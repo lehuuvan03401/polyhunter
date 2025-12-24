@@ -33,29 +33,36 @@ if (arb) {
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      PolymarketSDK                          │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 3: Services                                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │WalletService│  │MarketService│  │  RealtimeService    │  │
-│  │ - profiles  │  │ - K-Lines   │  │  - subscriptions    │  │
-│  │ - sell det. │  │ - signals   │  │  - price cache      │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 2: API Clients                                       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐  │
-│  │ DataAPI  │  │ GammaAPI │  │ CLOB API │  │  WebSocket  │  │
-│  │positions │  │ markets  │  │ orderbook│  │  real-time  │  │
-│  │ trades   │  │ events   │  │ trading  │  │  prices     │  │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 1: Infrastructure                                    │
-│  ┌────────────┐  ┌─────────┐  ┌──────────┐  ┌────────────┐  │
-│  │RateLimiter │  │  Cache  │  │  Errors  │  │   Types    │  │
-│  │per-API     │  │TTL-based│  │ retry    │  │ unified    │  │
-│  └────────────┘  └─────────┘  └──────────┘  └────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                             PolymarketSDK                                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Layer 3: Services                                                            │
+│  ┌─────────────┐ ┌─────────────┐ ┌───────────────┐ ┌─────────────────────────┐│
+│  │WalletService│ │MarketService│ │RealtimeService│ │   AuthorizationService  ││
+│  │ - profiles  │ │ - K-Lines   │ │- subscriptions│ │   - ERC20 approvals     ││
+│  │ - sell det. │ │ - signals   │ │- price cache  │ │   - ERC1155 approvals   ││
+│  └─────────────┘ └─────────────┘ └───────────────┘ └─────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │ SwapService: DEX swaps on Polygon (QuickSwap V3, USDC/USDC.e conversion)│  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Layer 2: API Clients                                                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌────────────────────┐  │
+│  │ DataAPI  │ │ GammaAPI │ │ CLOB API │ │ WebSocket │ │   BridgeClient     │  │
+│  │positions │ │ markets  │ │ orderbook│ │ real-time │ │   cross-chain      │  │
+│  │ trades   │ │ events   │ │ trading  │ │ prices    │ │   deposits         │  │
+│  └──────────┘ └──────────┘ └──────────┘ └───────────┘ └────────────────────┘  │
+│  ┌──────────────────────────────────────┐ ┌────────────────────────────────┐  │
+│  │ TradingClient: Order execution       │ │ CTFClient: On-chain operations │  │
+│  │ GTC/GTD/FOK/FAK, rewards, balances   │ │ Split / Merge / Redeem tokens  │  │
+│  └──────────────────────────────────────┘ └────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Layer 1: Infrastructure                                                      │
+│  ┌────────────┐  ┌─────────┐  ┌──────────┐  ┌────────────┐ ┌──────────────┐   │
+│  │RateLimiter │  │  Cache  │  │  Errors  │  │   Types    │ │ Price Utils  │   │
+│  │per-API     │  │TTL-based│  │ retry    │  │ unified    │ │ arb detect   │   │
+│  └────────────┘  └─────────┘  └──────────┘  └────────────┘ └──────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## API Clients
@@ -421,12 +428,26 @@ const price = realtime.getPrice(yesTokenId);
 await subscription.unsubscribe();
 ```
 
-### CTFClient - On-Chain Token Operations
+### CTFClient - On-Chain Token Operations (Split/Merge/Redeem)
 
-The CTF (Conditional Token Framework) client enables on-chain operations for Polymarket's conditional tokens. This is essential for:
-- **Arbitrage**: Merge tokens when buying YES + NO < $1
-- **Market Making**: Split USDC to create inventory
-- **Redemption**: Claim winnings after market resolution
+The CTF (Conditional Token Framework) client enables on-chain operations for Polymarket's conditional tokens.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CTF 核心操作快速参考                                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  操作         │ 功能                    │ 典型场景                           │
+├──────────────┼────────────────────────┼──────────────────────────────────────┤
+│  Split       │ USDC → YES + NO        │ 市场做市：创建代币库存                 │
+│  Merge       │ YES + NO → USDC        │ 套利：买入双边后合并获利               │
+│  Redeem      │ 胜出代币 → USDC         │ 结算：市场结束后兑换获胜代币            │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**核心用途：**
+- **Arbitrage (套利)**: 当 YES + NO 买入成本 < $1 时，Merge 获利
+- **Market Making (做市)**: Split USDC 创建代币库存进行双边报价
+- **Redemption (结算)**: 市场结束后 Redeem 胜出代币获取 USDC
 
 ```typescript
 import { CTFClient, CTF_CONTRACT, USDC_CONTRACT } from '@catalyst-team/poly-sdk';
@@ -548,44 +569,116 @@ if (arb?.type === 'long') {
 }
 ```
 
-### ArbitrageService - Automated Arbitrage
+### BridgeClient - Cross-Chain Deposits
 
-The ArbitrageService combines TradingClient and CTFClient for automated arbitrage detection and execution.
+Bridge assets from multiple chains (Ethereum, Solana, Bitcoin) to Polygon USDC.e for Polymarket trading.
 
-**内部使用有效价格计算**，自动处理 Polymarket 的镜像订单特性。
-
-详细的套利计算原理见: [docs/01-polymarket-orderbook-arbitrage.md](docs/01-polymarket-orderbook-arbitrage.md)
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  跨链充值流程                                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  1. 获取充值地址 → 2. 发送资产到地址 → 3. 自动桥接 → 4. USDC.e 到账           │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ```typescript
-import { ArbitrageService, TradingClient, CTFClient, RateLimiter } from '@catalyst-team/poly-sdk';
+import {
+  BridgeClient,
+  SUPPORTED_CHAINS,
+  depositUsdc,
+  swapAndDeposit,
+} from '@catalyst-team/poly-sdk';
 
-const rateLimiter = new RateLimiter();
-const tradingClient = new TradingClient(rateLimiter, { privateKey: '...' });
-const ctfClient = new CTFClient({ privateKey: '...' });
-const sdk = new PolymarketSDK();
+// Get deposit addresses for your wallet
+const bridge = new BridgeClient();
+const addresses = await bridge.createDepositAddresses(walletAddress);
+console.log(`EVM chains: ${addresses.address.evm}`);
+console.log(`Solana: ${addresses.address.svm}`);
+console.log(`Bitcoin: ${addresses.address.btc}`);
 
-const arbService = new ArbitrageService(tradingClient, ctfClient, sdk.clobApi, {
-  minProfitThreshold: 0.005,  // 0.5% minimum (based on effective prices)
-  maxGasCost: 0.10,           // $0.10 max gas
-  dryRun: true,               // Simulation mode
-});
-
-// Detect opportunity (uses effective prices internally)
-const opportunity = await arbService.detectOpportunity(conditionId);
-if (opportunity) {
-  console.log(`${opportunity.type} arb: ${opportunity.profitPercent.toFixed(2)}%`);
-  console.log(`Effective cost: ${opportunity.effectiveCost}`);
+// Get supported assets
+const assets = await bridge.getSupportedAssets();
+for (const asset of assets) {
+  console.log(`${asset.chainName} ${asset.tokenSymbol}: min ${asset.minDepositUsd} USD`);
 }
 
-// Scan multiple markets
-const opportunities = await arbService.scanMarkets(conditionIds);
+// Direct USDC deposit from Ethereum
+const depositResult = await depositUsdc(signer, '100', walletAddress);
+console.log(`Deposited: ${depositResult.txHash}`);
 
-// Execute (or simulate)
-const result = await arbService.execute({
-  conditionId,
-  amount: 100,  // $100 USDC
+// Swap ETH to USDC and deposit
+const swapResult = await swapAndDeposit(signer, {
+  tokenIn: 'ETH',
+  amountIn: '0.1',
+  targetAddress: walletAddress,
 });
-console.log(`Profit: $${result.netProfit.toFixed(4)}`);
+console.log(`Swapped & deposited: ${swapResult.usdcAmount}`);
+```
+
+### SwapService - DEX Swaps on Polygon
+
+Swap tokens on Polygon using QuickSwap V3. Essential for converting tokens to USDC.e for CTF operations.
+
+⚠️ **USDC vs USDC.e for Polymarket CTF**
+
+| Token | Address | Polymarket CTF |
+|-------|---------|----------------|
+| USDC.e | `0x2791...` | ✅ **Required** |
+| USDC (Native) | `0x3c49...` | ❌ Not accepted |
+
+```typescript
+import { SwapService, POLYGON_TOKENS } from '@catalyst-team/poly-sdk';
+
+const swapService = new SwapService(signer);
+
+// Check balances
+const balances = await swapService.getBalances();
+for (const b of balances) {
+  console.log(`${b.symbol}: ${b.balance}`);
+}
+
+// Swap native USDC to USDC.e for CTF operations
+const swapResult = await swapService.swap('USDC', 'USDC_E', '100');
+console.log(`Swapped: ${swapResult.amountOut} USDC.e`);
+
+// Swap MATIC to USDC.e
+const maticSwap = await swapService.swap('MATIC', 'USDC_E', '50');
+
+// Get quote before swapping
+const quote = await swapService.getQuote('WETH', 'USDC_E', '0.1');
+console.log(`Expected output: ${quote.estimatedAmountOut} USDC.e`);
+
+// Transfer USDC.e (for CTF operations)
+await swapService.transferUsdcE(recipientAddress, '100');
+```
+
+### AuthorizationService - Trading Approvals
+
+Manage ERC20 and ERC1155 approvals required for trading on Polymarket.
+
+```typescript
+import { AuthorizationService } from '@catalyst-team/poly-sdk';
+
+const authService = new AuthorizationService(signer);
+
+// Check all allowances
+const status = await authService.checkAllowances();
+console.log(`Wallet: ${status.wallet}`);
+console.log(`USDC Balance: ${status.usdcBalance}`);
+console.log(`Trading Ready: ${status.tradingReady}`);
+
+if (!status.tradingReady) {
+  console.log('Issues:', status.issues);
+
+  // Set up all required approvals
+  const result = await authService.approveAll();
+  console.log(result.summary);
+}
+
+// Check individual allowances
+for (const allowance of status.erc20Allowances) {
+  console.log(`${allowance.contract}: ${allowance.approved ? '✅' : '❌'}`);
+}
 ```
 
 ## Price Utilities
@@ -690,13 +783,25 @@ import type {
   RedeemResult,
   PositionBalance,
   MarketResolution,
+  TokenIds,
 
-  // Arbitrage
-  ArbitrageConfig,
-  ArbitrageOpportunity,
-  ArbitrageExecutionParams,
-  ArbitrageResult,
-  ArbitrageTransaction,
+  // Bridge
+  BridgeSupportedAsset,
+  DepositAddress,
+  DepositStatus,
+  DepositResult,
+  SwapAndDepositResult,
+
+  // Swap
+  SupportedToken,
+  SwapQuote,
+  SwapResult,
+  TokenBalance,
+
+  // Authorization
+  AllowanceInfo,
+  AllowancesResult,
+  ApprovalTxResult,
 
   // Price Utils
   TickSize,
@@ -779,9 +884,8 @@ sdk.invalidateMarketCache(conditionId);
 | [Trading Orders](examples/08-trading-orders.ts) | GTC, GTD, FOK, FAK order types | `pnpm example:trading` |
 | [Rewards Tracking](examples/09-rewards-tracking.ts) | Market maker incentives, earnings | `pnpm example:rewards` |
 | [CTF Operations](examples/10-ctf-operations.ts) | Split, merge, redeem tokens | `pnpm example:ctf` |
-| [Arbitrage Service](examples/11-arbitrage-service.ts) | Detect and execute arbitrage | `pnpm example:arbitrage` |
-| [Live Arbitrage Scan](examples/12-live-arbitrage-scan.ts) | Scan real markets for opportunities | `pnpm example:live-arb` |
-| [Trending Arb Monitor](examples/13-trending-arb-monitor.ts) | Real-time trending markets monitor | `pnpm example:trending-arb` |
+| [Live Arbitrage Scan](examples/11-live-arbitrage-scan.ts) | Scan real markets for opportunities | `pnpm example:live-arb` |
+| [Trending Arb Monitor](examples/12-trending-arb-monitor.ts) | Real-time trending markets monitor | `pnpm example:trending-arb` |
 
 Run any example:
 
