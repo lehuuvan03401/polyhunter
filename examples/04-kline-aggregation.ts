@@ -94,8 +94,10 @@ async function main() {
   // 3. Get token info
   console.log('3. Getting token info...');
   const unifiedMarket = await sdk.getMarket(market.conditionId);
-  console.log(`   YES Token: ${unifiedMarket.tokens.yes.tokenId.slice(0, 16)}...`);
-  console.log(`   NO Token: ${unifiedMarket.tokens.no.tokenId.slice(0, 16)}...\n`);
+  const yesToken = unifiedMarket.tokens.find(t => t.outcome === 'Yes');
+  const noToken = unifiedMarket.tokens.find(t => t.outcome === 'No');
+  console.log(`   YES Token: ${yesToken?.tokenId.slice(0, 16)}...`);
+  console.log(`   NO Token: ${noToken?.tokenId.slice(0, 16)}...\n`);
 
   // 4. Separate trades by token (YES vs NO)
   const yesTrades = trades.filter((t) => t.outcomeIndex === 0 || t.outcome === 'Yes');

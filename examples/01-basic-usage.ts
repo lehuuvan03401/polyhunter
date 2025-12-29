@@ -37,10 +37,12 @@ async function main() {
     const unifiedMarket = await sdk.getMarket(firstMarket.slug);
     console.log(`   Question: ${unifiedMarket.question}`);
     console.log(`   Condition ID: ${unifiedMarket.conditionId}`);
-    console.log(`   YES Token ID: ${unifiedMarket.tokens.yes.tokenId}`);
-    console.log(`   NO Token ID: ${unifiedMarket.tokens.no.tokenId}`);
-    console.log(`   YES Price: ${unifiedMarket.tokens.yes.price.toFixed(4)}`);
-    console.log(`   NO Price: ${unifiedMarket.tokens.no.price.toFixed(4)}`);
+    const yesToken = unifiedMarket.tokens.find(t => t.outcome === 'Yes');
+    const noToken = unifiedMarket.tokens.find(t => t.outcome === 'No');
+    console.log(`   YES Token ID: ${yesToken?.tokenId}`);
+    console.log(`   NO Token ID: ${noToken?.tokenId}`);
+    console.log(`   YES Price: ${yesToken?.price.toFixed(4)}`);
+    console.log(`   NO Price: ${noToken?.price.toFixed(4)}`);
     console.log(`   Source: ${unifiedMarket.source}`);
     console.log('');
 

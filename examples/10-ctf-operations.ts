@@ -37,7 +37,6 @@
 import {
   CTFClient,
   PolymarketSDK,
-  TradingClient,
   RateLimiter,
   CTF_CONTRACT,
   USDC_CONTRACT,
@@ -110,7 +109,7 @@ async function main() {
 
   for (const market of markets) {
     try {
-      const orderbook = await sdk.clobApi.getProcessedOrderbook(market.conditionId);
+      const orderbook = await sdk.markets.getProcessedOrderbook(market.conditionId);
       const askSum = orderbook.summary.askSum;
 
       console.log(`   ${market.question?.slice(0, 40)}...`);
@@ -243,16 +242,16 @@ async function main() {
 
   console.log(`
    // Assuming long arbitrage opportunity exists
-   // 1. Buy YES tokens via TradingClient
-   const yesOrder = await tradingClient.createMarketOrder({
+   // 1. Buy YES tokens via TradingService
+   const yesOrder = await tradingService.createMarketOrder({
      tokenId: yesTokenId,
      side: 'BUY',
      amount: 100, // $100 USDC
      orderType: 'FOK',
    });
 
-   // 2. Buy NO tokens via TradingClient
-   const noOrder = await tradingClient.createMarketOrder({
+   // 2. Buy NO tokens via TradingService
+   const noOrder = await tradingService.createMarketOrder({
      tokenId: noTokenId,
      side: 'BUY',
      amount: 100, // $100 USDC

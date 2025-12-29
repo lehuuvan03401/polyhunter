@@ -4,6 +4,73 @@
 
 import type { CacheAdapter } from '@catalyst-team/cache';
 
+// ===== Basic Trading Types =====
+
+/**
+ * Order side: BUY or SELL
+ */
+export type Side = 'BUY' | 'SELL';
+
+/**
+ * Order type for limit/market orders
+ * - GTC: Good Till Cancelled (default for limit orders)
+ * - GTD: Good Till Date (limit order with expiration)
+ * - FOK: Fill Or Kill (market order, must fill completely or cancel)
+ * - FAK: Fill And Kill (market order, fill what you can, cancel rest)
+ */
+export type OrderType = 'GTC' | 'FOK' | 'GTD' | 'FAK';
+
+/**
+ * Base trade interface with common fields
+ *
+ * This is the minimal set of fields that all trade types share.
+ * Specific trade types (Trade, TradeInfo, ActivityTrade, ParsedTrade)
+ * extend this with source-specific fields.
+ */
+export interface BaseTrade {
+  /** Trade side: BUY or SELL */
+  side: Side;
+  /** Trade price */
+  price: number;
+  /** Trade size (in shares/tokens) */
+  size: number;
+  /** Timestamp (Unix milliseconds) */
+  timestamp: number;
+}
+
+// ===== Orderbook Types =====
+
+/**
+ * Price level in an orderbook
+ */
+export interface OrderbookLevel {
+  price: number;
+  size: number;
+}
+
+/**
+ * Unified Orderbook type used across the SDK
+ *
+ * This is the base orderbook structure. Services may extend this
+ * with additional fields (e.g., OrderbookSnapshot adds tickSize, minOrderSize).
+ */
+export interface Orderbook {
+  /** Token ID (ERC-1155 token identifier) */
+  tokenId?: string;
+  /** @deprecated Use tokenId instead */
+  assetId?: string;
+  /** Bid levels (highest first) */
+  bids: OrderbookLevel[];
+  /** Ask levels (lowest first) */
+  asks: OrderbookLevel[];
+  /** Timestamp in milliseconds */
+  timestamp: number;
+  /** Market identifier (conditionId) */
+  market?: string;
+  /** Hash for change detection */
+  hash?: string;
+}
+
 /**
  * SDK Configuration Options
  *
@@ -40,9 +107,9 @@ export interface PolySDKOptions {
   chainId?: number;
 
   /**
-   * Ethereum signer for trading operations
+   * Private key for trading operations (hex string starting with 0x)
    */
-  signer?: unknown;
+  privateKey?: string;
 
   /**
    * API credentials for trading
@@ -318,28 +385,66 @@ export interface BookUpdate {
   timestamp: number;
 }
 
-// Unified market type (merged from Gamma and CLOB)
+// ===== Market Types =====
+
+/**
+ * Token in a market (YES or NO outcome)
+ */
+export interface MarketToken {
+  /** ERC-1155 token ID */
+  tokenId: string;
+  /** Outcome name (e.g., "Yes", "No") */
+  outcome: string;
+  /** Current price (0-1) */
+  price: number;
+  /** Whether this token won (after resolution) */
+  winner?: boolean;
+}
+
+/**
+ * Unified market type (merged from Gamma and CLOB)
+ *
+ * This is the primary market type used across the SDK.
+ * It combines data from both Gamma API (volume, liquidity) and CLOB API (trading data).
+ *
+ * BREAKING CHANGE (v2.0): tokens is now an array instead of { yes, no } object.
+ * Use tokens.find(t => t.outcome === 'Yes') to get specific outcomes.
+ */
 export interface UnifiedMarket {
+  /** Market condition ID (primary identifier) */
   conditionId: string;
+  /** URL-friendly slug */
   slug: string;
+  /** Market question */
   question: string;
+  /** Market description */
   description?: string;
-  tokens: {
-    yes: { tokenId: string; price: number };
-    no: { tokenId: string; price: number };
-  };
+  /**
+   * Market tokens (YES/NO outcomes)
+   * @example tokens.find(t => t.outcome === 'Yes')?.price
+   */
+  tokens: MarketToken[];
+  /** Total volume (USDC) */
   volume: number;
+  /** 24-hour volume (USDC) */
   volume24hr?: number;
+  /** Liquidity depth (USDC) */
   liquidity: number;
+  /** Bid-ask spread */
   spread?: number;
   /** 1-day price change (from Gamma API) */
   oneDayPriceChange?: number;
   /** 1-week price change (from Gamma API) */
   oneWeekPriceChange?: number;
+  /** Whether market is active */
   active: boolean;
+  /** Whether market is closed (resolved) */
   closed: boolean;
+  /** Whether market is accepting orders */
   acceptingOrders: boolean;
+  /** Market end date */
   endDate: Date;
+  /** Data source indicator */
   source: 'gamma' | 'clob' | 'merged';
 }
 

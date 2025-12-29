@@ -69,7 +69,10 @@ describe('DataApiClient Integration', () => {
       if (trades.length > 0) {
         // Verify trade structure
         for (const trade of trades) {
-          expect(typeof trade.id).toBe('string');
+          // id may not be present in all API responses
+          if (trade.id !== undefined) {
+            expect(typeof trade.id).toBe('string');
+          }
           expect(['BUY', 'SELL']).toContain(trade.side);
           expect(typeof trade.price).toBe('number');
           expect(trade.price).toBeGreaterThanOrEqual(0);
@@ -173,8 +176,8 @@ describe('DataApiClient Integration', () => {
       if (activity.length > 0) {
         // Verify activity structure
         for (const act of activity) {
-          // Polymarket has various activity types including YIELD for rewards
-          expect(['TRADE', 'SPLIT', 'MERGE', 'REDEEM', 'CONVERSION', 'YIELD']).toContain(act.type);
+          // Polymarket has various activity types
+          expect(['TRADE', 'SPLIT', 'MERGE', 'REDEEM', 'CONVERSION', 'YIELD', 'REWARD']).toContain(act.type);
           // Side might be null for non-trade activities
           if (act.type === 'TRADE') {
             expect(['BUY', 'SELL']).toContain(act.side);

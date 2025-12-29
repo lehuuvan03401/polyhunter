@@ -33,7 +33,9 @@ async function main() {
       // Get unified market for token IDs
       const unifiedMarket = await sdk.getMarket(market.conditionId);
 
-      if (!unifiedMarket.tokens.yes.tokenId || !unifiedMarket.tokens.no.tokenId) {
+      const yesToken = unifiedMarket.tokens.find(t => t.outcome === 'Yes');
+      const noToken = unifiedMarket.tokens.find(t => t.outcome === 'No');
+      if (!yesToken?.tokenId || !noToken?.tokenId) {
         console.log('     Skipping (missing token IDs)\n');
         continue;
       }

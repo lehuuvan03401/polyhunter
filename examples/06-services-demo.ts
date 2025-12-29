@@ -67,8 +67,10 @@ async function main() {
   console.log('5. Getting unified market data...');
   const unifiedMarket = await sdk.markets.getMarket(market.conditionId);
   console.log(`   Source: ${unifiedMarket.source}`);
-  console.log(`   YES Price: ${unifiedMarket.tokens.yes.price}`);
-  console.log(`   NO Price: ${unifiedMarket.tokens.no.price}`);
+  const yesToken = unifiedMarket.tokens.find(t => t.outcome === 'Yes');
+  const noToken = unifiedMarket.tokens.find(t => t.outcome === 'No');
+  console.log(`   YES Price: ${yesToken?.price}`);
+  console.log(`   NO Price: ${noToken?.price}`);
   console.log(`   Volume 24hr: $${unifiedMarket.volume24hr?.toLocaleString() || 'N/A'}\n`);
 
   // 6. Get K-Lines
