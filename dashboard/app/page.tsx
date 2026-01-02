@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
+import Link from 'next/link';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useSmartMoneyLeaderboard } from '@/lib/hooks/use-smart-money';
 import { useMarkets } from '@/lib/hooks/use-markets';
 import { formatCurrency, shortenAddress } from '@/lib/utils';
 
-export default function Home() {
+export default function HomePage() {
   const { data: topTraders } = useSmartMoneyLeaderboard(5);
   const { data: hotMarkets } = useMarkets({ limit: 6 });
   const [liveStats, setLiveStats] = useState({ volume: 2456789, markets: 1234, users: 45678 });
@@ -28,12 +28,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      {/* Hero Section with Gradient Background */}
-      <div className="relative overflow-hidden">
+      {/* Hero Section */}
+      <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-emerald-900/10 via-transparent to-transparent pointer-events-none" />
         <div className="max-w-7xl mx-auto px-6 pt-8 pb-16">
           <div className="text-center space-y-6 animate-fade-in">
-            {/* Logo Animation */}
+            {/* Logo */}
             <div className="flex justify-center mb-4">
               <div className="relative">
                 <div className="w-24 h-24 rounded-2xl bg-gradient-elegant flex items-center justify-center border border-silver-600/30 shadow-glow-silver">
@@ -52,8 +52,8 @@ export default function Home() {
               <span className="text-silver-500">Track smart money, find arbitrage, and trade with precision.</span>
             </p>
 
-            {/* Live Status Badge */}
-            <div className="flex items-center justify-center gap-4">
+            {/* Live Status */}
+            <div className="flex items-center justify-center gap-4 flex-wrap">
               <div className="glass px-4 py-2 rounded-full border border-silver-600/20 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-subtle" />
                 <span className="text-sm text-silver-300">Live Data</span>
@@ -66,27 +66,21 @@ export default function Home() {
             {/* Quick Actions */}
             <div className="flex flex-wrap items-center justify-center gap-4 mt-8">
               <Link href="/smart-money">
-                <Button size="lg" className="text-base px-8">
-                  💎 Smart Money Tracker
-                </Button>
+                <Button size="lg" className="text-base px-8">💎 Smart Money</Button>
               </Link>
               <Link href="/arbitrage">
-                <Button variant="secondary" size="lg" className="text-base px-8">
-                  💰 Arbitrage Scanner
-                </Button>
+                <Button variant="secondary" size="lg" className="text-base px-8">💰 Arbitrage</Button>
               </Link>
               <Link href="/trading">
-                <Button variant="ghost" size="lg" className="text-base px-8">
-                  💱 Trading Terminal
-                </Button>
+                <Button variant="ghost" size="lg" className="text-base px-8">💱 Trading</Button>
               </Link>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Live Stats Bar */}
-      <div className="border-y border-silver-600/20 bg-dark-800/50">
+      <section className="border-y border-silver-600/20 bg-dark-800/50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="grid grid-cols-3 md:grid-cols-6 gap-4 md:gap-8">
             <LiveStat label="24h Volume" value={`$${(liveStats.volume / 1000000).toFixed(2)}M`} />
@@ -97,12 +91,12 @@ export default function Home() {
             <LiveStat label="Latency" value="48ms" />
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto spacious">
         {/* Feature Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <FeatureCard
             icon="💎"
             title="Smart Money"
@@ -113,7 +107,7 @@ export default function Home() {
           />
           <FeatureCard
             icon="💰"
-            title="Arbitrage Monitor"
+            title="Arbitrage"
             description="Scan markets for price discrepancies and execute profitable trades"
             href="/arbitrage"
             stats="Real-time scanning"
@@ -121,7 +115,7 @@ export default function Home() {
           />
           <FeatureCard
             icon="📊"
-            title="Market Analytics"
+            title="Markets"
             description="Advanced charts, orderbook visualization, and market insights"
             href="/markets"
             stats={hotMarkets ? `${hotMarkets.length}+ markets` : 'Loading...'}
@@ -135,18 +129,16 @@ export default function Home() {
             stats="CTF Integration"
             badge="SDK"
           />
-        </div>
+        </section>
 
-        {/* Two Column Layout: Top Traders + Hot Markets */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+        {/* Two Column: Top Traders + Hot Markets */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
           {/* Top Traders */}
           <Card className="card-elegant">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-silver-100 flex items-center gap-2">
-                    🏆 Top Smart Money
-                  </CardTitle>
+                  <CardTitle className="text-silver-100 flex items-center gap-2">🏆 Top Smart Money</CardTitle>
                   <CardDescription>Highest PnL traders this week</CardDescription>
                 </div>
                 <Link href="/smart-money">
@@ -182,10 +174,7 @@ export default function Home() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8">
-                  <div className="animate-pulse text-4xl mb-2">⏳</div>
-                  <p className="text-silver-400">Loading top traders...</p>
-                </div>
+                <LoadingState text="Loading top traders..." />
               )}
             </CardContent>
           </Card>
@@ -195,9 +184,7 @@ export default function Home() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-silver-100 flex items-center gap-2">
-                    🔥 Hot Markets
-                  </CardTitle>
+                  <CardTitle className="text-silver-100 flex items-center gap-2">🔥 Hot Markets</CardTitle>
                   <CardDescription>Trending prediction markets</CardDescription>
                 </div>
                 <Link href="/markets">
@@ -208,7 +195,7 @@ export default function Home() {
             <CardContent>
               {hotMarkets && hotMarkets.length > 0 ? (
                 <div className="space-y-3">
-                  {hotMarkets.slice(0, 5).map((market, i) => (
+                  {hotMarkets.slice(0, 5).map((market) => (
                     <Link
                       href={`/markets/${market.slug}`}
                       key={market.conditionId}
@@ -216,7 +203,7 @@ export default function Home() {
                     >
                       <p className="text-silver-200 text-sm mb-2 line-clamp-1">{market.question}</p>
                       <div className="flex items-center gap-4">
-                        <div className="flex-1 flex gap-2">
+                        <div className="flex gap-2">
                           <Badge variant="success" className="text-xs">
                             YES {(market.yesPrice * 100).toFixed(0)}¢
                           </Badge>
@@ -232,17 +219,14 @@ export default function Home() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8">
-                  <div className="animate-pulse text-4xl mb-2">⏳</div>
-                  <p className="text-silver-400">Loading markets...</p>
-                </div>
+                <LoadingState text="Loading markets..." />
               )}
             </CardContent>
           </Card>
-        </div>
+        </section>
 
         {/* Quick Access Grid */}
-        <div className="mb-16">
+        <section className="mb-12">
           <h2 className="text-2xl font-bold gradient-text mb-6">Quick Access</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <QuickLink href="/trading" icon="💱" label="Trading" />
@@ -252,16 +236,16 @@ export default function Home() {
             <QuickLink href="/smart-money/copy-trading" icon="🔄" label="Copy Trading" />
             <QuickLink href="/settings" icon="⚙️" label="Settings" />
           </div>
-        </div>
+        </section>
 
         {/* Platform Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <StatsCard title="Active Markets" value="1,234" icon="📊" />
           <StatsCard title="24h Volume" value="$2.4M" icon="💵" />
           <StatsCard title="Smart Wallets" value="500+" icon="💎" />
           <StatsCard title="Arbitrage Opps" value="24/7" icon="🔍" />
-        </div>
-      </div>
+        </section>
+      </main>
 
       {/* Footer */}
       <footer className="border-t border-silver-600/20 mt-16">
@@ -282,6 +266,7 @@ export default function Home() {
   );
 }
 
+// Helper Components
 function LiveStat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="text-center">
@@ -291,33 +276,17 @@ function LiveStat({ label, value, highlight }: { label: string; value: string; h
   );
 }
 
-function FeatureCard({
-  icon,
-  title,
-  description,
-  href,
-  stats,
-  badge,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  href: string;
-  stats: string;
-  badge?: string;
+function FeatureCard({ icon, title, description, href, stats, badge }: {
+  icon: string; title: string; description: string; href: string; stats: string; badge?: string;
 }) {
   return (
     <Link href={href}>
       <Card className="card-elegant hover:shadow-glow-silver transition-all duration-300 cursor-pointer h-full group">
         <CardHeader>
           <div className="flex items-start justify-between mb-3">
-            <div className="text-4xl transform group-hover:scale-110 transition-transform">
-              {icon}
-            </div>
+            <div className="text-4xl transform group-hover:scale-110 transition-transform">{icon}</div>
             {badge && (
-              <Badge variant={badge === 'Live' ? 'success' : badge === 'Active' ? 'info' : 'default'}>
-                {badge}
-              </Badge>
+              <Badge variant={badge === 'Live' ? 'success' : badge === 'Active' ? 'info' : 'default'}>{badge}</Badge>
             )}
           </div>
           <CardTitle className="text-silver-100 group-hover:text-white transition">{title}</CardTitle>
@@ -355,5 +324,14 @@ function StatsCard({ title, value, icon }: { title: string; value: string; icon:
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function LoadingState({ text }: { text: string }) {
+  return (
+    <div className="text-center py-8">
+      <div className="animate-pulse text-4xl mb-2">⏳</div>
+      <p className="text-silver-400">{text}</p>
+    </div>
   );
 }

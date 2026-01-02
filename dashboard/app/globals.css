@@ -2,110 +2,101 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #111111;
-  color: #F5F5F5;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  letter-spacing: -0.01em;
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 210 40% 98%;
+
+    --card: 224 71% 4%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
 }
 
-/* Elegant grid background */
-.elegant-grid {
-  background-image:
-    linear-gradient(rgba(115, 115, 115, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(115, 115, 115, 0.03) 1px, transparent 1px);
-  background-size: 60px 60px;
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
 }
 
-/* Glass effect - elegant and subtle */
-.glass {
-  backdrop-filter: blur(12px);
-  background-color: rgba(26, 26, 26, 0.7);
-  border: 1px solid rgba(115, 115, 115, 0.15);
+/* Utilities for Dashboard */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Glow effects - subtle and refined */
-.glow {
-  box-shadow: 0 0 20px rgba(115, 115, 115, 0.2);
-  transition: box-shadow 0.3s ease;
-}
-
-.glow:hover {
-  box-shadow: 0 0 30px rgba(115, 115, 115, 0.3);
-}
-
-.glow-emerald {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
-}
-
-.glow-emerald:hover {
-  box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
-}
-
-/* Gradient text - elegant silver to white */
-.gradient-text {
-  background: linear-gradient(135deg, #F5F5F5 0%, #A3A3A3 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-
-.gradient-text-emerald {
-  background: linear-gradient(135deg, #10B981 0%, #34D399 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-
-/* Smooth scrollbar - minimal and elegant */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1A1A1A;
+  background: #0e1116;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(115, 115, 115, 0.3);
-  border-radius: 3px;
+  background: #2d3748;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(115, 115, 115, 0.5);
-}
-
-/* Elegant divider */
-.divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(115, 115, 115, 0.2), transparent);
-}
-
-/* Card with elegant shadow */
-.card-elegant {
-  background: linear-gradient(135deg, #1A1A1A 0%, #0A0A0A 100%);
-  border: 1px solid rgba(115, 115, 115, 0.1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-/* Metallic border effect */
-.border-metallic {
-  border: 1px solid;
-  border-image: linear-gradient(135deg, #525252, #737373, #525252) 1;
-}
-
-/* Spacious layout utility */
-.spacious {
-  padding: 2rem;
-  margin-bottom: 1.5rem;
-}
-
-@media (min-width: 768px) {
-  .spacious {
-    padding: 3rem;
-    margin-bottom: 2rem;
-  }
+  background: #4a5568;
 }

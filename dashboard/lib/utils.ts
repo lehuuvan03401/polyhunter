@@ -1,23 +1,8 @@
-import { clsx, type ClassValue } from "clsx";
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
-    const classes: string[] = [];
-
-    for (const input of inputs) {
-        if (typeof input === 'string') {
-            classes.push(input);
-        } else if (Array.isArray(input)) {
-            classes.push(...input.filter(Boolean));
-        } else if (typeof input === 'object' && input !== null) {
-            for (const [key, value] of Object.entries(input)) {
-                if (value) {
-                    classes.push(key);
-                }
-            }
-        }
-    }
-
-    return classes.filter(Boolean).join(' ');
+    return twMerge(clsx(inputs))
 }
 
 export function formatNumber(num: number): string {
