@@ -1,10 +1,16 @@
 'use client';
 
 import { OrderForm } from '@/components/trading/order-form';
+import { Orderbook, generateMockOrderbook } from '@/components/trading/orderbook';
+import { Portfolio, generateMockPortfolio } from '@/components/trading/portfolio';
+import { AlertsManager } from '@/components/ui/alerts-manager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 export default function TradingPage() {
+    const orderbook = generateMockOrderbook();
+    const portfolio = generateMockPortfolio();
+
     const handleOrderSubmit = (order: {
         side: 'YES' | 'NO';
         type: 'LIMIT' | 'MARKET';
@@ -32,14 +38,20 @@ export default function TradingPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Order Form */}
-                    <div className="lg:col-span-1">
-                        <OrderForm onSubmit={handleOrderSubmit} />
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    {/* Left Column - Portfolio & Alerts */}
+                    <div className="lg:col-span-1 space-y-6">
+                        <Portfolio {...portfolio} />
+                        <AlertsManager />
                     </div>
 
-                    {/* Main Area */}
+                    {/* Middle - Order Form & Orderbook */}
                     <div className="lg:col-span-2 space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <OrderForm onSubmit={handleOrderSubmit} />
+                            <Orderbook {...orderbook} />
+                        </div>
+
                         {/* Open Orders */}
                         <Card className="card-elegant">
                             <CardHeader>
@@ -49,41 +61,24 @@ export default function TradingPage() {
                                 </div>
                             </CardHeader>
                             <CardContent>
-                                <div className="text-center py-12">
-                                    <div className="text-4xl mb-4">📝</div>
+                                <div className="text-center py-8">
+                                    <div className="text-3xl mb-3">📝</div>
                                     <p className="text-silver-400">No open orders</p>
-                                    <p className="text-sm text-silver-500 mt-2">Place an order to get started</p>
                                 </div>
                             </CardContent>
                         </Card>
+                    </div>
 
-                        {/* Positions */}
-                        <Card className="card-elegant">
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <CardTitle className="text-silver-100">Positions</CardTitle>
-                                    <Badge variant="success">$0.00 PnL</Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-center py-12">
-                                    <div className="text-4xl mb-4">💼</div>
-                                    <p className="text-silver-400">No active positions</p>
-                                    <p className="text-sm text-silver-500 mt-2">Your positions will appear here</p>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Order History */}
+                    {/* Right Column - Order History */}
+                    <div className="lg:col-span-1">
                         <Card className="card-elegant">
                             <CardHeader>
                                 <CardTitle className="text-silver-100">Order History</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <div className="text-center py-12">
-                                    <div className="text-4xl mb-4">📜</div>
-                                    <p className="text-silver-400">No order history</p>
-                                    <p className="text-sm text-silver-500 mt-2">Your completed orders will appear here</p>
+                                <div className="text-center py-8">
+                                    <div className="text-3xl mb-3">📜</div>
+                                    <p className="text-silver-400 text-sm">No order history</p>
                                 </div>
                             </CardContent>
                         </Card>
