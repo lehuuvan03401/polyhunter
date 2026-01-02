@@ -7,11 +7,11 @@ export async function GET(request: NextRequest) {
     try {
         const searchParams = request.nextUrl.searchParams;
         const limit = parseInt(searchParams.get('limit') || '50');
-        const period = searchParams.get('period') || '7d';
 
+        // Use SDK's built-in smartMoney service
         const sdk = getReadOnlySDK();
 
-        // Get smart money list from SDK
+        // Get smart money list using SDK's verified implementation
         const smartWallets = await sdk.smartMoney.getSmartMoneyList(limit);
 
         return NextResponse.json({
@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
             data: smartWallets,
             metadata: {
                 count: smartWallets.length,
-                period,
                 timestamp: Date.now(),
             }
         });

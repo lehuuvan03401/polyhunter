@@ -9,7 +9,7 @@ import { useMarkets } from '@/lib/hooks/use-markets';
 export default function MarketsPage() {
     const [search, setSearch] = useState('');
     const [limit, setLimit] = useState(12);
-    const { data: markets, isLoading, error } = useMarkets(limit, search);
+    const { data: markets, isLoading, error } = useMarkets({ limit, search });
 
     return (
         <div className="min-h-screen">

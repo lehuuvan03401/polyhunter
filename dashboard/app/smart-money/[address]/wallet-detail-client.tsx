@@ -79,8 +79,8 @@ export default function WalletDetailClient({ address }: { address: string }) {
                         trendPositive
                     />
                     <StatCard
-                        title="Avg Position Size"
-                        value={formatCurrency(wallet.avgPositionSize || 0)}
+                        title="Position Count"
+                        value={(wallet.positionCount || 0).toString()}
                         icon="📈"
                     />
                 </div>

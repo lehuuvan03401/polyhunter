@@ -17,30 +17,27 @@ export async function GET(
             );
         }
 
-        // Use SDK's built-in services
+        // Use SDK's built-in dataApi for positions
         const sdk = getReadOnlySDK();
-
-        // Get wallet profile using SDK's wallets service
-        const profile = await sdk.wallets.getWalletProfile(address);
-
-        // Check if smart money
-        const isSmartMoney = await sdk.smartMoney.isSmartMoney(address);
+        const positions = await sdk.dataApi.getPositions(address);
 
         return NextResponse.json({
             success: true,
-            data: {
-                ...profile,
-                isSmartMoney,
+            data: positions,
+            metadata: {
+                count: positions.length,
+                address,
+                timestamp: Date.now(),
             }
         });
 
     } catch (error) {
-        console.error('Error fetching wallet data:', error);
+        console.error('Error fetching positions:', error);
 
         return NextResponse.json(
             {
                 success: false,
-                error: error instanceof Error ? error.message : 'Failed to fetch wallet data'
+                error: error instanceof Error ? error.message : 'Failed to fetch positions'
             },
             { status: 500 }
         );

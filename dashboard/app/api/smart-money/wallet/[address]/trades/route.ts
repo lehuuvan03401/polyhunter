@@ -17,30 +17,30 @@ export async function GET(
             );
         }
 
-        // Use SDK's built-in services
+        const searchParams = request.nextUrl.searchParams;
+        const limit = parseInt(searchParams.get('limit') || '50');
+
+        // Use SDK's built-in dataApi for trades
         const sdk = getReadOnlySDK();
-
-        // Get wallet profile using SDK's wallets service
-        const profile = await sdk.wallets.getWalletProfile(address);
-
-        // Check if smart money
-        const isSmartMoney = await sdk.smartMoney.isSmartMoney(address);
+        const trades = await sdk.dataApi.getTrades({ user: address, limit });
 
         return NextResponse.json({
             success: true,
-            data: {
-                ...profile,
-                isSmartMoney,
+            data: trades,
+            metadata: {
+                count: trades.length,
+                address,
+                timestamp: Date.now(),
             }
         });
 
     } catch (error) {
-        console.error('Error fetching wallet data:', error);
+        console.error('Error fetching trades:', error);
 
         return NextResponse.json(
             {
                 success: false,
-                error: error instanceof Error ? error.message : 'Failed to fetch wallet data'
+                error: error instanceof Error ? error.message : 'Failed to fetch trades'
             },
             { status: 500 }
         );

@@ -8,22 +8,27 @@ export async function GET(request: NextRequest) {
         const searchParams = request.nextUrl.searchParams;
         const minVolume = parseInt(searchParams.get('minVolume') || '1000');
         const profitThreshold = parseFloat(searchParams.get('profitThreshold') || '0.01');
+        const maxResults = parseInt(searchParams.get('maxResults') || '20');
 
-        // Create arbitrage service for scanning
+        // Use SDK's ArbitrageService for verified arbitrage scanning
         const arbitrageService = new ArbitrageService({
             enableLogging: false,
         });
 
-        // Scan for arbitrage opportunities using correct property name
+        // Scan for arbitrage opportunities using SDK's verified implementation
         const opportunities = await arbitrageService.scanMarkets({
             minVolume24h: minVolume,
         }, profitThreshold);
 
+        // Limit results
+        const limitedOpportunities = opportunities.slice(0, maxResults);
+
         return NextResponse.json({
             success: true,
-            data: opportunities,
+            data: limitedOpportunities,
             metadata: {
-                count: opportunities.length,
+                count: limitedOpportunities.length,
+                totalFound: opportunities.length,
                 minVolume,
                 profitThreshold,
                 timestamp: Date.now(),
