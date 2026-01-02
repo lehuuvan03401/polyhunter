@@ -311,7 +311,7 @@ import type { UnifiedMarket, ProcessedOrderbook, ArbitrageOpportunity, KLineInte
 import { createUnifiedCache, type UnifiedCache } from './core/unified-cache.js';
 
 // Re-export for backward compatibility
-export interface PolymarketSDKConfig extends PolySDKOptions {}
+export interface PolymarketSDKConfig extends PolySDKOptions { }
 
 export class PolymarketSDK {
   // Infrastructure
@@ -342,7 +342,11 @@ export class PolymarketSDK {
 
     // Initialize API clients
     this.dataApi = new DataApiClient(this.rateLimiter, this.cache);
-    this.gammaApi = new GammaApiClient(this.rateLimiter, this.cache);
+    this.gammaApi = new GammaApiClient(
+      this.rateLimiter,
+      this.cache,
+      config.gammaApiUrl
+    );
 
     // TradingService requires a private key - use provided key or dummy key for read-only
     const privateKey = config.privateKey || '0x' + '1'.repeat(64);

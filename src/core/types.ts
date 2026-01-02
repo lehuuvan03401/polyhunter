@@ -119,6 +119,12 @@ export interface PolySDKOptions {
     secret: string;
     passphrase: string;
   };
+
+  /**
+   * Custom Gamma API URL (e.g., for proxying requests)
+   * Default: https://gamma-api.polymarket.com
+   */
+  gammaApiUrl?: string;
 }
 
 // K-Line interval types

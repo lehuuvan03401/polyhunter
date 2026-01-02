@@ -143,7 +143,7 @@ export class MarketService {
     private rateLimiter: RateLimiter,
     private cache: UnifiedCache,
     private config?: MarketServiceConfig
-  ) {}
+  ) { }
 
   // ============================================================================
   // Initialization
@@ -682,30 +682,41 @@ export class MarketService {
    * 详细原理见: docs/01-polymarket-orderbook-arbitrage.md
    */
   async detectArbitrage(conditionId: string, threshold = 0.005): Promise<ArbitrageOpportunity | null> {
-    const orderbook = await this.getOrderbook(conditionId);
-    const { effectivePrices } = orderbook.summary;
+    try {
+      const orderbook = await this.getOrderbook(conditionId);
+      const { effectivePrices } = orderbook.summary;
 
-    if (orderbook.summary.longArbProfit > threshold) {
-      return {
-        type: 'long',
-        profit: orderbook.summary.longArbProfit,
-        // 使用有效价格描述实际操作
-        action: `Buy YES @ ${effectivePrices.effectiveBuyYes.toFixed(4)} + NO @ ${effectivePrices.effectiveBuyNo.toFixed(4)}, Merge for $1`,
-        expectedProfit: orderbook.summary.longArbProfit,
-      };
+      if (orderbook.summary.longArbProfit > threshold) {
+        return {
+          type: 'long',
+          profit: orderbook.summary.longArbProfit,
+          // 使用有效价格描述实际操作
+          action: `Buy YES @ ${effectivePrices.effectiveBuyYes.toFixed(4)} + NO @ ${effectivePrices.effectiveBuyNo.toFixed(4)}, Merge for $1`,
+          expectedProfit: orderbook.summary.longArbProfit,
+        };
+      }
+
+      if (orderbook.summary.shortArbProfit > threshold) {
+        return {
+          type: 'short',
+          profit: orderbook.summary.shortArbProfit,
+          // 使用有效价格描述实际操作
+          action: `Split $1, Sell YES @ ${effectivePrices.effectiveSellYes.toFixed(4)} + NO @ ${effectivePrices.effectiveSellNo.toFixed(4)}`,
+          expectedProfit: orderbook.summary.shortArbProfit,
+        };
+      }
+
+      return null;
+    } catch (err: any) {
+      // If market is not found in CLOB, just return null (no arb possible if no orderbook)
+      if (err instanceof PolymarketError && err.code === ErrorCode.MARKET_NOT_FOUND) {
+        return null;
+      }
+      if (err?.message?.includes('market not found')) {
+        return null;
+      }
+      throw err;
     }
-
-    if (orderbook.summary.shortArbProfit > threshold) {
-      return {
-        type: 'short',
-        profit: orderbook.summary.shortArbProfit,
-        // 使用有效价格描述实际操作
-        action: `Split $1, Sell YES @ ${effectivePrices.effectiveSellYes.toFixed(4)} + NO @ ${effectivePrices.effectiveSellNo.toFixed(4)}`,
-        expectedProfit: orderbook.summary.shortArbProfit,
-      };
-    }
-
-    return null;
   }
 
   // ===== Market Discovery =====
@@ -812,6 +823,9 @@ export class MarketService {
   // ===== Helper Methods =====
 
   private normalizeClobMarket(m: ClobMarket): Market {
+    if (!m || !Array.isArray(m.tokens)) {
+      throw new PolymarketError(ErrorCode.MARKET_NOT_FOUND, 'Invalid or missing market data from CLOB');
+    }
     return {
       conditionId: m.condition_id,
       questionId: m.question_id,

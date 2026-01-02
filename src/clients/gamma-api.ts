@@ -38,9 +38,6 @@ import { RateLimiter, ApiType } from '../core/rate-limiter.js';
 import type { UnifiedCache } from '../core/unified-cache.js';
 import { PolymarketError } from '../core/errors.js';
 
-/** Gamma API base URL */
-const GAMMA_API_BASE = 'https://gamma-api.polymarket.com';
-
 // ===== Types =====
 
 /**
@@ -296,11 +293,13 @@ export class GammaApiClient {
    *
    * @param rateLimiter - Rate limiter instance for API throttling
    * @param cache - Cache instance for storing data (supports both legacy Cache and CacheAdapter)
+   * @param baseUrl - Optional base URL for Gamma API (default: https://gamma-api.polymarket.com)
    */
   constructor(
     private rateLimiter: RateLimiter,
-    private cache: UnifiedCache
-  ) {}
+    private cache: UnifiedCache,
+    private baseUrl: string = 'https://gamma-api.polymarket.com'
+  ) { }
 
   // ===== Market Queries =====
 
@@ -348,7 +347,7 @@ export class GammaApiClient {
       query.set('ascending', String(params.ascending));
 
     return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
-      const response = await fetch(`${GAMMA_API_BASE}/markets?${query}`);
+      const response = await fetch(`${this.baseUrl}/markets?${query}`);
       if (!response.ok)
         throw PolymarketError.fromHttpError(
           response.status,
@@ -429,7 +428,7 @@ export class GammaApiClient {
     if (params?.limit) query.set('limit', String(params.limit));
 
     return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
-      const response = await fetch(`${GAMMA_API_BASE}/events?${query}`);
+      const response = await fetch(`${this.baseUrl}/events?${query}`);
       if (!response.ok)
         throw PolymarketError.fromHttpError(
           response.status,
@@ -473,7 +472,7 @@ export class GammaApiClient {
    */
   async getEventById(id: string): Promise<GammaEvent | null> {
     return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
-      const response = await fetch(`${GAMMA_API_BASE}/events/${id}`);
+      const response = await fetch(`${this.baseUrl}/events/${id}`);
       if (!response.ok) {
         if (response.status === 404) return null;
         throw PolymarketError.fromHttpError(

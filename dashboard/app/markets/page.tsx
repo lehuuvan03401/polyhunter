@@ -24,7 +24,7 @@ export default function MarketsPage() {
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-subtle" />
                             <span className="text-sm font-medium text-silver-200">
-                                {markets?.length || 0} Markets
+                                {(markets && Array.isArray(markets) ? markets.length : 0)} Markets
                             </span>
                         </div>
                     </div>
@@ -77,7 +77,7 @@ export default function MarketsPage() {
                 )}
 
                 {/* Empty State */}
-                {!isLoading && (!markets || markets.length === 0) && (
+                {!isLoading && (!markets || (Array.isArray(markets) && markets.length === 0)) && (
                     <div className="glass rounded-xl p-12 text-center card-elegant">
                         <div className="text-6xl mb-6">📊</div>
                         <h2 className="text-2xl font-bold gradient-text mb-4">No Markets Found</h2>
@@ -88,7 +88,7 @@ export default function MarketsPage() {
                 )}
 
                 {/* Markets Grid */}
-                {markets && markets.length > 0 && (
+                {markets && Array.isArray(markets) && markets.length > 0 && (
                     <>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {markets.map((market, index) => (

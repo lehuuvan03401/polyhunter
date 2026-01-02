@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -18,8 +22,32 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ],
+      "@catalyst-team/poly-sdk": [
+        "../src/index.ts"
+      ],
+      "ethers": [
+        "./node_modules/ethers"
+      ],
+      "@polymarket/*": [
+        "./node_modules/@polymarket/*"
+      ],
+      "bottleneck": [
+        "./node_modules/bottleneck"
+      ],
+      "ws": [
+        "./node_modules/ws"
+      ],
+      "isomorphic-ws": [
+        "./node_modules/isomorphic-ws"
+      ],
+      "@catalyst-team/cache": [
+        "./node_modules/@catalyst-team/cache"
+      ]
     }
   },
   "include": [
@@ -30,5 +58,7 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

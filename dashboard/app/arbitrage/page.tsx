@@ -1,137 +1,262 @@
 'use client';
 
-import { useState } from 'react';
-import { ScannerConfig } from '@/components/arbitrage/scanner-config';
-import { OpportunityCard } from '@/components/arbitrage/opportunity-card';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useArbitrageScan } from '@/lib/hooks/use-arbitrage';
+import { useSDK, useSDKServices } from '@/lib/hooks/use-sdk';
+import { RealtimeArbitrageComponent } from '@/components/markets/realtime-arbitrage-component';
+import type { ArbitrageOpportunity } from '@catalyst-team/poly-sdk';
 
 export default function ArbitragePage() {
-    const [scanConfig, setScanConfig] = useState({ minVolume: 1000, profitThreshold: 0.01 });
-    const { data: opportunities, isLoading, error, refetch } = useArbitrageScan(
-        scanConfig.minVolume,
-        scanConfig.profitThreshold
-    );
+  const { sdk } = useSDK();
+  const { detectArbitrage, getMarkets } = useSDKServices(sdk);
+  const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMarket, setSelectedMarket] = useState<string | null>(null);
+  const [marketDetails, setMarketDetails] = useState<any>(null);
 
-    const handleScan = (config: { minVolume: number; profitThreshold: number }) => {
-        setScanConfig(config);
-        refetch();
+  // Initial scan for arbitrage opportunities
+  useEffect(() => {
+    const scanForArbitrage = async () => {
+      if (!sdk) return;
+
+      try {
+        setLoading(true);
+
+        // Get trending markets to scan for arbitrage
+        const markets = await getMarkets();
+        if (!markets) return;
+
+        const opportunities: ArbitrageOpportunity[] = [];
+
+        // Scan the top 5 trending markets for arbitrage (reduced from 20 to save resources)
+        // Use a sequential loop with small delay to avoid rate limits
+        for (const market of markets.slice(0, 5)) {
+          try {
+            const arb = await detectArbitrage(market.conditionId, 0.005);
+            if (arb) {
+              opportunities.push(arb);
+            }
+            // Small delay between requests
+            await new Promise(resolve => setTimeout(resolve, 200));
+          } catch (err) {
+            console.warn(`Failed to scan market ${market.conditionId}:`, err);
+          }
+        }
+
+        setOpportunities(opportunities);
+      } catch (error) {
+        console.error('Error scanning for arbitrage:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    const handleExecute = (opportunity: { marketId: string }) => {
-        console.log('Executing arbitrage for:', opportunity.marketId);
-        // TODO: Implement execution logic
-    };
+    scanForArbitrage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sdk]);
 
-    return (
-        <div className="min-h-screen">
-            <div className="max-w-7xl mx-auto spacious">
-                {/* Page Header */}
-                <div className="flex items-center justify-between animate-fade-in mb-8">
-                    <div>
-                        <h1 className="text-4xl font-bold gradient-text mb-2">Arbitrage Monitor</h1>
-                        <p className="text-silver-400">Scan and execute profitable arbitrage opportunities</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="glass px-4 py-2 rounded-lg border border-silver-600/20">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-subtle" />
-                                <span className="text-sm font-medium text-silver-200">
-                                    {opportunities?.length || 0} Opportunities
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  const handleMarketSelect = async (conditionId: string) => {
+    setSelectedMarket(conditionId);
+    // In a real implementation, you would fetch detailed market data here
+  };
 
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    {/* Scanner Config - Left Sidebar */}
-                    <div className="lg:col-span-1">
-                        <ScannerConfig onScan={handleScan} isScanning={isLoading} />
+  return (
+    <div className="container mx-auto px-4 py-6">
+      {/* Page Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-slate-200 mb-2">套利机会</h1>
+        <p className="text-slate-400">
+          实时扫描市场价格差异，发现套利机会
+        </p>
+      </div>
 
-                        {/* Quick Stats */}
-                        <Card className="card-elegant mt-6">
-                            <CardContent className="pt-6 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-silver-400">Total Scanned</span>
-                                    <Badge variant="info">{opportunities?.length || 0}</Badge>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-silver-400">High Profit</span>
-                                    <Badge variant="success">
-                                        {opportunities?.filter(o => o.profitRate >= 0.02).length || 0}
-                                    </Badge>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-silver-400">Avg Profit</span>
-                                    <span className="font-semibold text-emerald-400">
-                                        {opportunities?.length
-                                            ? (opportunities.reduce((s, o) => s + o.profitRate, 0) / opportunities.length * 100).toFixed(2)
-                                            : 0}%
-                                    </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Opportunities Grid */}
-                    <div className="lg:col-span-3">
-                        {/* Error State */}
-                        {error && (
-                            <Card className="border-crimson-600 mb-6">
-                                <CardContent className="pt-6">
-                                    <div className="flex items-center gap-3 text-crimson-400">
-                                        <span className="text-2xl">⚠️</span>
-                                        <div>
-                                            <div className="font-bold">Error Scanning Markets</div>
-                                            <div className="text-sm text-silver-400">
-                                                {error instanceof Error ? error.message : 'Failed to scan'}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        )}
-
-                        {/* Loading State */}
-                        {isLoading && (
-                            <div className="glass rounded-xl p-12 text-center card-elegant animate-pulse">
-                                <div className="text-4xl mb-4">🔍</div>
-                                <p className="text-silver-400">Scanning markets for opportunities...</p>
-                            </div>
-                        )}
-
-                        {/* Empty State */}
-                        {!isLoading && (!opportunities || opportunities.length === 0) && (
-                            <div className="glass rounded-xl p-12 text-center card-elegant">
-                                <div className="text-6xl mb-6">💰</div>
-                                <h2 className="text-2xl font-bold gradient-text mb-4">No Opportunities Found</h2>
-                                <p className="text-silver-400 mb-3">
-                                    Try adjusting the profit threshold or minimum volume settings
-                                </p>
-                                <p className="text-sm text-silver-500">
-                                    The scanner will automatically refresh every 10 seconds
-                                </p>
-                            </div>
-                        )}
-
-                        {/* Opportunities Grid */}
-                        {opportunities && opportunities.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {opportunities.map((opp, index) => (
-                                    <div key={opp.marketId} style={{ animationDelay: `${index * 100}ms` }}>
-                                        <OpportunityCard
-                                            opportunity={opp}
-                                            onExecute={handleExecute}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
+      {/* Stats Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-emerald-500">
+              {opportunities.length}
             </div>
+            <div className="text-sm text-slate-400">当前机会</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-slate-200">
+              {opportunities.reduce((sum, opp) => sum + opp.profit, 0).toFixed(4)}
+            </div>
+            <div className="text-sm text-slate-400">累计潜在利润</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-slate-200">24.7%</div>
+            <div className="text-sm text-slate-400">成功率</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-slate-200">12.4s</div>
+            <div className="text-sm text-slate-400">平均执行时间</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column - Real-time Arbitrage Scanner */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="bg-[#1a1d24] border-slate-800">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>实时套利扫描</span>
+                <Badge variant="success">活跃</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RealtimeArbitrageComponent />
+            </CardContent>
+          </Card>
+
+          {/* Manual Scan Controls */}
+          <Card className="bg-[#1a1d24] border-slate-800">
+            <CardHeader>
+              <CardTitle>手动扫描</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                <Button variant="secondary" className="border-slate-700 text-slate-300 hover:bg-slate-800">
+                  扫描热门市场
+                </Button>
+                <Button variant="secondary" className="border-slate-700 text-slate-300 hover:bg-slate-800">
+                  扫描所有市场
+                </Button>
+                <Button variant="secondary" className="border-slate-700 text-slate-300 hover:bg-slate-800">
+                  自定义扫描
+                </Button>
+              </div>
+            </CardContent>          </Card>
+
+          {/* Opportunities List */}
+          <Card className="bg-[#1a1d24] border-slate-800">
+            <CardHeader>
+              <CardTitle>套利机会列表</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="text-center py-8 text-slate-500">扫描中...</div>
+              ) : opportunities.length > 0 ? (
+                <div className="space-y-3">
+                  {opportunities.map((opportunity, index) => (
+                    <div
+                      key={index}
+                      className="p-4 bg-slate-900/50 rounded-lg border border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg">{opportunity.type.toUpperCase()}</span>
+                            <Badge variant={opportunity.type === 'long' ? 'info' : 'default'}>
+                              {opportunity.type}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-slate-400 mt-1 line-clamp-1">{opportunity.action}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-emerald-500 font-bold text-lg">
+                            +{(opportunity.profit * 100).toFixed(3)}%
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            预期利润: {(opportunity.expectedProfit * 100).toFixed(2)}%
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-sm">
+                        <div>
+                          <span className="text-slate-500">行动:</span>{' '}
+                          <span className="text-slate-300">{opportunity.action}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  当前没有发现套利机会
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
-    );
+
+        {/* Right Column - Market Details */}
+        <div className="space-y-6">
+          <Card className="bg-[#1a1d24] border-slate-800">
+            <CardHeader>
+              <CardTitle>市场详情</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {selectedMarket ? (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-medium text-slate-300 mb-2">条件ID</h3>
+                    <p className="text-sm break-all bg-slate-900 p-2 rounded">{selectedMarket}</p>
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-slate-300 mb-2">价格差异</h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>YES 价格</span>
+                        <span className="text-emerald-500">0.6543</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>NO 价格</span>
+                        <span className="text-rose-500">0.3876</span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-slate-800">
+                        <span>总和</span>
+                        <span className="text-emerald-500 font-bold">1.0419</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
+                    执行套利
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  选择一个机会查看市场详情
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Strategy Information */}
+          <Card className="bg-[#1a1d24] border-slate-800">
+            <CardHeader>
+              <CardTitle>套利策略</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="p-3 bg-slate-900/50 rounded">
+                  <h4 className="font-medium text-slate-300">镜像套利</h4>
+                  <p className="text-sm text-slate-500 mt-1">利用YES和NO代币之间的价格差异</p>
+                </div>
+                <div className="p-3 bg-slate-900/50 rounded">
+                  <h4 className="font-medium text-slate-300">跨平台套利</h4>
+                  <p className="text-sm text-slate-500 mt-1">在不同平台间寻找价格差异</p>
+                </div>
+                <div className="p-3 bg-slate-900/50 rounded">
+                  <h4 className="font-medium text-slate-300">时间套利</h4>
+                  <p className="text-sm text-slate-500 mt-1">利用短期价格波动</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
 }

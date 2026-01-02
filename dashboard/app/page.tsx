@@ -8,11 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { useSmartMoneyLeaderboard } from '@/lib/hooks/use-smart-money';
 import { useMarkets } from '@/lib/hooks/use-markets';
 import { formatCurrency, shortenAddress } from '@/lib/utils';
+import { RealtimePriceComponent } from '@/components/markets/realtime-price-component';
+import { RealtimeArbitrageComponent } from '@/components/markets/realtime-arbitrage-component';
 
 export default function HomePage() {
   const { data: topTraders } = useSmartMoneyLeaderboard(5);
   const { data: hotMarkets } = useMarkets({ limit: 6 });
   const [liveStats, setLiveStats] = useState({ volume: 2456789, markets: 1234, users: 45678 });
+
+  // Extract token IDs for real-time price updates
+  const tokenIds = (hotMarkets && Array.isArray(hotMarkets) ? hotMarkets.map(m => m.conditionId).slice(0, 5) : []) || [];
 
   // Simulate live stats updates
   useEffect(() => {
@@ -43,10 +48,10 @@ export default function HomePage() {
               </div>
             </div>
 
-            <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-center">
               <span className="gradient-text">Polymarket Pro</span>
             </h1>
-            <p className="text-lg md:text-xl text-silver-400 max-w-2xl mx-auto">
+            <p className="text-base font-normal text-silver-400 max-w-2xl mx-auto">
               Professional-grade trading dashboard for prediction markets.
               <br />
               <span className="text-silver-500">Track smart money, find arbitrage, and trade with precision.</span>
@@ -95,6 +100,12 @@ export default function HomePage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto spacious">
+        {/* Real-time Components Section */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          <RealtimePriceComponent tokenIds={tokenIds} />
+          <RealtimeArbitrageComponent />
+        </section>
+
         {/* Feature Cards */}
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <FeatureCard
@@ -118,7 +129,7 @@ export default function HomePage() {
             title="Markets"
             description="Advanced charts, orderbook visualization, and market insights"
             href="/markets"
-            stats={hotMarkets ? `${hotMarkets.length}+ markets` : 'Loading...'}
+            stats={hotMarkets && Array.isArray(hotMarkets) ? `${hotMarkets.length}+ markets` : 'Loading...'}
             badge="New"
           />
           <FeatureCard
@@ -156,9 +167,9 @@ export default function HomePage() {
                       className="flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition group"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-lg font-bold text-silver-500 w-6">#{i + 1}</span>
+                        <span className="text-sm font-bold text-silver-500 w-6">#{i + 1}</span>
                         <div className="w-8 h-8 rounded-full bg-gradient-elegant flex items-center justify-center text-sm">
-                          {['🦈', '🐋', '🦁', '🦅', '🐺'][i]}
+                          {['🦈', '🐋', '🦁', '🦅', ' wolves'][i]}
                         </div>
                         <span className="text-silver-300 font-mono text-sm group-hover:text-silver-100 transition">
                           {shortenAddress(trader.address)}
@@ -168,7 +179,7 @@ export default function HomePage() {
                         <p className={`font-bold ${trader.pnl >= 0 ? 'text-emerald-400' : 'text-crimson-400'}`}>
                           {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
                         </p>
-                        <p className="text-xs text-silver-500">Score: {trader.score}</p>
+                        <p className="text-xs font-medium uppercase tracking-wider text-silver-500">Score: {trader.score}</p>
                       </div>
                     </Link>
                   ))}
@@ -193,7 +204,7 @@ export default function HomePage() {
               </div>
             </CardHeader>
             <CardContent>
-              {hotMarkets && hotMarkets.length > 0 ? (
+              {hotMarkets && Array.isArray(hotMarkets) && hotMarkets.length > 0 ? (
                 <div className="space-y-3">
                   {hotMarkets.slice(0, 5).map((market) => (
                     <Link
@@ -211,7 +222,7 @@ export default function HomePage() {
                             NO {(market.noPrice * 100).toFixed(0)}¢
                           </Badge>
                         </div>
-                        <span className="text-xs text-silver-500">
+                        <span className="text-xs font-medium uppercase tracking-wider text-silver-500">
                           Vol: {formatCurrency(market.volume24h, 0)}
                         </span>
                       </div>
@@ -270,8 +281,8 @@ export default function HomePage() {
 function LiveStat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="text-center">
-      <p className="text-xs text-silver-500 uppercase tracking-wide">{label}</p>
-      <p className={`font-bold ${highlight ? 'text-emerald-400' : 'text-silver-200'}`}>{value}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-silver-500">{label}</p>
+      <p className={`text-sm font-semibold ${highlight ? 'text-emerald-400' : 'text-silver-200'}`}>{value}</p>
     </div>
   );
 }
@@ -293,7 +304,7 @@ function FeatureCard({ icon, title, description, href, stats, badge }: {
           <CardDescription className="text-silver-400">{description}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-silver-500 uppercase tracking-wide">{stats}</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-silver-500">{stats}</p>
         </CardContent>
       </Card>
     </Link>
@@ -305,7 +316,7 @@ function QuickLink({ href, icon, label }: { href: string; icon: string; label: s
     <Link href={href}>
       <div className="glass p-4 rounded-lg border border-silver-600/20 hover:border-silver-500/30 hover:bg-white/5 transition text-center group">
         <div className="text-2xl mb-2 group-hover:scale-110 transition-transform">{icon}</div>
-        <p className="text-sm text-silver-400 group-hover:text-silver-200 transition">{label}</p>
+        <p className="text-sm font-medium text-silver-400 group-hover:text-silver-200 transition">{label}</p>
       </div>
     </Link>
   );
@@ -318,8 +329,8 @@ function StatsCard({ title, value, icon }: { title: string; value: string; icon:
         <div className="flex items-center gap-4">
           <div className="text-3xl">{icon}</div>
           <div>
-            <p className="text-sm text-silver-400">{title}</p>
-            <p className="text-2xl font-bold gradient-text">{value}</p>
+            <p className="text-sm font-medium text-silver-400">{title}</p>
+            <p className="text-xl font-bold gradient-text">{value}</p>
           </div>
         </div>
       </CardContent>
@@ -331,7 +342,7 @@ function LoadingState({ text }: { text: string }) {
   return (
     <div className="text-center py-8">
       <div className="animate-pulse text-4xl mb-2">⏳</div>
-      <p className="text-silver-400">{text}</p>
+      <p className="text-sm font-normal text-silver-400">{text}</p>
     </div>
   );
 }

@@ -20,7 +20,7 @@ export function HotMarkets() {
             </CardHeader>
             <CardContent className="p-0">
                 <div className="divide-y divide-slate-800/50">
-                    {hotMarkets.map((market) => (
+                    {hotMarkets && Array.isArray(hotMarkets) ? hotMarkets.map((market) => (
                         <Link
                             key={market.conditionId}
                             href={`/markets/${market.slug}`}
@@ -43,8 +43,7 @@ export function HotMarkets() {
                                 </Badge>
                             </div>
                         </Link>
-                    ))}
-                </div>
+                                         )) : null}                </div>
             </CardContent>
         </Card>
     );
