@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0A0E27;
+  color: #f8fafc;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Cyber grid background */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(0, 217, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 217, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Glass effect */
+.glass {
+  backdrop-filter: blur(12px);
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Neon glow effects */
+.glow {
+  box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(to right, #00D9FF, #A855F7);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0F1429;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 217, 255, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 217, 255, 0.5);
+}
