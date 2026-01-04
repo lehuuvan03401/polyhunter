@@ -1,5 +1,5 @@
 import { polyClient } from '@/lib/polymarket';
-import { MarketCard } from '@/components/market-card';
+import { MarketsList } from '@/components/markets-list';
 import { GammaMarket } from '@catalyst-team/poly-sdk';
 
 export const revalidate = 60;
@@ -27,17 +27,7 @@ export default async function MarketsPage() {
                 </p>
             </div>
 
-            {markets.length > 0 ? (
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {markets.map((market) => (
-                        <MarketCard key={market.id} market={market} />
-                    ))}
-                </div>
-            ) : (
-                <div className="flex h-64 items-center justify-center rounded-xl border border-dashed text-muted-foreground">
-                    No markets found.
-                </div>
-            )}
+            <MarketsList initialMarkets={markets} />
         </div>
     );
 }

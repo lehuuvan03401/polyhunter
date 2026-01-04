@@ -13,6 +13,7 @@ interface CopyTraderModalProps {
 }
 
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 type TabType = 'Mode' | 'Filters' | 'Sells';
 type CopyMode = '% Shares' | 'Range' | 'Fixed $';
@@ -465,8 +466,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
                                     // Redirect to portfolio to show user it worked
                                     router.push('/portfolio');
+                                    toast.success(`Started copying ${traderName || traderAddress}!`);
                                 } catch (e) {
                                     console.error("Failed to save copy config", e);
+                                    toast.error("Failed to start copying. Please try again.");
                                     onClose();
                                 }
                             }}
