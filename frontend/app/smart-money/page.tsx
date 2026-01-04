@@ -17,6 +17,18 @@ export default async function SmartMoneyPage() {
         smartMoneyList = await polyClient.smartMoney.getSmartMoneyList(20);
     } catch (e) {
         console.error("Smart Money fetch failed", e);
+        // Fallback to mock data for development
+        smartMoneyList = Array.from({ length: 15 }).map((_, i) => ({
+            address: `0x${Math.random().toString(16).slice(2, 42)}`,
+            name: `Smart Trader ${i + 1}`,
+            rank: i + 1,
+            pnl: 50000 * (10 - i * 0.5),
+            volume: 250000 * (10 - i * 0.5),
+            score: Math.max(98 - i, 70),
+            winRate: 0.8,
+            positions: [],
+            recentTrades: []
+        }));
     }
 
     return (

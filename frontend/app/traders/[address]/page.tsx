@@ -128,13 +128,25 @@ const TRADES = [
     }
 ];
 
-export default function TraderProfilePage({ params }: { params: { address: string } }) {
-    // In a real app, uses params.address to fetch data.
-    // using React.use to unwrap params if needed in newer Next.js versions, 
-    // but standard props access works for basic setups. For strict Next.js 15+ we might await it.
+// ... imports
+import { CopyTraderModal } from '@/components/copy-trading/copy-trader-modal';
+
+export default function TraderProfilePage({ params }: { params: Promise<{ address: string }> }) {
+    // Unwrap params for Next.js 15+ dynamic routes
+    const { address } = React.use(params);
+
+    // In a real app, uses address to fetch data.
+
+    const [isCopyModalOpen, setIsCopyModalOpen] = React.useState(false);
 
     return (
         <div className="min-h-screen bg-background pt-24 pb-20">
+            <CopyTraderModal
+                isOpen={isCopyModalOpen}
+                onClose={() => setIsCopyModalOpen(false)}
+                traderAddress={address}
+            />
+
             <div className="container max-w-5xl mx-auto px-4">
 
                 {/* Back Navigation */}
@@ -159,7 +171,10 @@ export default function TraderProfilePage({ params }: { params: { address: strin
                                 </div>
                             </div>
                         </div>
-                        <button className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20">
+                        <button
+                            onClick={() => setIsCopyModalOpen(true)}
+                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                        >
                             <Copy className="h-4 w-4" /> Copy Trader
                         </button>
                     </div>

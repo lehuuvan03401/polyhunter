@@ -12,6 +12,18 @@ export default async function Home() {
     topTraders = await polyClient.smartMoney.getSmartMoneyList(10);
   } catch (error) {
     console.error('Failed to fetch top traders', error);
+    // Fallback to mock data for development/demo if API is unreachable
+    topTraders = Array.from({ length: 5 }).map((_, i) => ({
+      address: `0x${Math.random().toString(16).slice(2, 42)}`,
+      name: `Trader ${i + 1}`,
+      rank: i + 1,
+      pnl: 10000 * (10 - i),
+      volume: 50000 * (10 - i),
+      score: 90 - i,
+      winRate: 0.75,
+      positions: [],
+      recentTrades: []
+    }));
   }
 
   return (

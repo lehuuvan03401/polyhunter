@@ -20,8 +20,8 @@ const API_LIMITS: Record<ApiType, Bottleneck.ConstructorOptions> = {
     maxConcurrent: 5,
   },
   [ApiType.GAMMA_API]: {
-    reservoir: 10,
-    reservoirRefreshAmount: 10,
+    reservoir: 5,
+    reservoirRefreshAmount: 5,
     reservoirRefreshInterval: 1000,
   },
   [ApiType.CLOB_API]: {

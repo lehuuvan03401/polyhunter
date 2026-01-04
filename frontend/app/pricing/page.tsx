@@ -1,10 +1,190 @@
+'use client';
+
 import Link from 'next/link';
 import { Check, Zap, Crown, Rocket } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePrivy } from '@privy-io/react-auth';
 
-export const revalidate = 3600; // Static page, revalidate hourly
+// --- Shared Components ---
+
+function SignalBars({ level }: { level: 1 | 2 | 3 }) {
+    return (
+        <div className="flex items-end gap-1 h-5">
+            <div className={cn("w-1.5 rounded-sm", level >= 1 ? "h-2 bg-blue-500" : "h-2 bg-white/10")} />
+            <div className={cn("w-1.5 rounded-sm", level >= 2 ? "h-3.5 bg-blue-500" : "h-3.5 bg-white/10")} />
+            <div className={cn("w-1.5 rounded-sm", level >= 3 ? "h-5 bg-blue-500" : "h-5 bg-white/10")} />
+        </div>
+    );
+}
+
+// --- Main Page Component ---
 
 export default function PricingPage() {
+    const { authenticated } = usePrivy();
+
+    if (authenticated) {
+        return <AuthenticatedPricing />;
+    }
+
+    return <PublicPricing />;
+}
+
+// --- Authenticated View ---
+
+function AuthenticatedPricing() {
+    return (
+        <div className="min-h-screen pt-24 pb-20 px-4">
+            {/* Header */}
+            <div className="container max-w-6xl mx-auto mb-16 text-center space-y-4">
+                <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Your Plan & Tier Status</h1>
+                <p className="text-lg text-muted-foreground">Track your volume and unlock lower fees.</p>
+            </div>
+
+            <div className="container max-w-6xl mx-auto">
+                <div className="grid md:grid-cols-3 gap-6">
+                    {/* Starter (Active) */}
+                    <div className="rounded-2xl border border-[#2c2d33] bg-[#1a1b1e] p-8 flex flex-col relative overflow-hidden ring-1 ring-white/5">
+                        <div className="mb-8 text-center">
+                            <h3 className="text-2xl font-bold mb-2 text-white">Starter</h3>
+                            <p className="text-muted-foreground text-sm">Everyone starts here</p>
+                        </div>
+
+                        <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-2">
+                            <div className="text-xs font-medium text-muted-foreground mb-4">Your share of profits</div>
+                            <div className="flex items-end gap-0.5 h-24 mb-4">
+                                <div className="w-14 bg-green-500/90 hover:bg-green-500 transition-colors rounded-t-sm h-full flex items-center justify-center text-xs font-bold text-black pb-2">90%</div>
+                                <div className="w-8 bg-white/10 rounded-t-sm h-[10%] border-t border-white/5 flex items-center justify-center text-[10px] text-muted-foreground pb-1">10%</div>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground flex gap-4 uppercase tracking-wider font-medium">
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500" /> You keep</span>
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-white/20" /> Fee</span>
+                            </div>
+                        </div>
+
+                        <div className="text-center mb-8 py-6 border-y border-white/5 bg-black/20 -mx-8 px-8">
+                            <div className="text-3xl font-bold text-white mb-1">10% fee</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">on realized profits</div>
+                        </div>
+
+                        <div className="space-y-6 mb-8">
+                            <div className="flex justify-between items-center text-sm p-4 rounded-xl bg-black/20 border border-white/5">
+                                <span className="text-muted-foreground">Execution Speed</span>
+                                <div className="flex items-center gap-3">
+                                    <SignalBars level={1} />
+                                    <span className="font-medium text-white">Standard</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button className="w-full py-3.5 rounded-lg bg-green-900/40 border border-green-500/50 text-green-400 font-bold flex items-center justify-center gap-2 cursor-default">
+                            <Check className="h-5 w-5" /> Your Current Tier
+                        </button>
+                    </div>
+
+                    {/* Pro */}
+                    <div className="rounded-2xl border border-[#2c2d33] bg-[#1a1b1e] p-8 flex flex-col relative overflow-hidden group hover:border-blue-500/30 transition-all">
+                        <div className="mb-8 text-center">
+                            <h3 className="text-2xl font-bold mb-2 text-white">Pro</h3>
+                            <p className="text-muted-foreground text-sm font-medium">$25k volume traded</p>
+                        </div>
+
+                        <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-2">
+                            <div className="text-xs font-medium text-muted-foreground mb-4">Your share of profits</div>
+                            <div className="flex items-end gap-0.5 h-24 mb-4">
+                                <div className="w-14 bg-green-500/90 hover:bg-green-500 transition-colors rounded-t-sm h-full flex items-center justify-center text-xs font-bold text-black pb-2">95%</div>
+                                <div className="w-8 bg-white/10 rounded-t-sm h-[5%] border-t border-white/5 flex items-center justify-center text-[10px] text-muted-foreground pb-1">5%</div>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground flex gap-4 uppercase tracking-wider font-medium">
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500" /> You keep</span>
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-white/20" /> Fee</span>
+                            </div>
+                        </div>
+
+                        <div className="text-center mb-8 py-6 border-y border-white/5 bg-black/20 -mx-8 px-8">
+                            <div className="text-3xl font-bold text-blue-400 mb-1">5% fee</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">on realized profits</div>
+                        </div>
+
+                        <div className="space-y-4 mb-8">
+                            <div className="flex justify-between items-center text-sm p-4 rounded-xl bg-black/20 border border-white/5">
+                                <span className="text-muted-foreground">Execution Speed</span>
+                                <div className="flex items-center gap-3">
+                                    <SignalBars level={2} />
+                                    <span className="font-medium text-white">Fast</span>
+                                </div>
+                            </div>
+
+                            {/* Volume Progress */}
+                            <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                                <div className="flex justify-between text-xs mb-2 text-muted-foreground">
+                                    <span>Volume progress</span>
+                                    <span>$0 / $25k</span>
+                                </div>
+                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500 w-[0%]" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Whale */}
+                    <div className="rounded-2xl border border-yellow-500/30 bg-[#1a1b1e] p-8 flex flex-col relative overflow-hidden group hover:border-yellow-500/60 transition-all shadow-lg shadow-yellow-500/5">
+                        <div className="absolute top-0 transform -translate-x-1/2 left-1/2 bg-yellow-500 text-black text-[10px] font-bold px-3 py-1 rounded-b-lg flex items-center gap-1 uppercase tracking-wider shadow-lg">
+                            <Crown className="h-3 w-3" /> Max Gains
+                        </div>
+
+                        <div className="mb-8 text-center pt-4">
+                            <h3 className="text-2xl font-bold mb-2 text-white">Whale</h3>
+                            <p className="text-muted-foreground text-sm font-medium">$250k volume traded</p>
+                        </div>
+
+                        <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-2">
+                            <div className="text-xs font-medium text-muted-foreground mb-4">Your share of profits</div>
+                            <div className="flex items-end gap-0.5 h-24 mb-4">
+                                <div className="w-14 bg-green-500/90 hover:bg-green-500 transition-colors rounded-t-sm h-full flex items-center justify-center text-xs font-bold text-black pb-2">98%</div>
+                                <div className="w-8 bg-white/10 rounded-t-sm h-[2%] border-t border-white/5 flex items-center justify-center text-[10px] text-muted-foreground pb-1">2%</div>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground flex gap-4 uppercase tracking-wider font-medium">
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500" /> You keep</span>
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-white/20" /> Fee</span>
+                            </div>
+                        </div>
+
+                        <div className="text-center mb-8 py-6 border-y border-white/5 bg-black/20 -mx-8 px-8">
+                            <div className="text-3xl font-bold text-yellow-500 mb-1">2% fee</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">on realized profits</div>
+                        </div>
+
+                        <div className="space-y-4 mb-8">
+                            <div className="flex justify-between items-center text-sm p-4 rounded-xl bg-black/20 border border-white/5">
+                                <span className="text-muted-foreground">Execution Speed</span>
+                                <div className="flex items-center gap-3">
+                                    <SignalBars level={3} />
+                                    <span className="font-medium text-white">Instant</span>
+                                </div>
+                            </div>
+
+                            {/* Volume Progress */}
+                            <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                                <div className="flex justify-between text-xs mb-2 text-muted-foreground">
+                                    <span>Volume progress</span>
+                                    <span>$0 / $250k</span>
+                                </div>
+                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                    <div className="h-full bg-yellow-500 w-[0%]" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- Public View (Original) ---
+
+function PublicPricing() {
     return (
         <div className="flex flex-col min-h-screen">
             {/* Hero */}

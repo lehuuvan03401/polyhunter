@@ -37,6 +37,7 @@
 import { RateLimiter, ApiType } from '../core/rate-limiter.js';
 import type { UnifiedCache } from '../core/unified-cache.js';
 import { PolymarketError } from '../core/errors.js';
+import { CACHE_TTL } from '../core/cache.js';
 
 /** Gamma API base URL */
 const GAMMA_API_BASE = 'https://gamma-api.polymarket.com';
@@ -300,7 +301,7 @@ export class GammaApiClient {
   constructor(
     private rateLimiter: RateLimiter,
     private cache: UnifiedCache
-  ) {}
+  ) { }
 
   // ===== Market Queries =====
 
@@ -347,17 +348,25 @@ export class GammaApiClient {
     if (params?.ascending !== undefined)
       query.set('ascending', String(params.ascending));
 
-    return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
-      const response = await fetch(`${GAMMA_API_BASE}/markets?${query}`);
-      if (!response.ok)
-        throw PolymarketError.fromHttpError(
-          response.status,
-          await response.json().catch(() => null)
-        );
-      const data = (await response.json()) as unknown[];
-      if (!Array.isArray(data)) return [];
-      return data.map((item) => this.normalizeMarket(item as Record<string, unknown>));
-    });
+    const cacheKey = `gamma:markets:${query.toString()}`;
+
+    return this.cache.getOrSet(
+      cacheKey,
+      CACHE_TTL.MARKET_INFO,
+      async () => {
+        return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
+          const response = await fetch(`${GAMMA_API_BASE}/markets?${query}`);
+          if (!response.ok)
+            throw PolymarketError.fromHttpError(
+              response.status,
+              await response.json().catch(() => null)
+            );
+          const data = (await response.json()) as unknown[];
+          if (!Array.isArray(data)) return [];
+          return data.map((item) => this.normalizeMarket(item as Record<string, unknown>));
+        });
+      }
+    );
   }
 
   /**
@@ -428,17 +437,25 @@ export class GammaApiClient {
     if (params?.active !== undefined) query.set('active', String(params.active));
     if (params?.limit) query.set('limit', String(params.limit));
 
-    return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
-      const response = await fetch(`${GAMMA_API_BASE}/events?${query}`);
-      if (!response.ok)
-        throw PolymarketError.fromHttpError(
-          response.status,
-          await response.json().catch(() => null)
-        );
-      const data = (await response.json()) as unknown[];
-      if (!Array.isArray(data)) return [];
-      return data.map((item) => this.normalizeEvent(item as Record<string, unknown>));
-    });
+    const cacheKey = `gamma:events:${query.toString()}`;
+
+    return this.cache.getOrSet(
+      cacheKey,
+      CACHE_TTL.MARKET_INFO,
+      async () => {
+        return this.rateLimiter.execute(ApiType.GAMMA_API, async () => {
+          const response = await fetch(`${GAMMA_API_BASE}/events?${query}`);
+          if (!response.ok)
+            throw PolymarketError.fromHttpError(
+              response.status,
+              await response.json().catch(() => null)
+            );
+          const data = (await response.json()) as unknown[];
+          if (!Array.isArray(data)) return [];
+          return data.map((item) => this.normalizeEvent(item as Record<string, unknown>));
+        });
+      }
+    );
   }
 
   /**
