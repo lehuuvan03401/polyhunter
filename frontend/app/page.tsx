@@ -97,9 +97,9 @@ export default async function Home() {
                   {trader.score}
                 </div>
                 <div className="col-span-2 text-right">
-                  <button className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors">
+                  <Link href={`/traders/${trader.address}`} className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors inline-block">
                     Copy
-                  </button>
+                  </Link>
                 </div>
               </div>
             )) : (

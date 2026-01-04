@@ -14,18 +14,29 @@ const navItems = [
 ];
 
 import { usePrivy } from '@privy-io/react-auth';
+import { UserMenu } from './user-menu';
 
 export function Navbar() {
     const pathname = usePathname();
-    const { login, authenticated, user, logout } = usePrivy();
+    const { login, authenticated, user, logout, ready } = usePrivy();
+
+    const truncateAddress = (address: string) => {
+        return `${address.slice(0, 6)}...${address.slice(-4)}`;
+    };
 
     return (
         <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="container flex h-16 max-w-7xl items-center justify-between">
+
+
                 {/* Logo */}
                 <Link href="/" className="flex items-center space-x-2">
-                    <div className="h-6 w-6 rounded-full bg-blue-600 flex items-center justify-center">
-                        <div className="h-2 w-2 rounded-full bg-white/80" />
+                    <div className="relative h-8 w-8 overflow-hidden rounded-full">
+                        <img
+                            src="/polyhunter.png"
+                            alt="PolyHunter Logo"
+                            className="object-cover w-full h-full"
+                        />
                     </div>
                     <span className="font-bold text-lg tracking-tight">
                         PolyHunter
@@ -53,17 +64,24 @@ export function Navbar() {
 
                 {/* Right Side */}
                 <div className="flex items-center gap-4">
-                    {authenticated ? (
-                        <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-white px-3 py-1.5 bg-white/5 rounded-lg border border-white/10">
-                                {user?.wallet?.address ? `${user.wallet.address.slice(0, 6)}...${user.wallet.address.slice(-4)}` : 'Connected'}
+                    {!ready ? (
+                        // Loading Skeleton
+                        <div className="h-9 w-24 bg-white/5 animate-pulse rounded-lg" />
+                    ) : authenticated ? (
+                        <div className="flex items-center gap-6">
+                            {/* Balance Stats */}
+                            <div className="hidden lg:flex items-center gap-6 mr-2">
+                                <div className="flex flex-col items-end">
+                                    <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">TOTAL</span>
+                                    <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">$0.00</span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                    <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">CASH</span>
+                                    <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">$0.00</span>
+                                </div>
                             </div>
-                            <button
-                                onClick={logout}
-                                className="text-sm font-medium text-muted-foreground hover:text-white transition-colors"
-                            >
-                                Log out
-                            </button>
+
+                            <UserMenu />
                         </div>
                     ) : (
                         <button

@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 
 export function Footer() {
@@ -8,8 +9,12 @@ export function Footer() {
                     {/* Brand Column (Width: 2/12 or 3/12 depending on spacing) */}
                     <div className="md:col-span-3 pr-4">
                         <Link href="/" className="flex items-center space-x-2 mb-4">
-                            <div className="h-6 w-6 rounded-full bg-blue-600 flex items-center justify-center">
-                                <div className="h-2 w-2 rounded-full bg-white/80" />
+                            <div className="relative h-8 w-8 overflow-hidden rounded-full">
+                                <img
+                                    src="/polyhunter.png"
+                                    alt="PolyHunter Logo"
+                                    className="object-cover w-full h-full"
+                                />
                             </div>
                             <span className="font-bold text-lg text-white tracking-tight">
                                 PolyHunter

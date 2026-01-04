@@ -10,8 +10,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
                 appearance: {
                     theme: 'dark',
                     accentColor: '#22c55e',
-                    logo: 'https://polymarket.com/logo.png', // We could use a PolyHunter logo here
+
                 },
+                loginMethods: ['wallet', 'email', 'google', 'twitter'],
                 embeddedWallets: {
                     ethereum: {
                         createOnLogin: 'users-without-wallets',

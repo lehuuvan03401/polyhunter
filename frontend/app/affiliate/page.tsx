@@ -1,10 +1,150 @@
-import Link from 'next/link';
-import { Link as LinkIcon, Users, Wallet, BarChart3, Calendar, Repeat } from 'lucide-react';
-import { cn } from '@/lib/utils';
+'use client';
 
-export const revalidate = 3600;
+import Link from 'next/link';
+import { Link as LinkIcon, Users, Wallet, BarChart3, Calendar, Repeat, Copy, Info, CheckCircle, Clock } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { usePrivy } from '@privy-io/react-auth';
 
 export default function AffiliatePage() {
+    const { authenticated, user } = usePrivy();
+
+    if (authenticated) {
+        return <AuthenticatedView user={user} />;
+    }
+
+    return <GuestView />;
+}
+
+// --- Authenticated Dashboard View ---
+function AuthenticatedView({ user }: { user: any }) {
+    const referralLink = `https://www.polyhunter.com/ref=${user?.wallet?.address?.slice(0, 8) || 'IM9608W0'}`;
+
+    return (
+        <div className="min-h-screen bg-background pt-24 pb-20">
+            <div className="container max-w-6xl mx-auto px-4">
+                <div className="text-center mb-10">
+                    <h1 className="text-3xl font-bold text-white">Affiliate Dashboard</h1>
+                </div>
+
+                {/* 1. Tier Status Card */}
+                <div className="bg-[#1a1b1e] border border-yellow-500/20 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden">
+                    {/* Background Glow */}
+                    <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 bg-yellow-500/5 blur-[80px] rounded-full pointer-events-none" />
+
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                        <div className="flex items-center gap-4">
+                            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg border-2 border-yellow-500/20">
+                                1
+                            </div>
+                            <div>
+                                <div className="text-sm text-yellow-500 font-medium mb-1">Current Tier</div>
+                                <h2 className="text-3xl font-bold text-white mb-1">Bronze Partner</h2>
+                                <div className="inline-flex items-center px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-sm font-bold">
+                                    10% Commission Rate
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="w-full md:w-1/2">
+                            <div className="flex justify-between text-xs mb-2">
+                                <span className="text-muted-foreground">Next tier (Silver) at $500K volume</span>
+                                <span className="text-white font-medium">Your volume: $0 / $500K</span>
+                            </div>
+                            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500 w-[2%]" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex justify-center md:justify-start">
+                        <button className="text-xs text-muted-foreground hover:text-white flex items-center gap-1 transition-colors">
+                            <Info className="h-3 w-3" /> How do tiers & commissions work?
+                        </button>
+                    </div>
+                </div>
+
+                {/* 2. Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    {[
+                        { label: "Volume Generated", value: "$0", sub: "By your referrals", icon: BarChart3, color: "text-blue-500", bg: "bg-blue-500/10" },
+                        { label: "Total Referrals", value: "0", sub: "Users you've referred", icon: Users, color: "text-purple-500", bg: "bg-purple-500/10" },
+                        { label: "Total Earned", value: "$0.00", sub: "Paid to your wallet", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
+                        { label: "Pending Payout", value: "$0.00", sub: "Paid daily ≥ $0.50", icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
+                    ].map((stat, i) => (
+                        <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-6 flex flex-col justify-between h-32 relative overflow-hidden group hover:border-white/10 transition-colors">
+                            <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
+                                <stat.icon className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</div>
+                                <div className="text-2xl font-bold text-white">{stat.value}</div>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                {i === 3 && <div className="h-1.5 w-1.5 rounded-full bg-yellow-500 animate-pulse" />}
+                                {stat.sub}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* 3. Referral Link */}
+                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                        <div className="h-6 w-6 rounded bg-blue-500/20 flex items-center justify-center text-blue-500">
+                            <LinkIcon className="h-3.5 w-3.5" />
+                        </div>
+                        <h3 className="font-bold text-white">Your Referral Link</h3>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-4 items-center">
+                        <p className="text-sm text-muted-foreground md:w-1/3">
+                            Share this link. Users who sign up are permanently linked to you.
+                        </p>
+                        <div className="flex-1 w-full relative flex items-center">
+                            <input
+                                type="text"
+                                readOnly
+                                value={referralLink}
+                                className="w-full bg-[#0a0a0a] border border-[#2c2d33] rounded-lg pl-4 pr-24 py-3 text-sm font-mono text-blue-400 focus:outline-none"
+                            />
+                            <button className="absolute right-1 top-1 bottom-1 bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+                                <Copy className="h-3.5 w-3.5" /> Copy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 4. Earnings History */}
+                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 min-h-[300px] flex flex-col">
+                    <div className="flex items-center gap-2 mb-8">
+                        <div className="h-6 w-6 rounded bg-green-500/20 flex items-center justify-center text-green-500">
+                            <Wallet className="h-3.5 w-3.5" />
+                        </div>
+                        <h3 className="font-bold text-white">Earnings History</h3>
+                    </div>
+
+                    <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 py-8">
+                        <div className="h-16 w-16 rounded-2xl bg-white/5 flex items-center justify-center">
+                            <Copy className="h-8 w-8 text-muted-foreground opacity-20" />
+                        </div>
+                        <div>
+                            <h4 className="text-lg font-medium text-white mb-1">No earnings yet</h4>
+                            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                                Share your referral link and start earning when your referrals trade profitably.
+                            </p>
+                        </div>
+                        <button className="text-sm text-blue-500 hover:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-400">
+                            Copy your link to get started
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    );
+}
+
+// --- Guest Landing View (Original Content) ---
+function GuestView() {
     return (
         <div className="flex flex-col min-h-screen">
             {/* Hero Section */}
@@ -166,7 +306,7 @@ export default function AffiliatePage() {
     );
 }
 
-// Icon component helper
+// Icon component helper (Shared)
 function Trophy({ className }: { className?: string }) {
     return (
         <svg
