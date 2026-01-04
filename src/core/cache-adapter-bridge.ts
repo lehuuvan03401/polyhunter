@@ -6,14 +6,14 @@
  * 2. New CacheAdapter interface (async, second TTL)
  */
 
-import type { CacheAdapter } from '@catalyst-team/cache';
+import type { CacheAdapter } from './types.js';
 import { Cache } from './cache.js';
 
 /**
  * Wraps the legacy Cache class to implement CacheAdapter interface
  */
 export class LegacyCacheAdapter implements CacheAdapter {
-  constructor(private cache: Cache) {}
+  constructor(private cache: Cache) { }
 
   async get<T>(key: string): Promise<T | null> {
     const value = this.cache.get<T>(key);
@@ -45,7 +45,7 @@ export class LegacyCacheAdapter implements CacheAdapter {
  * This allows using new cache adapters with code expecting the old Cache class
  */
 export class CacheAdapterWrapper {
-  constructor(private adapter: CacheAdapter) {}
+  constructor(private adapter: CacheAdapter) { }
 
   get<T>(key: string): T | undefined {
     // Note: This makes an async operation sync, which may cause issues

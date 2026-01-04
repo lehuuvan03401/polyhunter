@@ -9,7 +9,7 @@
  * backward compatibility with existing code.
  */
 
-import type { CacheAdapter } from '@catalyst-team/cache';
+import type { CacheAdapter } from './types.js';
 import { Cache, CACHE_TTL } from './cache.js';
 
 /**
@@ -32,7 +32,7 @@ export interface UnifiedCache {
  * Wraps the legacy Cache class to provide async interface
  */
 export class LegacyCacheWrapper implements UnifiedCache {
-  constructor(private cache: Cache) {}
+  constructor(private cache: Cache) { }
 
   async get<T>(key: string): Promise<T | undefined> {
     return this.cache.get<T>(key);
@@ -69,7 +69,7 @@ export class LegacyCacheWrapper implements UnifiedCache {
  * - Implements pattern-based invalidation (limited support)
  */
 export class CacheAdapterWrapper implements UnifiedCache {
-  constructor(private adapter: CacheAdapter) {}
+  constructor(private adapter: CacheAdapter) { }
 
   async get<T>(key: string): Promise<T | undefined> {
     const value = await this.adapter.get<T>(key);
