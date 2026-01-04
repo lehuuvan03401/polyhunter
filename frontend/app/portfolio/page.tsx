@@ -1,3 +1,6 @@
+'use client';
+
+import { usePrivy } from '@privy-io/react-auth';
 import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import {
@@ -9,38 +12,96 @@ import {
     History,
     Layers,
     Copy,
-    ArrowUpRight
+    ArrowUpRight,
+    Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
-export const revalidate = 60;
+export default function PortfolioPage() {
+    const { user, authenticated, ready, login } = usePrivy();
+    const [portfolioValue, setPortfolioValue] = useState(0);
+    const [positions, setPositions] = useState<any[]>([]);
+    const [activeCopies, setActiveCopies] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-export default async function PortfolioPage() {
-    // Mock data for dashboard
-    // "Starter" plan, $0.00 balance, no active copies
-    // We can still try to fetch the demo address details if we want meaningful data in the 'positions' section
-    // but for now let's match the "empty state" design from the screenshot first, 
-    // maybe populate if data exists.
+    useEffect(() => {
+        const loadData = async () => {
+            if (!ready) return;
 
-    let demoAddress = '';
-    let portfolioValue = 0;
-    let positions: any[] = [];
+            setIsLoading(true);
+            try {
+                // Load local storage copies (Simulation)
+                const savedCopies = JSON.parse(localStorage.getItem('active_copies') || '[]');
+                setActiveCopies(savedCopies);
 
-    try {
-        const topTraders = await polyClient.smartMoney.getSmartMoneyList(1);
-        if (topTraders.length > 0) {
-            demoAddress = topTraders[0].address;
-            const profile = await polyClient.wallets.getWalletProfile(demoAddress);
-            portfolioValue = profile.totalPnL;
-            positions = await polyClient.wallets.getWalletPositions(demoAddress);
-        }
-    } catch (e) {
-        console.error("Failed to fetch demo portfolio", e);
+                if (authenticated && user?.wallet?.address) {
+                    const address = user.wallet.address;
+
+                    try {
+                        // 1. Get Portfolio Value (PnL + Cash)
+                        const profile = await polyClient.wallets.getWalletProfile(address);
+                        // If user is new/empty, profile might be basic.
+                        // totalPnL is realized + unrealized. 
+                        // Note: This doesn't include CASH balance unless we fetch it separately.
+                        // For now we use totalPnL as a proxy for "Actionable Value" or just display PnL.
+                        // Ideally we'd fetch USDC balance too.
+                        setPortfolioValue(profile.totalPnL);
+
+                        // 2. Get Positions
+                        const walletPositions = await polyClient.wallets.getWalletPositions(address);
+                        setPositions(walletPositions);
+                    } catch (err) {
+                        console.warn("Failed to fetch user data", err);
+                    }
+                } else {
+                    // Not authenticated or no wallet
+                    setPortfolioValue(0);
+                    setPositions([]);
+                }
+            } catch (e) {
+                console.error("Dashboard load failed", e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadData();
+    }, [ready, authenticated, user?.wallet?.address]);
+
+    // Format address for display
+    const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+
+    if (!ready || isLoading) {
+        return (
+            <div className="container max-w-7xl py-8 flex items-center justify-center min-h-[500px]">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        )
     }
 
-    // Determine if we show empty states or data
-    const showEmpty = positions.length === 0;
+    if (!authenticated) {
+        return (
+            <div className="container max-w-7xl py-12 flex flex-col items-center justify-center min-h-[500px] text-center space-y-4">
+                <div className="h-16 w-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
+                    <Wallet className="h-8 w-8 text-blue-400" />
+                </div>
+                <h2 className="text-2xl font-bold">Connect Your Wallet</h2>
+                <p className="text-muted-foreground max-w-md">
+                    Connect your wallet to view your portfolio, track positions, and manage copy trading.
+                </p>
+                <button
+                    onClick={login}
+                    className="mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                >
+                    Connect Wallet
+                </button>
+            </div>
+        )
+    }
+
+    const userAddress = user?.wallet?.address || '0x...';
 
     return (
         <div className="container max-w-7xl py-8">
@@ -65,9 +126,9 @@ export default async function PortfolioPage() {
                         <div className="text-3xl font-bold tracking-tight mb-1">
                             ${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-lg text-muted-foreground font-normal">USDC</span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono bg-muted/50 w-fit px-2 py-1 rounded">
-                            <span>{demoAddress ? `${demoAddress.slice(0, 6)}...${demoAddress.slice(-4)}` : '0x...'}</span>
-                            <Copy className="h-3 w-3 cursor-pointer hover:text-foreground" />
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono bg-muted/50 w-fit px-2 py-1 rounded group cursor-pointer" onClick={() => navigator.clipboard.writeText(userAddress)}>
+                            <span>{formatAddress(userAddress)}</span>
+                            <Copy className="h-3 w-3 group-hover:text-white transition-colors" />
                         </div>
                     </div>
 
@@ -91,14 +152,14 @@ export default async function PortfolioPage() {
                             </div>
                             <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">All Time</div>
                         </div>
-                        <div className="text-3xl font-bold tracking-tight text-green-500">
-                            +${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className={cn("text-3xl font-bold tracking-tight", portfolioValue >= 0 ? "text-green-500" : "text-red-500")}>
+                            {portfolioValue >= 0 ? '+' : ''}${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                     </div>
 
-                    {/* Fake Chart Line */}
+                    {/* Fake Chart Line (Keeping for visuals, could replace later) */}
                     <div className="mt-4 h-16 w-full flex items-end opacity-50">
-                        <svg viewBox="0 0 100 20" className="w-full text-green-500 fill-green-500/20 stroke-current h-full" preserveAspectRatio="none">
+                        <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", portfolioValue >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
                             <path d="M0 20 L0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2 L 100 20 Z" strokeWidth="0" />
                             <path d="M0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2" fill="none" strokeWidth="2" />
                         </svg>
@@ -131,7 +192,7 @@ export default async function PortfolioPage() {
                             <div className="h-full w-[5%] bg-blue-500 rounded-full" />
                         </div>
 
-                        <Link href="#" className="flex items-center text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
+                        <Link href="/pricing" className="flex items-center text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
                             View Plans <ChevronRight className="h-3 w-3 ml-0.5" />
                         </Link>
                     </div>
@@ -150,20 +211,36 @@ export default async function PortfolioPage() {
                         </Link>
                     </div>
 
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
-                        <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-                            <Users className="h-6 w-6" />
+                    {activeCopies.length > 0 ? (
+                        <div className="flex-1 overflow-auto p-4 space-y-3">
+                            {activeCopies.map((copy: any, i: number) => (
+                                <div key={i} className="bg-muted/30 border border-border/50 rounded-lg p-4 flex items-center justify-between">
+                                    <div>
+                                        <div className="font-bold text-sm">{formatAddress(copy.traderAddress)}</div>
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                            {copy.mode === 'fixed_amount' ? `Using Fixed $` : `${copy.fixedAmount}% Share`}
+                                        </div>
+                                    </div>
+                                    <div className="text-green-500 text-xs font-mono bg-green-500/10 px-2 py-1 rounded">Avg +12%</div>
+                                </div>
+                            ))}
                         </div>
-                        <div>
-                            <h4 className="font-medium">No Active Copies</h4>
-                            <p className="text-xs text-muted-foreground mt-1 max-w-[200px] mx-auto">
-                                Start copying top traders to update your portfolio
-                            </p>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
+                            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                                <Users className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <h4 className="font-medium">No Active Copies</h4>
+                                <p className="text-xs text-muted-foreground mt-1 max-w-[200px] mx-auto">
+                                    Start copying top traders to update your portfolio
+                                </p>
+                            </div>
+                            <Link href="/smart-money" className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+                                Discover Traders
+                            </Link>
                         </div>
-                        <Link href="/smart-money" className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
-                            Discover Traders
-                        </Link>
-                    </div>
+                    )}
                 </div>
 
                 {/* Right: Active Positions (8 cols) */}
@@ -209,9 +286,9 @@ export default async function PortfolioPage() {
                                                 </span>
                                             </td>
                                             <td className="p-4 align-middle text-right font-mono text-xs">{pos.size.toFixed(2)}</td>
-                                            <td className="p-4 align-middle text-right font-mono text-xs">${pos.currentPrice?.toFixed(2)}</td>
-                                            <td className={cn("p-4 align-middle text-right font-mono text-xs", pos.percentPnl >= 0 ? "text-green-500" : "text-red-500")}>
-                                                {pos.percentPnl >= 0 ? '+' : ''}{(pos.percentPnl * 100).toFixed(2)}%
+                                            <td className="p-4 align-middle text-right font-mono text-xs">${(pos.curPrice || pos.avgPrice)?.toFixed(2)}</td>
+                                            <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
+                                                {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
                                             </td>
                                         </tr>
                                     ))}

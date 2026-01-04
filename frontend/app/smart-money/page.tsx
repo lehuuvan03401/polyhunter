@@ -1,5 +1,6 @@
 import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
+import Link from 'next/link';
 
 
 export const revalidate = 60;
@@ -67,7 +68,9 @@ export default async function SmartMoneyPage() {
                                     <tr key={wallet.address} className="border-b transition-colors hover:bg-muted/50">
                                         <td className="p-4 align-middle font-medium">#{wallet.rank || i + 1}</td>
                                         <td className="p-4 align-middle font-mono">
-                                            {wallet.name || `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`}
+                                            <Link href={`/traders/${wallet.address}`} className="hover:text-blue-400 transition-colors hover:underline">
+                                                {wallet.name || `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`}
+                                            </Link>
                                         </td>
                                         <td className="p-4 align-middle text-right">${wallet.volume.toLocaleString()}</td>
                                         <td className="p-4 align-middle text-right text-green-500">+${wallet.pnl.toLocaleString()}</td>

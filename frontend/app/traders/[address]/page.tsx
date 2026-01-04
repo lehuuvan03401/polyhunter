@@ -16,128 +16,182 @@ import { cn } from '@/lib/utils';
 import * as React from 'react';
 
 // Mock Data
-const PROFILE = {
-    username: "bizyugo",
-    address: "0xba66...24f5",
-    copiers: 142,
-    activePositions: 4,
-    avatarColor: "bg-blue-500"
+// Deterministic mock data generator
+const getMockProfile = (address: string) => {
+    // Simple hash function for consistency
+    const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const copiers = 50 + (hash % 1000);
+    const activePositions = 1 + (hash % 10);
+    const pnlBase = (hash % 50000);
+
+    return {
+        username: `Trader ${address.slice(2, 6)}`,
+        address: address,
+        copiers,
+        activePositions,
+        avatarColor: ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500'][hash % 4],
+        positions: Array.from({ length: activePositions }).map((_, i) => ({
+            question: `Mock Market Question ${i + 1}?`,
+            outcome: (hash + i) % 2 === 0 ? "Yes" : "No",
+            pnl: (i % 2 === 0 ? "+" : "-") + `$${(100 + (hash % 500)).toFixed(2)}`,
+            pnlPositive: i % 2 === 0,
+            size: `$${(1000 + (hash % 9000)).toFixed(2)}`
+        })),
+        trades: Array.from({ length: 5 }).map((_, i) => ({
+            action: "Bought",
+            market: `Mock Market Event ${i + 1}`,
+            date: "Just now",
+            amount: `$${(50 + (hash % 500)).toFixed(2)}`,
+            type: "buy"
+        }))
+    };
 };
-
-const POSITIONS = [
-    {
-        question: "Will Bitcoin hit $100k in 2024?",
-        outcome: "No",
-        pnl: "-$4,736.40",
-        pnlPositive: false,
-        size: "$0.00"
-    },
-    {
-        question: "Will Base launch a token in 2025?",
-        outcome: "No",
-        pnl: "+$161.25",
-        pnlPositive: true,
-        size: "$10,928.78"
-    },
-    {
-        question: "Will FC Barcelona win on 2025-11-06?",
-        outcome: "Yes",
-        pnl: "-$3,299.95",
-        pnlPositive: false,
-        size: "$0.00"
-    },
-    {
-        question: "Will Hyperliquid launch a token in December?",
-        outcome: "Yes",
-        pnl: "-$215.40",
-        pnlPositive: false,
-        size: "$0.00"
-    }
-];
-
-const TRADES = [
-    {
-        action: "Bought",
-        market: "Will Base launch a token in 2025?",
-        date: "Dec 5, 04:32 AM",
-        amount: "$7,625.53",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Will Base launch a token in 2025?",
-        date: "Dec 5, 04:31 AM",
-        amount: "$3,088.46",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:26 PM",
-        amount: "$2,957.81",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:24 PM",
-        amount: "$8.83",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:23 PM",
-        amount: "$1.86",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:20 PM",
-        amount: "$82.76",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:16 PM",
-        amount: "$23.72",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:10 PM",
-        amount: "$45.65",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 08:10 PM",
-        amount: "$9,107.74",
-        type: "buy"
-    },
-    {
-        action: "Bought",
-        market: "Fed decreases interest rates by 25 bps after December 2025 meeting?",
-        date: "Nov 25, 07:58 PM",
-        amount: "$8.95",
-        type: "buy"
-    }
-];
 
 // ... imports
 import { CopyTraderModal } from '@/components/copy-trading/copy-trader-modal';
+import { polyClient } from '@/lib/polymarket';
+import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 
 export default function TraderProfilePage({ params }: { params: Promise<{ address: string }> }) {
     // Unwrap params for Next.js 15+ dynamic routes
     const { address } = React.use(params);
-
-    // In a real app, uses address to fetch data.
-
     const [isCopyModalOpen, setIsCopyModalOpen] = React.useState(false);
+
+    // State for dynamic data
+    const [profile, setProfile] = React.useState<ReturnType<typeof getMockProfile> | null>(null);
+    const [isLoading, setIsLoading] = React.useState(true);
+
+    React.useEffect(() => {
+        const fetchProfile = async () => {
+            setIsLoading(true);
+            try {
+                // Try to get real smart money info
+                let smartMoneyInfo: SmartMoneyWallet | null = null;
+
+                try {
+                    smartMoneyInfo = await polyClient.smartMoney.getSmartMoneyInfo(address);
+                } catch (err) {
+                    console.warn("Failed to fetch smart money info, likely network:", err);
+                }
+
+                // Fetch real positions and activity
+                let openPositions: any[] = [];
+                let recentActivity: any[] = [];
+
+                try {
+                    const rawPositions = await polyClient.wallets.getWalletPositions(address);
+                    openPositions = rawPositions.map(pos => ({
+                        question: pos.title,
+                        outcome: pos.outcome,
+                        pnl: (pos.cashPnl || 0) >= 0 ? `+$${(pos.cashPnl || 0).toFixed(2)}` : `-$${Math.abs(pos.cashPnl || 0).toFixed(2)}`,
+                        pnlPositive: (pos.cashPnl || 0) >= 0,
+                        size: `$${(pos.currentValue || (pos.size * pos.avgPrice)).toFixed(2)}`
+                    }));
+                } catch (e) {
+                    console.warn("Failed to fetch positions:", e);
+                }
+
+                try {
+                    const activity = await polyClient.wallets.getWalletActivity(address, 20);
+                    recentActivity = activity.activities
+                        .filter(a => a.type === 'TRADE')
+                        .map(a => ({
+                            action: a.side === 'BUY' ? 'Bought' : 'Sold',
+                            market: a.title,
+                            date: new Date(a.timestamp * 1000).toLocaleDateString(),
+                            amount: `$${(a.usdcSize || (a.size * a.price)).toFixed(2)}`,
+                            type: a.side.toLowerCase()
+                        }));
+                } catch (e) {
+                    console.warn("Failed to fetch activity:", e);
+                }
+
+                if (smartMoneyInfo || openPositions.length > 0 || recentActivity.length > 0) {
+                    setProfile({
+                        username: smartMoneyInfo?.name || `User ${address.slice(0, 6)}`,
+                        address: address,
+                        copiers: smartMoneyInfo ? Math.floor(smartMoneyInfo.score * 1.5) : 0,
+                        activePositions: openPositions.length,
+                        avatarColor: "bg-blue-500",
+                        positions: openPositions,
+                        trades: recentActivity
+                    });
+                } else {
+                    // Fallback to deterministic mock
+                    setProfile(getMockProfile(address));
+                }
+            } catch (error) {
+                console.error("Profile load error", error);
+                setProfile(getMockProfile(address));
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchProfile();
+    }, [address]);
+
+    // Use mock positions/trades if real ones are empty (hybrid approach)
+    const displayProfile = profile || getMockProfile(address);
+    const positions = displayProfile.positions || getMockProfile(address).positions;
+    const trades = displayProfile.trades || getMockProfile(address).trades;
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-background pt-24 pb-20">
+                <div className="container max-w-5xl mx-auto px-4">
+                    <Link href="/smart-money" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-white mb-8 transition-colors">
+                        <ChevronLeft className="h-4 w-4" /> Back to Discovery
+                    </Link>
+
+                    {/* Header Skeleton */}
+                    <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 lg:p-8 mb-8 animate-pulse">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+                            <div className="flex items-center gap-5 w-full">
+                                <div className="h-16 w-16 rounded-2xl bg-white/5" />
+                                <div className="space-y-2">
+                                    <div className="h-8 w-48 bg-white/5 rounded-lg" />
+                                    <div className="h-4 w-32 bg-white/5 rounded-lg" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-white/5 pt-6">
+                            <div className="flex items-center gap-8">
+                                <div className="space-y-1">
+                                    <div className="h-8 w-16 bg-white/5 rounded-lg" />
+                                    <div className="h-3 w-12 bg-white/5 rounded-lg" />
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="h-8 w-16 bg-white/5 rounded-lg" />
+                                    <div className="h-3 w-24 bg-white/5 rounded-lg" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Active Positions Skeleton */}
+                    <div className="mb-10">
+                        <div className="h-6 w-32 bg-white/5 rounded-lg mb-4 animate-pulse" />
+                        <div className="space-y-4">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-5 h-24 animate-pulse" />
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Recent Trades Skeleton */}
+                    <div>
+                        <div className="h-6 w-32 bg-white/5 rounded-lg mb-4 animate-pulse" />
+                        <div className="space-y-3">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-4 h-16 animate-pulse" />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background pt-24 pb-20">
@@ -158,16 +212,21 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 lg:p-8 mb-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                         <div className="flex items-center gap-5">
-                            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg">
+                            <div className={`h-16 w-16 rounded-2xl ${displayProfile.avatarColor} flex items-center justify-center shadow-lg`}>
                                 <Wallet className="h-8 w-8 text-white" />
                             </div>
                             <div>
-                                <h1 className="text-3xl font-bold text-white mb-1">{PROFILE.username}</h1>
+                                <h1 className="text-3xl font-bold text-white mb-1">{displayProfile.username}</h1>
                                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                    <span className="flex items-center gap-1 hover:text-blue-400 cursor-pointer">
+                                    <a
+                                        href={`https://polymarket.com/${address}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1 hover:text-blue-400 cursor-pointer"
+                                    >
                                         <ExternalLink className="h-3 w-3" /> View real username on Polymarket
-                                    </span>
-                                    <span className="text-blue-500">{PROFILE.address}</span>
+                                    </a>
+                                    <span className="text-blue-500">{address}</span>
                                 </div>
                             </div>
                         </div>
@@ -182,11 +241,11 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     <div className="flex items-center justify-between border-t border-white/5 pt-6">
                         <div className="flex items-center gap-8">
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">{PROFILE.copiers}</div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{displayProfile.copiers}</div>
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Copiers</div>
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">{PROFILE.activePositions}</div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{displayProfile.activePositions}</div>
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Active Positions</div>
                             </div>
                         </div>
@@ -205,7 +264,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 <div className="mb-10">
                     <h2 className="text-lg font-bold text-muted-foreground mb-4">Active Positions</h2>
                     <div className="space-y-4">
-                        {POSITIONS.map((pos, i) => (
+                        {positions.map((pos, i) => (
                             <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-5 flex items-center justify-between hover:bg-[#25262b] transition-colors cursor-default">
                                 <div>
                                     <h3 className="font-bold text-white text-sm mb-1">{pos.question}</h3>
@@ -225,7 +284,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 <div>
                     <h2 className="text-lg font-bold text-muted-foreground mb-4">Recent Trades</h2>
                     <div className="space-y-3">
-                        {TRADES.map((trade, i) => (
+                        {trades.map((trade, i) => (
                             <div key={i} className="group bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-4 flex items-center justify-between hover:border-white/10 transition-colors">
                                 <div className="flex items-center gap-4">
                                     <div className="h-8 w-8 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">

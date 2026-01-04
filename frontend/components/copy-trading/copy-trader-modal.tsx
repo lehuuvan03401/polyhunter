@@ -12,11 +12,14 @@ interface CopyTraderModalProps {
     traderName?: string;
 }
 
+import { useRouter } from 'next/navigation';
+
 type TabType = 'Mode' | 'Filters' | 'Sells';
 type CopyMode = '% Shares' | 'Range' | 'Fixed $';
 type SellMode = 'Same %' | 'Fixed Amount' | 'Custom %';
 
-export function CopyTraderModal({ isOpen, onClose, traderAddress }: CopyTraderModalProps) {
+export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: CopyTraderModalProps) {
+    const router = useRouter();
     const [activeTab, setActiveTab] = React.useState<TabType>('Mode');
     const [copyMode, setCopyMode] = React.useState<CopyMode>('% Shares');
     const [sellMode, setSellMode] = React.useState<SellMode>('Same %');
@@ -442,21 +445,30 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress }: CopyTraderMo
                         <button
                             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98]"
                             onClick={() => {
-                                console.log({
-                                    target: traderAddress,
+                                const newCopyCtx = {
+                                    traderAddress,
+                                    traderName: traderName || `Trader ${traderAddress.slice(0, 4)}`,
                                     activeTab,
-                                    copyMode,
-                                    sellMode,
-                                    sharePercent,
-                                    rangeMin,
-                                    rangeMax,
-                                    fixedAmount,
-                                    infiniteMode,
-                                    takeProfit,
-                                    stopLoss,
-                                    copyDirection
-                                });
-                                onClose();
+                                    mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
+                                    fixedAmount: copyMode === 'Fixed $' ? fixedAmount : undefined,
+                                    sharePercent: copyMode === '% Shares' ? sharePercent : undefined,
+                                    timestamp: Date.now()
+                                };
+
+                                // Save to local storage for simulation
+                                try {
+                                    const existing = JSON.parse(localStorage.getItem('active_copies') || '[]');
+                                    // Remove if already exists to update
+                                    const filtered = existing.filter((c: any) => c.traderAddress !== traderAddress);
+                                    filtered.push(newCopyCtx);
+                                    localStorage.setItem('active_copies', JSON.stringify(filtered));
+
+                                    // Redirect to portfolio to show user it worked
+                                    router.push('/portfolio');
+                                } catch (e) {
+                                    console.error("Failed to save copy config", e);
+                                    onClose();
+                                }
                             }}
                         >
                             Start Copying

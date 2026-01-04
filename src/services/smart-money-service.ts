@@ -26,7 +26,7 @@
  * 验证跟单结果请使用 TradingService.getTrades()
  */
 
-import type { WalletService } from './wallet-service.js';
+import type { WalletService, WalletProfile } from './wallet-service.js';
 import type { RealtimeServiceV2, ActivityTrade } from './realtime-service-v2.js';
 import type { TradingService, OrderResult } from './trading-service.js';
 
@@ -178,27 +178,60 @@ export class SmartMoneyService {
       return Array.from(this.smartMoneyCache.values());
     }
 
-    const leaderboardPage = await this.walletService.getLeaderboard(0, limit);
+    const leaderboardPage = await this.walletService.getLeaderboard(0, Math.max(limit * 3, 50));
     const entries = leaderboardPage.entries;
+
+    const candidates = [];
+
+    // First pass: Filter by Min PnL
+    for (const trader of entries) {
+      if (trader.pnl >= this.config.minPnl) {
+        candidates.push(trader);
+      }
+    }
 
     const smartMoneyList: SmartMoneyWallet[] = [];
 
-    for (let i = 0; i < entries.length; i++) {
-      const trader = entries[i];
-      if (trader.pnl < this.config.minPnl) continue;
+    // Second pass: Verify Activity (Batch processing to respect rate limits)
+    // We process in chunks to find enough active traders
+    let processedCount = 0;
+    const CHUNK_SIZE = 5;
 
-      const wallet: SmartMoneyWallet = {
-        address: trader.address.toLowerCase(),
-        name: trader.userName,
-        pnl: trader.pnl,
-        volume: trader.volume,
-        score: Math.min(100, Math.round((trader.pnl / 100000) * 50 + (trader.volume / 1000000) * 50)),
-        rank: trader.rank ?? i + 1,
-      };
+    while (smartMoneyList.length < limit && processedCount < candidates.length) {
+      const chunk = candidates.slice(processedCount, processedCount + CHUNK_SIZE);
+      processedCount += chunk.length;
 
-      smartMoneyList.push(wallet);
-      this.smartMoneyCache.set(wallet.address, wallet);
-      this.smartMoneySet.add(wallet.address);
+      const results = await Promise.all(chunk.map(async (trader) => {
+        try {
+          const profile = await this.walletService.getWalletProfile(trader.address);
+          // Criteria: Must have active positions OR traded in last 7 days
+          const hasPositions = profile.positionCount > 0;
+          const isRecent = Date.now() - profile.lastActiveAt.getTime() < 7 * 24 * 60 * 60 * 1000;
+
+          if (hasPositions || isRecent) {
+            return {
+              address: trader.address.toLowerCase(),
+              name: trader.userName,
+              pnl: trader.pnl,
+              volume: trader.volume,
+              score: Math.min(100, Math.round((trader.pnl / 100000) * 50 + (trader.volume / 1000000) * 50)),
+              rank: trader.rank,
+              // Cache the profile info implicitly by adding it to cache if needed
+            };
+          }
+        } catch (e) {
+          console.warn(`Failed to verify profile for ${trader.address}:`, e);
+        }
+        return null;
+      }));
+
+      for (const wallet of results) {
+        if (wallet && smartMoneyList.length < limit) {
+          smartMoneyList.push(wallet);
+          this.smartMoneyCache.set(wallet.address, wallet);
+          this.smartMoneySet.add(wallet.address);
+        }
+      }
     }
 
     this.cacheTimestamp = Date.now();
@@ -260,7 +293,7 @@ export class SmartMoneyService {
     this.tradeHandlers.add(onTrade);
 
     // Ensure cache is populated
-    this.getSmartMoneyList().catch(() => {});
+    this.getSmartMoneyList().catch(() => { });
 
     // Start subscription if not active
     if (!this.activeSubscription) {
