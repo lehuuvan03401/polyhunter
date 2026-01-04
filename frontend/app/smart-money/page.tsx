@@ -21,11 +21,17 @@ export default async function SmartMoneyPage() {
 
     return (
         <div className="container py-10">
-            <div className="mb-8 space-y-4">
-                <h1 className="text-3xl font-bold tracking-tight">Smart Money Tracker</h1>
-                <p className="text-muted-foreground">
-                    Follow the most profitable traders on Polymarket.
+            <div className="mb-8 space-y-4 text-center">
+                <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+                    Automate Your Edge
+                </h1>
+                <p className="text-muted-foreground text-lg">
+                    Discover and follow the most profitable traders on Polymarket.
                 </p>
+                <div className="flex justify-center gap-4">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500"></span> Live Updates</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> Verified Data</span>
+                </div>
             </div>
 
             <div className="rounded-xl border bg-card shadow-sm">

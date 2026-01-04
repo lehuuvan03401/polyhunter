@@ -1,55 +1,232 @@
-import { polyClient } from '@/lib/polymarket';
-import { MarketCard } from '@/components/market-card'; // Fix relative import if needed, assuming alias works for internal files
-import { ArrowRight, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
-import { GammaMarket } from '@catalyst-team/poly-sdk'; // Relative import for type
+import { polyClient } from '@/lib/polymarket';
+import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
+import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck } from 'lucide-react';
 
-
-// Revalidate every 60 seconds
-export const revalidate = 60;
+export const revalidate = 60; // Revalidate every minute
 
 export default async function Home() {
-  // Fetch trending markets
-  // We use try/catch to handle errors gracefully if SDK isn't fully configured
-  let trendingMarkets: GammaMarket[] = [];
+  // Fetch top traders for the leaderboard preview
+  let topTraders: SmartMoneyWallet[] = [];
   try {
-    trendingMarkets = await polyClient.gammaApi.getTrendingMarkets(12);
+    topTraders = await polyClient.smartMoney.getSmartMoneyList(10);
   } catch (error) {
-    console.error("Failed to fetch trending markets:", error);
+    console.error('Failed to fetch top traders', error);
   }
 
   return (
-    <div className="container py-10">
-      <section className="mb-12 space-y-4 text-center sm:text-left">
-        <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl">
-          The Global <span className="text-primary">Prediction Market</span>
-        </h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Trade on the world's most highly debated topics. crypto, politics, sports, and current events.
-        </p>
+    <div className="flex flex-col min-h-screen">
+      {/* Hero Section */}
+      <section className="pt-20 pb-16 md:pt-32 md:pb-24 text-center px-4">
+        <div className="container max-w-4xl mx-auto space-y-6">
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-foreground">
+            Best Polymarket Traders to <br /> Follow & Copy
+          </h1>
+          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
+            Stop guessing on prediction markets. Follow proven traders with verified win rates and automatically copy their trades to your wallet.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <Link
+              href="/smart-money"
+              className="px-8 py-3 rounded-lg bg-yellow-500 text-black font-bold text-lg hover:bg-yellow-400 transition-colors"
+            >
+              See All Traders
+            </Link>
+            <Link
+              href="/portfolio"
+              className="px-8 py-3 rounded-lg bg-white/10 text-foreground font-medium border border-white/10 hover:bg-white/20 transition-colors"
+            >
+              How It Works
+            </Link>
+          </div>
+
+          {/* Stats Bar */}
+          <div className="grid grid-cols-3 gap-8 pt-12 max-w-3xl mx-auto border-t border-white/10 mt-12">
+            <div>
+              <div className="text-2xl md:text-3xl font-bold text-yellow-500">500+</div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Verified Traders</div>
+            </div>
+            <div>
+              <div className="text-2xl md:text-3xl font-bold text-green-500">$2M+</div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Volume Copied</div>
+            </div>
+            <div>
+              <div className="text-2xl md:text-3xl font-bold text-blue-500">Live</div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">On-Chain Data</div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <div className="mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-bold tracking-tight">Trending Now</h2>
-        </div>
-        <Link href="/markets" className="group flex items-center text-sm font-medium text-primary hover:underline">
-          View All <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
-        </Link>
-      </div>
+      {/* Leaderboard Preview */}
+      <section className="py-16 bg-card/30 border-y border-white/5">
+        <div className="container max-w-5xl mx-auto px-4">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl font-bold">Top 10 Most Followed Traders</h2>
+            <p className="text-sm text-muted-foreground hidden md:block">Live rankings based on on-chain Polymarket data. Updated in real-time.</p>
+          </div>
 
-      {trendingMarkets.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {trendingMarkets.map((market) => (
-            <MarketCard key={market.id} market={market} />
-          ))}
+          <div className="bg-card border rounded-xl overflow-hidden">
+            {/* Header Row */}
+            <div className="grid grid-cols-12 gap-4 p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b bg-muted/50">
+              <div className="col-span-1 text-center">Rank</div>
+              <div className="col-span-4">Trader</div>
+              <div className="col-span-3 text-right">Profit</div>
+              <div className="col-span-2 text-right">Score</div>
+              <div className="col-span-2 text-right">Action</div>
+            </div>
+
+            {/* Rows */}
+            {topTraders.length > 0 ? topTraders.map((trader, i) => (
+              <div key={trader.address} className="grid grid-cols-12 gap-4 p-4 border-b last:border-0 hover:bg-white/5 items-center transition-colors">
+                <div className="col-span-1 text-center font-bold text-muted-foreground">#{trader.rank || i + 1}</div>
+                <div className="col-span-4 flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs">
+                    {trader.address.substring(2, 4).toUpperCase()}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-medium text-sm truncate max-w-[120px]">{trader.name || `${trader.address.slice(0, 6)}...`}</span>
+                    <span className="text-xs text-muted-foreground">{trader.address.slice(0, 8)}...</span>
+                  </div>
+                </div>
+                <div className="col-span-3 text-right text-green-500 font-mono font-medium">
+                  +${trader.pnl.toLocaleString()}
+                </div>
+                <div className="col-span-2 text-right font-mono text-muted-foreground">
+                  {trader.score}
+                </div>
+                <div className="col-span-2 text-right">
+                  <button className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors">
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <div className="p-8 text-center text-muted-foreground">Loading top traders...</div>
+            )}
+          </div>
+
+          <div className="text-center mt-8">
+            <Link href="/smart-money" className="text-yellow-500 hover:text-yellow-400 text-sm font-medium inline-flex items-center gap-1">
+              View All 500+ Traders <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
-      ) : (
-        <div className="flex h-64 items-center justify-center rounded-xl border border-dashed text-muted-foreground">
-          No markets found or API error.
+      </section>
+
+      {/* How to Pick Section */}
+      <section className="py-24 px-4">
+        <div className="container max-w-6xl mx-auto">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="text-3xl font-bold mb-4">How to Pick the Best Traders to Copy</h2>
+            <p className="text-muted-foreground">Not all traders are equal. Follow these tips to maximize your copy trading success.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Card 1 */}
+            <div className="p-8 rounded-xl bg-card border border-white/5 hover:border-white/10 transition-colors">
+              <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-500 mb-6">
+                <Users className="h-5 w-5" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Diversify Across Traders</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                Copy 3-5 traders with different styles to reduce risk and smooth out returns. Don't put all eggs in one basket.
+              </p>
+            </div>
+
+            {/* Card 2 */}
+            <div className="p-8 rounded-xl bg-card border border-white/5 hover:border-white/10 transition-colors">
+              <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-500 mb-6">
+                <Trophy className="h-5 w-5" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Check Recent Performance</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                Focus on 7-day and 30-day stats, not just all-time. Markets change and so do trader strategies.
+              </p>
+            </div>
+
+            {/* Card 3 */}
+            <div className="p-8 rounded-xl bg-card border border-white/5 hover:border-white/10 transition-colors">
+              <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-500 mb-6">
+                <Zap className="h-5 w-5" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Start Small</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                Begin with smaller allocations and increase as you verify the trader's performance and consistency.
+              </p>
+            </div>
+
+            {/* Card 4 */}
+            <div className="p-8 rounded-xl bg-card border border-white/5 hover:border-white/10 transition-colors">
+              <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-500 mb-6">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Monitor Weekly</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                Check your portfolio every week and adjust based on trader performance. Stop copying underperformers early.
+              </p>
+            </div>
+          </div>
         </div>
-      )}
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-24 px-4 bg-card/30 border-t border-white/5">
+        <div className="container max-w-3xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12">Frequently Asked Questions</h2>
+
+          <div className="space-y-4">
+            {[
+              { q: "How do I know which Polymarket traders to follow?", a: "Look for traders with consistent win rates (above 55%), positive profit over 7-30 days, and multiple followers. Avoid traders who only trade occasionally or have recent losing streaks." },
+              { q: "Can I copy multiple traders at once?", a: "Yes! With PolyHunter, you can copy unlimited traders simultaneously. This is actually recommended for diversification — if one trader has a bad week, others may balance it out." },
+              { q: "How much should I allocate per trader?", a: "We recommend starting with $50-100 per trader and spreading across 3-5 traders. As you learn which traders perform best for your risk tolerance, you can adjust allocations." },
+              { q: "What if a top trader starts losing money?", a: "You can pause or stop copying any trader instantly. We recommend checking your portfolio weekly and adjusting if a trader has lost more than 20% in a month." },
+              { q: "Are these traders verified?", a: "All trader statistics on PolyHunter come directly from on-chain Polymarket data. Win rates, PnL, and trading history are verifiable and cannot be faked." }
+            ].map((item, i) => (
+              <div key={i} className="rounded-lg border border-white/10 bg-card overflow-hidden">
+                <details className="group">
+                  <summary className="flex cursor-pointer items-center justify-between p-6 font-medium transition-colors hover:bg-white/5 list-none">
+                    {item.q}
+                    <span className="ml-4 flex-shrink-0 transition-transform group-open:rotate-180">
+                      <ChevronDown className="h-4 w-4" />
+                    </span>
+                  </summary>
+                  <div className="px-6 pb-6 pt-0 text-muted-foreground leading-relaxed">
+                    {item.a}
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer CTA */}
+      <section className="py-24 px-4 text-center">
+        <div className="container max-w-4xl mx-auto space-y-8">
+          <h2 className="text-3xl md:text-4xl font-bold">Start Copying Top Traders Today</h2>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Join thousands of traders already copying Polymarket whales. It's free to start — you only pay when you profit.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link
+              href="/smart-money"
+              className="px-8 py-3 rounded-lg bg-yellow-500 text-black font-bold text-lg hover:bg-yellow-400 transition-colors w-full sm:w-auto"
+            >
+              Find Traders to Copy <ArrowRight className="ml-2 h-4 w-4 inline" />
+            </Link>
+            <Link
+              href="/pricing"
+              className="px-8 py-3 rounded-lg bg-white/10 text-foreground font-medium border border-white/10 hover:bg-white/20 transition-colors w-full sm:w-auto"
+            >
+              View Pricing
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer is now global in layout.tsx */}
     </div>
   );
 }

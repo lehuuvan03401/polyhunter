@@ -62,15 +62,15 @@ export function MarketChart({ market }: MarketChartProps) {
                     <AreaChart data={data}>
                         <defs>
                             <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="oklch(var(--primary))" stopOpacity={0.3} />
-                                <stop offset="95%" stopColor="oklch(var(--primary))" stopOpacity={0} />
+                                <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="oklch(var(--border))" />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                         <XAxis
                             dataKey="date"
                             tickFormatter={(d) => format(d, 'MMM d')}
-                            stroke="oklch(var(--muted-foreground))"
+                            stroke="#888888"
                             fontSize={12}
                             tickLine={false}
                             axisLine={false}
@@ -78,17 +78,17 @@ export function MarketChart({ market }: MarketChartProps) {
                         <YAxis
                             domain={[0, 1]}
                             tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                            stroke="oklch(var(--muted-foreground))"
+                            stroke="#888888"
                             fontSize={12}
                             tickLine={false}
                             axisLine={false}
                         />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: 'oklch(var(--popover))',
-                                border: '1px solid oklch(var(--border))',
+                                backgroundColor: '#1a1a1a',
+                                border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: '8px',
-                                color: 'oklch(var(--popover-foreground))'
+                                color: '#fff'
                             }}
                             labelFormatter={(l) => format(l, 'MMM d, h:mm a')}
                             formatter={(value: number | undefined) => [value ? `${(value * 100).toFixed(1)}%` : '-', 'Price']}
@@ -96,8 +96,8 @@ export function MarketChart({ market }: MarketChartProps) {
                         <Area
                             type="monotone"
                             dataKey="price"
-                            stroke="oklch(var(--primary))"
-                            strokeWidth={2}
+                            stroke="#22c55e"
+                            strokeWidth={3}
                             fillOpacity={1}
                             fill="url(#colorPrice)"
                         />

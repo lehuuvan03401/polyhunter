@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@catalyst-team/poly-sdk": "file:..",
+    "@privy-io/react-auth": "^3.10.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.26",
