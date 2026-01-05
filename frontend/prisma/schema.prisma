@@ -131,3 +131,88 @@ model FeeTransaction {
   @@index([userProxyId])
   @@index([createdAt])
 }
+
+// ========================================
+// Copy Trading Models
+// ========================================
+
+// Copy trading mode
+enum CopyTradingMode {
+  PERCENTAGE    // Copy X% of trader's position
+  FIXED_AMOUNT  // Fixed dollar amount per trade
+}
+
+// Copy trade execution status
+enum CopyTradeStatus {
+  PENDING    // Waiting for user confirmation
+  EXECUTED   // Successfully executed
+  FAILED     // Execution failed
+  SKIPPED    // Skipped due to filters/conditions
+  EXPIRED    // User didn't confirm in time
+}
+
+// User's copy trading configuration
+model CopyTradingConfig {
+  id              String           @id @default(cuid())
+  walletAddress   String           // User's wallet address
+  traderAddress   String           // Trader being copied
+  traderName      String?          // Display name of trader
+  
+  // Copy mode settings
+  mode            CopyTradingMode  @default(PERCENTAGE)
+  sizeScale       Float?           // For PERCENTAGE mode: 0.5 = 50%
+  fixedAmount     Float?           // For FIXED_AMOUNT mode
+  maxSizePerTrade Float            @default(100)
+  
+  // Filters
+  sideFilter      String?          // 'BUY' | 'SELL' | null (both)
+  minTriggerSize  Float?           // Min trade size to trigger copy
+  maxDaysOut      Int?             // Max market expiry days
+  
+  // Status
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  // Relations
+  copyTrades      CopyTrade[]
+  
+  @@index([walletAddress])
+  @@index([traderAddress])
+  @@index([isActive])
+}
+
+// Individual copy trade record
+model CopyTrade {
+  id              String           @id @default(cuid())
+  config          CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId        String
+  
+  // Original trade info
+  originalTrader  String
+  originalSide    String           // 'BUY' | 'SELL'
+  originalSize    Float
+  originalPrice   Float
+  marketSlug      String?
+  conditionId     String?
+  tokenId         String?
+  outcome         String?          // 'Yes' | 'No'
+  
+  // Copy trade info
+  copySize        Float
+  copyPrice       Float?
+  
+  // Execution status
+  status          CopyTradeStatus  @default(PENDING)
+  txHash          String?
+  errorMessage    String?
+  
+  // Timestamps
+  detectedAt      DateTime         @default(now())
+  executedAt      DateTime?
+  expiresAt       DateTime?        // For PENDING trades
+  
+  @@index([configId])
+  @@index([status])
+  @@index([detectedAt])
+}

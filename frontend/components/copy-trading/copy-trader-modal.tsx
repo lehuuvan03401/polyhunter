@@ -46,23 +46,47 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const handleStartCopying = async () => {
         setIsStarting(true);
         try {
-            // Create config using Zustand store
-            const configId = addConfig({
+            // Get wallet address from privy (we need to import usePrivy)
+            // For now, we'll get it from the router or pass it through
+
+            // Save to API for backend copy trading
+            const apiResponse = await fetch('/api/copy-trading/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    walletAddress: localStorage.getItem('privy:wallet_address') || '',
+                    traderAddress,
+                    traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
+                    mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
+                    sizeScale: copyMode === '% Shares' ? Number(sharePercent) / 100 : undefined,
+                    fixedAmount: copyMode === 'Fixed $' ? Number(fixedAmount) : undefined,
+                    maxSizePerTrade: Number(maxPerTrade) || 100,
+                    sideFilter: null, // Can add based on copyDirection
+                }),
+            });
+
+            if (!apiResponse.ok) {
+                const err = await apiResponse.json();
+                throw new Error(err.error || 'Failed to save config');
+            }
+
+            // Also save to Zustand for local state
+            addConfig({
                 traderAddress,
                 traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
                 mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
                 sizeScale: copyMode === '% Shares' ? Number(sharePercent) / 100 : undefined,
                 fixedAmount: copyMode === 'Fixed $' ? Number(fixedAmount) : undefined,
                 maxSizePerTrade: Number(maxPerTrade) || 100,
-                sideFilter: copyDirection === 'Counter' ? undefined : undefined, // Could add filter based on copyDirection
-                dryRun: true, // Always dryRun for now - real trading requires backend
+                sideFilter: undefined,
+                dryRun: false, // Now using real backend!
             });
 
             toast.success(
                 <div className="flex flex-col gap-1">
                     <span className="font-medium">Copy Trading Started</span>
                     <span className="text-xs text-muted-foreground">
-                        Following {traderName || traderAddress.slice(0, 10)}... in demo mode
+                        Following {traderName || traderAddress.slice(0, 10)}... trades will be detected
                     </span>
                 </div>
             );
@@ -70,7 +94,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
             router.push('/portfolio');
         } catch (error) {
             console.error('Failed to start copy trading:', error);
-            toast.error('Failed to start copying. Please try again.');
+            const errorMsg = error instanceof Error ? error.message : 'Please try again.';
+            toast.error(`Failed to start copying: ${errorMsg}`);
         } finally {
             setIsStarting(false);
         }
