@@ -163,11 +163,29 @@ model CopyTradingConfig {
   sizeScale       Float?           // For PERCENTAGE mode: 0.5 = 50%
   fixedAmount     Float?           // For FIXED_AMOUNT mode
   maxSizePerTrade Float            @default(100)
+  minSizePerTrade Float?           // For RANGE mode: minimum $ per trade
   
-  // Filters
+  // Advanced mode settings
+  infiniteMode    Boolean          @default(false)  // Pause and retry on insufficient funds
+  takeProfit      Float?           // Auto-pause at this profit ($)
+  stopLoss        Float?           // Auto-pause at this loss ($)
+  direction       String           @default("COPY")  // 'COPY' | 'COUNTER'
+  
+  // Filters - basic
   sideFilter      String?          // 'BUY' | 'SELL' | null (both)
-  minTriggerSize  Float?           // Min trade size to trigger copy
+  minTriggerSize  Float?           // Min trade size to trigger copy ($)
   maxDaysOut      Int?             // Max market expiry days
+  
+  // Filters - advanced
+  maxPerMarket    Float?           // Max total investment per market ($)
+  minLiquidity    Float?           // Min market liquidity ($)
+  minVolume       Float?           // Min market volume ($)
+  maxOdds         Float?           // Max odds to copy (e.g., 0.8 = 80%)
+  
+  // Sell strategy
+  sellMode        String           @default("SAME_PERCENT")  // 'SAME_PERCENT' | 'FIXED_AMOUNT' | 'CUSTOM_PERCENT'
+  sellFixedAmount Float?           // For FIXED_AMOUNT sell mode ($)
+  sellPercentage  Float?           // For CUSTOM_PERCENT sell mode (0.25 = 25%)
   
   // Status
   isActive        Boolean          @default(true)

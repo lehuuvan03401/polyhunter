@@ -59,9 +59,24 @@ export async function POST(request: NextRequest) {
             sizeScale,
             fixedAmount,
             maxSizePerTrade,
+            minSizePerTrade,
+            // Advanced mode settings
+            infiniteMode,
+            takeProfit,
+            stopLoss,
+            direction,
+            // Filters
             sideFilter,
             minTriggerSize,
             maxDaysOut,
+            maxPerMarket,
+            minLiquidity,
+            minVolume,
+            maxOdds,
+            // Sell strategy
+            sellMode,
+            sellFixedAmount,
+            sellPercentage,
         } = body;
 
         // Validation
@@ -88,8 +103,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Determine mode
-        const copyMode = mode === 'fixed_amount' ? 'FIXED_AMOUNT' : 'PERCENTAGE';
+        // Determine mode: percentage, fixed_amount, or range
+        let copyMode: 'PERCENTAGE' | 'FIXED_AMOUNT' = 'PERCENTAGE';
+        if (mode === 'fixed_amount' || mode === 'Fixed $') {
+            copyMode = 'FIXED_AMOUNT';
+        }
 
         const config = await prisma.copyTradingConfig.create({
             data: {
@@ -97,12 +115,27 @@ export async function POST(request: NextRequest) {
                 traderAddress: traderAddress.toLowerCase(),
                 traderName: traderName || null,
                 mode: copyMode,
-                sizeScale: copyMode === 'PERCENTAGE' ? (sizeScale || 0.5) : null,
-                fixedAmount: copyMode === 'FIXED_AMOUNT' ? (fixedAmount || 50) : null,
-                maxSizePerTrade: maxSizePerTrade || 100,
+                sizeScale: sizeScale !== undefined ? Number(sizeScale) : null,
+                fixedAmount: fixedAmount !== undefined ? Number(fixedAmount) : null,
+                maxSizePerTrade: Number(maxSizePerTrade) || 100,
+                minSizePerTrade: minSizePerTrade !== undefined ? Number(minSizePerTrade) : null,
+                // Advanced mode settings
+                infiniteMode: infiniteMode === true,
+                takeProfit: takeProfit !== undefined ? Number(takeProfit) : null,
+                stopLoss: stopLoss !== undefined ? Number(stopLoss) : null,
+                direction: direction || 'COPY',
+                // Filters
                 sideFilter: sideFilter || null,
-                minTriggerSize: minTriggerSize || null,
-                maxDaysOut: maxDaysOut || null,
+                minTriggerSize: minTriggerSize !== undefined ? Number(minTriggerSize) : null,
+                maxDaysOut: maxDaysOut !== undefined ? Number(maxDaysOut) : null,
+                maxPerMarket: maxPerMarket !== undefined ? Number(maxPerMarket) : null,
+                minLiquidity: minLiquidity !== undefined ? Number(minLiquidity) : null,
+                minVolume: minVolume !== undefined ? Number(minVolume) : null,
+                maxOdds: maxOdds !== undefined ? Number(maxOdds) : null,
+                // Sell strategy
+                sellMode: sellMode || 'SAME_PERCENT',
+                sellFixedAmount: sellFixedAmount !== undefined ? Number(sellFixedAmount) : null,
+                sellPercentage: sellPercentage !== undefined ? Number(sellPercentage) : null,
                 isActive: true,
             },
         });

@@ -45,6 +45,18 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     // Fixed Mode State
     const [fixedAmount, setFixedAmount] = React.useState('50');
 
+    // Filter States
+    const [maxDaysOut, setMaxDaysOut] = React.useState('');
+    const [maxPerMarket, setMaxPerMarket] = React.useState('');
+    const [minLiquidity, setMinLiquidity] = React.useState('');
+    const [minVolume, setMinVolume] = React.useState('');
+    const [maxOdds, setMaxOdds] = React.useState('');
+    const [minTrigger, setMinTrigger] = React.useState('');
+
+    // Sell Mode States
+    const [sellFixedAmount, setSellFixedAmount] = React.useState('25');
+    const [sellPercentage, setSellPercentage] = React.useState('25');
+
     const handleStartCopying = async () => {
         setIsStarting(true);
         try {
@@ -55,6 +67,11 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                 throw new Error('Please connect your wallet first');
             }
 
+            // Determine sell mode for API
+            let apiSellMode = 'SAME_PERCENT';
+            if (sellMode === 'Fixed Amount') apiSellMode = 'FIXED_AMOUNT';
+            if (sellMode === 'Custom %') apiSellMode = 'CUSTOM_PERCENT';
+
             // Save to API for backend copy trading
             const apiResponse = await fetch('/api/copy-trading/config', {
                 method: 'POST',
@@ -63,11 +80,28 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     walletAddress: walletAddress.toLowerCase(),
                     traderAddress,
                     traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
+                    // Mode settings
                     mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
-                    sizeScale: copyMode === '% Shares' ? Number(sharePercent) / 100 : undefined,
+                    sizeScale: (copyMode === '% Shares' || copyMode === 'Range') ? Number(sharePercent) / 100 : undefined,
                     fixedAmount: copyMode === 'Fixed $' ? Number(fixedAmount) : undefined,
-                    maxSizePerTrade: Number(maxPerTrade) || 100,
-                    sideFilter: null, // Can add based on copyDirection
+                    maxSizePerTrade: copyMode === 'Range' ? Number(rangeMax) : (Number(maxPerTrade) || 100),
+                    minSizePerTrade: copyMode === 'Range' ? Number(rangeMin) : undefined,
+                    // Advanced mode settings
+                    infiniteMode,
+                    takeProfit: takeProfit ? Number(takeProfit) : undefined,
+                    stopLoss: stopLoss ? Number(stopLoss) : undefined,
+                    direction: copyDirection === 'Counter' ? 'COUNTER' : 'COPY',
+                    // Filters
+                    maxDaysOut: maxDaysOut ? Number(maxDaysOut) : undefined,
+                    maxPerMarket: maxPerMarket ? Number(maxPerMarket) : undefined,
+                    minLiquidity: minLiquidity ? Number(minLiquidity) : undefined,
+                    minVolume: minVolume ? Number(minVolume) : undefined,
+                    maxOdds: maxOdds ? Number(maxOdds) / 100 : undefined,
+                    minTriggerSize: minTrigger ? Number(minTrigger) : undefined,
+                    // Sell strategy
+                    sellMode: apiSellMode,
+                    sellFixedAmount: sellMode === 'Fixed Amount' ? Number(sellFixedAmount) : undefined,
+                    sellPercentage: sellMode === 'Custom %' ? Number(sellPercentage) / 100 : undefined,
                 }),
             });
 
@@ -395,28 +429,90 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                         {/* FILTERS TAB */}
                         {activeTab === 'Filters' && (
                             <div className="space-y-4">
-                                {[
-                                    { label: 'Max Days Out', desc: 'Only copy trades on markets ending within X days', icon: '📅' },
-                                    { label: 'Max Per Market ($)', desc: 'Limit total investment per market to prevent over-exposure', icon: '⏱️' },
-                                    { label: 'Min Liquidity ($)', desc: 'Only copy trades on markets with sufficient liquidity', icon: '💧' },
-                                    { label: 'Min Volume ($)', desc: 'Require minimum trading volume for active markets', icon: '📊' },
-                                    { label: 'Max Odds (%)', desc: 'Avoid copying trades on very likely outcomes (e.g., 80 = skip trades above 80%)', icon: '🎯', placeholder: 'e.g. 80' },
-                                    { label: 'Min Trigger ($)', desc: 'Minimum amount trader must trade to trigger your copy', icon: '⚡' }
-                                ].map((filter, i) => (
-                                    <div key={i} className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white flex items-center gap-2">
-                                            {/* <span className="text-base">{filter.icon}</span>  */}
-                                            {filter.label}
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            placeholder={filter.placeholder || "No limit"}
-                                            className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                                        />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">{filter.desc}</div>
-                                    </div>
-                                ))}
+                                {/* Max Days Out */}
+                                <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
+                                    <label className="text-xs font-bold text-white">Max Days Out</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="No limit"
+                                        value={maxDaysOut}
+                                        onChange={(e) => setMaxDaysOut(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                    <div className="text-[10px] text-muted-foreground leading-snug">Only copy trades on markets ending within X days</div>
+                                </div>
+
+                                {/* Max Per Market */}
+                                <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
+                                    <label className="text-xs font-bold text-white">Max Per Market ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="No limit"
+                                        value={maxPerMarket}
+                                        onChange={(e) => setMaxPerMarket(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                    <div className="text-[10px] text-muted-foreground leading-snug">Limit total investment per market to prevent over-exposure</div>
+                                </div>
+
+                                {/* Min Liquidity */}
+                                <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
+                                    <label className="text-xs font-bold text-white">Min Liquidity ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="No limit"
+                                        value={minLiquidity}
+                                        onChange={(e) => setMinLiquidity(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                    <div className="text-[10px] text-muted-foreground leading-snug">Only copy trades on markets with sufficient liquidity</div>
+                                </div>
+
+                                {/* Min Volume */}
+                                <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
+                                    <label className="text-xs font-bold text-white">Min Volume ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="No limit"
+                                        value={minVolume}
+                                        onChange={(e) => setMinVolume(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                    <div className="text-[10px] text-muted-foreground leading-snug">Require minimum trading volume for active markets</div>
+                                </div>
+
+                                {/* Max Odds */}
+                                <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
+                                    <label className="text-xs font-bold text-white">Max Odds (%)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        placeholder="e.g. 80"
+                                        value={maxOdds}
+                                        onChange={(e) => setMaxOdds(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                    <div className="text-[10px] text-muted-foreground leading-snug">Avoid copying trades on very likely outcomes (e.g., 80 = skip trades above 80%)</div>
+                                </div>
+
+                                {/* Min Trigger */}
+                                <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
+                                    <label className="text-xs font-bold text-white">Min Trigger ($)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="No limit"
+                                        value={minTrigger}
+                                        onChange={(e) => setMinTrigger(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                    <div className="text-[10px] text-muted-foreground leading-snug">Minimum amount trader must trade to trigger your copy</div>
+                                </div>
                             </div>
                         )}
 
@@ -458,6 +554,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                 <input
                                                     type="number"
                                                     min="0"
+                                                    value={sellFixedAmount}
+                                                    onChange={(e) => setSellFixedAmount(e.target.value)}
                                                     className="w-full bg-[#1a1b1e] border border-green-500/30 rounded-lg pl-6 pr-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
                                                     placeholder="25"
                                                 />
@@ -485,6 +583,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     type="number"
                                                     min="0"
                                                     max="100"
+                                                    value={sellPercentage}
+                                                    onChange={(e) => setSellPercentage(e.target.value)}
                                                     className="w-full bg-[#1a1b1e] border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
                                                     placeholder="25"
                                                 />
