@@ -1,23 +1,117 @@
 'use client';
 
 import Link from 'next/link';
-import { Link as LinkIcon, Users, Wallet, BarChart3, Calendar, Repeat, Copy, Info, CheckCircle, Clock } from 'lucide-react';
+import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePrivy } from '@privy-io/react-auth';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink } from '@/lib/affiliate-api';
 
 export default function AffiliatePage() {
-    const { authenticated, user } = usePrivy();
+    const { authenticated, user, ready } = usePrivy();
 
-    if (authenticated) {
-        return <AuthenticatedView user={user} />;
+    if (!ready) {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
+
+    if (authenticated && user?.wallet?.address) {
+        return <AuthenticatedView walletAddress={user.wallet.address} />;
     }
 
     return <GuestView />;
 }
 
 // --- Authenticated Dashboard View ---
-function AuthenticatedView({ user }: { user: any }) {
-    const referralLink = `https://www.polyhunter.com/ref=${user?.wallet?.address?.slice(0, 8) || 'IM9608W0'}`;
+function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
+    const [stats, setStats] = useState<AffiliateStats | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isRegistering, setIsRegistering] = useState(false);
+    const [isRegistered, setIsRegistered] = useState(false);
+
+    useEffect(() => {
+        async function loadStats() {
+            try {
+                // Check if registered
+                const lookup = await affiliateApi.lookupWallet(walletAddress);
+                if (lookup.registered) {
+                    setIsRegistered(true);
+                    const data = await affiliateApi.getStats(walletAddress);
+                    setStats(data);
+                } else {
+                    setIsRegistered(false);
+                }
+            } catch (err) {
+                console.warn('Failed to load affiliate stats', err);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+        loadStats();
+    }, [walletAddress]);
+
+    const handleRegister = async () => {
+        setIsRegistering(true);
+        try {
+            const result = await affiliateApi.register(walletAddress);
+            if (result.success) {
+                toast.success('Successfully registered as affiliate!');
+                setIsRegistered(true);
+                const data = await affiliateApi.getStats(walletAddress);
+                setStats(data);
+            } else {
+                toast.error(result.error || 'Registration failed');
+            }
+        } catch (err) {
+            toast.error('Failed to register. Is the backend running?');
+        } finally {
+            setIsRegistering(false);
+        }
+    };
+
+    const handleCopyLink = () => {
+        if (stats?.referralCode) {
+            navigator.clipboard.writeText(generateReferralLink(stats.referralCode));
+            toast.success('Referral link copied!');
+        }
+    };
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
+
+    if (!isRegistered) {
+        return (
+            <div className="min-h-screen bg-background pt-24 pb-20">
+                <div className="container max-w-2xl mx-auto px-4 text-center">
+                    <h1 className="text-3xl font-bold text-white mb-4">Join the Affiliate Program</h1>
+                    <p className="text-muted-foreground mb-8">Earn up to 25% commission on trading fees from your referrals</p>
+                    <button
+                        onClick={handleRegister}
+                        disabled={isRegistering}
+                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center gap-2 mx-auto"
+                    >
+                        {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+                        {isRegistering ? 'Registering...' : 'Become an Affiliate'}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    const tierInfo = stats ? TIER_INFO[stats.tier] : TIER_INFO.BRONZE;
+    const referralLink = stats?.referralCode ? generateReferralLink(stats.referralCode) : '';
+    const progressPercent = stats?.nextTier
+        ? Math.min(100, ((stats.totalVolumeGenerated) / (tierInfo.nextVolume || 1)) * 100)
+        : 100;
 
     return (
         <div className="min-h-screen bg-background pt-24 pb-20">
@@ -28,48 +122,47 @@ function AuthenticatedView({ user }: { user: any }) {
 
                 {/* 1. Tier Status Card */}
                 <div className="bg-[#1a1b1e] border border-yellow-500/20 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden">
-                    {/* Background Glow */}
                     <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 bg-yellow-500/5 blur-[80px] rounded-full pointer-events-none" />
 
                     <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
                         <div className="flex items-center gap-4">
                             <div className="h-16 w-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg border-2 border-yellow-500/20">
-                                1
+                                {stats?.tier === 'DIAMOND' ? '💎' : stats?.tier === 'GOLD' ? '🥇' : stats?.tier === 'SILVER' ? '🥈' : '🥉'}
                             </div>
                             <div>
                                 <div className="text-sm text-yellow-500 font-medium mb-1">Current Tier</div>
-                                <h2 className="text-3xl font-bold text-white mb-1">Bronze Partner</h2>
+                                <h2 className={cn("text-3xl font-bold mb-1", tierInfo.color)}>{tierInfo.name}</h2>
                                 <div className="inline-flex items-center px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-sm font-bold">
-                                    10% Commission Rate
+                                    {((stats?.commissionRate || 0.1) * 100).toFixed(0)}% Commission Rate
                                 </div>
                             </div>
                         </div>
 
                         <div className="w-full md:w-1/2">
-                            <div className="flex justify-between text-xs mb-2">
-                                <span className="text-muted-foreground">Next tier (Silver) at $500K volume</span>
-                                <span className="text-white font-medium">Your volume: $0 / $500K</span>
-                            </div>
-                            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                <div className="h-full bg-green-500 w-[2%]" />
-                            </div>
+                            {stats?.nextTier ? (
+                                <>
+                                    <div className="flex justify-between text-xs mb-2">
+                                        <span className="text-muted-foreground">Next tier ({stats.nextTier}) at ${((tierInfo.nextVolume || 0) / 1000).toFixed(0)}K volume</span>
+                                        <span className="text-white font-medium">${(stats.totalVolumeGenerated / 1000).toFixed(1)}K / ${((tierInfo.nextVolume || 0) / 1000).toFixed(0)}K</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                        <div className="h-full bg-green-500 transition-all" style={{ width: `${progressPercent}%` }} />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-center text-yellow-400 font-medium">🎉 Maximum tier achieved!</div>
+                            )}
                         </div>
-                    </div>
-
-                    <div className="mt-6 flex justify-center md:justify-start">
-                        <button className="text-xs text-muted-foreground hover:text-white flex items-center gap-1 transition-colors">
-                            <Info className="h-3 w-3" /> How do tiers & commissions work?
-                        </button>
                     </div>
                 </div>
 
                 {/* 2. Stats Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     {[
-                        { label: "Volume Generated", value: "$0", sub: "By your referrals", icon: BarChart3, color: "text-blue-500", bg: "bg-blue-500/10" },
-                        { label: "Total Referrals", value: "0", sub: "Users you've referred", icon: Users, color: "text-purple-500", bg: "bg-purple-500/10" },
-                        { label: "Total Earned", value: "$0.00", sub: "Paid to your wallet", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
-                        { label: "Pending Payout", value: "$0.00", sub: "Paid daily ≥ $0.50", icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
+                        { label: "Volume Generated", value: `$${(stats?.totalVolumeGenerated || 0).toLocaleString()}`, sub: "By your referrals", icon: BarChart3, color: "text-blue-500", bg: "bg-blue-500/10" },
+                        { label: "Total Referrals", value: `${stats?.totalReferrals || 0}`, sub: "Users you've referred", icon: Users, color: "text-purple-500", bg: "bg-purple-500/10" },
+                        { label: "Total Earned", value: `$${(stats?.totalEarned || 0).toFixed(2)}`, sub: "Paid to your wallet", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
+                        { label: "Pending Payout", value: `$${(stats?.pendingPayout || 0).toFixed(2)}`, sub: "Paid daily ≥ $0.50", icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
                     ].map((stat, i) => (
                         <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-6 flex flex-col justify-between h-32 relative overflow-hidden group hover:border-white/10 transition-colors">
                             <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
@@ -99,45 +192,22 @@ function AuthenticatedView({ user }: { user: any }) {
                         <p className="text-sm text-muted-foreground md:w-1/3">
                             Share this link. Users who sign up are permanently linked to you.
                         </p>
-                        <div className="flex-1 w-full relative flex items-center">
+                        <div className="flex-1 flex gap-2">
                             <input
                                 type="text"
                                 readOnly
                                 value={referralLink}
-                                className="w-full bg-[#0a0a0a] border border-[#2c2d33] rounded-lg pl-4 pr-24 py-3 text-sm font-mono text-blue-400 focus:outline-none"
+                                className="flex-1 bg-[#25262b] border border-[#2c2d33] rounded-lg px-4 py-2 text-sm text-white font-mono"
                             />
-                            <button className="absolute right-1 top-1 bottom-1 bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
-                                <Copy className="h-3.5 w-3.5" /> Copy
+                            <button
+                                onClick={handleCopyLink}
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                            >
+                                <Copy className="h-4 w-4" /> Copy
                             </button>
                         </div>
                     </div>
                 </div>
-
-                {/* 4. Earnings History */}
-                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 min-h-[300px] flex flex-col">
-                    <div className="flex items-center gap-2 mb-8">
-                        <div className="h-6 w-6 rounded bg-green-500/20 flex items-center justify-center text-green-500">
-                            <Wallet className="h-3.5 w-3.5" />
-                        </div>
-                        <h3 className="font-bold text-white">Earnings History</h3>
-                    </div>
-
-                    <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 py-8">
-                        <div className="h-16 w-16 rounded-2xl bg-white/5 flex items-center justify-center">
-                            <Copy className="h-8 w-8 text-muted-foreground opacity-20" />
-                        </div>
-                        <div>
-                            <h4 className="text-lg font-medium text-white mb-1">No earnings yet</h4>
-                            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                                Share your referral link and start earning when your referrals trade profitably.
-                            </p>
-                        </div>
-                        <button className="text-sm text-blue-500 hover:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-400">
-                            Copy your link to get started
-                        </button>
-                    </div>
-                </div>
-
             </div>
         </div>
     );
@@ -303,19 +373,5 @@ function GuestView() {
                 </div>
             </section>
         </div>
-    );
-}
-
-// Icon component helper (Shared)
-function Trophy({ className }: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            className={className}
-        >
-            <path fillRule="evenodd" d="M5.166 2.621v.858c-1.035.148-2.059.33-3.071.543a.75.75 0 00-.584.859 6.753 6.753 0 006.138 5.6 6.73 6.73 0 002.743 1.346A6.707 6.707 0 019.279 15H8.54c-1.036 0-1.875.84-1.875 1.875V19.5h-.75a2.25 2.25 0 00-2.25 2.25c0 .414.336.75.75.75h15a.75.75 0 00.75-.75 2.25 2.25 0 00-2.25-2.25h-.75v-2.625c0-1.036-.84-1.875-1.875-1.875h-.739a6.706 6.706 0 01-1.612-3.125 6.73 6.73 0 002.743-1.347 6.753 6.753 0 006.139-5.6.75.75 0 00-.585-.858 47.077 47.077 0 00-3.07-.543V2.62a.75.75 0 00-.658-.744 49.22 49.22 0 00-6.093-.377c-2.063 0-4.096.128-6.093.377a.75.75 0 00-.657.744zm0 2.629c0 1.196.312 2.32.857 3.294A5.266 5.266 0 013.16 5.337a45.6 45.6 0 012.006-.343v.256zm13.5 0v-.256c.674.1 1.343.214 2.006.343a5.265 5.265 0 01-2.863 3.207 6.72 6.72 0 00.857-3.294z" clipRule="evenodd" />
-        </svg>
     );
 }
