@@ -110,8 +110,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ config }, { status: 201 });
     } catch (error) {
         console.error('Error creating copy trading config:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return NextResponse.json(
-            { error: 'Failed to create config' },
+            { error: `Failed to create config: ${errorMessage}` },
             { status: 500 }
         );
     }

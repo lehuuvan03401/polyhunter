@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useCopyTradingStore } from '@/lib/copy-trading-store';
+import { usePrivy } from '@privy-io/react-auth';
 
 interface CopyTraderModalProps {
     isOpen: boolean;
@@ -21,6 +22,7 @@ type SellMode = 'Same %' | 'Fixed Amount' | 'Custom %';
 
 export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: CopyTraderModalProps) {
     const router = useRouter();
+    const { user, authenticated } = usePrivy();
     const addConfig = useCopyTradingStore((state) => state.addConfig);
     const [isStarting, setIsStarting] = React.useState(false);
 
@@ -46,15 +48,19 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const handleStartCopying = async () => {
         setIsStarting(true);
         try {
-            // Get wallet address from privy (we need to import usePrivy)
-            // For now, we'll get it from the router or pass it through
+            // Get wallet address from Privy
+            const walletAddress = user?.wallet?.address;
+
+            if (!authenticated || !walletAddress) {
+                throw new Error('Please connect your wallet first');
+            }
 
             // Save to API for backend copy trading
             const apiResponse = await fetch('/api/copy-trading/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    walletAddress: localStorage.getItem('privy:wallet_address') || '',
+                    walletAddress: walletAddress.toLowerCase(),
                     traderAddress,
                     traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
                     mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
