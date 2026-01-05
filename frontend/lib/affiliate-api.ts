@@ -1,10 +1,11 @@
 /**
  * Affiliate API Client
  * 
- * TypeScript client for the affiliate backend service
+ * TypeScript client for the affiliate API routes (Next.js API Routes + Prisma)
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_AFFILIATE_API_URL || 'http://localhost:8081';
+// Use empty string for local API routes (same-origin)
+const API_BASE_URL = '';
 
 // Types
 export interface AffiliateStats {

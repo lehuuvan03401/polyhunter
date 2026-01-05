@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Affiliate tier levels
+enum AffiliateTier {
+  BRONZE
+  SILVER
+  GOLD
+  DIAMOND
+}
+
+// Payout status
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Referrer - wallet registered as affiliate
+model Referrer {
+  id            String        @id @default(cuid())
+  walletAddress String        @unique
+  referralCode  String        @unique
+  tier          AffiliateTier @default(BRONZE)
+  totalVolume   Float         @default(0)
+  totalEarned   Float         @default(0)
+  pendingPayout Float         @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  referrals     Referral[]
+  payouts       Payout[]
+  volumeRecords ReferralVolume[]
+}
+
+// Referral - user referred by an affiliate
+model Referral {
+  id             String   @id @default(cuid())
+  referrer       Referrer @relation(fields: [referrerId], references: [id])
+  referrerId     String
+  refereeAddress String   @unique
+  lifetimeVolume Float    @default(0)
+  last30DaysVolume Float  @default(0)
+  createdAt      DateTime @default(now())
+  lastActiveAt   DateTime?
+
+  @@index([referrerId])
+}
+
+// Daily volume aggregation
+model ReferralVolume {
+  id           String   @id @default(cuid())
+  referrer     Referrer @relation(fields: [referrerId], references: [id])
+  referrerId   String
+  date         DateTime
+  volumeUsd    Float    @default(0)
+  commissionUsd Float   @default(0)
+  tradeCount   Int      @default(0)
+
+  @@unique([referrerId, date])
+  @@index([referrerId])
+}
+
+// Payout records
+model Payout {
+  id          String       @id @default(cuid())
+  referrer    Referrer     @relation(fields: [referrerId], references: [id])
+  referrerId  String
+  amountUsd   Float
+  status      PayoutStatus @default(PENDING)
+  txHash      String?
+  createdAt   DateTime     @default(now())
+  processedAt DateTime?
+  errorMessage String?
+
+  @@index([referrerId])
+}
