@@ -84,3 +84,50 @@ model Payout {
 
   @@index([referrerId])
 }
+
+// ========================================
+// Proxy System Models
+// ========================================
+
+// Subscription tier levels (determines fee percentage)
+enum SubscriptionTier {
+  STARTER  // 10% fee
+  PRO      // 5% fee
+  WHALE    // 2% fee
+}
+
+// User's trading proxy wallet
+model UserProxy {
+  id              String           @id @default(cuid())
+  walletAddress   String           @unique  // User's main wallet
+  proxyAddress    String           @unique  // Smart contract proxy address
+  tier            SubscriptionTier @default(STARTER)
+  totalDeposited  Float            @default(0)
+  totalWithdrawn  Float            @default(0)
+  totalVolume     Float            @default(0)
+  totalProfit     Float            @default(0)
+  totalFeesPaid   Float            @default(0)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  feeTransactions FeeTransaction[]
+
+  @@index([walletAddress])
+}
+
+// Fee transaction records
+model FeeTransaction {
+  id           String    @id @default(cuid())
+  userProxy    UserProxy @relation(fields: [userProxyId], references: [id])
+  userProxyId  String
+  profitAmount Float     // Profit amount that triggered the fee
+  feeAmount    Float     // Fee collected
+  feePercent   Float     // Fee percentage at time of transaction (10, 5, 2)
+  txHash       String?   // On-chain transaction hash
+  blockNumber  Int?      // Block number of the transaction
+  createdAt    DateTime  @default(now())
+
+  @@index([userProxyId])
+  @@index([createdAt])
+}
