@@ -2,7 +2,6 @@
 
 import { usePrivy } from '@privy-io/react-auth';
 import { polyClient } from '@/lib/polymarket';
-import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import {
     Wallet,
     TrendingUp,
@@ -13,15 +12,22 @@ import {
     Layers,
     Copy,
     ArrowUpRight,
-    Loader2
+    Loader2,
+    Coins
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { ethers } from 'ethers';
+
+// USDC.e contract on Polygon (used by Polymarket)
+const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export default function PortfolioPage() {
     const { user, authenticated, ready, login } = usePrivy();
-    const [portfolioValue, setPortfolioValue] = useState(0);
+    const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+    const [totalPnL, setTotalPnL] = useState(0);
     const [positions, setPositions] = useState<any[]>([]);
     const [activeCopies, setActiveCopies] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -39,17 +45,25 @@ export default function PortfolioPage() {
                 if (authenticated && user?.wallet?.address) {
                     const address = user.wallet.address;
 
+                    // Fetch USDC balance on-chain
                     try {
-                        // 1. Get Portfolio Value (PnL + Cash)
-                        const profile = await polyClient.wallets.getWalletProfile(address);
-                        // If user is new/empty, profile might be basic.
-                        // totalPnL is realized + unrealized. 
-                        // Note: This doesn't include CASH balance unless we fetch it separately.
-                        // For now we use totalPnL as a proxy for "Actionable Value" or just display PnL.
-                        // Ideally we'd fetch USDC balance too.
-                        setPortfolioValue(profile.totalPnL);
+                        const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+                        const usdcContract = new ethers.Contract(USDC_CONTRACT, USDC_ABI, provider);
+                        const rawBalance = await usdcContract.balanceOf(address);
+                        // USDC has 6 decimals
+                        const balance = Number(rawBalance) / 1e6;
+                        setUsdcBalance(balance);
+                    } catch (balanceErr) {
+                        console.warn("Failed to fetch USDC balance", balanceErr);
+                        setUsdcBalance(null);
+                    }
 
-                        // 2. Get Positions
+                    try {
+                        // Get Portfolio PnL
+                        const profile = await polyClient.wallets.getWalletProfile(address);
+                        setTotalPnL(profile.totalPnL);
+
+                        // Get Positions
                         const walletPositions = await polyClient.wallets.getWalletPositions(address);
                         setPositions(walletPositions);
                     } catch (err) {
@@ -57,7 +71,8 @@ export default function PortfolioPage() {
                     }
                 } else {
                     // Not authenticated or no wallet
-                    setPortfolioValue(0);
+                    setUsdcBalance(null);
+                    setTotalPnL(0);
                     setPositions([]);
                 }
             } catch (e) {
@@ -116,7 +131,7 @@ export default function PortfolioPage() {
             {/* Top Cards Grid */}
             <div className="grid gap-6 md:grid-cols-3 mb-8">
 
-                {/* Wallet Card */}
+                {/* Wallet Card - Now with real USDC balance */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px]">
                     <div>
                         <div className="flex items-center gap-2 text-sm font-medium text-blue-400 mb-4">
@@ -124,7 +139,10 @@ export default function PortfolioPage() {
                             <span>Your Wallet</span>
                         </div>
                         <div className="text-3xl font-bold tracking-tight mb-1">
-                            ${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-lg text-muted-foreground font-normal">USDC</span>
+                            {usdcBalance !== null
+                                ? `$${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                : '--'}
+                            <span className="text-lg text-muted-foreground font-normal ml-1">USDC</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono bg-muted/50 w-fit px-2 py-1 rounded group cursor-pointer" onClick={() => navigator.clipboard.writeText(userAddress)}>
                             <span>{formatAddress(userAddress)}</span>
@@ -142,7 +160,7 @@ export default function PortfolioPage() {
                     </div>
                 </div>
 
-                {/* PnL Card */}
+                {/* PnL Card - Now with real data */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px]">
                     <div>
                         <div className="flex items-center justify-between mb-4">
@@ -152,14 +170,14 @@ export default function PortfolioPage() {
                             </div>
                             <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">All Time</div>
                         </div>
-                        <div className={cn("text-3xl font-bold tracking-tight", portfolioValue >= 0 ? "text-green-500" : "text-red-500")}>
-                            {portfolioValue >= 0 ? '+' : ''}${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className={cn("text-3xl font-bold tracking-tight", totalPnL >= 0 ? "text-green-500" : "text-red-500")}>
+                            {totalPnL >= 0 ? '+' : ''}${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                     </div>
 
                     {/* Fake Chart Line (Keeping for visuals, could replace later) */}
                     <div className="mt-4 h-16 w-full flex items-end opacity-50">
-                        <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", portfolioValue >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
+                        <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", totalPnL >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
                             <path d="M0 20 L0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2 L 100 20 Z" strokeWidth="0" />
                             <path d="M0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2" fill="none" strokeWidth="2" />
                         </svg>

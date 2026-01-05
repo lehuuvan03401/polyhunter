@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { polyClient } from '@/lib/polymarket';
-import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck } from 'lucide-react';
 
 export const revalidate = 60; // Revalidate every minute
@@ -9,7 +8,28 @@ import { Suspense } from 'react';
 import { LeaderboardSection } from '@/components/home/leaderboard-section';
 import { LeaderboardSkeleton } from '@/components/home/leaderboard-skeleton';
 
-export default function Home() {
+// Fetch homepage stats from leaderboard
+async function getHomeStats() {
+  try {
+    const leaderboard = await polyClient.dataApi.getLeaderboard({ limit: 100 });
+    const traderCount = leaderboard.total;
+    const totalVolume = leaderboard.entries.reduce((sum, e) => sum + (e.volume || 0), 0);
+    return { traderCount, totalVolume };
+  } catch (e) {
+    console.error("Failed to fetch homepage stats", e);
+    return { traderCount: null, totalVolume: null };
+  }
+}
+
+function formatVolume(volume: number): string {
+  if (volume >= 1_000_000_000) return `$${(volume / 1_000_000_000).toFixed(1)}B+`;
+  if (volume >= 1_000_000) return `$${(volume / 1_000_000).toFixed(1)}M+`;
+  if (volume >= 1_000) return `$${(volume / 1_000).toFixed(0)}K+`;
+  return `$${volume.toLocaleString()}`;
+}
+
+export default async function Home() {
+  const { traderCount, totalVolume } = await getHomeStats();
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -38,15 +58,19 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Stats Bar */}
+          {/* Stats Bar - Now with real data */}
           <div className="grid grid-cols-3 gap-8 pt-12 max-w-3xl mx-auto border-t border-white/10 mt-12">
             <div>
-              <div className="text-2xl md:text-3xl font-bold text-yellow-500">500+</div>
+              <div className="text-2xl md:text-3xl font-bold text-yellow-500">
+                {traderCount !== null ? `${traderCount.toLocaleString()}+` : '500+'}
+              </div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Verified Traders</div>
             </div>
             <div>
-              <div className="text-2xl md:text-3xl font-bold text-green-500">$2M+</div>
-              <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Volume Copied</div>
+              <div className="text-2xl md:text-3xl font-bold text-green-500">
+                {totalVolume !== null ? formatVolume(totalVolume) : '$2M+'}
+              </div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Volume Traded</div>
             </div>
             <div>
               <div className="text-2xl md:text-3xl font-bold text-blue-500">Live</div>
