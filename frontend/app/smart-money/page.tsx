@@ -66,6 +66,7 @@ export default async function SmartMoneyPage() {
                                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Volume</th>
                                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Profit</th>
                                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Score</th>
+                                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="[&_tr:last-child]:border-0">
@@ -83,6 +84,14 @@ export default async function SmartMoneyPage() {
                                                 <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary text-primary-foreground hover:bg-primary/80">
                                                     {wallet.score}
                                                 </div>
+                                            </td>
+                                            <td className="p-4 align-middle text-right">
+                                                <Link
+                                                    href={`/traders/${wallet.address}`}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
+                                                >
+                                                    Copy Trader
+                                                </Link>
                                             </td>
                                         </tr>
                                     ))}

@@ -111,6 +111,17 @@ export async function POST(request: NextRequest) {
                 for (const trade of recentTrades) {
                     totalDetected++;
 
+                    // Validate timestamp - skip if invalid
+                    const tradeTimeMs = typeof trade.timestamp === 'number'
+                        ? (trade.timestamp > 1e12 ? trade.timestamp : trade.timestamp * 1000)
+                        : Date.now();
+
+                    // Skip if timestamp is too far in future or past (sanity check)
+                    const now = Date.now();
+                    if (tradeTimeMs > now + 60000 || tradeTimeMs < now - 24 * 60 * 60 * 1000) {
+                        continue; // Invalid timestamp, skip
+                    }
+
                     for (const config of configsForTrader) {
                         // Check if we already have a copy trade for this exact trade
                         const existing = await prisma.copyTrade.findFirst({
@@ -118,8 +129,8 @@ export async function POST(request: NextRequest) {
                                 configId: config.id,
                                 originalTrader: traderAddress,
                                 detectedAt: {
-                                    gte: new Date(trade.timestamp * 1000 - 5000), // 5s tolerance
-                                    lte: new Date(trade.timestamp * 1000 + 5000),
+                                    gte: new Date(tradeTimeMs - 5000), // 5s tolerance
+                                    lte: new Date(tradeTimeMs + 5000),
                                 },
                                 originalSide: trade.side,
                                 originalSize: trade.size,
