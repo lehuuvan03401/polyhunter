@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { Check, Zap, Crown, Rocket } from 'lucide-react';
+import { Check, Zap, Crown, Rocket, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePrivy } from '@privy-io/react-auth';
+import { useState, useEffect } from 'react';
+import { polyClient } from '@/lib/polymarket';
 
 // --- Shared Components ---
 
@@ -32,12 +34,62 @@ export default function PricingPage() {
 // --- Authenticated View ---
 
 function AuthenticatedPricing() {
+    const { user } = usePrivy();
+    const [userVolume, setUserVolume] = useState<number | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Volume thresholds for tiers
+    const PRO_THRESHOLD = 25000;
+    const WHALE_THRESHOLD = 250000;
+
+    useEffect(() => {
+        const fetchVolume = async () => {
+            if (!user?.wallet?.address) {
+                setUserVolume(0);
+                setIsLoading(false);
+                return;
+            }
+
+            try {
+                const activity = await polyClient.wallets.getWalletActivity(user.wallet.address);
+                // Total volume = buy volume + sell volume from summary
+                const totalVolume = activity.summary.buyVolume + activity.summary.sellVolume;
+                setUserVolume(totalVolume);
+            } catch (err) {
+                console.warn('Failed to fetch user volume', err);
+                setUserVolume(0);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchVolume();
+    }, [user?.wallet?.address]);
+
+    // Determine current tier
+    const currentTier = userVolume !== null
+        ? (userVolume >= WHALE_THRESHOLD ? 'whale' : userVolume >= PRO_THRESHOLD ? 'pro' : 'starter')
+        : 'starter';
+
+    // Format volume for display
+    const formatVolume = (vol: number) => {
+        if (vol >= 1000000) return `$${(vol / 1000000).toFixed(1)}M`;
+        if (vol >= 1000) return `$${(vol / 1000).toFixed(1)}k`;
+        return `$${vol.toFixed(0)}`;
+    };
+
+    // Calculate progress percentages
+    const proProgress = userVolume !== null ? Math.min((userVolume / PRO_THRESHOLD) * 100, 100) : 0;
+    const whaleProgress = userVolume !== null ? Math.min((userVolume / WHALE_THRESHOLD) * 100, 100) : 0;
+
     return (
         <div className="min-h-screen pt-24 pb-20 px-4">
             {/* Header */}
             <div className="container max-w-6xl mx-auto mb-16 text-center space-y-4">
                 <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Your Plan & Tier Status</h1>
-                <p className="text-lg text-muted-foreground">Track your volume and unlock lower fees.</p>
+                <p className="text-lg text-muted-foreground">
+                    {isLoading ? 'Loading your stats...' : `Your total volume: ${formatVolume(userVolume || 0)}`}
+                </p>
             </div>
 
             <div className="container max-w-6xl mx-auto">
@@ -76,8 +128,17 @@ function AuthenticatedPricing() {
                             </div>
                         </div>
 
-                        <button className="w-full py-3.5 rounded-lg bg-green-900/40 border border-green-500/50 text-green-400 font-bold flex items-center justify-center gap-2 cursor-default">
-                            <Check className="h-5 w-5" /> Your Current Tier
+                        <button className={cn(
+                            "w-full py-3.5 rounded-lg font-bold flex items-center justify-center gap-2",
+                            currentTier === 'starter'
+                                ? "bg-green-900/40 border border-green-500/50 text-green-400 cursor-default"
+                                : "bg-white/5 border border-white/10 text-muted-foreground"
+                        )}>
+                            {currentTier === 'starter' ? (
+                                <><Check className="h-5 w-5" /> Your Current Tier</>
+                            ) : (
+                                'Starter Tier'
+                            )}
                         </button>
                     </div>
 
@@ -118,13 +179,30 @@ function AuthenticatedPricing() {
                             <div className="bg-black/40 rounded-xl p-4 border border-white/5">
                                 <div className="flex justify-between text-xs mb-2 text-muted-foreground">
                                     <span>Volume progress</span>
-                                    <span>$0 / $25k</span>
+                                    <span>{isLoading ? '...' : `${formatVolume(userVolume || 0)} / $25k`}</span>
                                 </div>
                                 <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-blue-500 w-[0%]" />
+                                    <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${proProgress}%` }} />
                                 </div>
                             </div>
                         </div>
+
+                        <button className={cn(
+                            "w-full py-3.5 rounded-lg font-bold flex items-center justify-center gap-2",
+                            currentTier === 'pro'
+                                ? "bg-blue-900/40 border border-blue-500/50 text-blue-400 cursor-default"
+                                : currentTier === 'whale'
+                                    ? "bg-white/5 border border-white/10 text-muted-foreground"
+                                    : "bg-blue-600 hover:bg-blue-500 text-white"
+                        )}>
+                            {currentTier === 'pro' ? (
+                                <><Check className="h-5 w-5" /> Your Current Tier</>
+                            ) : currentTier === 'whale' ? (
+                                'Pro Tier'
+                            ) : (
+                                `${formatVolume(PRO_THRESHOLD - (userVolume || 0))} to unlock`
+                            )}
+                        </button>
                     </div>
 
                     {/* Whale */}
@@ -168,13 +246,26 @@ function AuthenticatedPricing() {
                             <div className="bg-black/40 rounded-xl p-4 border border-white/5">
                                 <div className="flex justify-between text-xs mb-2 text-muted-foreground">
                                     <span>Volume progress</span>
-                                    <span>$0 / $250k</span>
+                                    <span>{isLoading ? '...' : `${formatVolume(userVolume || 0)} / $250k`}</span>
                                 </div>
                                 <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-yellow-500 w-[0%]" />
+                                    <div className="h-full bg-yellow-500 transition-all duration-500" style={{ width: `${whaleProgress}%` }} />
                                 </div>
                             </div>
                         </div>
+
+                        <button className={cn(
+                            "w-full py-3.5 rounded-lg font-bold flex items-center justify-center gap-2",
+                            currentTier === 'whale'
+                                ? "bg-yellow-900/40 border border-yellow-500/50 text-yellow-400 cursor-default"
+                                : "bg-yellow-600 hover:bg-yellow-500 text-black"
+                        )}>
+                            {currentTier === 'whale' ? (
+                                <><Check className="h-5 w-5" /> Your Current Tier</>
+                            ) : (
+                                `${formatVolume(WHALE_THRESHOLD - (userVolume || 0))} to unlock`
+                            )}
+                        </button>
                     </div>
                 </div>
             </div>
