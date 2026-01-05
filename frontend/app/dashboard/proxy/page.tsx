@@ -1,31 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import Link from 'next/link';
-
-interface ProxyData {
-    id: string;
-    walletAddress: string;
-    proxyAddress: string;
-    tier: 'STARTER' | 'PRO' | 'WHALE';
-    totalDeposited: number;
-    totalWithdrawn: number;
-    totalVolume: number;
-    totalProfit: number;
-    totalFeesPaid: number;
-    isActive: boolean;
-    feePercent: number;
-    netProfit: number;
-    feeTransactions: Array<{
-        id: string;
-        profitAmount: number;
-        feeAmount: number;
-        feePercent: number;
-        txHash: string | null;
-        createdAt: string;
-    }>;
-}
+import { useProxy } from '@/lib/contracts/useProxy';
 
 const TIER_INFO = {
     STARTER: { name: 'Starter', fee: '10%', color: 'text-gray-400', bgColor: 'bg-gray-800' },
@@ -34,76 +12,82 @@ const TIER_INFO = {
 };
 
 export default function ProxyDashboardPage() {
-    const { user, authenticated, ready } = usePrivy();
-    const [proxyData, setProxyData] = useState<ProxyData | null>(null);
-    const [hasProxy, setHasProxy] = useState<boolean>(false);
-    const [loading, setLoading] = useState(true);
-    const [creating, setCreating] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const { authenticated, ready } = usePrivy();
+    const {
+        proxyAddress,
+        hasProxy,
+        stats,
+        usdcBalance,
+        isLoading,
+        error,
+        createProxy,
+        deposit,
+        withdraw,
+        withdrawAll,
+        txPending,
+        txHash,
+    } = useProxy();
 
-    const walletAddress = user?.wallet?.address;
+    // Modal states
+    const [showDepositModal, setShowDepositModal] = useState(false);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+    const [amount, setAmount] = useState('');
+    const [actionError, setActionError] = useState<string | null>(null);
 
-    const fetchProxyStatus = useCallback(async () => {
-        if (!walletAddress) return;
+    // Determine tier from fee percent
+    const getTierFromFee = (feePercent: number): 'STARTER' | 'PRO' | 'WHALE' => {
+        if (feePercent <= 2) return 'WHALE';
+        if (feePercent <= 5) return 'PRO';
+        return 'STARTER';
+    };
 
-        try {
-            setLoading(true);
-            const res = await fetch(`/api/proxy/status?wallet=${walletAddress}`);
-            const data = await res.json();
-
-            if (res.ok) {
-                setHasProxy(data.hasProxy);
-                setProxyData(data.proxy);
-            } else {
-                setError(data.error || 'Failed to fetch proxy status');
-            }
-        } catch (err) {
-            setError('Network error');
-        } finally {
-            setLoading(false);
-        }
-    }, [walletAddress]);
-
-    useEffect(() => {
-        if (ready && authenticated && walletAddress) {
-            fetchProxyStatus();
-        } else if (ready && !authenticated) {
-            setLoading(false);
-        }
-    }, [ready, authenticated, walletAddress, fetchProxyStatus]);
+    const currentTier = stats ? getTierFromFee(stats.feePercent) : 'STARTER';
 
     const handleCreateProxy = async () => {
-        if (!walletAddress) return;
+        setActionError(null);
+        const result = await createProxy('STARTER');
+        if (!result && error) {
+            setActionError(error);
+        }
+    };
 
-        setCreating(true);
-        setError(null);
+    const handleDeposit = async () => {
+        if (!amount || parseFloat(amount) <= 0) {
+            setActionError('Please enter a valid amount');
+            return;
+        }
+        setActionError(null);
+        const success = await deposit(parseFloat(amount));
+        if (success) {
+            setShowDepositModal(false);
+            setAmount('');
+        } else if (error) {
+            setActionError(error);
+        }
+    };
 
-        try {
-            // In production, this would call the smart contract to create a proxy
-            // For now, we'll simulate with a mock address
-            const mockProxyAddress = `0x${Math.random().toString(16).slice(2, 42)}`;
+    const handleWithdraw = async () => {
+        if (!amount || parseFloat(amount) <= 0) {
+            setActionError('Please enter a valid amount');
+            return;
+        }
+        setActionError(null);
+        const success = await withdraw(parseFloat(amount));
+        if (success) {
+            setShowWithdrawModal(false);
+            setAmount('');
+        } else if (error) {
+            setActionError(error);
+        }
+    };
 
-            const res = await fetch('/api/proxy/create', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    walletAddress,
-                    proxyAddress: mockProxyAddress,
-                    tier: 'STARTER',
-                }),
-            });
-
-            const data = await res.json();
-
-            if (res.ok) {
-                await fetchProxyStatus();
-            } else {
-                setError(data.error || 'Failed to create proxy');
-            }
-        } catch (err) {
-            setError('Network error');
-        } finally {
-            setCreating(false);
+    const handleWithdrawAll = async () => {
+        setActionError(null);
+        const success = await withdrawAll();
+        if (success) {
+            setShowWithdrawModal(false);
+        } else if (error) {
+            setActionError(error);
         }
     };
 
@@ -137,19 +121,42 @@ export default function ProxyDashboardPage() {
                     </p>
                 </div>
 
-                {loading ? (
-                    <div className="flex items-center justify-center py-16">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
+                {/* Transaction Pending Banner */}
+                {txPending && (
+                    <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-6 flex items-center gap-3">
+                        <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-blue-500" />
+                        <div>
+                            <p className="text-blue-400 font-medium">Transaction Pending...</p>
+                            {txHash && (
+                                <a
+                                    href={`https://polygonscan.com/tx/${txHash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-300 text-sm hover:underline"
+                                >
+                                    View on PolygonScan
+                                </a>
+                            )}
+                        </div>
                     </div>
-                ) : error ? (
+                )}
+
+                {/* Error Banner */}
+                {(actionError || error) && (
                     <div className="bg-red-900/30 border border-red-500 rounded-lg p-4 mb-6">
-                        <p className="text-red-400">{error}</p>
+                        <p className="text-red-400">{actionError || error}</p>
                         <button
-                            onClick={() => { setError(null); fetchProxyStatus(); }}
+                            onClick={() => setActionError(null)}
                             className="mt-2 text-sm text-red-300 hover:text-red-200 underline"
                         >
-                            Try again
+                            Dismiss
                         </button>
+                    </div>
+                )}
+
+                {isLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
                     </div>
                 ) : !hasProxy ? (
                     /* No Proxy - Create Flow */
@@ -190,10 +197,10 @@ export default function ProxyDashboardPage() {
 
                         <button
                             onClick={handleCreateProxy}
-                            disabled={creating}
+                            disabled={txPending}
                             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
                         >
-                            {creating ? (
+                            {txPending ? (
                                 <span className="flex items-center gap-2">
                                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white" />
                                     Creating...
@@ -212,12 +219,12 @@ export default function ProxyDashboardPage() {
                                 <div>
                                     <h2 className="text-xl font-bold text-white">Your Trading Proxy</h2>
                                     <p className="text-gray-400 text-sm font-mono truncate max-w-xs">
-                                        {proxyData?.proxyAddress}
+                                        {proxyAddress}
                                     </p>
                                 </div>
-                                <div className={`px-4 py-2 rounded-lg ${TIER_INFO[proxyData?.tier || 'STARTER'].bgColor}`}>
-                                    <span className={`font-semibold ${TIER_INFO[proxyData?.tier || 'STARTER'].color}`}>
-                                        {TIER_INFO[proxyData?.tier || 'STARTER'].name} ({TIER_INFO[proxyData?.tier || 'STARTER'].fee} fee)
+                                <div className={`px-4 py-2 rounded-lg ${TIER_INFO[currentTier].bgColor}`}>
+                                    <span className={`font-semibold ${TIER_INFO[currentTier].color}`}>
+                                        {TIER_INFO[currentTier].name} ({TIER_INFO[currentTier].fee} fee)
                                     </span>
                                 </div>
                             </div>
@@ -225,27 +232,27 @@ export default function ProxyDashboardPage() {
                             {/* Stats Grid */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div className="bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-gray-400 text-sm mb-1">Total Deposited</p>
+                                    <p className="text-gray-400 text-sm mb-1">Proxy Balance</p>
                                     <p className="text-xl font-bold text-white">
-                                        ${proxyData?.totalDeposited.toLocaleString() || '0'}
+                                        ${stats?.balance.toLocaleString() || '0'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-800/50 rounded-lg p-4">
                                     <p className="text-gray-400 text-sm mb-1">Total Profit</p>
-                                    <p className={`text-xl font-bold ${(proxyData?.totalProfit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        ${proxyData?.totalProfit.toLocaleString() || '0'}
+                                    <p className={`text-xl font-bold ${(stats?.profit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        ${stats?.profit.toLocaleString() || '0'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-800/50 rounded-lg p-4">
                                     <p className="text-gray-400 text-sm mb-1">Fees Paid</p>
                                     <p className="text-xl font-bold text-yellow-400">
-                                        ${proxyData?.totalFeesPaid.toLocaleString() || '0'}
+                                        ${stats?.feesPaid.toLocaleString() || '0'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-gray-400 text-sm mb-1">Net Profit</p>
-                                    <p className={`text-xl font-bold ${(proxyData?.netProfit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        ${proxyData?.netProfit.toLocaleString() || '0'}
+                                    <p className="text-gray-400 text-sm mb-1">Wallet USDC</p>
+                                    <p className="text-xl font-bold text-white">
+                                        ${usdcBalance.toLocaleString()}
                                     </p>
                                 </div>
                             </div>
@@ -253,13 +260,21 @@ export default function ProxyDashboardPage() {
 
                         {/* Actions */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <button className="bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg px-6 py-4 flex items-center justify-center gap-2 transition-colors">
+                            <button
+                                onClick={() => { setShowDepositModal(true); setAmount(''); setActionError(null); }}
+                                disabled={txPending}
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-semibold rounded-lg px-6 py-4 flex items-center justify-center gap-2 transition-colors"
+                            >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
                                 Deposit USDC
                             </button>
-                            <button className="bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg px-6 py-4 flex items-center justify-center gap-2 transition-colors">
+                            <button
+                                onClick={() => { setShowWithdrawModal(true); setAmount(''); setActionError(null); }}
+                                disabled={txPending}
+                                className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 text-white font-semibold rounded-lg px-6 py-4 flex items-center justify-center gap-2 transition-colors"
+                            >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                 </svg>
@@ -267,67 +282,13 @@ export default function ProxyDashboardPage() {
                             </button>
                         </div>
 
-                        {/* Fee History */}
-                        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-                            <h3 className="text-lg font-bold text-white mb-4">Fee History</h3>
-                            {proxyData?.feeTransactions && proxyData.feeTransactions.length > 0 ? (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead>
-                                            <tr className="text-gray-400 border-b border-gray-800">
-                                                <th className="text-left py-2">Date</th>
-                                                <th className="text-right py-2">Profit</th>
-                                                <th className="text-right py-2">Fee</th>
-                                                <th className="text-right py-2">Rate</th>
-                                                <th className="text-right py-2">Tx</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {proxyData.feeTransactions.map((tx) => (
-                                                <tr key={tx.id} className="border-b border-gray-800/50">
-                                                    <td className="py-3 text-gray-300">
-                                                        {new Date(tx.createdAt).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="py-3 text-right text-green-400">
-                                                        +${tx.profitAmount.toLocaleString()}
-                                                    </td>
-                                                    <td className="py-3 text-right text-yellow-400">
-                                                        -${tx.feeAmount.toLocaleString()}
-                                                    </td>
-                                                    <td className="py-3 text-right text-gray-400">
-                                                        {tx.feePercent}%
-                                                    </td>
-                                                    <td className="py-3 text-right">
-                                                        {tx.txHash ? (
-                                                            <a
-                                                                href={`https://polygonscan.com/tx/${tx.txHash}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-blue-400 hover:text-blue-300"
-                                                            >
-                                                                View
-                                                            </a>
-                                                        ) : (
-                                                            <span className="text-gray-500">-</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <p className="text-gray-500 text-center py-8">No fee transactions yet.</p>
-                            )}
-                        </div>
-
                         {/* Upgrade CTA */}
-                        {proxyData?.tier !== 'WHALE' && (
+                        {currentTier !== 'WHALE' && (
                             <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-xl p-6 flex items-center justify-between">
                                 <div>
                                     <h3 className="text-lg font-bold text-white mb-1">Upgrade Your Tier</h3>
                                     <p className="text-gray-400 text-sm">
-                                        Reduce your fee to {proxyData?.tier === 'STARTER' ? '5% (Pro)' : '2% (Whale)'}
+                                        Reduce your fee to {currentTier === 'STARTER' ? '5% (Pro)' : '2% (Whale)'}
                                     </p>
                                 </div>
                                 <Link
@@ -338,6 +299,113 @@ export default function ProxyDashboardPage() {
                                 </Link>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Deposit Modal */}
+                {showDepositModal && (
+                    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full">
+                            <h3 className="text-xl font-bold text-white mb-4">Deposit USDC</h3>
+
+                            <div className="mb-4">
+                                <label className="text-sm text-gray-400 mb-2 block">Amount</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                                    />
+                                    <button
+                                        onClick={() => setAmount(usdcBalance.toString())}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-sm hover:text-blue-300"
+                                    >
+                                        MAX
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Available: ${usdcBalance.toLocaleString()}</p>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowDepositModal(false)}
+                                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeposit}
+                                    disabled={txPending || !amount}
+                                    className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    {txPending ? 'Processing...' : 'Deposit'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Withdraw Modal */}
+                {showWithdrawModal && (
+                    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full">
+                            <h3 className="text-xl font-bold text-white mb-4">Withdraw USDC</h3>
+
+                            <div className="mb-4">
+                                <label className="text-sm text-gray-400 mb-2 block">Amount</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500"
+                                    />
+                                    <button
+                                        onClick={() => setAmount((stats?.balance || 0).toString())}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-sm hover:text-blue-300"
+                                    >
+                                        MAX
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Proxy balance: ${stats?.balance.toLocaleString() || '0'}</p>
+                            </div>
+
+                            {/* Fee warning */}
+                            {(stats?.profit || 0) > 0 && (
+                                <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-3 mb-4">
+                                    <p className="text-yellow-400 text-sm">
+                                        ⚠️ A {stats?.feePercent}% fee will be applied to profits when withdrawing.
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowWithdrawModal(false)}
+                                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleWithdraw}
+                                    disabled={txPending || !amount}
+                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    {txPending ? 'Processing...' : 'Withdraw'}
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={handleWithdrawAll}
+                                disabled={txPending}
+                                className="w-full mt-3 py-2 text-gray-400 hover:text-white text-sm transition-colors"
+                            >
+                                Withdraw All
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
