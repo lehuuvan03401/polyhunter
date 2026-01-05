@@ -15,11 +15,16 @@ async function main() {
         // Polymarket CTF Exchange (Neg Risk)
         ctfExchangeAddress = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
     } else if (network.chainId === 80002n) {
-        // Polygon Amoy Testnet
-        // You'll need to deploy a mock USDC for testing
-        console.log("⚠️  Amoy testnet - using mock addresses");
-        usdcAddress = "0x0000000000000000000000000000000000000000"; // Replace with deployed mock
-        ctfExchangeAddress = "0x0000000000000000000000000000000000000000";
+        // Polygon Amoy Testnet - deploy mock USDC for testing
+        console.log("📝 Amoy testnet - deploying mock USDC...");
+
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        const mockUsdc = await MockERC20.deploy("Mock USDC", "USDC", 6);
+        await mockUsdc.waitForDeployment();
+        usdcAddress = await mockUsdc.getAddress();
+        ctfExchangeAddress = deployer.address; // Use deployer as mock CTF for testing
+
+        console.log("✅ Mock USDC deployed to:", usdcAddress);
     } else {
         // Local/Hardhat network - will use mock
         console.log("📝 Local network - deploying mock USDC...");
