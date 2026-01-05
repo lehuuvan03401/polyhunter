@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
+import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -45,6 +46,9 @@ export default function PortfolioPage() {
 
                 if (authenticated && user?.wallet?.address) {
                     const address = user.wallet.address;
+
+                    // Save wallet address for copy trading modal
+                    localStorage.setItem('privy:wallet_address', address.toLowerCase());
 
                     // Fetch USDC balance on-chain
                     try {
@@ -217,6 +221,13 @@ export default function PortfolioPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Pending Copy Trades Alert */}
+            {user?.wallet?.address && (
+                <div className="mb-8">
+                    <PendingTradesAlert walletAddress={user.wallet.address} />
+                </div>
+            )}
 
             {/* Main Content Split */}
             <div className="grid gap-6 lg:grid-cols-12">
