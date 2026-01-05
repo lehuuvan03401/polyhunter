@@ -92,6 +92,24 @@ function AuthenticatedPricing() {
                 </p>
             </div>
 
+            {/* Proxy Wallet Banner */}
+            <div className="container max-w-6xl mx-auto mb-8">
+                <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-500/30 rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-1">🚀 Trading Proxy Wallet</h3>
+                        <p className="text-gray-400 text-sm">
+                            Create your proxy wallet for automatic fee collection. Only pay fees on profits, never on losses.
+                        </p>
+                    </div>
+                    <Link
+                        href="/dashboard/proxy"
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors whitespace-nowrap"
+                    >
+                        Manage Proxy Wallet
+                    </Link>
+                </div>
+            </div>
+
             <div className="container max-w-6xl mx-auto">
                 <div className="grid md:grid-cols-3 gap-6">
                     {/* Starter (Active) */}
