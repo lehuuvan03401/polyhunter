@@ -26,6 +26,69 @@ import {
 const NETWORK = process.env.NEXT_PUBLIC_NETWORK === 'polygon' ? 'polygon' : 'amoy';
 const ADDRESSES = CONTRACT_ADDRESSES[NETWORK];
 
+/**
+ * Parse blockchain/wallet errors into user-friendly messages
+ */
+function parseTransactionError(err: unknown): string {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const lowerMessage = errorMessage.toLowerCase();
+
+    // User rejected transaction
+    if (
+        lowerMessage.includes('user rejected') ||
+        lowerMessage.includes('user denied') ||
+        lowerMessage.includes('action_rejected') ||
+        lowerMessage.includes('user cancelled') ||
+        lowerMessage.includes('rejected the request')
+    ) {
+        return 'Transaction cancelled by user';
+    }
+
+    // Insufficient funds
+    if (
+        lowerMessage.includes('insufficient funds') ||
+        lowerMessage.includes('insufficient balance')
+    ) {
+        return 'Insufficient funds for transaction';
+    }
+
+    // Gas estimation failed
+    if (lowerMessage.includes('gas required exceeds')) {
+        return 'Transaction would fail - please check your balance';
+    }
+
+    // Network issues
+    if (
+        lowerMessage.includes('network') ||
+        lowerMessage.includes('timeout') ||
+        lowerMessage.includes('disconnected')
+    ) {
+        return 'Network error - please check your connection';
+    }
+
+    // Wrong network
+    if (lowerMessage.includes('chain') || lowerMessage.includes('network mismatch')) {
+        return 'Please switch to Polygon Amoy network';
+    }
+
+    // Contract errors
+    if (lowerMessage.includes('execution reverted')) {
+        // Try to extract reason
+        const reasonMatch = errorMessage.match(/reason="([^"]+)"/);
+        if (reasonMatch) {
+            return `Transaction failed: ${reasonMatch[1]}`;
+        }
+        return 'Transaction failed - contract rejected the request';
+    }
+
+    // Generic fallback - truncate long messages
+    if (errorMessage.length > 100) {
+        return 'Transaction failed. Please try again.';
+    }
+
+    return errorMessage;
+}
+
 export interface ProxyStats {
     balance: number;
     deposited: number;
@@ -205,8 +268,7 @@ export function useProxy(): UseProxyReturn {
 
             return newProxyAddress;
         } catch (err: unknown) {
-            const errMessage = err instanceof Error ? err.message : 'Failed to create proxy';
-            setError(errMessage);
+            setError(parseTransactionError(err));
             return null;
         } finally {
             setTxPending(false);
@@ -236,8 +298,7 @@ export function useProxy(): UseProxyReturn {
             await tx.wait();
             return true;
         } catch (err: unknown) {
-            const errMessage = err instanceof Error ? err.message : 'Failed to approve USDC';
-            setError(errMessage);
+            setError(parseTransactionError(err));
             return false;
         } finally {
             setTxPending(false);
@@ -282,8 +343,7 @@ export function useProxy(): UseProxyReturn {
 
             return true;
         } catch (err: unknown) {
-            const errMessage = err instanceof Error ? err.message : 'Failed to deposit';
-            setError(errMessage);
+            setError(parseTransactionError(err));
             return false;
         } finally {
             setTxPending(false);
@@ -316,8 +376,7 @@ export function useProxy(): UseProxyReturn {
 
             return true;
         } catch (err: unknown) {
-            const errMessage = err instanceof Error ? err.message : 'Failed to withdraw';
-            setError(errMessage);
+            setError(parseTransactionError(err));
             return false;
         } finally {
             setTxPending(false);
@@ -350,8 +409,7 @@ export function useProxy(): UseProxyReturn {
 
             return true;
         } catch (err: unknown) {
-            const errMessage = err instanceof Error ? err.message : 'Failed to withdraw all';
-            setError(errMessage);
+            setError(parseTransactionError(err));
             return false;
         } finally {
             setTxPending(false);
