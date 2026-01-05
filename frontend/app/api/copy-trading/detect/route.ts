@@ -28,6 +28,7 @@ function calculateCopySize(
         sizeScale: number | null;
         fixedAmount: number | null;
         maxSizePerTrade: number;
+        minSizePerTrade?: number | null;
     },
     originalSize: number,
     originalPrice: number
@@ -39,7 +40,13 @@ function calculateCopySize(
     }
 
     if (config.mode === 'PERCENTAGE' && config.sizeScale) {
-        const scaledValue = originalValue * config.sizeScale;
+        let scaledValue = originalValue * config.sizeScale;
+
+        // For Range mode: clamp between min and max
+        if (config.minSizePerTrade && scaledValue < config.minSizePerTrade) {
+            scaledValue = config.minSizePerTrade;
+        }
+
         return Math.min(scaledValue, config.maxSizePerTrade);
     }
 
@@ -139,14 +146,32 @@ export async function POST(request: NextRequest) {
 
                         if (existing) continue; // Already processed
 
-                        // Apply filters
+                        // ========================================
+                        // Apply Filters
+                        // ========================================
+
+                        // Filter 1: Side filter (BUY/SELL only)
                         if (config.sideFilter && trade.side !== config.sideFilter) {
                             continue; // Side doesn't match filter
                         }
 
+                        // Filter 2: Minimum trigger size ($)
                         const tradeValue = trade.size * trade.price;
                         if (config.minTriggerSize && tradeValue < config.minTriggerSize) {
                             continue; // Below minimum trigger size
+                        }
+
+                        // Filter 3: Max odds (skip trades on highly likely outcomes)
+                        // maxOdds is stored as decimal (e.g., 0.85 = 85%)
+                        if (config.maxOdds && trade.price > config.maxOdds) {
+                            continue; // Price/odds too high, skip
+                        }
+
+                        // Filter 4: Direction handling (COPY vs COUNTER)
+                        // For COUNTER mode, we flip the trade side
+                        let copySide = trade.side;
+                        if (config.direction === 'COUNTER') {
+                            copySide = trade.side === 'BUY' ? 'SELL' : 'BUY';
                         }
 
                         // Calculate copy size
@@ -159,7 +184,7 @@ export async function POST(request: NextRequest) {
                             data: {
                                 configId: config.id,
                                 originalTrader: traderAddress,
-                                originalSide: trade.side,
+                                originalSide: copySide, // Use potentially flipped side for COUNTER
                                 originalSize: trade.size,
                                 originalPrice: trade.price,
                                 marketSlug: trade.slug || null,
