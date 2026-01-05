@@ -12,7 +12,7 @@ const TIER_INFO = {
 };
 
 export default function ProxyDashboardPage() {
-    const { authenticated, ready } = usePrivy();
+    const { authenticated, ready, user } = usePrivy();
     const {
         proxyAddress,
         hasProxy,
@@ -32,6 +32,7 @@ export default function ProxyDashboardPage() {
     const [showDepositModal, setShowDepositModal] = useState(false);
     const [showWithdrawModal, setShowWithdrawModal] = useState(false);
     const [amount, setAmount] = useState('');
+    const [destinationAddress, setDestinationAddress] = useState('');
     const [actionError, setActionError] = useState<string | null>(null);
 
     // Determine tier from fee percent
@@ -305,44 +306,70 @@ export default function ProxyDashboardPage() {
                 {/* Deposit Modal */}
                 {showDepositModal && (
                     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full">
-                            <h3 className="text-xl font-bold text-white mb-4">Deposit USDC</h3>
-
-                            <div className="mb-4">
-                                <label className="text-sm text-gray-400 mb-2 block">Amount</label>
-                                <div className="relative">
-                                    <input
-                                        type="number"
-                                        value={amount}
-                                        onChange={(e) => setAmount(e.target.value)}
-                                        placeholder="0.00"
-                                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500"
-                                    />
-                                    <button
-                                        onClick={() => setAmount(usdcBalance.toString())}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-sm hover:text-blue-300"
-                                    >
-                                        MAX
-                                    </button>
+                        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full relative">
+                            {/* Header */}
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                    </svg>
+                                    <h3 className="text-xl font-bold text-white">Deposit USDC</h3>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">Available: ${usdcBalance.toLocaleString()}</p>
-                            </div>
-
-                            <div className="flex gap-3">
                                 <button
                                     onClick={() => setShowDepositModal(false)}
-                                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                                    className="text-gray-400 hover:text-white transition-colors"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleDeposit}
-                                    disabled={txPending || !amount}
-                                    className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg font-medium transition-colors"
-                                >
-                                    {txPending ? 'Processing...' : 'Deposit'}
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
+
+                            {/* QR Code */}
+                            <div className="flex justify-center mb-6">
+                                <div className="bg-white p-4 rounded-lg">
+                                    {/* QR Code - using a simple SVG placeholder, in production use a QR library */}
+                                    <img
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${proxyAddress || ''}`}
+                                        alt="Deposit QR Code"
+                                        className="w-44 h-44"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Address */}
+                            <p className="text-center text-gray-400 mb-3">
+                                Send <span className="font-bold text-white">USDC</span> on Polygon to:
+                            </p>
+                            <div
+                                className="flex items-center justify-center gap-2 bg-gray-800 rounded-lg px-4 py-3 cursor-pointer hover:bg-gray-700 transition-colors mb-6"
+                                onClick={() => {
+                                    if (proxyAddress) {
+                                        navigator.clipboard.writeText(proxyAddress);
+                                        setActionError('Address copied!');
+                                        setTimeout(() => setActionError(null), 2000);
+                                    }
+                                }}
+                            >
+                                <span className="text-white font-mono text-sm">
+                                    {proxyAddress ? `${proxyAddress.slice(0, 10)}...${proxyAddress.slice(-8)}` : '...'}
+                                </span>
+                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            </div>
+
+                            {/* Info Box */}
+                            <div className="bg-green-900/30 border border-green-600/30 rounded-lg p-4">
+                                <p className="text-sm text-green-400">
+                                    <span className="font-bold">✅ Simple:</span> Just send USDC on Polygon. We automatically handle conversion for Polymarket trading.
+                                </p>
+                            </div>
+
+                            {/* Copy Success Message */}
+                            {actionError === 'Address copied!' && (
+                                <p className="text-center text-green-400 text-sm mt-3">{actionError}</p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -350,11 +377,30 @@ export default function ProxyDashboardPage() {
                 {/* Withdraw Modal */}
                 {showWithdrawModal && (
                     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full">
-                            <h3 className="text-xl font-bold text-white mb-4">Withdraw USDC</h3>
+                        <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 max-w-md w-full relative">
+                            {/* Header */}
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-white">Withdraw USDC</h3>
+                                </div>
+                                <button
+                                    onClick={() => { setShowWithdrawModal(false); setAmount(''); setDestinationAddress(''); }}
+                                    className="text-gray-400 hover:text-white transition-colors"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
 
+                            {/* Amount Input */}
                             <div className="mb-4">
-                                <label className="text-sm text-gray-400 mb-2 block">Amount</label>
+                                <label className="text-sm text-gray-400 mb-2 block">Amount (USDC)</label>
                                 <div className="relative">
                                     <input
                                         type="number"
@@ -365,45 +411,33 @@ export default function ProxyDashboardPage() {
                                     />
                                     <button
                                         onClick={() => setAmount((stats?.balance || 0).toString())}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-sm hover:text-blue-300"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 text-sm font-medium hover:text-blue-300"
                                     >
                                         MAX
                                     </button>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">Proxy balance: ${stats?.balance.toLocaleString() || '0'}</p>
+                                <p className="text-xs text-gray-500 mt-1">Available: ${stats?.balance.toLocaleString() || '0.00'}</p>
                             </div>
 
-                            {/* Fee warning */}
-                            {(stats?.profit || 0) > 0 && (
-                                <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-3 mb-4">
-                                    <p className="text-yellow-400 text-sm">
-                                        ⚠️ A {stats?.feePercent}% fee will be applied to profits when withdrawing.
-                                    </p>
-                                </div>
-                            )}
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setShowWithdrawModal(false)}
-                                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleWithdraw}
-                                    disabled={txPending || !amount}
-                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg font-medium transition-colors"
-                                >
-                                    {txPending ? 'Processing...' : 'Withdraw'}
-                                </button>
+                            {/* Destination Address */}
+                            <div className="mb-6">
+                                <label className="text-sm text-gray-400 mb-2 block">Destination Address</label>
+                                <input
+                                    type="text"
+                                    value={destinationAddress || user?.wallet?.address || ''}
+                                    onChange={(e) => setDestinationAddress(e.target.value)}
+                                    placeholder="0x..."
+                                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-blue-500"
+                                />
                             </div>
 
+                            {/* Withdraw Button */}
                             <button
-                                onClick={handleWithdrawAll}
-                                disabled={txPending}
-                                className="w-full mt-3 py-2 text-gray-400 hover:text-white text-sm transition-colors"
+                                onClick={handleWithdraw}
+                                disabled={txPending || !amount || parseFloat(amount) <= 0}
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
                             >
-                                Withdraw All
+                                {txPending ? 'Processing...' : 'Withdraw'}
                             </button>
                         </div>
                     </div>

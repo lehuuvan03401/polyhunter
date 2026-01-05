@@ -136,9 +136,14 @@ export function useProxy(): UseProxyReturn {
     const walletAddress = user?.wallet?.address;
 
     /**
-     * Get ethers provider and signer from Privy wallet
+     * Target chain ID based on network setting
      */
-    const getSignerAndProvider = useCallback(async () => {
+    const targetChainId = NETWORK === 'polygon' ? 137 : 80002;
+
+    /**
+     * Switch wallet to the correct network
+     */
+    const ensureCorrectNetwork = useCallback(async () => {
         const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
         const externalWallet = wallets.find(w => w.walletClientType !== 'privy');
         const wallet = externalWallet || embeddedWallet;
@@ -148,11 +153,65 @@ export function useProxy(): UseProxyReturn {
         }
 
         const provider = await wallet.getEthereumProvider();
-        const ethersProvider = new ethers.providers.Web3Provider(provider);
+
+        // Check current chain
+        const currentChainId = await provider.request({ method: 'eth_chainId' });
+        const currentChainIdNum = parseInt(currentChainId as string, 16);
+
+        if (currentChainIdNum !== targetChainId) {
+            console.log(`Switching from chain ${currentChainIdNum} to ${targetChainId}`);
+
+            try {
+                // Try to switch to the target network
+                await provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: `0x${targetChainId.toString(16)}` }],
+                });
+            } catch (switchError: unknown) {
+                // If the chain hasn't been added to MetaMask, add it
+                const error = switchError as { code?: number };
+                if (error.code === 4902) {
+                    const networkParams = NETWORK === 'polygon'
+                        ? {
+                            chainId: '0x89',
+                            chainName: 'Polygon Mainnet',
+                            nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+                            rpcUrls: ['https://polygon-rpc.com'],
+                            blockExplorerUrls: ['https://polygonscan.com'],
+                        }
+                        : {
+                            chainId: '0x13882',
+                            chainName: 'Polygon Amoy Testnet',
+                            nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+                            rpcUrls: ['https://rpc-amoy.polygon.technology'],
+                            blockExplorerUrls: ['https://amoy.polygonscan.com'],
+                        };
+
+                    await provider.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [networkParams],
+                    });
+                } else {
+                    throw switchError;
+                }
+            }
+        }
+
+        return provider;
+    }, [wallets, targetChainId]);
+
+    /**
+     * Get ethers provider and signer from Privy wallet
+     */
+    const getSignerAndProvider = useCallback(async () => {
+        // Ensure we're on the correct network first
+        const rawProvider = await ensureCorrectNetwork();
+
+        const ethersProvider = new ethers.providers.Web3Provider(rawProvider);
         const signer = ethersProvider.getSigner();
 
         return { provider: ethersProvider, signer };
-    }, [wallets]);
+    }, [ensureCorrectNetwork]);
 
     /**
      * Fetch user's proxy address and check if they have one

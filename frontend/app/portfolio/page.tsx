@@ -152,12 +152,12 @@ export default function PortfolioPage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 mt-4">
-                        <button className="flex items-center justify-center rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+                        <Link href="/dashboard/proxy" className="flex items-center justify-center rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
                             Deposit
-                        </button>
-                        <button className="flex items-center justify-center rounded-lg border border-input bg-transparent py-2 text-sm font-medium hover:bg-muted transition-colors">
+                        </Link>
+                        <Link href="/dashboard/proxy" className="flex items-center justify-center rounded-lg border border-input bg-transparent py-2 text-sm font-medium hover:bg-muted transition-colors">
                             Withdraw
-                        </button>
+                        </Link>
                     </div>
                 </div>
 
