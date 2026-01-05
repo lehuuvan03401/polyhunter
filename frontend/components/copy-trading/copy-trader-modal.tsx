@@ -1,9 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { X, Settings, Filter, RefreshCcw, Copy, TrendingUp, AlertTriangle, Zap, Wallet, ShieldCheck, Fuel } from 'lucide-react';
+import { X, Settings, Filter, RefreshCcw, Copy, TrendingUp, AlertTriangle, Zap, Wallet, ShieldCheck, Fuel, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { useCopyTradingStore } from '@/lib/copy-trading-store';
 
 interface CopyTraderModalProps {
     isOpen: boolean;
@@ -12,15 +15,15 @@ interface CopyTraderModalProps {
     traderName?: string;
 }
 
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-
 type TabType = 'Mode' | 'Filters' | 'Sells';
 type CopyMode = '% Shares' | 'Range' | 'Fixed $';
 type SellMode = 'Same %' | 'Fixed Amount' | 'Custom %';
 
 export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: CopyTraderModalProps) {
     const router = useRouter();
+    const addConfig = useCopyTradingStore((state) => state.addConfig);
+    const [isStarting, setIsStarting] = React.useState(false);
+
     const [activeTab, setActiveTab] = React.useState<TabType>('Mode');
     const [copyMode, setCopyMode] = React.useState<CopyMode>('% Shares');
     const [sellMode, setSellMode] = React.useState<SellMode>('Same %');
@@ -31,6 +34,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [takeProfit, setTakeProfit] = React.useState('');
     const [stopLoss, setStopLoss] = React.useState('');
     const [copyDirection, setCopyDirection] = React.useState<'Copy' | 'Counter'>('Copy');
+    const [maxPerTrade, setMaxPerTrade] = React.useState('100');
 
     // Range Mode State
     const [rangeMin, setRangeMin] = React.useState('2');
@@ -38,6 +42,39 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
     // Fixed Mode State
     const [fixedAmount, setFixedAmount] = React.useState('50');
+
+    const handleStartCopying = async () => {
+        setIsStarting(true);
+        try {
+            // Create config using Zustand store
+            const configId = addConfig({
+                traderAddress,
+                traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
+                mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
+                sizeScale: copyMode === '% Shares' ? Number(sharePercent) / 100 : undefined,
+                fixedAmount: copyMode === 'Fixed $' ? Number(fixedAmount) : undefined,
+                maxSizePerTrade: Number(maxPerTrade) || 100,
+                sideFilter: copyDirection === 'Counter' ? undefined : undefined, // Could add filter based on copyDirection
+                dryRun: true, // Always dryRun for now - real trading requires backend
+            });
+
+            toast.success(
+                <div className="flex flex-col gap-1">
+                    <span className="font-medium">Copy Trading Started</span>
+                    <span className="text-xs text-muted-foreground">
+                        Following {traderName || traderAddress.slice(0, 10)}... in demo mode
+                    </span>
+                </div>
+            );
+
+            router.push('/portfolio');
+        } catch (error) {
+            console.error('Failed to start copy trading:', error);
+            toast.error('Failed to start copying. Please try again.');
+        } finally {
+            setIsStarting(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -444,37 +481,18 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                         </div>
 
                         <button
-                            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98]"
-                            onClick={() => {
-                                const newCopyCtx = {
-                                    traderAddress,
-                                    traderName: traderName || `Trader ${traderAddress.slice(0, 4)}`,
-                                    activeTab,
-                                    mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
-                                    fixedAmount: copyMode === 'Fixed $' ? fixedAmount : undefined,
-                                    sharePercent: copyMode === '% Shares' ? sharePercent : undefined,
-                                    timestamp: Date.now()
-                                };
-
-                                // Save to local storage for simulation
-                                try {
-                                    const existing = JSON.parse(localStorage.getItem('active_copies') || '[]');
-                                    // Remove if already exists to update
-                                    const filtered = existing.filter((c: any) => c.traderAddress !== traderAddress);
-                                    filtered.push(newCopyCtx);
-                                    localStorage.setItem('active_copies', JSON.stringify(filtered));
-
-                                    // Redirect to portfolio to show user it worked
-                                    router.push('/portfolio');
-                                    toast.success(`Started copying ${traderName || traderAddress}!`);
-                                } catch (e) {
-                                    console.error("Failed to save copy config", e);
-                                    toast.error("Failed to start copying. Please try again.");
-                                    onClose();
-                                }
-                            }}
+                            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98] disabled:active:scale-100 flex items-center justify-center gap-2"
+                            onClick={handleStartCopying}
+                            disabled={isStarting}
                         >
-                            Start Copying
+                            {isStarting ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Starting...
+                                </>
+                            ) : (
+                                'Start Copying'
+                            )}
                         </button>
                     </div>
 

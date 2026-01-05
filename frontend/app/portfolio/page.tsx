@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
+import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -29,8 +30,11 @@ export default function PortfolioPage() {
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
     const [totalPnL, setTotalPnL] = useState(0);
     const [positions, setPositions] = useState<any[]>([]);
-    const [activeCopies, setActiveCopies] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Get copy trading configs from Zustand store
+    const copyConfigs = useCopyTradingStore((state) => state.configs);
+    const removeConfig = useCopyTradingStore((state) => state.removeConfig);
 
     useEffect(() => {
         const loadData = async () => {
@@ -38,9 +42,6 @@ export default function PortfolioPage() {
 
             setIsLoading(true);
             try {
-                // Load local storage copies (Simulation)
-                const savedCopies = JSON.parse(localStorage.getItem('active_copies') || '[]');
-                setActiveCopies(savedCopies);
 
                 if (authenticated && user?.wallet?.address) {
                     const address = user.wallet.address;
@@ -229,17 +230,29 @@ export default function PortfolioPage() {
                         </Link>
                     </div>
 
-                    {activeCopies.length > 0 ? (
+                    {copyConfigs.length > 0 ? (
                         <div className="flex-1 overflow-auto p-4 space-y-3">
-                            {activeCopies.map((copy: any, i: number) => (
-                                <div key={i} className="bg-muted/30 border border-border/50 rounded-lg p-4 flex items-center justify-between">
+                            {copyConfigs.map((config: CopyTradingConfig) => (
+                                <div key={config.id} className="bg-muted/30 border border-border/50 rounded-lg p-4 flex items-center justify-between">
                                     <div>
-                                        <div className="font-bold text-sm">{formatAddress(copy.traderAddress)}</div>
+                                        <div className="font-bold text-sm">{config.traderName || formatAddress(config.traderAddress)}</div>
                                         <div className="text-xs text-muted-foreground mt-1">
-                                            {copy.mode === 'fixed_amount' ? `Using Fixed $` : `${copy.fixedAmount}% Share`}
+                                            {config.mode === 'fixed_amount'
+                                                ? `Fixed $${config.fixedAmount}/trade`
+                                                : `${(config.sizeScale || 0) * 100}% of trades`}
                                         </div>
                                     </div>
-                                    <div className="text-green-500 text-xs font-mono bg-green-500/10 px-2 py-1 rounded">Avg +12%</div>
+                                    <div className="flex items-center gap-2">
+                                        {config.dryRun && (
+                                            <span className="text-xs font-mono bg-yellow-500/10 text-yellow-500 px-2 py-1 rounded">Demo</span>
+                                        )}
+                                        <button
+                                            onClick={() => removeConfig(config.id)}
+                                            className="text-xs font-mono bg-red-500/10 text-red-400 px-2 py-1 rounded hover:bg-red-500/20 transition-colors"
+                                        >
+                                            Stop
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
