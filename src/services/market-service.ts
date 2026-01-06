@@ -94,6 +94,8 @@ interface ClobMarket {
   neg_risk?: boolean;
   minimum_order_size?: number;
   minimum_tick_size?: number;
+  image?: string;
+  icon?: string;
 }
 
 /**
@@ -116,6 +118,8 @@ export interface Market {
   negRisk?: boolean;
   minimumOrderSize?: number;
   minimumTickSize?: number;
+  image?: string;
+  icon?: string;
 }
 
 /**
@@ -143,7 +147,7 @@ export class MarketService {
     private rateLimiter: RateLimiter,
     private cache: UnifiedCache,
     private config?: MarketServiceConfig
-  ) {}
+  ) { }
 
   // ============================================================================
   // Initialization
@@ -831,6 +835,8 @@ export class MarketService {
       negRisk: m.neg_risk,
       minimumOrderSize: m.minimum_order_size,
       minimumTickSize: m.minimum_tick_size,
+      image: m.image,
+      icon: m.icon,
     };
   }
 

@@ -24,19 +24,28 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
     const loadMore = async () => {
         setLoading(true);
         try {
-            const newMarkets = await polyClient.gammaApi.getMarkets({
-                active: true,
-                closed: false,
-                limit: 20,
-                offset: offset,
+            const params = new URLSearchParams({
+                active: 'true',
+                closed: 'false',
+                limit: '20',
+                offset: offset.toString(),
                 order: sort,
-                ascending: false,
+                ascending: 'false',
             });
+
+            const response = await fetch(`/api/markets?${params.toString()}`);
+            if (!response.ok) throw new Error('Failed to fetch markets');
+
+            const newMarkets = await response.json();
 
             if (newMarkets.length === 0) {
                 setHasMore(false);
             } else {
-                setMarkets([...markets, ...newMarkets]);
+                setMarkets(prev => {
+                    const existingIds = new Set(prev.map(m => m.id));
+                    const uniqueNewMarkets = newMarkets.filter((m: GammaMarket) => !existingIds.has(m.id));
+                    return [...prev, ...uniqueNewMarkets];
+                });
                 setOffset(offset + 20);
             }
         } catch (error) {
@@ -51,17 +60,23 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
         if (newSort === sort) return;
         setSort(newSort);
         setLoading(true);
-        setMarkets([]); // Clear current to show loading state or keep old? Better to clear or show loader overlay.
+        setMarkets([]);
 
         try {
-            const sortedMarkets = await polyClient.gammaApi.getMarkets({
-                active: true,
-                closed: false,
-                limit: 50, // Reset to initial batch size
-                offset: 0,
+            const params = new URLSearchParams({
+                active: 'true',
+                closed: 'false',
+                limit: '50',
+                offset: '0',
                 order: newSort,
-                ascending: false,
+                ascending: 'false',
             });
+
+            const response = await fetch(`/api/markets?${params.toString()}`);
+            if (!response.ok) throw new Error('Failed to fetch markets');
+
+            const sortedMarkets = await response.json();
+
             setMarkets(sortedMarkets);
             setOffset(sortedMarkets.length);
             setHasMore(true);
