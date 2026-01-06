@@ -1,15 +1,39 @@
 import Link from 'next/link';
-import { polyClient } from '@/lib/polymarket';
-import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
+
+interface TopTrader {
+    address: string;
+    name: string | null;
+    pnl: number;
+    volume: number;
+    score: number;
+    rank: number;
+}
+
+async function fetchTopTraders(): Promise<TopTrader[]> {
+    try {
+        // Use internal cached API instead of SDK direct call
+        // This is much faster because:
+        // 1. Uses simple in-memory cache (5 min TTL)
+        // 2. Only makes 1 API call (leaderboard) instead of N+1 calls
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const response = await fetch(`${baseUrl}/api/traders/top?limit=10`, {
+            next: { revalidate: 60 }, // Next.js ISR cache
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch');
+        }
+
+        const data = await response.json();
+        return data.traders || [];
+    } catch (error) {
+        console.error('Failed to fetch top traders:', error);
+        return [];
+    }
+}
 
 export async function LeaderboardSection() {
-    let topTraders: SmartMoneyWallet[] = [];
-    try {
-        topTraders = await polyClient.smartMoney.getSmartMoneyList(10);
-    } catch (error) {
-        console.error('Failed to fetch top traders', error);
-        // Fallback or empty, but don't crash whole page
-    }
+    const topTraders = await fetchTopTraders();
 
     return (
         <div className="bg-card border rounded-xl overflow-hidden">
@@ -53,3 +77,4 @@ export async function LeaderboardSection() {
         </div>
     );
 }
+
