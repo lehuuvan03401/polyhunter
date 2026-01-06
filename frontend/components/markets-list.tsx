@@ -1,10 +1,11 @@
 'use client';
+// Force rebuild
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { GammaMarket } from '@catalyst-team/poly-sdk';
 import { MarketCard } from '@/components/market-card';
-import { polyClient } from '@/lib/polymarket';
-import { Filter, ArrowDownUp, Loader2 } from 'lucide-react';
+import { MarketListItem } from '@/components/market-list-item';
+import { Filter, ArrowDownUp, Loader2, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -13,11 +14,13 @@ interface MarketsListProps {
 }
 
 type SortOption = 'volume24hr' | 'liquidity' | 'createdAt';
+type ViewMode = 'grid' | 'list';
 
 export function MarketsList({ initialMarkets }: MarketsListProps) {
     const [markets, setMarkets] = useState<GammaMarket[]>(initialMarkets);
     const [loading, setLoading] = useState(false);
     const [sort, setSort] = useState<SortOption>('volume24hr');
+    const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [offset, setOffset] = useState(initialMarkets.length);
     const [hasMore, setHasMore] = useState(true);
 
@@ -90,37 +93,75 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
 
     return (
         <div className="space-y-6">
-            {/* Filters Bar */}
-            <div className="flex items-center gap-4 border-b border-white/5 pb-4 overflow-x-auto">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mr-2">
-                    <ArrowDownUp className="h-4 w-4" /> Sort by:
+            {/* Filters & View Toggle Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+
+                {/* Sort Options */}
+                <div className="flex items-center gap-4 overflow-x-auto">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mr-2 whitespace-nowrap">
+                        <ArrowDownUp className="h-4 w-4" /> Sort by:
+                    </div>
+
+                    {[
+                        { id: 'volume24hr', label: 'Volume (24h)' },
+                        { id: 'liquidity', label: 'Liquidity' },
+                        { id: 'createdAt', label: 'Newest' }
+                    ].map((option) => (
+                        <button
+                            key={option.id}
+                            onClick={() => handleSortChange(option.id as SortOption)}
+                            className={cn(
+                                "px-4 py-2 rounded-full text-sm font-medium transition-colors border whitespace-nowrap",
+                                sort === option.id
+                                    ? "bg-primary/20 border-primary text-primary"
+                                    : "bg-card border-white/5 hover:border-white/20 hover:bg-white/5"
+                            )}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
                 </div>
 
-                {[
-                    { id: 'volume24hr', label: 'Volume (24h)' },
-                    { id: 'liquidity', label: 'Liquidity' },
-                    { id: 'createdAt', label: 'Newest' }
-                ].map((option) => (
+                {/* View Mode Toggle */}
+                <div className="flex items-center bg-card border border-white/5 rounded-lg p-1">
                     <button
-                        key={option.id}
-                        onClick={() => handleSortChange(option.id as SortOption)}
+                        onClick={() => setViewMode('grid')}
                         className={cn(
-                            "px-4 py-2 rounded-full text-sm font-medium transition-colors border",
-                            sort === option.id
-                                ? "bg-primary/20 border-primary text-primary"
-                                : "bg-card border-white/5 hover:border-white/20 hover:bg-white/5"
+                            "p-2 rounded-md transition-colors",
+                            viewMode === 'grid'
+                                ? "bg-white/10 text-primary"
+                                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                         )}
+                        title="Grid View"
                     >
-                        {option.label}
+                        <LayoutGrid className="h-4 w-4" />
                     </button>
-                ))}
+                    <button
+                        onClick={() => setViewMode('list')}
+                        className={cn(
+                            "p-2 rounded-md transition-colors",
+                            viewMode === 'list'
+                                ? "bg-white/10 text-primary"
+                                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                        )}
+                        title="List View"
+                    >
+                        <ListIcon className="h-4 w-4" />
+                    </button>
+                </div>
             </div>
 
-            {/* Grid */}
+            {/* Content Area */}
             {markets.length > 0 ? (
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className={cn(
+                    viewMode === 'grid'
+                        ? "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                        : "flex flex-col gap-3"
+                )}>
                     {markets.map((market) => (
-                        <MarketCard key={`${market.id}-${sort}`} market={market} />
+                        viewMode === 'grid'
+                            ? <MarketCard key={`${market.id}-${sort}`} market={market} />
+                            : <MarketListItem key={`${market.id}-${sort}`} market={market} />
                     ))}
                 </div>
             ) : (
