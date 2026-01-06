@@ -349,7 +349,7 @@ export class DataApiClient {
   constructor(
     private rateLimiter: RateLimiter,
     private cache: UnifiedCache
-  ) {}
+  ) { }
 
   // ===== Wallet-related =====
 
@@ -649,7 +649,7 @@ export class DataApiClient {
       userName,
     } = params || {};
 
-    const cacheKey = `leaderboard:${timePeriod}:${orderBy}:${category}:${offset}:${limit}`;
+    const cacheKey = `leaderboard:${timePeriod}:${orderBy}:${category}:${offset}:${limit}:${user || ''}:${userName || ''}`;
 
     return this.cache.getOrSet(cacheKey, CACHE_TTL.LEADERBOARD, async () => {
       const query = new URLSearchParams({
