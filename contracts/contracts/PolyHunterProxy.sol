@@ -63,10 +63,19 @@ contract PolyHunterProxy is ReentrancyGuard {
     event Withdrawn(address indexed user, uint256 amount, uint256 fee);
     event TreasuryUpdated(address newTreasury);
     event FeePercentUpdated(uint256 newFeePercent);
+    event OperatorUpdated(address indexed operator, bool active);
+    
+    // Authorized operators (can execute trades but cannot withdraw)
+    mapping(address => bool) public operators;
     
     // Modifiers
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
+        _;
+    }
+    
+    modifier onlyOperatorOrOwner() {
+        require(msg.sender == owner || operators[msg.sender], "Not authorized");
         _;
     }
     
@@ -255,13 +264,23 @@ contract PolyHunterProxy is ReentrancyGuard {
     }
     
     /**
+     * @notice Set operator status
+     * @param operator Address of the operator
+     * @param active Active status
+     */
+    function setOperator(address operator, bool active) external onlyOwner {
+        operators[operator] = active;
+        emit OperatorUpdated(operator, active);
+    }
+
+    /**
      * @notice Execute arbitrary call for trading
-     * @dev Owner can call Polymarket contracts through this proxy
+     * @dev Owner or Operator can call Polymarket contracts through this proxy
      */
     function execute(
         address target,
         bytes calldata data
-    ) external onlyOwner nonReentrant returns (bytes memory) {
+    ) external onlyOperatorOrOwner nonReentrant returns (bytes memory) {
         require(target != address(usdc), "Cannot call USDC directly");
         require(target != treasury, "Cannot call treasury directly");
         

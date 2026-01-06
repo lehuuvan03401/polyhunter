@@ -116,6 +116,8 @@ export interface UseProxyReturn {
     approveUSDC: (amount: number) => Promise<boolean>;
     /** Execute arbitrary call through proxy (for trading) */
     executeCall: (target: string, data: string) => Promise<{ success: boolean; txHash?: string; error?: string }>;
+    /** Authorize an operator */
+    authorizeOperator: (operator: string, active: boolean) => Promise<{ success: boolean; txHash?: string; error?: string }>;
 
     // Transaction state
     txPending: boolean;
@@ -532,6 +534,38 @@ export function useProxy(): UseProxyReturn {
         }
     }, [proxyAddress, getSignerAndProvider, refreshStats]);
 
+
+    /**
+     * Authorize or deauthorize an operator
+     */
+    const authorizeOperator = useCallback(async (operator: string, active: boolean): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+        if (!proxyAddress) {
+            return { success: false, error: 'No proxy address' };
+        }
+
+        setTxPending(true);
+        setError(null);
+
+        try {
+            const { signer } = await getSignerAndProvider();
+            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, signer);
+
+            const tx = await proxy.setOperator(operator, active);
+            setTxHash(tx.hash);
+
+            await tx.wait();
+
+            return { success: true, txHash: tx.hash };
+        } catch (err: unknown) {
+            const errorMsg = parseTransactionError(err);
+            setError(errorMsg);
+            return { success: false, error: errorMsg };
+        } finally {
+            setTxPending(false);
+        }
+    }, [proxyAddress, getSignerAndProvider]);
+
+
     return {
         proxyAddress,
         hasProxy,
@@ -546,6 +580,7 @@ export function useProxy(): UseProxyReturn {
         refreshStats,
         approveUSDC,
         executeCall,
+        authorizeOperator,
         txPending,
         txHash,
     };

@@ -50,7 +50,9 @@ export const POLY_HUNTER_PROXY_ABI = [
     'function getProfit() external view returns (int256)',
     'function getEstimatedFee() external view returns (uint256)',
     'function getStats() external view returns (uint256 balance, uint256 deposited, uint256 withdrawn, uint256 feesPaid, int256 profit, uint256 currentFeePercent)',
+    'function operators(address operator) external view returns (bool)',
     // Write functions
+    'function setOperator(address operator, bool active) external',
     'function deposit(uint256 amount) external',
     'function withdraw(uint256 amount) external',
     'function withdrawAll() external',
@@ -60,6 +62,7 @@ export const POLY_HUNTER_PROXY_ABI = [
     // Events
     'event Deposited(address indexed user, uint256 amount)',
     'event Withdrawn(address indexed user, uint256 amount, uint256 fee)',
+    'event OperatorUpdated(address indexed operator, bool active)',
 ] as const;
 
 // ERC20 ABI (for USDC approvals)
