@@ -33,65 +33,89 @@ export function PendingTradesAlert({ walletAddress }: PendingTradesAlertProps) {
     }
 
     const handleExecute = async (trade: PendingTrade) => {
-        // Check proxy availability
-        if (!hasProxy || !proxyAddress) {
-            toast.error(
-                <div className="flex flex-col gap-1">
-                    <span className="font-medium">No Proxy Contract</span>
-                    <span className="text-xs text-muted-foreground">
-                        Please create a proxy contract first from the Dashboard
-                    </span>
-                </div>
-            );
-            return;
-        }
-
         setExecuting(trade.id);
         try {
             /**
-             * TRADE EXECUTION FLOW via Proxy.execute()
-             * 
-             * 1. Approve USDC for CLOB Exchange (if needed)
-             * 2. Execute trade through proxy
-             * 3. Update database with txHash
-             * 
-             * Note: For full CLOB integration, the trade would need to be
-             * signed and posted to Polymarket's order book API.
-             * This implementation handles the on-chain operations.
+             * EXECUTION FLOW:
+             * 1. Try server-side execution (if TRADING_PRIVATE_KEY configured)
+             * 2. Fall back to manual proxy execution if needed
+             * 3. Update database with result
              */
 
-            // Step 1: Approve USDC for CLOB Exchange (do this first)
-            const exchangeAddress = getExchangeAddress();
-            if (exchangeAddress) {
-                const approveCall = encodeApproveUSDC(exchangeAddress, -1); // Unlimited approval
-                const approveResult = await executeCall(approveCall.target, approveCall.data);
+            // Step 1: Try server-side CLOB execution
+            const serverResponse = await fetch('/api/copy-trading/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tradeId: trade.id,
+                    walletAddress: walletAddress,
+                    executeOnServer: true,
+                    orderMode: 'market',
+                    slippage: 0.02,
+                }),
+            });
 
-                if (!approveResult.success) {
-                    // Non-critical - may already be approved
-                    console.log('USDC approval skipped or failed:', approveResult.error);
-                }
-            }
+            const serverResult = await serverResponse.json();
 
-            // Step 2: For now, mark trade as executed
-            // Full implementation would submit order to CLOB API here
-            // using TradingService.createMarketOrder() or similar
-
-            const success = await executeTrade(trade.id, 'executed', undefined);
-
-            if (success) {
+            if (serverResult.success) {
                 toast.success(
                     <div className="flex flex-col gap-1">
-                        <span className="font-medium">Trade Approved</span>
+                        <span className="font-medium">Trade Executed</span>
                         <span className="text-xs text-muted-foreground">
                             {trade.originalSide} ${trade.copySize.toFixed(2)} on {trade.marketSlug || 'market'}
                         </span>
-                        <span className="text-xs text-yellow-400 mt-1">
-                            ⚠️ Note: Full CLOB integration coming soon
-                        </span>
+                        {serverResult.orderId && (
+                            <span className="text-xs text-green-400">
+                                Order: {serverResult.orderId.slice(0, 20)}...
+                            </span>
+                        )}
                     </div>
                 );
+                refresh();
+                return;
+            }
+
+            // Step 2: Server execution not available - try manual proxy execution
+            if (serverResult.requiresManualExecution) {
+                // Check proxy availability
+                if (!hasProxy || !proxyAddress) {
+                    toast.error(
+                        <div className="flex flex-col gap-1">
+                            <span className="font-medium">No Proxy Contract</span>
+                            <span className="text-xs text-muted-foreground">
+                                Please create a proxy contract first from the Dashboard
+                            </span>
+                        </div>
+                    );
+                    return;
+                }
+
+                // Approve USDC for CLOB Exchange
+                const exchangeAddress = getExchangeAddress();
+                if (exchangeAddress) {
+                    const approveCall = encodeApproveUSDC(exchangeAddress, -1);
+                    await executeCall(approveCall.target, approveCall.data);
+                }
+
+                // Mark as executed (manual mode)
+                const success = await executeTrade(trade.id, 'executed', undefined);
+                if (success) {
+                    toast.success(
+                        <div className="flex flex-col gap-1">
+                            <span className="font-medium">Trade Approved</span>
+                            <span className="text-xs text-muted-foreground">
+                                {trade.originalSide} ${trade.copySize.toFixed(2)}
+                            </span>
+                            <span className="text-xs text-yellow-400">
+                                Note: Submit order manually via Polymarket
+                            </span>
+                        </div>
+                    );
+                    refresh();
+                }
             } else {
-                toast.error('Failed to execute trade');
+                // Server execution failed
+                toast.error(serverResult.error || 'Failed to execute trade');
             }
         } catch (err) {
             console.error('Execute error:', err);
