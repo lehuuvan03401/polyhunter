@@ -11,12 +11,19 @@ export const CONTRACT_ADDRESSES = {
         proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || '',
         treasury: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '',
         usdc: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged)
+        // Polymarket CLOB Exchange
+        clobExchange: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',
+        negRiskExchange: '0xC5d563A36AE78145C45a50134d48A1215220f80a',
+        ctfContract: '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',
     },
     // Polygon Amoy Testnet
     amoy: {
         proxyFactory: process.env.NEXT_PUBLIC_AMOY_PROXY_FACTORY_ADDRESS || '',
         treasury: process.env.NEXT_PUBLIC_AMOY_TREASURY_ADDRESS || '',
         usdc: process.env.NEXT_PUBLIC_AMOY_USDC_ADDRESS || '',
+        clobExchange: '',
+        negRiskExchange: '',
+        ctfContract: '',
     },
 } as const;
 
@@ -48,6 +55,8 @@ export const POLY_HUNTER_PROXY_ABI = [
     'function withdraw(uint256 amount) external',
     'function withdrawAll() external',
     'function approveTrading(address spender, uint256 amount) external',
+    // Execute arbitrary calls for trading
+    'function execute(address target, bytes calldata data) external returns (bytes memory)',
     // Events
     'event Deposited(address indexed user, uint256 amount)',
     'event Withdrawn(address indexed user, uint256 amount, uint256 fee)',
