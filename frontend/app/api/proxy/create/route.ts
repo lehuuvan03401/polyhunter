@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createUserProxy, getUserProxy, TIER_FEES } from '../utils';
-import { SubscriptionTier } from '@prisma/client';
+
+// Define tier type locally to avoid Prisma 7 import issues
+type TierType = 'STARTER' | 'PRO' | 'WHALE';
 
 /**
  * POST /api/proxy/create
@@ -41,13 +43,13 @@ export async function POST(request: NextRequest) {
         const proxy = await createUserProxy(
             walletAddress,
             proxyAddress,
-            tier as SubscriptionTier
+            tier as TierType
         );
 
         return NextResponse.json({
             success: true,
             proxy,
-            feePercent: TIER_FEES[tier as SubscriptionTier] / 100,
+            feePercent: TIER_FEES[tier as TierType] / 100,
         });
     } catch (error) {
         console.error('Error creating proxy:', error);
@@ -57,3 +59,4 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+

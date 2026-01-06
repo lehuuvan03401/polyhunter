@@ -27,7 +27,7 @@ interface Position {
 
 interface Trade {
     action: string;
-    market: string;
+    market?: string;
     date: string;
     amount: string;
     type: string;

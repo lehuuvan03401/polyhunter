@@ -39,33 +39,31 @@ function calculateCopySize(
         return Math.min(config.fixedAmount, config.maxSizePerTrade);
     }
 
-    if (config.mode === 'PERCENTAGE' && config.sizeScale) {
-        let scaledValue = originalValue * config.sizeScale;
+    // PROPORTIONAL mode - scale based on original trade size
+    const scaledValue = originalValue * (config.sizeScale || 1);
 
-        // For Range mode: clamp between min and max
-        if (config.minSizePerTrade && scaledValue < config.minSizePerTrade) {
-            scaledValue = config.minSizePerTrade;
-        }
+    // Range mode - clamp between min and max
+    const minSize = config.minSizePerTrade ?? 0;
+    const clampedValue = Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 
-        return Math.min(scaledValue, config.maxSizePerTrade);
-    }
-
-    return 0;
+    return clampedValue;
 }
+
+// Secret for cron job authentication
+const CRON_SECRET = process.env.CRON_SECRET || 'dev-cron-secret';
 
 /**
  * POST /api/copy-trading/detect
- * Detect new trades from watched addresses and create pending copy trades
+ * Detect new trades and create pending copy trades
+ * 
+ * Called by cron job with Authorization header
  */
 export async function POST(request: NextRequest) {
     try {
-        // Optional: verify API key for cron jobs
-        const authHeader = request.headers.get('Authorization');
-        const cronSecret = process.env.CRON_SECRET;
-
-        if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-            // Only enforce if CRON_SECRET is set
-            if (cronSecret) {
+        // Verify cron secret (optional in dev)
+        if (process.env.NODE_ENV === 'production') {
+            const authHeader = request.headers.get('Authorization');
+            if (!authHeader || authHeader !== `Bearer ${CRON_SECRET}`) {
                 return NextResponse.json(
                     { error: 'Unauthorized' },
                     { status: 401 }
@@ -85,8 +83,11 @@ export async function POST(request: NextRequest) {
             });
         }
 
+        // Type alias for config items
+        type ConfigType = typeof activeConfigs[number];
+
         // Group configs by trader address for efficient querying
-        const traderAddresses = [...new Set(activeConfigs.map(c => c.traderAddress))];
+        const traderAddresses = [...new Set(activeConfigs.map((c: ConfigType) => c.traderAddress))];
 
         let totalDetected = 0;
         let totalCreated = 0;
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
 
                 // Get configs for this trader
                 const configsForTrader = activeConfigs.filter(
-                    c => c.traderAddress === traderAddress
+                    (c: ConfigType) => c.traderAddress === traderAddress
                 );
 
                 // Process each recent trade

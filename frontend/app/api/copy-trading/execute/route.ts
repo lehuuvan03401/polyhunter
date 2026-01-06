@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
                     data: {
                         status: 'EXECUTED',
                         executedAt: new Date(),
-                        executedTxHash: orderResult.transactionHashes?.[0] || orderResult.orderId,
+                        txHash: orderResult.transactionHashes?.[0] || orderResult.orderId,
                     },
                 });
 
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
             where: { id: tradeId },
             data: {
                 status: executionStatus,
-                executedTxHash: txHash || null,
+                txHash: txHash || null,
                 errorMessage: errorMessage || null,
                 executedAt: executionStatus === 'EXECUTED' ? new Date() : null,
             },
