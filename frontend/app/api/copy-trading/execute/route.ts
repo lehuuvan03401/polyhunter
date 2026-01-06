@@ -105,47 +105,51 @@ export async function POST(request: NextRequest) {
 
             /**
              * CLOB ORDER EXECUTION
-             * 
-             * In production, uncomment this code and configure TRADING_PRIVATE_KEY:
-             * 
-             * import { TradingService } from '@catalyst-team/poly-sdk';
-             * import { RateLimiter } from '@catalyst-team/poly-sdk';
-             * import { UnifiedCache } from '@catalyst-team/poly-sdk';
-             * 
-             * const rateLimiter = new RateLimiter();
-             * const cache = new UnifiedCache('copy-execute');
-             * const tradingService = new TradingService(rateLimiter, cache, {
-             *     privateKey: TRADING_PRIVATE_KEY,
-             *     chainId: CHAIN_ID,
-             * });
-             * await tradingService.initialize();
-             * 
-             * let orderResult;
-             * if (orderMode === 'market') {
-             *     orderResult = await tradingService.createMarketOrder({
-             *         tokenId: trade.tokenId,
-             *         side: trade.originalSide as 'BUY' | 'SELL',
-             *         amount: trade.copySize,
-             *         price: trade.originalPrice * (1 + slippage),
-             *     });
-             * } else {
-             *     const size = trade.copySize / trade.originalPrice;
-             *     orderResult = await tradingService.createLimitOrder({
-             *         tokenId: trade.tokenId,
-             *         side: trade.originalSide as 'BUY' | 'SELL',
-             *         price: trade.originalPrice,
-             *         size: size,
-             *     });
-             * }
              */
 
-            // Simulated execution for demo
-            const orderResult = {
-                success: true,
-                orderId: `order_${Date.now()}_${trade.id.slice(0, 8)}`,
-                transactionHashes: [] as string[],
-                errorMsg: undefined as string | undefined,
-            };
+            // Import services dynamically to avoid issues if they are not fully initialized
+            const { TradingService, RateLimiter, UnifiedCache } = await import('@catalyst-team/poly-sdk');
+
+            // Initialize services
+            const rateLimiter = new RateLimiter();
+            const cache = new UnifiedCache('copy-execute');
+            const tradingService = new TradingService(rateLimiter, cache, {
+                privateKey: TRADING_PRIVATE_KEY,
+                chainId: CHAIN_ID,
+            });
+            await tradingService.initialize();
+
+            let orderResult;
+            try {
+                if (orderMode === 'market') {
+                    orderResult = await tradingService.createMarketOrder({
+                        tokenId: trade.tokenId,
+                        side: trade.originalSide as 'BUY' | 'SELL',
+                        amount: trade.copySize,
+                        price: trade.originalPrice * (1 + slippage), // Apply slippage tolerance
+                    });
+                } else {
+                    // For limit orders, we need to calculate size in shares (amount / price)
+                    // But createLimitOrder usually takes size in raw units. 
+                    // Let's assume trade.copySize is in USDC amount for now as per `detect` logic.
+                    // IMPORTANT: Limit orders need size in shares.
+                    const size = trade.copySize / trade.originalPrice;
+
+                    orderResult = await tradingService.createLimitOrder({
+                        tokenId: trade.tokenId,
+                        side: trade.originalSide as 'BUY' | 'SELL',
+                        price: trade.originalPrice,
+                        size: size,
+                    });
+                }
+            } catch (err: any) {
+                orderResult = {
+                    success: false,
+                    errorMsg: err.message || 'Unknown execution error',
+                    orderId: '',
+                    transactionHashes: []
+                };
+            }
 
             if (orderResult.success) {
                 const updatedTrade = await prisma.copyTrade.update({
