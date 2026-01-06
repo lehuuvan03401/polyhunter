@@ -11,7 +11,9 @@ import {
     ArrowDownRight,
     Clock,
     User,
-    AlertCircle
+    AlertCircle,
+    TrendingUp,
+    BarChart3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
@@ -36,16 +38,18 @@ interface Trade {
 interface TraderProfile {
     username: string;
     address: string;
-    copiers: number;
-    activePositions: number;
-    avatarColor: string;
+    pnl: number;
+    volume: number;
+    score: number;
+    winRate: number;
+    totalTrades: number;
+    positionCount: number;
+    lastActive: string;
     positions: Position[];
     trades: Trade[];
 }
 
 import { CopyTraderModal } from '@/components/copy-trading/copy-trader-modal';
-import { polyClient } from '@/lib/polymarket';
-import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 
 export default function TraderProfilePage({ params }: { params: Promise<{ address: string }> }) {
     // Unwrap params for Next.js 15+ dynamic routes
@@ -62,67 +66,63 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
             setIsLoading(true);
             setError(null);
             try {
-                // Try to get real smart money info
-                let smartMoneyInfo: SmartMoneyWallet | null = null;
+                // Use cached API endpoint for faster loading
+                const response = await fetch(`/api/traders/${address}`);
 
-                try {
-                    smartMoneyInfo = await polyClient.smartMoney.getSmartMoneyInfo(address);
-                } catch (err) {
-                    console.warn("Failed to fetch smart money info:", err);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch profile');
                 }
 
-                // Fetch real positions and activity
-                let openPositions: Position[] = [];
-                let recentActivity: Trade[] = [];
+                const data = await response.json();
 
-                try {
-                    const rawPositions = await polyClient.wallets.getWalletPositions(address);
-                    openPositions = rawPositions.map(pos => ({
-                        question: pos.title,
-                        outcome: pos.outcome,
-                        pnl: (pos.cashPnl || 0) >= 0 ? `+$${(pos.cashPnl || 0).toFixed(2)}` : `-$${Math.abs(pos.cashPnl || 0).toFixed(2)}`,
-                        pnlPositive: (pos.cashPnl || 0) >= 0,
-                        size: `$${(pos.currentValue || (pos.size * pos.avgPrice)).toFixed(2)}`
-                    }));
-                } catch (e) {
-                    console.warn("Failed to fetch positions:", e);
+                if (data.profile) {
+                    setProfile({
+                        username: data.profile.username,
+                        address: data.profile.address,
+                        pnl: data.profile.pnl || 0,
+                        volume: data.profile.volume || 0,
+                        score: data.profile.score || 0,
+                        winRate: data.profile.winRate || 0,
+                        totalTrades: data.profile.totalTrades || 0,
+                        positionCount: data.profile.positionCount || 0,
+                        lastActive: data.profile.lastActive,
+                        positions: data.profile.positions || [],
+                        trades: data.profile.recentTrades || [],
+                    });
+                } else {
+                    throw new Error('Invalid profile data');
                 }
-
-                try {
-                    const activity = await polyClient.wallets.getWalletActivity(address, 20);
-                    recentActivity = activity.activities
-                        .filter(a => a.type === 'TRADE')
-                        .map(a => ({
-                            action: a.side === 'BUY' ? 'Bought' : 'Sold',
-                            market: a.title,
-                            date: new Date(a.timestamp * 1000).toLocaleDateString(),
-                            amount: `$${(a.usdcSize || (a.size * a.price)).toFixed(2)}`,
-                            type: a.side.toLowerCase()
-                        }));
-                } catch (e) {
-                    console.warn("Failed to fetch activity:", e);
-                }
-
-                // Always set profile with real data (even if empty)
-                setProfile({
-                    username: smartMoneyInfo?.name || `User ${address.slice(0, 6)}`,
-                    address: address,
-                    copiers: smartMoneyInfo ? Math.floor(smartMoneyInfo.score * 1.5) : 0,
-                    activePositions: openPositions.length,
-                    avatarColor: "bg-blue-500",
-                    positions: openPositions,
-                    trades: recentActivity
-                });
-            } catch (error) {
-                console.error("Profile load error", error);
+            } catch (err) {
+                console.error("Profile load error", err);
                 setError('Failed to load trader profile. Please try again.');
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchProfile();
+        if (address) {
+            fetchProfile();
+        }
     }, [address]);
+
+    // Format large numbers
+    const formatPnL = (pnl: number) => {
+        if (pnl >= 1000000) {
+            return `$${(pnl / 1000000).toFixed(2)}M`;
+        } else if (pnl >= 1000) {
+            return `$${(pnl / 1000).toFixed(1)}K`;
+        }
+        return `$${pnl.toFixed(2)}`;
+    };
+
+    const formatVolume = (volume: number) => {
+        if (volume >= 1000000) {
+            return `$${(volume / 1000000).toFixed(1)}M`;
+        } else if (volume >= 1000) {
+            return `$${(volume / 1000).toFixed(0)}K`;
+        }
+        return `$${volume.toFixed(0)}`;
+    };
 
     // Use real data only
     const positions = profile?.positions || [];
@@ -215,7 +215,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 lg:p-8 mb-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                         <div className="flex items-center gap-5">
-                            <div className={`h-16 w-16 rounded-2xl ${profile?.avatarColor || 'bg-blue-500'} flex items-center justify-center shadow-lg`}>
+                            <div className="h-16 w-16 rounded-2xl bg-blue-500 flex items-center justify-center shadow-lg">
                                 <Wallet className="h-8 w-8 text-white" />
                             </div>
                             <div>
@@ -244,12 +244,22 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     <div className="flex items-center justify-between border-t border-white/5 pt-6">
                         <div className="flex items-center gap-8">
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">{profile?.copiers || 0}</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Copiers</div>
+                                <div className={`text-2xl font-bold mb-0.5 ${(profile?.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {(profile?.pnl || 0) >= 0 ? '+' : ''}{formatPnL(profile?.pnl || 0)}
+                                </div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Total PnL</div>
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{formatVolume(profile?.volume || 0)}</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume</div>
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{profile?.winRate || 0}%</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Win Rate</div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{positions.length}</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Active Positions</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Positions</div>
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
