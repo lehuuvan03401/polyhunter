@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
 import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
+import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -224,8 +225,15 @@ export default function PortfolioPage() {
 
             {/* Pending Copy Trades Alert */}
             {user?.wallet?.address && (
-                <div className="mb-8">
+                <div className="mb-6">
                     <PendingTradesAlert walletAddress={user.wallet.address} />
+                </div>
+            )}
+
+            {/* Order Status Monitoring */}
+            {user?.wallet?.address && (
+                <div className="mb-8">
+                    <OrderStatusPanel walletAddress={user.wallet.address} />
                 </div>
             )}
 
