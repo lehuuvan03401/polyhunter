@@ -7,6 +7,7 @@ export const revalidate = 60; // Revalidate every minute
 import { Suspense } from 'react';
 import { LeaderboardSection } from '@/components/home/leaderboard-section';
 import { LeaderboardSkeleton } from '@/components/home/leaderboard-skeleton';
+import { ImportTraderSection } from '@/components/home/import-trader-section';
 
 // Fetch homepage stats from leaderboard
 async function getHomeStats() {
@@ -79,6 +80,9 @@ export default async function Home() {
           </div>
         </div>
       </section>
+
+      {/* Import Trader Section */}
+      <ImportTraderSection />
 
       {/* Leaderboard Preview */}
       <section className="py-16 bg-card/30 border-y border-white/5">
