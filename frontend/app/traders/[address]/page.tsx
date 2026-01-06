@@ -10,44 +10,39 @@ import {
     ArrowUpRight,
     ArrowDownRight,
     Clock,
-    User
+    User,
+    AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 
-// Mock Data
-// Deterministic mock data generator
-const getMockProfile = (address: string) => {
-    // Simple hash function for consistency
-    const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const copiers = 50 + (hash % 1000);
-    const activePositions = 1 + (hash % 10);
-    const pnlBase = (hash % 50000);
+// Type definitions for profile data
+interface Position {
+    question: string;
+    outcome: string;
+    pnl: string;
+    pnlPositive: boolean;
+    size: string;
+}
 
-    return {
-        username: `Trader ${address.slice(2, 6)}`,
-        address: address,
-        copiers,
-        activePositions,
-        avatarColor: ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500'][hash % 4],
-        positions: Array.from({ length: activePositions }).map((_, i) => ({
-            question: `Mock Market Question ${i + 1}?`,
-            outcome: (hash + i) % 2 === 0 ? "Yes" : "No",
-            pnl: (i % 2 === 0 ? "+" : "-") + `$${(100 + (hash % 500)).toFixed(2)}`,
-            pnlPositive: i % 2 === 0,
-            size: `$${(1000 + (hash % 9000)).toFixed(2)}`
-        })),
-        trades: Array.from({ length: 5 }).map((_, i) => ({
-            action: "Bought",
-            market: `Mock Market Event ${i + 1}`,
-            date: "Just now",
-            amount: `$${(50 + (hash % 500)).toFixed(2)}`,
-            type: "buy"
-        }))
-    };
-};
+interface Trade {
+    action: string;
+    market: string;
+    date: string;
+    amount: string;
+    type: string;
+}
 
-// ... imports
+interface TraderProfile {
+    username: string;
+    address: string;
+    copiers: number;
+    activePositions: number;
+    avatarColor: string;
+    positions: Position[];
+    trades: Trade[];
+}
+
 import { CopyTraderModal } from '@/components/copy-trading/copy-trader-modal';
 import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
@@ -58,12 +53,14 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
     const [isCopyModalOpen, setIsCopyModalOpen] = React.useState(false);
 
     // State for dynamic data
-    const [profile, setProfile] = React.useState<ReturnType<typeof getMockProfile> | null>(null);
+    const [profile, setProfile] = React.useState<TraderProfile | null>(null);
     const [isLoading, setIsLoading] = React.useState(true);
+    const [error, setError] = React.useState<string | null>(null);
 
     React.useEffect(() => {
         const fetchProfile = async () => {
             setIsLoading(true);
+            setError(null);
             try {
                 // Try to get real smart money info
                 let smartMoneyInfo: SmartMoneyWallet | null = null;
@@ -71,12 +68,12 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 try {
                     smartMoneyInfo = await polyClient.smartMoney.getSmartMoneyInfo(address);
                 } catch (err) {
-                    console.warn("Failed to fetch smart money info, likely network:", err);
+                    console.warn("Failed to fetch smart money info:", err);
                 }
 
                 // Fetch real positions and activity
-                let openPositions: any[] = [];
-                let recentActivity: any[] = [];
+                let openPositions: Position[] = [];
+                let recentActivity: Trade[] = [];
 
                 try {
                     const rawPositions = await polyClient.wallets.getWalletPositions(address);
@@ -106,23 +103,19 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     console.warn("Failed to fetch activity:", e);
                 }
 
-                if (smartMoneyInfo || openPositions.length > 0 || recentActivity.length > 0) {
-                    setProfile({
-                        username: smartMoneyInfo?.name || `User ${address.slice(0, 6)}`,
-                        address: address,
-                        copiers: smartMoneyInfo ? Math.floor(smartMoneyInfo.score * 1.5) : 0,
-                        activePositions: openPositions.length,
-                        avatarColor: "bg-blue-500",
-                        positions: openPositions,
-                        trades: recentActivity
-                    });
-                } else {
-                    // Fallback to deterministic mock
-                    setProfile(getMockProfile(address));
-                }
+                // Always set profile with real data (even if empty)
+                setProfile({
+                    username: smartMoneyInfo?.name || `User ${address.slice(0, 6)}`,
+                    address: address,
+                    copiers: smartMoneyInfo ? Math.floor(smartMoneyInfo.score * 1.5) : 0,
+                    activePositions: openPositions.length,
+                    avatarColor: "bg-blue-500",
+                    positions: openPositions,
+                    trades: recentActivity
+                });
             } catch (error) {
                 console.error("Profile load error", error);
-                setProfile(getMockProfile(address));
+                setError('Failed to load trader profile. Please try again.');
             } finally {
                 setIsLoading(false);
             }
@@ -131,10 +124,9 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
         fetchProfile();
     }, [address]);
 
-    // Use mock positions/trades if real ones are empty (hybrid approach)
-    const displayProfile = profile || getMockProfile(address);
-    const positions = displayProfile.positions || getMockProfile(address).positions;
-    const trades = displayProfile.trades || getMockProfile(address).trades;
+    // Use real data only
+    const positions = profile?.positions || [];
+    const trades = profile?.trades || [];
 
     if (isLoading) {
         return (
@@ -208,15 +200,26 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     <ChevronLeft className="h-4 w-4" /> Back to Discovery
                 </Link>
 
+                {/* Error State */}
+                {error && (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 mb-8 flex items-center gap-4">
+                        <AlertCircle className="h-6 w-6 text-red-400" />
+                        <div>
+                            <div className="font-medium text-red-400">Error Loading Profile</div>
+                            <div className="text-sm text-muted-foreground">{error}</div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Profile Header */}
                 <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 lg:p-8 mb-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                         <div className="flex items-center gap-5">
-                            <div className={`h-16 w-16 rounded-2xl ${displayProfile.avatarColor} flex items-center justify-center shadow-lg`}>
+                            <div className={`h-16 w-16 rounded-2xl ${profile?.avatarColor || 'bg-blue-500'} flex items-center justify-center shadow-lg`}>
                                 <Wallet className="h-8 w-8 text-white" />
                             </div>
                             <div>
-                                <h1 className="text-3xl font-bold text-white mb-1">{displayProfile.username}</h1>
+                                <h1 className="text-3xl font-bold text-white mb-1">{profile?.username || `User ${address.slice(0, 6)}`}</h1>
                                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                     <a
                                         href={`https://polymarket.com/${address}`}
@@ -241,11 +244,11 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     <div className="flex items-center justify-between border-t border-white/5 pt-6">
                         <div className="flex items-center gap-8">
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">{displayProfile.copiers}</div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{profile?.copiers || 0}</div>
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Copiers</div>
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">{displayProfile.activePositions}</div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{positions.length}</div>
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Active Positions</div>
                             </div>
                         </div>
@@ -263,48 +266,66 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 {/* Active Positions */}
                 <div className="mb-10">
                     <h2 className="text-lg font-bold text-muted-foreground mb-4">Active Positions</h2>
-                    <div className="space-y-4">
-                        {positions.map((pos, i) => (
-                            <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-5 flex items-center justify-between hover:bg-[#25262b] transition-colors cursor-default">
-                                <div>
-                                    <h3 className="font-bold text-white text-sm mb-1">{pos.question}</h3>
-                                    <div className="text-xs text-muted-foreground">
-                                        <span className={cn("font-medium", pos.outcome === "Yes" ? "text-green-500" : "text-red-500")}>{pos.outcome}</span> • {pos.size}
+                    {positions.length === 0 ? (
+                        <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-8 text-center">
+                            <Wallet className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                            <div className="text-sm text-muted-foreground">No active positions found for this trader</div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {positions.map((pos, i) => (
+                                <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-5 flex items-center justify-between hover:bg-[#25262b] transition-colors cursor-default">
+                                    <div>
+                                        <h3 className="font-bold text-white text-sm mb-1">{pos.question}</h3>
+                                        <div className="text-xs text-muted-foreground">
+                                            <span className={cn("font-medium", pos.outcome === "Yes" ? "text-green-500" : "text-red-500")}>{pos.outcome}</span> • {pos.size}
+                                        </div>
+                                    </div>
+                                    <div className={cn("text-sm font-bold font-mono", pos.pnlPositive ? "text-green-500" : "text-red-500")}>
+                                        {pos.pnl}
                                     </div>
                                 </div>
-                                <div className={cn("text-sm font-bold font-mono", pos.pnlPositive ? "text-green-500" : "text-red-500")}>
-                                    {pos.pnl}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Recent Trades */}
                 <div>
                     <h2 className="text-lg font-bold text-muted-foreground mb-4">Recent Trades</h2>
-                    <div className="space-y-3">
-                        {trades.map((trade, i) => (
-                            <div key={i} className="group bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-4 flex items-center justify-between hover:border-white/10 transition-colors">
-                                <div className="flex items-center gap-4">
-                                    <div className="h-8 w-8 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                                        <ArrowUpRight className="h-4 w-4 text-green-500" />
+                    {trades.length === 0 ? (
+                        <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-8 text-center">
+                            <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                            <div className="text-sm text-muted-foreground">No recent trades found for this trader</div>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {trades.map((trade, i) => (
+                                <div key={i} className="group bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-4 flex items-center justify-between hover:border-white/10 transition-colors">
+                                    <div className="flex items-center gap-4">
+                                        <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0", trade.type === 'buy' ? 'bg-green-500/10' : 'bg-red-500/10')}>
+                                            {trade.type === 'buy' ? (
+                                                <ArrowUpRight className="h-4 w-4 text-green-500" />
+                                            ) : (
+                                                <ArrowDownRight className="h-4 w-4 text-red-500" />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-medium text-white">
+                                                <span className={cn("font-bold", trade.type === 'buy' ? 'text-green-500' : 'text-red-500')}>{trade.action}</span> {trade.market}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-0.5">
+                                                {trade.date}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div className="text-sm font-medium text-white">
-                                            <span className="text-green-500 font-bold">{trade.action}</span> {trade.market}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mt-0.5">
-                                            {trade.date}
-                                        </div>
+                                    <div className="text-sm font-bold text-white font-mono">
+                                        {trade.amount}
                                     </div>
                                 </div>
-                                <div className="text-sm font-bold text-white font-mono">
-                                    {trade.amount}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
             </div>

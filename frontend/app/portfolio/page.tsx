@@ -180,7 +180,7 @@ export default function PortfolioPage() {
                         </div>
                     </div>
 
-                    {/* Fake Chart Line (Keeping for visuals, could replace later) */}
+                    {/* PnL Trend Visualization (stylized, not historical data) */}
                     <div className="mt-4 h-16 w-full flex items-end opacity-50">
                         <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", totalPnL >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
                             <path d="M0 20 L0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2 L 100 20 Z" strokeWidth="0" />
