@@ -171,15 +171,33 @@ export class SmartMoneyService {
   // ============================================================================
 
   /**
-   * Get list of Smart Money wallets from leaderboard
+   * Get list of Smart Money wallets from leaderboard with pagination
    */
-  async getSmartMoneyList(limit: number = 100): Promise<SmartMoneyWallet[]> {
-    if (this.isCacheValid()) {
-      return Array.from(this.smartMoneyCache.values());
+  async getSmartMoneyList(optionsOrLimit: number | { page?: number; limit?: number } = 100): Promise<SmartMoneyWallet[]> {
+    // Backward compatibility for when it was just a number
+    const options = typeof optionsOrLimit === 'number'
+      ? { page: 1, limit: optionsOrLimit }
+      : { page: 1, limit: 100, ...optionsOrLimit };
+
+    const { page = 1, limit = 20 } = options;
+    const startIndex = (page - 1) * limit;
+    const targetEndIndex = page * limit;
+
+    // If we have enough cached data, return directly
+    const cachedList = Array.from(this.smartMoneyCache.values());
+    if (this.isCacheValid() && cachedList.length >= targetEndIndex) {
+      return cachedList.slice(startIndex, targetEndIndex);
     }
 
-    const leaderboardPage = await this.walletService.getLeaderboard(0, Math.max(limit * 3, 50));
+    // We need more data. Fetch from leaderboard.
+    // To ensure we get enough *filtered* (valid) results, we need to fetch a larger candidate pool.
+    // Heuristic: valid rate is ~30%, so we fetch 3x the target count.
+    const candidatesToFetch = Math.max(targetEndIndex * 3, 50);
+    console.log(`[SmartMoney] Fetching ${candidatesToFetch} candidates from leaderboard for page ${page} (target index: ${targetEndIndex})`);
+
+    const leaderboardPage = await this.walletService.getLeaderboard(0, candidatesToFetch);
     const entries = leaderboardPage.entries;
+    console.log(`[SmartMoney] Got ${entries.length} entries from leaderboard`);
 
     const candidates = [];
 
@@ -189,53 +207,76 @@ export class SmartMoneyService {
         candidates.push(trader);
       }
     }
+    console.log(`[SmartMoney] ${candidates.length} candidates after PnL filter (min: ${this.config.minPnl})`);
 
     const smartMoneyList: SmartMoneyWallet[] = [];
 
-    // Second pass: Verify Activity (Batch processing to respect rate limits)
-    // We process in chunks to find enough active traders
+    // Clear cache if we are starting fresh (page 1) or cache expired,
+    // BUT if we are just fetching the next page and cache is valid, we should append/check existing.
+    // To keep it simple and consistent: We use the cache as the single source of truth.
+    // We iterate through candidates and add valid ones to cache.
+
+    // If cache is invalid, clear it
+    if (!this.isCacheValid()) {
+      console.log('[SmartMoney] Cache invalid or expired, clearing.');
+      this.smartMoneyCache.clear();
+      this.smartMoneySet.clear();
+      this.cacheTimestamp = Date.now();
+    }
+
+    // Second pass: Verify Activity
     let processedCount = 0;
     const CHUNK_SIZE = 5;
 
-    while (smartMoneyList.length < limit && processedCount < candidates.length) {
-      const chunk = candidates.slice(processedCount, processedCount + CHUNK_SIZE);
-      processedCount += chunk.length;
+    // We iterate until we have enough items in our cache (targetEndIndex) OR we run out of candidates
+    const currentCacheSize = this.smartMoneyCache.size;
+    const neededSize = targetEndIndex;
+    console.log(`[SmartMoney] Current cache size: ${currentCacheSize}, Need: ${neededSize}`);
 
-      const results = await Promise.all(chunk.map(async (trader) => {
-        try {
-          const profile = await this.walletService.getWalletProfile(trader.address);
-          // Criteria: Must have active positions OR traded in last 7 days
-          const hasPositions = profile.positionCount > 0;
-          const isRecent = Date.now() - profile.lastActiveAt.getTime() < 7 * 24 * 60 * 60 * 1000;
+    if (currentCacheSize < neededSize) {
+      while (this.smartMoneyCache.size < neededSize && processedCount < candidates.length) {
+        const chunk = candidates.slice(processedCount, processedCount + CHUNK_SIZE);
+        processedCount += chunk.length;
 
-          if (hasPositions || isRecent) {
-            return {
-              address: trader.address.toLowerCase(),
-              name: trader.userName,
-              pnl: trader.pnl,
-              volume: trader.volume,
-              score: Math.min(100, Math.round((trader.pnl / 100000) * 50 + (trader.volume / 1000000) * 50)),
-              rank: trader.rank,
-              // Cache the profile info implicitly by adding it to cache if needed
-            };
+        // Skip candidates already in cache
+        const newCandidates = chunk.filter(c => !this.smartMoneySet.has(c.address.toLowerCase()));
+
+        if (newCandidates.length === 0) continue;
+
+        const results = await Promise.all(newCandidates.map(async (trader) => {
+          try {
+            const profile = await this.walletService.getWalletProfile(trader.address);
+            // Criteria: Must have active positions OR traded in last 7 days
+            const hasPositions = profile.positionCount > 0;
+            const isRecent = Date.now() - profile.lastActiveAt.getTime() < 7 * 24 * 60 * 60 * 1000;
+
+            if (hasPositions || isRecent) {
+              return {
+                address: trader.address.toLowerCase(),
+                name: trader.userName,
+                pnl: trader.pnl,
+                volume: trader.volume,
+                score: Math.min(100, Math.round((trader.pnl / 100000) * 50 + (trader.volume / 1000000) * 50)),
+                rank: trader.rank,
+              };
+            }
+          } catch (e) {
+            console.warn(`Failed to verify profile for ${trader.address}:`, e);
           }
-        } catch (e) {
-          console.warn(`Failed to verify profile for ${trader.address}:`, e);
-        }
-        return null;
-      }));
+          return null;
+        }));
 
-      for (const wallet of results) {
-        if (wallet && smartMoneyList.length < limit) {
-          smartMoneyList.push(wallet);
-          this.smartMoneyCache.set(wallet.address, wallet);
-          this.smartMoneySet.add(wallet.address);
+        for (const wallet of results) {
+          if (wallet) {
+            this.smartMoneyCache.set(wallet.address, wallet);
+            this.smartMoneySet.add(wallet.address);
+          }
         }
       }
     }
 
-    this.cacheTimestamp = Date.now();
-    return smartMoneyList;
+    console.log(`[SmartMoney] Finished processing. Total valid: ${this.smartMoneyCache.size}`);
+    return Array.from(this.smartMoneyCache.values()).slice(startIndex, targetEndIndex);
   }
 
   /**

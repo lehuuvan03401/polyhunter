@@ -5,9 +5,12 @@ import { AlertCircle, RefreshCcw } from 'lucide-react';
 
 export const revalidate = 60;
 
-async function fetchSmartMoneyData(): Promise<{ data: SmartMoneyWallet[] | null; error: string | null }> {
+const ITEMS_PER_PAGE = 20;
+const MAX_PAGES = 5;
+
+async function fetchSmartMoneyData(page: number): Promise<{ data: SmartMoneyWallet[] | null; error: string | null }> {
     try {
-        const smartMoneyList = await polyClient.smartMoney.getSmartMoneyList(20);
+        const smartMoneyList = await polyClient.smartMoney.getSmartMoneyList({ page, limit: ITEMS_PER_PAGE });
         return { data: smartMoneyList, error: null };
     } catch (e) {
         console.error("Smart Money fetch failed", e);
@@ -15,8 +18,20 @@ async function fetchSmartMoneyData(): Promise<{ data: SmartMoneyWallet[] | null;
     }
 }
 
-export default async function SmartMoneyPage() {
-    const { data: smartMoneyList, error } = await fetchSmartMoneyData();
+interface SmartMoneyPageProps {
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
+export default async function SmartMoneyPage({ searchParams }: SmartMoneyPageProps) {
+    const resolvedParams = await searchParams;
+    const page = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page) : 1;
+    const currentPage = isNaN(page) || page < 1 ? 1 : page;
+
+    const { data: smartMoneyList, error } = await fetchSmartMoneyData(currentPage);
+
+    // Pagination logic
+    const hasNextPage = (smartMoneyList?.length || 0) === ITEMS_PER_PAGE && currentPage < MAX_PAGES;
+    const hasPrevPage = currentPage > 1;
 
     return (
         <div className="container py-10">
@@ -34,8 +49,11 @@ export default async function SmartMoneyPage() {
             </div>
 
             <div className="rounded-xl border bg-card shadow-sm">
-                <div className="border-b p-6">
+                <div className="border-b p-6 flex justify-between items-center">
                     <h2 className="text-lg font-semibold">Top Performers</h2>
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                        Page {currentPage}
+                    </span>
                 </div>
                 <div className="p-0">
                     {error ? (
@@ -57,52 +75,85 @@ export default async function SmartMoneyPage() {
                         </div>
                     ) : smartMoneyList && smartMoneyList.length > 0 ? (
                         /* Data Table */
-                        <div className="relative w-full overflow-auto">
-                            <table className="w-full caption-bottom text-sm">
-                                <thead className="[&_tr]:border-b">
-                                    <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rank</th>
-                                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Trader</th>
-                                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Volume</th>
-                                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Profit</th>
-                                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Score</th>
-                                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="[&_tr:last-child]:border-0">
-                                    {smartMoneyList.map((wallet, i) => (
-                                        <tr key={wallet.address} className="border-b transition-colors hover:bg-muted/50">
-                                            <td className="p-4 align-middle font-medium">#{wallet.rank || i + 1}</td>
-                                            <td className="p-4 align-middle font-mono">
-                                                <Link href={`/traders/${wallet.address}`} className="hover:text-blue-400 transition-colors hover:underline">
-                                                    {wallet.name || `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`}
-                                                </Link>
-                                            </td>
-                                            <td className="p-4 align-middle text-right">${wallet.volume.toLocaleString()}</td>
-                                            <td className="p-4 align-middle text-right text-green-500">+${wallet.pnl.toLocaleString()}</td>
-                                            <td className="p-4 align-middle text-right">
-                                                <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary text-primary-foreground hover:bg-primary/80">
-                                                    {wallet.score}
-                                                </div>
-                                            </td>
-                                            <td className="p-4 align-middle text-right">
-                                                <Link
-                                                    href={`/traders/${wallet.address}`}
-                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
-                                                >
-                                                    Copy Trader
-                                                </Link>
-                                            </td>
+                        <>
+                            <div className="relative w-full overflow-auto">
+                                <table className="w-full caption-bottom text-sm">
+                                    <thead className="[&_tr]:border-b">
+                                        <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rank</th>
+                                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Trader</th>
+                                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Volume</th>
+                                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Profit</th>
+                                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Score</th>
+                                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody className="[&_tr:last-child]:border-0">
+                                        {smartMoneyList.map((wallet, i) => (
+                                            <tr key={wallet.address} className="border-b transition-colors hover:bg-muted/50">
+                                                <td className="p-4 align-middle font-medium">#{wallet.rank || ((currentPage - 1) * ITEMS_PER_PAGE + i + 1)}</td>
+                                                <td className="p-4 align-middle font-mono">
+                                                    <Link href={`/traders/${wallet.address}`} className="hover:text-blue-400 transition-colors hover:underline">
+                                                        {wallet.name || `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`}
+                                                    </Link>
+                                                </td>
+                                                <td className="p-4 align-middle text-right">${wallet.volume.toLocaleString()}</td>
+                                                <td className="p-4 align-middle text-right text-green-500">+${wallet.pnl.toLocaleString()}</td>
+                                                <td className="p-4 align-middle text-right">
+                                                    <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary text-primary-foreground hover:bg-primary/80">
+                                                        {wallet.score}
+                                                    </div>
+                                                </td>
+                                                <td className="p-4 align-middle text-right">
+                                                    <Link
+                                                        href={`/traders/${wallet.address}`}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
+                                                    >
+                                                        Copy Trader
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Pagination Controls */}
+                            <div className="flex items-center justify-between p-4 border-t">
+                                <Link
+                                    href={hasPrevPage ? `/smart-money?page=${currentPage - 1}` : '#'}
+                                    className={`px-4 py-2 text-sm font-medium rounded-lg border bg-card transition-colors ${hasPrevPage
+                                        ? "hover:bg-muted hover:text-foreground text-foreground"
+                                        : "pointer-events-none opacity-50 text-muted-foreground"
+                                        }`}
+                                    aria-disabled={!hasPrevPage}
+                                >
+                                    Previous
+                                </Link>
+                                <span className="text-sm text-muted-foreground">
+                                    Page {currentPage}
+                                </span>
+                                <Link
+                                    href={hasNextPage ? `/smart-money?page=${currentPage + 1}` : '#'}
+                                    className={`px-4 py-2 text-sm font-medium rounded-lg border bg-card transition-colors ${hasNextPage
+                                        ? "hover:bg-muted hover:text-foreground text-foreground"
+                                        : "pointer-events-none opacity-50 text-muted-foreground"
+                                        }`}
+                                    aria-disabled={!hasNextPage}
+                                >
+                                    Next
+                                </Link>
+                            </div>
+                        </>
                     ) : (
                         /* Empty State */
                         <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <p className="text-muted-foreground">No traders found at the moment.</p>
-                            <p className="text-xs text-muted-foreground mt-2">Check back later for updated rankings.</p>
+                            <p className="text-muted-foreground">No traders found on this page.</p>
+                            {currentPage > 1 && (
+                                <Link href="/smart-money" className="mt-4 text-blue-500 hover:underline">
+                                    Go back to first page
+                                </Link>
+                            )}
                         </div>
                     )}
                 </div>

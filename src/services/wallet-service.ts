@@ -141,6 +141,8 @@ export interface WalletProfile {
   tradeCount: number;
   smartScore: number; // 0-100
   lastActiveAt: Date;
+  volume?: number;
+  userName?: string;
 }
 
 export interface WalletActivitySummary {
@@ -167,7 +169,7 @@ export class WalletService {
     private dataApi: DataApiClient,
     private subgraph: SubgraphClient,
     private cache: UnifiedCache
-  ) {}
+  ) { }
 
   // ===== Time Period Helpers =====
 
@@ -194,12 +196,17 @@ export class WalletService {
    * Get comprehensive wallet profile with PnL analysis
    */
   async getWalletProfile(address: string): Promise<WalletProfile> {
-    const [positions, activities] = await Promise.all([
+    const [positions, activities, officialStats] = await Promise.all([
       this.dataApi.getPositions(address),
       this.dataApi.getActivity(address, { limit: 100 }),
+      this.getUserPeriodPnl(address, 'all').catch(() => null),
     ]);
 
-    const totalPnL = positions.reduce((sum, p) => sum + (p.cashPnl || 0), 0);
+    // Use official stats if available, otherwise fall back to calculation (which is incomplete as it ignores closed positions)
+    const totalPnL = officialStats ? officialStats.pnl : positions.reduce((sum, p) => sum + (p.cashPnl || 0), 0);
+    const volume = officialStats ? officialStats.volume : 0;
+
+    // For breakdown, we still rely on positions if official stats don't provide it
     const realizedPnL = positions.reduce((sum, p) => sum + (p.realizedPnl || 0), 0);
     const unrealizedPnL = totalPnL - realizedPnL;
 
@@ -217,9 +224,11 @@ export class WalletService {
       unrealizedPnL,
       avgPercentPnL,
       positionCount: positions.length,
-      tradeCount: activities.filter((a) => a.type === 'TRADE').length,
+      tradeCount: officialStats ? officialStats.tradeCount : activities.filter((a) => a.type === 'TRADE').length,
       smartScore: this.calculateSmartScore(positions, activities),
       lastActiveAt: lastActivity ? new Date(lastActivity.timestamp) : new Date(0),
+      volume, // Added field
+      userName: officialStats?.userName,
     };
   }
 

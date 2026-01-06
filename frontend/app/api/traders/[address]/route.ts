@@ -35,7 +35,10 @@ interface TraderProfileData {
         action: string;
         market?: string;
         date: string;
+        time: string;
         amount: string;
+        shares: string;
+        price: string;
         type: string;
     }>;
 }
@@ -104,7 +107,7 @@ export async function GET(
         const winRate = totalTrades > 0 ? Math.round((wins / totalTrades) * 100) : 0;
 
         // Type-safe property access with defaults
-        const pnl = typeof profile?.pnl === 'number' ? profile.pnl : 0;
+        const pnl = typeof profile?.totalPnL === 'number' ? profile.totalPnL : (typeof profile?.pnl === 'number' ? profile.pnl : 0);
         const volume = typeof profile?.volume === 'number' ? profile.volume : 0;
         const userName = typeof profile?.userName === 'string' ? profile.userName : null;
         const positionCount = typeof profile?.positionCount === 'number' ? profile.positionCount : positions.length;
@@ -134,13 +137,22 @@ export async function GET(
                 size: `$${(pos.currentValue || (pos.size * pos.avgPrice)).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
                 conditionId: pos.conditionId,
             })),
-            recentTrades: trades.slice(0, 10).map(t => ({
-                action: t.side === 'BUY' ? 'Bought' : 'Sold',
-                market: t.title,
-                date: new Date(t.timestamp * 1000).toLocaleDateString(),
-                amount: `$${(t.usdcSize || (t.size * t.price)).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-                type: t.side.toLowerCase(),
-            })),
+            recentTrades: trades.slice(0, 10).map(t => {
+                // Auto-detect timestamp format: if > 10 digits, it's milliseconds
+                const timestampMs = t.timestamp > 9999999999 ? t.timestamp : t.timestamp * 1000;
+                const tradeDate = new Date(timestampMs);
+                const usdcAmount = t.usdcSize || (t.size * t.price);
+                return {
+                    action: t.side === 'BUY' ? 'Bought' : 'Sold',
+                    market: t.title,
+                    date: tradeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                    time: tradeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                    amount: `$${usdcAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+                    shares: `${t.size.toLocaleString(undefined, { maximumFractionDigits: 2 })} shares`,
+                    price: `$${t.price.toFixed(4)}`,
+                    type: t.side.toLowerCase(),
+                };
+            }),
         };
 
         // Update cache
