@@ -26,9 +26,9 @@ export async function GET(request: NextRequest) {
 
         // Calculate next tier
         const currentTier = referrer.tier as keyof typeof TIER_THRESHOLDS;
-        const tiers = ['BRONZE', 'SILVER', 'GOLD', 'DIAMOND'] as const;
+        const tiers = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'] as const;
         const currentIndex = tiers.indexOf(currentTier);
-        const nextTier = currentIndex < 3 ? tiers[currentIndex + 1] : null;
+        const nextTier = currentIndex < 4 ? tiers[currentIndex + 1] : null;
         const volumeToNextTier = nextTier
             ? Math.max(0, TIER_THRESHOLDS[nextTier] - referrer.totalVolume)
             : 0;

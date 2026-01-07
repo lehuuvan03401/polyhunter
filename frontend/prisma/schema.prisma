@@ -14,6 +14,7 @@ enum AffiliateTier {
   BRONZE
   SILVER
   GOLD
+  PLATINUM
   DIAMOND
 }
 
@@ -44,27 +45,27 @@ model Referrer {
 
 // Referral - user referred by an affiliate
 model Referral {
-  id             String   @id @default(cuid())
-  referrer       Referrer @relation(fields: [referrerId], references: [id])
-  referrerId     String
-  refereeAddress String   @unique
-  lifetimeVolume Float    @default(0)
-  last30DaysVolume Float  @default(0)
-  createdAt      DateTime @default(now())
-  lastActiveAt   DateTime?
+  id               String    @id @default(cuid())
+  referrer         Referrer  @relation(fields: [referrerId], references: [id])
+  referrerId       String
+  refereeAddress   String    @unique
+  lifetimeVolume   Float     @default(0)
+  last30DaysVolume Float     @default(0)
+  createdAt        DateTime  @default(now())
+  lastActiveAt     DateTime?
 
   @@index([referrerId])
 }
 
 // Daily volume aggregation
 model ReferralVolume {
-  id           String   @id @default(cuid())
-  referrer     Referrer @relation(fields: [referrerId], references: [id])
-  referrerId   String
-  date         DateTime
-  volumeUsd    Float    @default(0)
-  commissionUsd Float   @default(0)
-  tradeCount   Int      @default(0)
+  id            String   @id @default(cuid())
+  referrer      Referrer @relation(fields: [referrerId], references: [id])
+  referrerId    String
+  date          DateTime
+  volumeUsd     Float    @default(0)
+  commissionUsd Float    @default(0)
+  tradeCount    Int      @default(0)
 
   @@unique([referrerId, date])
   @@index([referrerId])
@@ -72,14 +73,14 @@ model ReferralVolume {
 
 // Payout records
 model Payout {
-  id          String       @id @default(cuid())
-  referrer    Referrer     @relation(fields: [referrerId], references: [id])
-  referrerId  String
-  amountUsd   Float
-  status      PayoutStatus @default(PENDING)
-  txHash      String?
-  createdAt   DateTime     @default(now())
-  processedAt DateTime?
+  id           String       @id @default(cuid())
+  referrer     Referrer     @relation(fields: [referrerId], references: [id])
+  referrerId   String
+  amountUsd    Float
+  status       PayoutStatus @default(PENDING)
+  txHash       String?
+  createdAt    DateTime     @default(now())
+  processedAt  DateTime?
   errorMessage String?
 
   @@index([referrerId])
@@ -91,25 +92,25 @@ model Payout {
 
 // Subscription tier levels (determines fee percentage)
 enum SubscriptionTier {
-  STARTER  // 10% fee
-  PRO      // 5% fee
-  WHALE    // 2% fee
+  STARTER // 10% fee
+  PRO // 5% fee
+  WHALE // 2% fee
 }
 
 // User's trading proxy wallet
 model UserProxy {
-  id              String           @id @default(cuid())
-  walletAddress   String           @unique  // User's main wallet
-  proxyAddress    String           @unique  // Smart contract proxy address
-  tier            SubscriptionTier @default(STARTER)
-  totalDeposited  Float            @default(0)
-  totalWithdrawn  Float            @default(0)
-  totalVolume     Float            @default(0)
-  totalProfit     Float            @default(0)
-  totalFeesPaid   Float            @default(0)
-  isActive        Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id             String           @id @default(cuid())
+  walletAddress  String           @unique // User's main wallet
+  proxyAddress   String           @unique // Smart contract proxy address
+  tier           SubscriptionTier @default(STARTER)
+  totalDeposited Float            @default(0)
+  totalWithdrawn Float            @default(0)
+  totalVolume    Float            @default(0)
+  totalProfit    Float            @default(0)
+  totalFeesPaid  Float            @default(0)
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   feeTransactions FeeTransaction[]
 
@@ -121,11 +122,11 @@ model FeeTransaction {
   id           String    @id @default(cuid())
   userProxy    UserProxy @relation(fields: [userProxyId], references: [id])
   userProxyId  String
-  profitAmount Float     // Profit amount that triggered the fee
-  feeAmount    Float     // Fee collected
-  feePercent   Float     // Fee percentage at time of transaction (10, 5, 2)
-  txHash       String?   // On-chain transaction hash
-  blockNumber  Int?      // Block number of the transaction
+  profitAmount Float // Profit amount that triggered the fee
+  feeAmount    Float // Fee collected
+  feePercent   Float // Fee percentage at time of transaction (10, 5, 2)
+  txHash       String? // On-chain transaction hash
+  blockNumber  Int? // Block number of the transaction
   createdAt    DateTime  @default(now())
 
   @@index([userProxyId])
@@ -138,63 +139,63 @@ model FeeTransaction {
 
 // Copy trading mode
 enum CopyTradingMode {
-  PERCENTAGE    // Copy X% of trader's position
-  FIXED_AMOUNT  // Fixed dollar amount per trade
+  PERCENTAGE // Copy X% of trader's position
+  FIXED_AMOUNT // Fixed dollar amount per trade
 }
 
 // Copy trade execution status
 enum CopyTradeStatus {
-  PENDING    // Waiting for user confirmation
-  EXECUTED   // Successfully executed
-  FAILED     // Execution failed
-  SKIPPED    // Skipped due to filters/conditions
-  EXPIRED    // User didn't confirm in time
+  PENDING // Waiting for user confirmation
+  EXECUTED // Successfully executed
+  FAILED // Execution failed
+  SKIPPED // Skipped due to filters/conditions
+  EXPIRED // User didn't confirm in time
 }
 
 // User's copy trading configuration
 model CopyTradingConfig {
-  id              String           @id @default(cuid())
-  walletAddress   String           // User's wallet address
-  traderAddress   String           // Trader being copied
-  traderName      String?          // Display name of trader
-  
+  id            String  @id @default(cuid())
+  walletAddress String // User's wallet address
+  traderAddress String // Trader being copied
+  traderName    String? // Display name of trader
+
   // Copy mode settings
-  mode            CopyTradingMode  @default(PERCENTAGE)
-  sizeScale       Float?           // For PERCENTAGE mode: 0.5 = 50%
-  fixedAmount     Float?           // For FIXED_AMOUNT mode
-  maxSizePerTrade Float            @default(100)
-  minSizePerTrade Float?           // For RANGE mode: minimum $ per trade
-  
+  mode            CopyTradingMode @default(PERCENTAGE)
+  sizeScale       Float? // For PERCENTAGE mode: 0.5 = 50%
+  fixedAmount     Float? // For FIXED_AMOUNT mode
+  maxSizePerTrade Float           @default(100)
+  minSizePerTrade Float? // For RANGE mode: minimum $ per trade
+
   // Advanced mode settings
-  infiniteMode    Boolean          @default(false)  // Pause and retry on insufficient funds
-  takeProfit      Float?           // Auto-pause at this profit ($)
-  stopLoss        Float?           // Auto-pause at this loss ($)
-  direction       String           @default("COPY")  // 'COPY' | 'COUNTER'
-  
+  infiniteMode Boolean @default(false) // Pause and retry on insufficient funds
+  takeProfit   Float? // Auto-pause at this profit ($)
+  stopLoss     Float? // Auto-pause at this loss ($)
+  direction    String  @default("COPY") // 'COPY' | 'COUNTER'
+
   // Filters - basic
-  sideFilter      String?          // 'BUY' | 'SELL' | null (both)
-  minTriggerSize  Float?           // Min trade size to trigger copy ($)
-  maxDaysOut      Int?             // Max market expiry days
-  
+  sideFilter     String? // 'BUY' | 'SELL' | null (both)
+  minTriggerSize Float? // Min trade size to trigger copy ($)
+  maxDaysOut     Int? // Max market expiry days
+
   // Filters - advanced
-  maxPerMarket    Float?           // Max total investment per market ($)
-  minLiquidity    Float?           // Min market liquidity ($)
-  minVolume       Float?           // Min market volume ($)
-  maxOdds         Float?           // Max odds to copy (e.g., 0.8 = 80%)
-  
+  maxPerMarket Float? // Max total investment per market ($)
+  minLiquidity Float? // Min market liquidity ($)
+  minVolume    Float? // Min market volume ($)
+  maxOdds      Float? // Max odds to copy (e.g., 0.8 = 80%)
+
   // Sell strategy
-  sellMode        String           @default("SAME_PERCENT")  // 'SAME_PERCENT' | 'FIXED_AMOUNT' | 'CUSTOM_PERCENT'
-  sellFixedAmount Float?           // For FIXED_AMOUNT sell mode ($)
-  sellPercentage  Float?           // For CUSTOM_PERCENT sell mode (0.25 = 25%)
-  
+  sellMode        String @default("SAME_PERCENT") // 'SAME_PERCENT' | 'FIXED_AMOUNT' | 'CUSTOM_PERCENT'
+  sellFixedAmount Float? // For FIXED_AMOUNT sell mode ($)
+  sellPercentage  Float? // For CUSTOM_PERCENT sell mode (0.25 = 25%)
+
   // Status
-  isActive        Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  copyTrades      CopyTrade[]
-  
+  copyTrades CopyTrade[]
+
   @@index([walletAddress])
   @@index([traderAddress])
   @@index([isActive])
@@ -202,34 +203,34 @@ model CopyTradingConfig {
 
 // Individual copy trade record
 model CopyTrade {
-  id              String           @id @default(cuid())
-  config          CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-  configId        String
-  
+  id       String            @id @default(cuid())
+  config   CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId String
+
   // Original trade info
-  originalTrader  String
-  originalSide    String           // 'BUY' | 'SELL'
-  originalSize    Float
-  originalPrice   Float
-  marketSlug      String?
-  conditionId     String?
-  tokenId         String?
-  outcome         String?          // 'Yes' | 'No'
-  
+  originalTrader String
+  originalSide   String // 'BUY' | 'SELL'
+  originalSize   Float
+  originalPrice  Float
+  marketSlug     String?
+  conditionId    String?
+  tokenId        String?
+  outcome        String? // 'Yes' | 'No'
+
   // Copy trade info
-  copySize        Float
-  copyPrice       Float?
-  
+  copySize  Float
+  copyPrice Float?
+
   // Execution status
-  status          CopyTradeStatus  @default(PENDING)
-  txHash          String?
-  errorMessage    String?
-  
+  status       CopyTradeStatus @default(PENDING)
+  txHash       String?
+  errorMessage String?
+
   // Timestamps
-  detectedAt      DateTime         @default(now())
-  executedAt      DateTime?
-  expiresAt       DateTime?        // For PENDING trades
-  
+  detectedAt DateTime  @default(now())
+  executedAt DateTime?
+  expiresAt  DateTime? // For PENDING trades
+
   @@index([configId])
   @@index([status])
   @@index([detectedAt])
@@ -237,15 +238,15 @@ model CopyTrade {
 
 // Sync log for tracking sync history
 model SyncLog {
-  id          String   @id @default(cuid())
-  type        String   // 'PROXY_STATS' | 'COPY_TRADING_DETECT'
-  startedAt   DateTime @default(now())
+  id          String    @id @default(cuid())
+  type        String // 'PROXY_STATS' | 'COPY_TRADING_DETECT'
+  startedAt   DateTime  @default(now())
   completedAt DateTime?
-  synced      Int      @default(0)
-  failed      Int      @default(0)
+  synced      Int       @default(0)
+  failed      Int       @default(0)
   durationMs  Int?
-  errors      String?  // JSON array of error messages
-  
+  errors      String? // JSON array of error messages
+
   @@index([type])
   @@index([startedAt])
 }

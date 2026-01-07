@@ -11,7 +11,7 @@ const API_BASE_URL = '';
 export interface AffiliateStats {
     walletAddress: string;
     referralCode: string;
-    tier: 'BRONZE' | 'SILVER' | 'GOLD' | 'DIAMOND';
+    tier: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM' | 'DIAMOND';
     commissionRate: number;
     totalVolumeGenerated: number;
     totalReferrals: number;
@@ -130,7 +130,8 @@ export function generateReferralLink(referralCode: string): string {
 // Tier display helpers
 export const TIER_INFO = {
     BRONZE: { name: 'Bronze Partner', color: 'text-orange-400', minVolume: 0, nextTier: 'Silver', nextVolume: 500000 },
-    SILVER: { name: 'Silver Partner', color: 'text-gray-300', minVolume: 500000, nextTier: 'Gold', nextVolume: 2000000 },
-    GOLD: { name: 'Gold Partner', color: 'text-yellow-400', minVolume: 2000000, nextTier: 'Diamond', nextVolume: 10000000 },
-    DIAMOND: { name: 'Diamond Partner', color: 'text-blue-300', minVolume: 10000000, nextTier: null, nextVolume: null },
+    SILVER: { name: 'Silver Partner', color: 'text-gray-300', minVolume: 500000, nextTier: 'Gold', nextVolume: 2500000 },
+    GOLD: { name: 'Gold Partner', color: 'text-yellow-400', minVolume: 2500000, nextTier: 'Platinum', nextVolume: 10000000 },
+    PLATINUM: { name: 'Platinum Partner', color: 'text-cyan-400', minVolume: 10000000, nextTier: 'Diamond', nextVolume: 50000000 },
+    DIAMOND: { name: 'Diamond Partner', color: 'text-blue-300', minVolume: 50000000, nextTier: null, nextVolume: null },
 };
