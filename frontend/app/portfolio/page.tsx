@@ -38,7 +38,7 @@ export default function PortfolioPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     // New state for History and Sell All
-    const [activeTab, setActiveTab] = useState<'positions' | 'history'>('positions');
+    const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history'>('positions');
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isSellingAll, setIsSellingAll] = useState(false);
@@ -322,18 +322,13 @@ export default function PortfolioPage() {
                 </div>
             )}
 
-            {/* Order Status Monitoring */}
-            {user?.wallet?.address && (
-                <div className="mb-8">
-                    <OrderStatusPanel walletAddress={user.wallet.address} />
-                </div>
-            )}
+            {/* Order Status Monitoring Removed - moved to Tabs */}
 
             {/* Main Content Split */}
             <div className="grid gap-6 lg:grid-cols-12">
 
                 {/* Left: Active Copies (4 cols) */}
-                <div className="lg:col-span-4 rounded-xl border bg-card shadow-sm flex flex-col h-[500px]">
+                <div className="lg:col-span-4 rounded-xl border bg-card shadow-sm flex flex-col h-[600px]">
                     <div className="p-6 border-b flex items-center justify-between">
                         <h3 className="font-semibold">Active Copies</h3>
                         <Link href="/smart-money" className="text-xs font-medium text-blue-400 hover:text-blue-300">
@@ -385,8 +380,8 @@ export default function PortfolioPage() {
                     )}
                 </div>
 
-                {/* Right: Active Positions (8 cols) */}
-                <div className="lg:col-span-8 rounded-xl border bg-card shadow-sm flex flex-col h-[500px]">
+                {/* Right: Portfolio Tabs (8 cols) */}
+                <div className="lg:col-span-8 rounded-xl border bg-card shadow-sm flex flex-col h-[600px]">
                     <div className="p-4 border-b flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <h3 className="font-semibold px-2">Portfolio</h3>
@@ -400,6 +395,15 @@ export default function PortfolioPage() {
                                     )}
                                 >
                                     Active <span className="ml-1 text-muted-foreground">{positions.length}</span>
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('orders')}
+                                    className={cn(
+                                        "rounded px-3 py-1 text-xs font-medium transition-all",
+                                        activeTab === 'orders' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    Orders
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('history')}
@@ -419,13 +423,13 @@ export default function PortfolioPage() {
                                 className="text-xs font-medium text-red-400 hover:text-red-300 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 rounded px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                                 {isSellingAll && <Loader2 className="h-3 w-3 animate-spin" />}
-                                Sell All Positions
+                                Sell All
                             </button>
                         )}
                     </div>
 
-                    <div className="flex-1 overflow-auto">
-                        {activeTab === 'positions' ? (
+                    <div className="flex-1 overflow-auto bg-card">
+                        {activeTab === 'positions' && (
                             // --- POSITIONS VIEW ---
                             positions.length > 0 ? (
                                 <table className="w-full caption-bottom text-sm">
@@ -470,7 +474,25 @@ export default function PortfolioPage() {
                                     </div>
                                 </div>
                             )
-                        ) : (
+                        )}
+
+                        {activeTab === 'orders' && (
+                            // --- ORDERS VIEW ---
+                            <div className="h-full flex flex-col">
+                                {user?.wallet?.address ? (
+                                    <OrderStatusPanel
+                                        walletAddress={user.wallet.address}
+                                        className="border-0 rounded-none bg-transparent shadow-none h-full"
+                                    />
+                                ) : (
+                                    <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                                        Connect wallet to view orders
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'history' && (
                             // --- HISTORY VIEW ---
                             isHistoryLoading ? (
                                 <div className="flex h-full items-center justify-center">
