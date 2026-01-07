@@ -62,11 +62,11 @@ export const affiliateApi = {
     /**
      * Track a referral signup
      */
-    async trackReferral(referralCode: string, refereeAddress: string): Promise<{ success: boolean; error?: string }> {
+    async trackReferral(referralCode: string, referrerWallet: string, refereeAddress: string): Promise<{ success: boolean; error?: string }> {
         const response = await fetch(`${API_BASE_URL}/api/affiliate/track`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ referralCode, refereeAddress }),
+            body: JSON.stringify({ referralCode, referrerWallet, refereeAddress }),
         });
         return response.json();
     },

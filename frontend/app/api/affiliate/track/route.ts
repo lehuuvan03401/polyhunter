@@ -4,10 +4,10 @@ import { prisma, normalizeAddress, errorResponse } from '../utils';
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { referralCode, refereeAddress } = body;
+        const { referralCode, referrerWallet, refereeAddress } = body;
 
-        if (!referralCode) {
-            return errorResponse('Referral code is required');
+        if (!referralCode && !referrerWallet) {
+            return errorResponse('Referral code or referrer wallet is required');
         }
 
         if (!refereeAddress || !/^0x[a-fA-F0-9]{40}$/.test(refereeAddress)) {
@@ -28,13 +28,23 @@ export async function POST(request: Request) {
             });
         }
 
-        // Find referrer by code
-        const referrer = await prisma.referrer.findUnique({
-            where: { referralCode: referralCode.toUpperCase() },
-        });
+        // Find referrer by code OR wallet
+        let referrer = null;
+
+        if (referralCode) {
+            referrer = await prisma.referrer.findUnique({
+                where: { referralCode: referralCode.toUpperCase() },
+            });
+        }
+
+        if (!referrer && referrerWallet) {
+            referrer = await prisma.referrer.findUnique({
+                where: { walletAddress: normalizeAddress(referrerWallet) },
+            });
+        }
 
         if (!referrer) {
-            return errorResponse('Invalid referral code');
+            return errorResponse('Invalid referral code or wallet');
         }
 
         // Prevent self-referral

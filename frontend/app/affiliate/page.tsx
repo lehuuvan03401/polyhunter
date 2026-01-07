@@ -32,6 +32,9 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     const [isLoading, setIsLoading] = useState(true);
     const [isRegistering, setIsRegistering] = useState(false);
     const [isRegistered, setIsRegistered] = useState(false);
+    const [referrals, setReferrals] = useState<any[]>([]);
+    const [simVolume, setSimVolume] = useState('1000');
+    const [isSimulating, setIsSimulating] = useState(false);
 
     useEffect(() => {
         async function loadStats() {
@@ -40,8 +43,12 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                 const lookup = await affiliateApi.lookupWallet(walletAddress);
                 if (lookup.registered) {
                     setIsRegistered(true);
-                    const data = await affiliateApi.getStats(walletAddress);
-                    setStats(data);
+                    const [statsData, referralsData] = await Promise.all([
+                        affiliateApi.getStats(walletAddress),
+                        affiliateApi.getReferrals(walletAddress)
+                    ]);
+                    setStats(statsData);
+                    setReferrals(referralsData);
                 } else {
                     setIsRegistered(false);
                 }
@@ -61,8 +68,12 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
             if (result.success) {
                 toast.success('Successfully registered as affiliate!');
                 setIsRegistered(true);
-                const data = await affiliateApi.getStats(walletAddress);
-                setStats(data);
+                const [statsData, referralsData] = await Promise.all([
+                    affiliateApi.getStats(walletAddress),
+                    affiliateApi.getReferrals(walletAddress)
+                ]);
+                setStats(statsData);
+                setReferrals(referralsData);
             } else {
                 toast.error(result.error || 'Registration failed');
             }
@@ -77,6 +88,46 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
         if (stats?.referralCode) {
             navigator.clipboard.writeText(generateReferralLink(stats.referralCode));
             toast.success('Referral link copied!');
+        }
+    };
+
+    const handleSimulate = async () => {
+        setIsSimulating(true);
+        try {
+            // Simulate a trade from the FIRST referral if exists, or a dummy
+            const referee = referrals.length > 0 ? referrals[0].address : '0x0000000000000000000000000000000000000000'; // Fallback needs real referral
+
+            if (referrals.length === 0) {
+                toast.error("You need at least one referral to simulate commission!");
+                return;
+            }
+
+            const response = await fetch('/api/affiliate/simulate-trade', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    refereeAddress: referee,
+                    volume: parseFloat(simVolume)
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                toast.success(`Simulated! Earned $${result.commissionEarned.toFixed(2)}`);
+                // Refresh stats
+                const [statsData, referralsData] = await Promise.all([
+                    affiliateApi.getStats(walletAddress),
+                    affiliateApi.getReferrals(walletAddress)
+                ]);
+                setStats(statsData);
+                setReferrals(referralsData);
+            } else {
+                toast.error(result.error);
+            }
+        } catch (e) {
+            toast.error("Simulation failed");
+        } finally {
+            setIsSimulating(false);
         }
     };
 
@@ -207,6 +258,66 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                             </button>
                         </div>
                     </div>
+                </div>
+
+                {/* 4. Recent Referrals */}
+                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
+                    <h3 className="font-bold text-white mb-4">Recent Referrals</h3>
+                    {referrals.length > 0 ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-muted-foreground border-b border-white/5 uppercase text-xs">
+                                    <tr>
+                                        <th className="py-3 font-medium">Wallet</th>
+                                        <th className="py-3 font-medium">Joined</th>
+                                        <th className="py-3 font-medium text-right">Volume</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {referrals.map((ref) => (
+                                        <tr key={ref.address} className="hover:bg-white/5">
+                                            <td className="py-3 font-mono text-muted-foreground">{ref.address.slice(0, 6)}...{ref.address.slice(-4)}</td>
+                                            <td className="py-3">{new Date(ref.joinedAt).toLocaleDateString()}</td>
+                                            <td className="py-3 text-right">${ref.lifetimeVolume.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                            No referrals yet. Share your link to get started!
+                        </div>
+                    )}
+                </div>
+
+                {/* 5. Developer Tools (Simulation) */}
+                <div className="rounded-xl border border-dashed border-yellow-500/30 bg-yellow-500/5 p-6">
+                    <div className="flex items-center gap-2 mb-4 text-yellow-500">
+                        <Info className="h-4 w-4" />
+                        <h3 className="font-bold text-sm uppercase tracking-wider">Developer Simulation</h3>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-4 items-end">
+                        <div className="flex-1 space-y-2">
+                            <label className="text-xs text-muted-foreground">Simulate Trade Volume (USDC)</label>
+                            <input
+                                type="number"
+                                value={simVolume}
+                                onChange={(e) => setSimVolume(e.target.value)}
+                                className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-4 py-2 text-white"
+                            />
+                        </div>
+                        <button
+                            onClick={handleSimulate}
+                            disabled={isSimulating || referrals.length === 0}
+                            className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors h-10"
+                        >
+                            {isSimulating ? 'Processing...' : 'Simulate Trade'}
+                        </button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-2">
+                        *This simulates a trade from your most recent referral to test commission & tier logic.
+                    </p>
                 </div>
             </div>
         </div>

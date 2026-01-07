@@ -14,6 +14,7 @@ export const metadata: Metadata = {
 };
 
 import Providers from './providers';
+import { ReferralProvider } from '@/components/providers/referral-provider';
 
 // ... imports remain same
 
@@ -26,12 +27,14 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={inter.className}>
         <Providers>
-          <Navbar />
-          <main className="flex-1 min-h-screen">
-            {children}
-          </main>
-          <Footer />
-          <Toaster position="top-center" richColors theme="dark" />
+          <ReferralProvider>
+            <Navbar />
+            <main className="flex-1 min-h-screen">
+              {children}
+            </main>
+            <Footer />
+            <Toaster position="top-center" richColors theme="dark" />
+          </ReferralProvider>
         </Providers>
       </body>
     </html>
