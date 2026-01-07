@@ -13,8 +13,11 @@ import {
     Copy,
     ArrowUpRight,
     Loader2,
-    Coins
+    Coins,
+    AlertCircle,
+    Check
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -33,6 +36,12 @@ export default function PortfolioPage() {
     const [totalPnL, setTotalPnL] = useState(0);
     const [positions, setPositions] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    // New state for History and Sell All
+    const [activeTab, setActiveTab] = useState<'positions' | 'history'>('positions');
+    const [historyData, setHistoryData] = useState<any[]>([]);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const [isSellingAll, setIsSellingAll] = useState(false);
 
     // Get copy trading configs from Zustand store
     const copyConfigs = useCopyTradingStore((state) => state.configs);
@@ -90,6 +99,89 @@ export default function PortfolioPage() {
 
         loadData();
     }, [ready, authenticated, user?.wallet?.address]);
+
+    // Fetch history when tab changes
+    useEffect(() => {
+        const fetchHistory = async () => {
+            if (activeTab === 'history' && authenticated && user?.wallet?.address) {
+                setIsHistoryLoading(true);
+                try {
+                    // @ts-ignore - getWalletActivity exists in service but type might lag
+                    const activity = await polyClient.wallets.getWalletActivity(user.wallet.address);
+                    // Standardize activity format
+                    const formattedDetails = activity.activities || [];
+                    setHistoryData(formattedDetails);
+                } catch (e) {
+                    console.error("Failed to fetch history", e);
+                } finally {
+                    setIsHistoryLoading(false);
+                }
+            }
+        };
+
+        fetchHistory();
+    }, [activeTab, authenticated, user?.wallet?.address]);
+
+    const handleSellAll = async () => {
+        if (positions.length === 0) return;
+
+        if (!confirm(`Are you sure you want to sell ALL ${positions.length} positions? This will execute market sell orders for everything.`)) {
+            return;
+        }
+
+        setIsSellingAll(true);
+        const toastId = toast.loading("Selling all positions...");
+
+        try {
+            let successCount = 0;
+            let failCount = 0;
+
+            // Process in parallel with concurrency limit ideally, but simple for now
+            const results = await Promise.all(positions.map(async (pos) => {
+                try {
+                    // Assuming pos has tokenId and size
+                    // We need to determine SIDE. If we hold YES, we SELL YES.
+                    // If we hold NO, we SELL NO.
+                    // The position object should have 'outcome' or 'tokenId'
+
+                    if (!pos.tokenId || !pos.size) return false;
+
+                    // Execute Market Sell
+                    await polyClient.trading.createMarketOrder({
+                        tokenId: pos.tokenId,
+                        side: 'SELL',
+                        amount: pos.size, // Sell entire size
+                        orderType: 'FOK' // Fill or Kill
+                    });
+                    return true;
+                } catch (err) {
+                    console.error("Sell failed for", pos.title, err);
+                    return false;
+                }
+            }));
+
+            successCount = results.filter(r => r).length;
+            failCount = results.filter(r => !r).length;
+
+            if (failCount === 0) {
+                toast.success(`Successfully sold all ${successCount} positions!`, { id: toastId });
+                // Refresh positions
+                const newPos = await polyClient.wallets.getWalletPositions(user?.wallet?.address!);
+                setPositions(newPos);
+            } else {
+                toast.warning(`Sold ${successCount} positions. Failed: ${failCount}`, { id: toastId });
+                // Partial refresh
+                const newPos = await polyClient.wallets.getWalletPositions(user?.wallet?.address!);
+                setPositions(newPos);
+            }
+
+        } catch (e) {
+            console.error("Sell all error", e);
+            toast.error("Critical error during sell-all", { id: toastId });
+        } finally {
+            setIsSellingAll(false);
+        }
+    };
 
     // Format address for display
     const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -297,65 +389,141 @@ export default function PortfolioPage() {
                 <div className="lg:col-span-8 rounded-xl border bg-card shadow-sm flex flex-col h-[500px]">
                     <div className="p-4 border-b flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <h3 className="font-semibold px-2">Active Positions</h3>
+                            <h3 className="font-semibold px-2">Portfolio</h3>
                             {/* Tabs */}
                             <div className="flex items-center rounded-lg bg-muted/50 p-1">
-                                <button className="rounded px-3 py-1 text-xs font-medium bg-background shadow-sm text-foreground">
+                                <button
+                                    onClick={() => setActiveTab('positions')}
+                                    className={cn(
+                                        "rounded px-3 py-1 text-xs font-medium transition-all",
+                                        activeTab === 'positions' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
                                     Active <span className="ml-1 text-muted-foreground">{positions.length}</span>
                                 </button>
-                                <button className="rounded px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                                <button
+                                    onClick={() => setActiveTab('history')}
+                                    className={cn(
+                                        "rounded px-3 py-1 text-xs font-medium transition-all",
+                                        activeTab === 'history' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
                                     History
                                 </button>
                             </div>
                         </div>
-                        <button className="text-xs font-medium text-muted-foreground hover:text-foreground border border-input rounded px-3 py-1.5 hover:bg-muted transition-colors">
-                            Sell All Positions
-                        </button>
+                        {activeTab === 'positions' && (
+                            <button
+                                onClick={handleSellAll}
+                                disabled={positions.length === 0 || isSellingAll}
+                                className="text-xs font-medium text-red-400 hover:text-red-300 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 rounded px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                {isSellingAll && <Loader2 className="h-3 w-3 animate-spin" />}
+                                Sell All Positions
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex-1 overflow-auto">
-                        {positions.length > 0 ? (
-                            <table className="w-full caption-bottom text-sm">
-                                <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
-                                    <tr className="border-b transition-colors">
-                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Market</th>
-                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Outcome</th>
-                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Size</th>
-                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Price</th>
-                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">PnL</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {positions.map((pos, i) => (
-                                        <tr key={i} className="border-b transition-colors hover:bg-muted/50">
-                                            <td className="p-4 align-middle font-medium max-w-[200px] truncate" title={pos.title}>{pos.title}</td>
-                                            <td className="p-4 align-middle">
-                                                <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
-                                                    pos.outcome === 'YES' ? "bg-green-400/10 text-green-400 ring-green-400/20" : "bg-red-400/10 text-red-400 ring-red-400/20")}>
-                                                    {pos.outcome}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 align-middle text-right font-mono text-xs">{pos.size.toFixed(2)}</td>
-                                            <td className="p-4 align-middle text-right font-mono text-xs">${(pos.curPrice || pos.avgPrice)?.toFixed(2)}</td>
-                                            <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
-                                                {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
-                                            </td>
+                        {activeTab === 'positions' ? (
+                            // --- POSITIONS VIEW ---
+                            positions.length > 0 ? (
+                                <table className="w-full caption-bottom text-sm">
+                                    <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
+                                        <tr className="border-b transition-colors">
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Market</th>
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Outcome</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Size</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Price</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">PnL</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {positions.map((pos, i) => (
+                                            <tr key={i} className="border-b transition-colors hover:bg-muted/50">
+                                                <td className="p-4 align-middle font-medium max-w-[200px] truncate" title={pos.title}>{pos.title}</td>
+                                                <td className="p-4 align-middle">
+                                                    <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                                                        pos.outcome === 'YES' ? "bg-green-400/10 text-green-400 ring-green-400/20" : "bg-red-400/10 text-red-400 ring-red-400/20")}>
+                                                        {pos.outcome}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4 align-middle text-right font-mono text-xs">{pos.size.toFixed(2)}</td>
+                                                <td className="p-4 align-middle text-right font-mono text-xs">${(pos.curPrice || pos.avgPrice)?.toFixed(2)}</td>
+                                                <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
+                                                    {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
+                                    <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">
+                                        <Layers className="h-6 w-6" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm">No Active Positions</h4>
+                                        <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
+                                            When traders you follow make moves, your positions will appear here.
+                                        </p>
+                                    </div>
+                                </div>
+                            )
                         ) : (
-                            <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
-                                <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">
-                                    <Layers className="h-6 w-6" />
+                            // --- HISTORY VIEW ---
+                            isHistoryLoading ? (
+                                <div className="flex h-full items-center justify-center">
+                                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                                 </div>
-                                <div>
-                                    <h4 className="font-medium text-sm">No Active Positions</h4>
-                                    <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
-                                        When traders you follow make moves, your positions will appear here.
-                                    </p>
+                            ) : historyData.length > 0 ? (
+                                <table className="w-full caption-bottom text-sm">
+                                    <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
+                                        <tr className="border-b transition-colors">
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Date</th>
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Action</th>
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Market</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Size</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {historyData.map((item, i) => (
+                                            <tr key={i} className="border-b transition-colors hover:bg-muted/50">
+                                                <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
+                                                    {new Date(item.timestamp * 1000).toLocaleDateString()}
+                                                </td>
+                                                <td className="p-4 align-middle">
+                                                    <span className={cn("font-medium text-xs uppercase", item.side === 'BUY' ? "text-green-500" : "text-red-500")}>
+                                                        {item.side} {item.outcome || 'SHARES'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4 align-middle text-xs max-w-[180px] truncate" title={item.title}>
+                                                    {item.title || item.conditionId?.slice(0, 10) + '...'}
+                                                </td>
+                                                <td className="p-4 align-middle text-right font-mono text-xs">
+                                                    {(item.size || item.usdcSize || 0).toFixed(2)}
+                                                </td>
+                                                <td className="p-4 align-middle text-right font-mono text-xs">
+                                                    ${(item.price || 0).toFixed(2)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
+                                    <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">
+                                        <History className="h-6 w-6" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-medium text-sm">No History Yet</h4>
+                                        <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
+                                            Your trade history and activity will appear here.
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
+                            )
                         )}
                     </div>
                 </div>
