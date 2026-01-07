@@ -94,12 +94,35 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     const handleSimulate = async () => {
         setIsSimulating(true);
         try {
-            // Simulate a trade from the FIRST referral if exists, or a dummy
-            const referee = referrals.length > 0 ? referrals[0].address : '0x0000000000000000000000000000000000000000'; // Fallback needs real referral
+            let referee = referrals.length > 0 ? referrals[0].address : null;
 
-            if (referrals.length === 0) {
-                toast.error("You need at least one referral to simulate commission!");
-                return;
+            // If no referrals, auto-create a test one
+            if (!referee) {
+                const toastId = toast.loading('Creating test referral...');
+                try {
+                    // Create a random wallet address
+                    const randomWallet = '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                    // Track it
+                    const trackRes = await affiliateApi.trackReferral(stats?.referralCode || '', walletAddress, randomWallet);
+
+                    if (trackRes.success) {
+                        referee = randomWallet;
+                        toast.dismiss(toastId);
+                        toast.success('Created test referral!');
+
+                        // Refresh referrals list
+                        const newReferrals = await affiliateApi.getReferrals(walletAddress);
+                        setReferrals(newReferrals);
+                    } else {
+                        toast.dismiss(toastId);
+                        toast.error('Failed to create test referral');
+                        return;
+                    }
+                } catch (e) {
+                    toast.dismiss(toastId);
+                    toast.error('Failed to create test referral');
+                    return;
+                }
             }
 
             const response = await fetch('/api/affiliate/simulate-trade', {
@@ -309,7 +332,7 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                         </div>
                         <button
                             onClick={handleSimulate}
-                            disabled={isSimulating || referrals.length === 0}
+                            disabled={isSimulating}
                             className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors h-10"
                         >
                             {isSimulating ? 'Processing...' : 'Simulate Trade'}
