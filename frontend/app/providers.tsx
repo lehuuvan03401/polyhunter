@@ -10,17 +10,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
                 appearance: {
                     theme: 'dark',
                     accentColor: '#22c55e',
-
                 },
                 loginMethods: ['wallet', 'email', 'google', 'twitter'],
                 embeddedWallets: {
-                    ethereum: {
-                        createOnLogin: 'users-without-wallets',
-                    },
-                },
+                    createOnLogin: 'users-without-wallets',
+                } as any,
             }}
         >
-            {children}
+            <>{children}</>
         </PrivyProvider>
     );
 }
