@@ -147,7 +147,7 @@ export default function PortfolioPage() {
                     if (!pos.tokenId || !pos.size) return false;
 
                     // Execute Market Sell
-                    await polyClient.trading.createMarketOrder({
+                    await polyClient.tradingService.createMarketOrder({
                         tokenId: pos.tokenId,
                         side: 'SELL',
                         amount: pos.size, // Sell entire size

@@ -194,11 +194,11 @@ export async function POST(request: NextRequest) {
              */
 
             // Import services dynamically to avoid issues if they are not fully initialized
-            const { TradingService, RateLimiter, UnifiedCache } = await import('@catalyst-team/poly-sdk');
+            const { TradingService, RateLimiter, createUnifiedCache } = await import('@catalyst-team/poly-sdk');
 
             // Initialize services
             const rateLimiter = new RateLimiter();
-            const cache = new UnifiedCache('copy-execute');
+            const cache = createUnifiedCache();
             const tradingService = new TradingService(rateLimiter, cache, {
                 privateKey: TRADING_PRIVATE_KEY,
                 chainId: CHAIN_ID,
