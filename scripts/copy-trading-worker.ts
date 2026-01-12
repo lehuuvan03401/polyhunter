@@ -24,7 +24,8 @@
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
 import type { ActivityTrade } from '../src/services/realtime-service-v2.js';
-import { TradingService, RateLimiter, createUnifiedCache } from '../src/index.js';
+import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService } from '../src/index.js';
+import { ethers } from 'ethers';
 
 // Dynamic import for Prisma to handle different runtime contexts
 let prisma: any = null;
@@ -47,6 +48,7 @@ const realtimeService = new RealtimeServiceV2({ debug: false });
 
 // Trading service for direct execution (if private key is available)
 let tradingService: TradingService | null = null;
+let executionService: CopyTradingExecutionService | null = null;
 
 // ============================================================================
 // State
@@ -271,17 +273,20 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
             // Execute Immediately (if configured)
             // ========================================
 
-            if (TRADING_PRIVATE_KEY && tradingService && trade.asset) {
+            if (TRADING_PRIVATE_KEY && executionService && trade.asset) {
                 try {
-                    // Direct execution via TradingService
-                    const slippage = 0.02; // 2%
-                    const size = copySize / trade.price; // Convert $ to shares
+                    // Execute via CopyTradingExecutionService (handles Proxy & Order)
+                    console.log(`   🚀 Executing via Service for ${config.walletAddress}...`);
 
-                    const result = await tradingService.createLimitOrder({
+                    const result = await executionService.executeOrderWithProxy({
+                        tradeId: copyTrade.id,
+                        walletAddress: config.walletAddress,
                         tokenId: trade.asset,
                         side: copySide as 'BUY' | 'SELL',
+                        amount: copySize,
                         price: trade.price,
-                        size: size,
+                        slippage: 0.02,
+                        orderType: 'limit',
                     });
 
                     if (result.success) {
@@ -295,16 +300,19 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         });
                         stats.tradesExecuted++;
                         console.log(`   ✅ Executed! Order: ${result.orderId}`);
+                        if (result.useProxyFunds) {
+                            console.log(`   💰 Used Proxy Funds: ${result.fundTransferTxHash}`);
+                        }
                     } else {
                         await prisma.copyTrade.update({
                             where: { id: copyTrade.id },
                             data: {
                                 status: 'FAILED',
-                                errorMessage: result.errorMsg,
+                                errorMessage: result.error,
                             },
                         });
                         stats.tradesFailed++;
-                        console.log(`   ❌ Failed: ${result.errorMsg}`);
+                        console.log(`   ❌ Failed: ${result.error}`);
                     }
                 } catch (execError) {
                     const errorMsg = execError instanceof Error ? execError.message : String(execError);
@@ -403,10 +411,18 @@ async function start(): Promise<void> {
                 chainId: CHAIN_ID,
             });
             await tradingService.initialize();
+
+            // Initialize Execution Service
+            const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+            const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+            executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
+
             console.log(`   Trading Wallet: ${tradingService.getAddress()}`);
+            console.log(`   Execution Service: Ready ✅`);
         } catch (error) {
             console.error('   ⚠️ Failed to initialize TradingService:', error);
             tradingService = null;
+            executionService = null;
         }
     }
 

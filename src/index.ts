@@ -158,6 +158,13 @@ export type {
   SmartMoneyServiceConfig,
 } from './services/smart-money-service.js';
 
+// CopyTradingExecutionService - Proxy execution mechanics
+export { CopyTradingExecutionService } from './services/copy-trading-execution-service.js';
+export type {
+  ExecutionParams,
+  ExecutionResult,
+} from './services/copy-trading-execution-service.js';
+
 // TradingService - Unified trading and market data
 export { TradingService, POLYGON_MAINNET, POLYGON_AMOY } from './services/trading-service.js';
 export type {
@@ -311,7 +318,7 @@ import type { UnifiedMarket, ProcessedOrderbook, ArbitrageOpportunity, KLineInte
 import { createUnifiedCache, type UnifiedCache } from './core/unified-cache.js';
 
 // Re-export for backward compatibility
-export interface PolymarketSDKConfig extends PolySDKOptions {}
+export interface PolymarketSDKConfig extends PolySDKOptions { }
 
 export class PolymarketSDK {
   // Infrastructure

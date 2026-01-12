@@ -187,229 +187,79 @@ export async function POST(request: NextRequest) {
                 });
             }
 
-            // --- OPTION B: PROXY FUND MANAGEMENT ---
-            // 
-            // Flow:
-            // 1. Check if user has Proxy with sufficient funds
-            // 2. Transfer USDC from Proxy to Bot
-            // 3. Bot executes CLOB order
-            // 4. Transfer result tokens back to Proxy
-            //
-
-            const signer = getBotSigner();
-            let proxyAddress: string | null = null;
-            let useProxyFunds = false;
-            let fundTransferTxHash: string | undefined;
-
-            if (signer) {
-                try {
-                    const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-                    if (addresses.proxyFactory) {
-                        const factory = new ethers.Contract(addresses.proxyFactory, PROXY_FACTORY_ABI, signer);
-                        const userProxy = await factory.getUserProxy(walletAddress);
-                        if (userProxy && userProxy !== ethers.constants.AddressZero) {
-                            proxyAddress = userProxy;
-                            console.log(`[Execute] User has Proxy: ${proxyAddress}`);
-
-                            // Check Proxy balance
-                            const proxyBalance = await getProxyUsdcBalance(proxyAddress!, signer);
-                            console.log(`[Execute] Proxy USDC balance: $${proxyBalance.toFixed(2)}`);
-
-                            if (proxyBalance >= trade.copySize) {
-                                // Sufficient funds - transfer from Proxy to Bot
-                                console.log(`[Execute] Transferring $${trade.copySize} from Proxy to Bot...`);
-                                const transferResult = await transferFromProxy(proxyAddress!, trade.copySize, signer);
-
-                                if (transferResult.success) {
-                                    useProxyFunds = true;
-                                    fundTransferTxHash = transferResult.txHash;
-                                    console.log(`[Execute] Fund transfer successful: ${fundTransferTxHash}`);
-                                } else {
-                                    console.error(`[Execute] Fund transfer failed: ${transferResult.error}`);
-                                    return NextResponse.json({
-                                        success: false,
-                                        error: `Failed to transfer funds from Proxy: ${transferResult.error}`,
-                                    });
-                                }
-                            } else {
-                                console.log(`[Execute] Insufficient Proxy funds ($${proxyBalance} < $${trade.copySize})`);
-                                return NextResponse.json({
-                                    success: false,
-                                    error: `Insufficient Proxy balance. Need $${trade.copySize.toFixed(2)}, have $${proxyBalance.toFixed(2)}`,
-                                    requiresDeposit: true,
-                                    proxyAddress,
-                                });
-                            }
-                        }
-                    }
-                } catch (e: any) {
-                    console.error('[Execute] Failed to check/transfer from Proxy:', e);
-                    return NextResponse.json({
-                        success: false,
-                        error: `Proxy operation failed: ${e.message}`,
-                    });
-                }
-            }
-
-            // If no Proxy or Proxy check failed, require manual execution
-            if (!proxyAddress) {
-                return NextResponse.json({
-                    success: false,
-                    requiresManualExecution: true,
-                    message: 'No Proxy wallet found. User must execute manually via frontend wallet.',
-                    trade: {
-                        id: trade.id,
-                        tokenId: trade.tokenId,
-                        side: trade.originalSide,
-                        size: trade.copySize,
-                        price: trade.originalPrice,
-                    },
-                });
-            }
-
-            // --- CLOB ORDER EXECUTION ---
-
-            const { TradingService, RateLimiter, createUnifiedCache } = await import('@catalyst-team/poly-sdk');
-
-            const rateLimiter = new RateLimiter();
-            const cache = createUnifiedCache();
-            const tradingService = new TradingService(rateLimiter, cache, {
-                privateKey: TRADING_PRIVATE_KEY,
-                chainId: CHAIN_ID,
-            });
-            await tradingService.initialize();
-
-            let orderResult;
+            // --- EXECUTION VIA SERVICE ---
             try {
-                if (orderMode === 'market') {
-                    orderResult = await tradingService.createMarketOrder({
-                        tokenId: trade.tokenId,
-                        side: trade.originalSide as 'BUY' | 'SELL',
-                        amount: trade.copySize,
-                        price: trade.originalPrice * (1 + slippage), // Apply slippage tolerance
+                // Dynamic import to avoid build-time issues if any
+                const { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService } = await import('@catalyst-team/poly-sdk');
+                const { ethers } = await import('ethers');
+
+                // Initialize Trading Service
+                const rateLimiter = new RateLimiter();
+                const cache = createUnifiedCache();
+                const tradingService = new TradingService(rateLimiter, cache, {
+                    privateKey: TRADING_PRIVATE_KEY,
+                    chainId: CHAIN_ID,
+                });
+                await tradingService.initialize();
+
+                // Initialize Execution Service
+                const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+                const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+                const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
+
+                // Execute
+                const result = await executionService.executeOrderWithProxy({
+                    tradeId: trade.id,
+                    walletAddress: walletAddress,
+                    tokenId: trade.tokenId,
+                    side: trade.originalSide as 'BUY' | 'SELL',
+                    amount: trade.copySize, // In USDC
+                    price: trade.originalPrice,
+                    slippage: slippage,
+                    orderType: orderMode as 'market' | 'limit',
+                });
+
+                // Update DB based on result
+                if (result.success) {
+                    const updatedTrade = await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'EXECUTED',
+                            executedAt: new Date(),
+                            txHash: result.transactionHashes?.[0] || result.orderId,
+                        },
+                    });
+
+                    return NextResponse.json({
+                        success: true,
+                        orderId: result.orderId,
+                        transactionHashes: result.transactionHashes,
+                        fundTransferTxHash: result.fundTransferTxHash,
+                        returnTransferTxHash: result.returnTransferTxHash,
+                        trade: updatedTrade,
+                        useProxyFunds: result.useProxyFunds,
                     });
                 } else {
-                    // For limit orders, we need to calculate size in shares (amount / price)
-                    // But createLimitOrder usually takes size in raw units. 
-                    // Let's assume trade.copySize is in USDC amount for now as per `detect` logic.
-                    // IMPORTANT: Limit orders need size in shares.
-                    const size = trade.copySize / trade.originalPrice;
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'FAILED',
+                            errorMessage: result.error,
+                        },
+                    });
 
-                    orderResult = await tradingService.createLimitOrder({
-                        tokenId: trade.tokenId,
-                        side: trade.originalSide as 'BUY' | 'SELL',
-                        price: trade.originalPrice,
-                        size: size,
+                    return NextResponse.json({
+                        success: false,
+                        error: result.error || 'Order execution failed',
+                        fundsReturned: result.useProxyFunds, // Service handles returns
                     });
                 }
-            } catch (err: any) {
-                orderResult = {
-                    success: false,
-                    errorMsg: err.message || 'Unknown execution error',
-                    orderId: '',
-                    transactionHashes: []
-                };
-            }
 
-            if (orderResult.success) {
-                let returnTransferTxHash: string | undefined;
-
-                // OPTION B: Transfer result tokens back to Proxy
-                if (useProxyFunds && proxyAddress && signer) {
-                    try {
-                        const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-
-                        if (trade.originalSide === 'BUY') {
-                            // For BUY orders: Bot received CTF tokens, transfer to Proxy
-                            // Note: CTF tokens use 6 decimals like USDC
-                            const sharesReceived = trade.copySize / trade.originalPrice;
-                            console.log(`[Execute] Returning ${sharesReceived.toFixed(4)} tokens to Proxy...`);
-
-                            // CTF tokens are at trade.tokenId address (simplified - in reality need CTF contract)
-                            // For now, we log the intent - full CTF transfer requires more contract work
-                            console.log(`[Execute] Token ID: ${trade.tokenId}`);
-                            console.log(`[Execute] Note: CTF token transfer to Proxy pending - tokens held in Bot for user`);
-
-                            // TODO: Implement actual CTF token transfer
-                            // This requires calling the CTF contract's safeTransferFrom
-                        } else {
-                            // For SELL orders: Bot received USDC, transfer to Proxy
-                            const usdcReceived = trade.copySize;
-                            console.log(`[Execute] Returning $${usdcReceived.toFixed(2)} USDC to Proxy...`);
-
-                            const returnResult = await transferToProxy(
-                                proxyAddress,
-                                addresses.usdc,
-                                usdcReceived,
-                                USDC_DECIMALS,
-                                signer
-                            );
-
-                            if (returnResult.success) {
-                                returnTransferTxHash = returnResult.txHash;
-                                console.log(`[Execute] USDC returned to Proxy: ${returnTransferTxHash}`);
-                            } else {
-                                console.error(`[Execute] Failed to return USDC to Proxy: ${returnResult.error}`);
-                                // Don't fail the trade - funds are safe in Bot wallet
-                            }
-                        }
-                    } catch (returnError: any) {
-                        console.error(`[Execute] Token return error: ${returnError.message}`);
-                        // Don't fail the trade - funds are safe in Bot wallet
-                    }
-                }
-
-                const updatedTrade = await prisma.copyTrade.update({
-                    where: { id: trade.id },
-                    data: {
-                        status: 'EXECUTED',
-                        executedAt: new Date(),
-                        txHash: orderResult.transactionHashes?.[0] || orderResult.orderId,
-                    },
-                });
-
-                return NextResponse.json({
-                    success: true,
-                    orderId: orderResult.orderId,
-                    transactionHashes: orderResult.transactionHashes,
-                    fundTransferTxHash,
-                    returnTransferTxHash,
-                    trade: updatedTrade,
-                    useProxyFunds,
-                });
-            } else {
-                // Order failed - need to return funds to Proxy
-                if (useProxyFunds && proxyAddress && signer) {
-                    console.log(`[Execute] Order failed, returning $${trade.copySize} to Proxy...`);
-                    const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-
-                    const refundResult = await transferToProxy(
-                        proxyAddress,
-                        addresses.usdc,
-                        trade.copySize,
-                        USDC_DECIMALS,
-                        signer
-                    );
-
-                    if (refundResult.success) {
-                        console.log(`[Execute] Refund complete: ${refundResult.txHash}`);
-                    } else {
-                        console.error(`[Execute] Refund failed: ${refundResult.error}`);
-                    }
-                }
-
-                await prisma.copyTrade.update({
-                    where: { id: trade.id },
-                    data: {
-                        status: 'FAILED',
-                        errorMessage: orderResult.errorMsg,
-                    },
-                });
-
+            } catch (serviceError: any) {
+                console.error('[Execute] Service error:', serviceError);
                 return NextResponse.json({
                     success: false,
-                    error: orderResult.errorMsg || 'Order execution failed',
-                    fundsReturned: useProxyFunds,
+                    error: `Execution service failed: ${serviceError.message}`,
                 });
             }
         }
