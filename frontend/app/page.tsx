@@ -1,36 +1,51 @@
+'use client';
+
 import Link from 'next/link';
 import { polyClient } from '@/lib/polymarket';
-import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck } from 'lucide-react';
-
-export const revalidate = 60; // Revalidate every minute
-
-import { Suspense } from 'react';
+import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck, Lock, TrendingUp, BarChart3 } from 'lucide-react';
+import { Suspense, useEffect, useState } from 'react';
 import { LeaderboardSection } from '@/components/home/leaderboard-section';
 import { LeaderboardSkeleton } from '@/components/home/leaderboard-skeleton';
 import { ImportTraderSection } from '@/components/home/import-trader-section';
+import { usePrivy } from '@privy-io/react-auth';
 
-// Fetch homepage stats from leaderboard
-async function getHomeStats() {
-  try {
-    const leaderboard = await polyClient.dataApi.getLeaderboard({ limit: 100 });
-    const traderCount = leaderboard.total;
-    const totalVolume = leaderboard.entries.reduce((sum, e) => sum + (e.volume || 0), 0);
-    return { traderCount, totalVolume };
-  } catch (e) {
-    console.error("Failed to fetch homepage stats", e);
-    return { traderCount: null, totalVolume: null };
+export function Home() {
+  const { authenticated, ready, login } = usePrivy();
+  const [homeStats, setHomeStats] = useState<{ traderCount: number | null; totalVolume: number | null }>({
+    traderCount: null,
+    totalVolume: null
+  });
+
+  useEffect(() => {
+    const fetchHomeStats = async () => {
+      try {
+        const leaderboard = await polyClient.dataApi.getLeaderboard({ limit: 100 });
+        const traderCount = leaderboard.total;
+        const totalVolume = leaderboard.entries.reduce((sum, e) => sum + (e.volume || 0), 0);
+        setHomeStats({ traderCount, totalVolume });
+      } catch (e) {
+        console.error("Failed to fetch homepage stats", e);
+        setHomeStats({ traderCount: null, totalVolume: null });
+      }
+    };
+
+    fetchHomeStats();
+  }, []);
+
+  function formatVolume(volume: number): string {
+    if (volume >= 1_000_000_000) return `$${(volume / 1_000_000_000).toFixed(1)}B+`;
+    if (volume >= 1_000_000) return `$${(volume / 1_000_000).toFixed(1)}M+`;
+    if (volume >= 1_000) return `$${(volume / 1_000).toFixed(0)}K+`;
+    return `$${volume.toLocaleString()}`;
   }
-}
 
-function formatVolume(volume: number): string {
-  if (volume >= 1_000_000_000) return `$${(volume / 1_000_000_000).toFixed(1)}B+`;
-  if (volume >= 1_000_000) return `$${(volume / 1_000_000).toFixed(1)}M+`;
-  if (volume >= 1_000) return `$${(volume / 1_000).toFixed(0)}K+`;
-  return `$${volume.toLocaleString()}`;
-}
-
-export default async function Home() {
-  const { traderCount, totalVolume } = await getHomeStats();
+  if (!ready) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -59,17 +74,17 @@ export default async function Home() {
             </Link>
           </div>
 
-          {/* Stats Bar - Now with real data */}
+          {/* Stats Bar */}
           <div className="grid grid-cols-3 gap-8 pt-12 max-w-3xl mx-auto border-t border-white/10 mt-12">
             <div>
               <div className="text-2xl md:text-3xl font-bold text-yellow-500">
-                {traderCount !== null ? `${traderCount.toLocaleString()}+` : '500+'}
+                {homeStats.traderCount !== null ? `${homeStats.traderCount.toLocaleString()}+` : '500+'}
               </div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Verified Traders</div>
             </div>
             <div>
               <div className="text-2xl md:text-3xl font-bold text-green-500">
-                {totalVolume !== null ? formatVolume(totalVolume) : '$2M+'}
+                {homeStats.totalVolume !== null ? formatVolume(homeStats.totalVolume) : '$2M+'}
               </div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Total Volume Traded</div>
             </div>
@@ -84,23 +99,70 @@ export default async function Home() {
       {/* Import Trader Section */}
       <ImportTraderSection />
 
-      {/* Leaderboard Preview */}
+      {/* Leaderboard Preview - Only show when authenticated */}
       <section className="py-16 bg-card/30 border-y border-white/5">
         <div className="container max-w-5xl mx-auto px-4">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold">Top 10 Most Followed Traders</h2>
-            <p className="text-sm text-muted-foreground hidden md:block">Live rankings based on on-chain Polymarket data. Updated in real-time.</p>
-          </div>
+          {authenticated ? (
+            <>
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold">Top 10 Most Followed Traders</h2>
+                <p className="text-sm text-muted-foreground hidden md:block">Live rankings based on on-chain Polymarket data. Updated in real-time.</p>
+              </div>
 
-          <Suspense fallback={<LeaderboardSkeleton />}>
-            <LeaderboardSection />
-          </Suspense>
+              <Suspense fallback={<LeaderboardSkeleton />}>
+                <LeaderboardSection />
+              </Suspense>
 
-          <div className="text-center mt-8">
-            <Link href="/smart-money" className="text-yellow-500 hover:text-yellow-400 text-sm font-medium inline-flex items-center gap-1">
-              View All 500+ Traders <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+              <div className="text-center mt-8">
+                <Link href="/smart-money" className="text-yellow-500 hover:text-yellow-400 text-sm font-medium inline-flex items-center gap-1">
+                  View All 500+ Traders <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-card/50 p-12 text-center">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                <Lock className="h-10 w-10 text-yellow-400" />
+              </div>
+              <h2 className="text-2xl font-bold mb-3">Connect Your Wallet to View Top Traders</h2>
+              <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
+                Access the complete leaderboard of top performers on Polymarket. 
+                View their trading history, profit metrics, and start copy trading with a single click.
+              </p>
+
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
+                <div className="p-4 rounded-xl border border-white/5 bg-white/5">
+                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                    <Users className="h-5 w-5 text-yellow-400" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Top 10 Preview</h3>
+                  <p className="text-xs text-muted-foreground">Most followed traders</p>
+                </div>
+                <div className="p-4 rounded-xl border border-white/5 bg-white/5">
+                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-green-500/10 flex items-center justify-center">
+                    <TrendingUp className="h-5 w-5 text-green-400" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Real-time PnL</h3>
+                  <p className="text-xs text-muted-foreground">Live profit tracking</p>
+                </div>
+                <div className="p-4 rounded-xl border border-white/5 bg-white/5">
+                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <BarChart3 className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Verified Data</h3>
+                  <p className="text-xs text-muted-foreground">On-chain verification</p>
+                </div>
+              </div>
+
+              <button
+                onClick={login}
+                className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-semibold transition-colors"
+              >
+                Connect Wallet to View Traders
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -219,3 +281,5 @@ export default async function Home() {
     </div>
   );
 }
+
+export default Home;

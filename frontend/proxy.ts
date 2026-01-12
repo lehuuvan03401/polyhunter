@@ -29,17 +29,16 @@ export function proxy(request: NextRequest) {
     // 这里我们使用 cookie 作为简单的认证标记
     const isAuthenticated = request.cookies.get('privy-authenticated')?.value === 'true';
 
-    // 如果是受保护路由但未认证，重定向到首页
-    if (isProtectedRoute && !isAuthenticated) {
-        const url = new URL('/', request.url);
-        url.searchParams.set('redirect', pathname);
-        return NextResponse.redirect(url);
-    }
+    // 注释掉重定向逻辑，让各个页面自己处理登录检查
+    // if (isProtectedRoute && !isAuthenticated) {
+    //     const url = new URL('/', request.url);
+    //     url.searchParams.set('redirect', pathname);
+    //     return NextResponse.redirect(url);
+    // }
 
-    // 如果是访客路由但已认证，重定向到首页
-    if (isGuestRoute && isAuthenticated) {
-        return NextResponse.redirect(new URL('/', request.url));
-    }
+    // if (isGuestRoute && isAuthenticated) {
+    //     return NextResponse.redirect(new URL('/', request.url));
+    // }
 
     return NextResponse.next();
 }

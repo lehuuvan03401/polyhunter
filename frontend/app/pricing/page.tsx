@@ -294,6 +294,8 @@ function AuthenticatedPricing() {
 // --- Public View (Original) ---
 
 function PublicPricing() {
+    const { login } = usePrivy();
+
     return (
         <div className="flex flex-col min-h-screen">
             {/* Hero */}
@@ -381,7 +383,7 @@ function PublicPricing() {
                                 </div>
                             </div>
 
-                            <button className="w-full py-3 rounded-lg bg-white/10 border border-white/10 hover:bg-white/20 font-medium transition-colors">
+                            <button onClick={login} className="w-full py-3 rounded-lg bg-white/10 border border-white/10 hover:bg-white/20 font-medium transition-colors">
                                 Start Copying
                             </button>
                         </div>
@@ -416,7 +418,7 @@ function PublicPricing() {
                                 </div>
                             </div>
 
-                            <button className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 font-medium transition-colors text-white">
+                            <button onClick={login} className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 font-medium transition-colors text-white">
                                 Start Copying
                             </button>
                         </div>
@@ -455,7 +457,7 @@ function PublicPricing() {
                                 </div>
                             </div>
 
-                            <button className="w-full py-3 rounded-lg border border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black font-medium transition-all">
+                            <button onClick={login} className="w-full py-3 rounded-lg border border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black font-medium transition-all">
                                 Start Copying
                             </button>
                         </div>

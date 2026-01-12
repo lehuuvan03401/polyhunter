@@ -1,3 +1,6 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import { LeaderboardTable, ActiveTrader } from './leaderboard-table';
 
 async function fetchActiveTraders(): Promise<ActiveTrader[]> {
@@ -21,11 +24,25 @@ async function fetchActiveTraders(): Promise<ActiveTrader[]> {
     }
 }
 
-export async function LeaderboardSection() {
-    const activeTraders = await fetchActiveTraders();
+export function LeaderboardSection() {
+    const [activeTraders, setActiveTraders] = useState<ActiveTrader[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    return (
-        <LeaderboardTable initialData={activeTraders} />
-    );
+    useEffect(() => {
+        const loadData = async () => {
+            setIsLoading(true);
+            const data = await fetchActiveTraders();
+            setActiveTraders(data);
+            setIsLoading(false);
+        };
+
+        loadData();
+    }, []);
+
+    if (isLoading) {
+        return <div className="text-center py-8 text-muted-foreground">Loading...</div>;
+    }
+
+    return <LeaderboardTable initialData={activeTraders} />;
 }
 

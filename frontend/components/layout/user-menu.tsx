@@ -2,13 +2,17 @@
 
 import * as React from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { Settings, HelpCircle, LogOut, ChevronDown, ChevronUp } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Settings, HelpCircle, LogOut, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 export function UserMenu() {
     const { user, logout } = usePrivy();
+    const router = useRouter();
     const [isOpen, setIsOpen] = React.useState(false);
+    const [isLoggingOut, setIsLoggingOut] = React.useState(false);
     const menuRef = React.useRef<HTMLDivElement>(null);
 
     // Close on click outside
@@ -23,6 +27,22 @@ export function UserMenu() {
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, []);
+
+    const handleLogout = async () => {
+        setIsLoggingOut(true);
+        setIsOpen(false);
+        
+        try {
+            await logout();
+            toast.success('Logged out successfully');
+            router.push('/');
+        } catch (error) {
+            console.error('Logout failed:', error);
+            toast.error('Failed to logout. Please try again.');
+        } finally {
+            setIsLoggingOut(false);
+        }
+    };
 
     const truncateAddress = (address: string) => {
         return `${address.slice(0, 4)}...${address.slice(-4)}`;
@@ -82,11 +102,26 @@ export function UserMenu() {
 
                     <div className="p-1 border-t border-white/5">
                         <button
-                            onClick={logout}
-                            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                            onClick={handleLogout}
+                            disabled={isLoggingOut}
+                            className={cn(
+                                "w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors",
+                                isLoggingOut
+                                    ? "text-red-400/50 cursor-not-allowed"
+                                    : "text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                            )}
                         >
-                            <LogOut className="w-4 h-4" />
-                            Log Out
+                            {isLoggingOut ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Logging out...
+                                </>
+                            ) : (
+                                <>
+                                    <LogOut className="w-4 h-4" />
+                                    Log Out
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>

@@ -349,6 +349,8 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
 
 // --- Guest Landing View (Original Content) ---
 function GuestView() {
+    const { login } = usePrivy();
+
     return (
         <div className="flex flex-col min-h-screen">
             {/* Hero Section */}
@@ -366,7 +368,7 @@ function GuestView() {
                     </p>
 
                     <div className="pt-4">
-                        <button className="px-8 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold text-lg transition-all shadow-[0_0_20px_-5px_rgba(22,163,74,0.5)]">
+                        <button onClick={login} className="px-8 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold text-lg transition-all shadow-[0_0_20px_-5px_rgba(22,163,74,0.5)]">
                             Start Earning Now
                         </button>
                         <div className="mt-4 text-xs text-muted-foreground">
@@ -498,7 +500,7 @@ function GuestView() {
                             Join hundreds of affiliates already earning passive income. It takes 30 seconds to get started.
                         </p>
                         <div className="flex flex-col items-center gap-2">
-                            <button className="px-8 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold transition-all w-full md:w-auto flex items-center justify-center gap-2">
+                            <button onClick={login} className="px-8 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold transition-all w-full md:w-auto flex items-center justify-center gap-2">
                                 <LinkIcon className="h-4 w-4" /> Get Your Referral Link
                             </button>
                             <p className="text-[10px] text-muted-foreground mt-2">100% free — Paid in USDC (Polygon)</p>
