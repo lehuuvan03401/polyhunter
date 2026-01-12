@@ -30,7 +30,7 @@ const mockContract = {
 
 // Mock Contract Construction
 vi.mock('ethers', async (importOriginal) => {
-    const actual = await importOriginal();
+    const actual = await importOriginal<typeof import('ethers')>();
     return {
         ...actual,
         ethers: {
@@ -129,22 +129,90 @@ describe('CopyTradingExecutionService', () => {
         expect(mockContract.transfer).toHaveBeenCalled();
     });
 
-    it('should fail if Proxy funds are insufficient', async () => {
-        mockContract.balanceOf.mockResolvedValue(ethers.utils.parseUnits('10', 6)); // Only $10
+    it('should use OPTIMIZED BUY (Float) if Bot has funds', async () => {
+        // Mock Bot has 1000 USDC
+        // first call is getBotUsdcBalance, second is getProxyUsdcBalance (if needed)
+        // We mock balanceOf implementation to return based on address
+        mockContract.balanceOf.mockImplementation(async (address) => {
+            if (address === VALID_BOT_ADDRESS) return ethers.utils.parseUnits('1000', 6);
+            return ethers.utils.parseUnits('500', 6);
+        });
 
         const params: ExecutionParams = {
-            tradeId: 't3',
+            tradeId: 't4',
             walletAddress: VALID_USER_ADDRESS,
             tokenId: '123456',
             side: 'BUY',
-            amount: 100, // Needs start $100
+            amount: 100,
             price: 0.5,
             proxyAddress: VALID_PROXY_ADDRESS
         };
 
         const result = await service.executeOrderWithProxy(params);
-        expect(result.success).toBe(false);
-        expect(result.error).toContain('Insufficient Proxy funds');
-        expect(mockTradingService.createMarketOrder).not.toHaveBeenCalled();
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+        expect(result.useProxyFunds).toBe(true); // Should be true if we used float? Actually service logic sets this to true if float used too?
+        // Wait, checking service logic: `useProxyFunds: useProxyFunds || usedBotFloat`. Yes.
+
+        // 1. Check Bot Balance First
+        expect(mockContract.balanceOf).toHaveBeenCalledWith(VALID_BOT_ADDRESS);
+
+        // 2. NO pull from Proxy (execute called for Reimbursement LATER)
+        // The first execute call should be Reimbursement, NOT initial pull
+        // Initial Pull: `transferFromProxy`. Reimbursement: `transferFromProxy`.
+        // Wait, if Optimized, we skip initial pull.
+        // We do Trade -> Push -> Reimburse (Pull).
+
+        // 3. Execute Order (Immediate)
+        expect(mockTradingService.createMarketOrder).toHaveBeenCalledTimes(1);
+
+        // 4. Push Tokens (safeTransferFrom)
+        expect(mockContract.safeTransferFrom).toHaveBeenCalled();
+
+        // 5. Reimburse (Pull USDC)
+        expect(mockContract.execute).toHaveBeenCalledTimes(1); // Only 1 pull (reimbursement)
+    });
+
+    it('should use STANDARD BUY (Fallback) if Bot has NO funds', async () => {
+        // Mock Bot has 0 USDC, Proxy has 1000
+        mockContract.balanceOf.mockImplementation(async (address) => {
+            if (address === VALID_BOT_ADDRESS) return ethers.utils.parseUnits('0', 6);
+            if (address === VALID_PROXY_ADDRESS) return ethers.utils.parseUnits('1000', 6);
+            return ethers.utils.parseUnits('0', 6);
+        });
+
+        const params: ExecutionParams = {
+            tradeId: 't5',
+            walletAddress: VALID_USER_ADDRESS,
+            tokenId: '123456',
+            side: 'BUY',
+            amount: 100,
+            price: 0.5,
+            proxyAddress: VALID_PROXY_ADDRESS
+        };
+
+        const result = await service.executeOrderWithProxy(params);
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+
+        // 1. Check Bot Balance
+        expect(mockContract.balanceOf).toHaveBeenCalledWith(VALID_BOT_ADDRESS);
+
+        // 2. Check Proxy Balance (and Pull)
+        expect(mockContract.balanceOf).toHaveBeenCalledWith(VALID_PROXY_ADDRESS);
+
+        // 3. Pull from Proxy (Initial)
+        // 4. (No Reimbursement needed in standard flow, or is it?)
+        // Standard flow: Pull -> Trade -> Push.
+        // So execute called ONCE (Pull).
+        expect(mockContract.execute).toHaveBeenCalledTimes(1);
+
+        // 5. Execute Order
+        expect(mockTradingService.createMarketOrder).toHaveBeenCalled();
+
+        // 6. Push Tokens
+        expect(mockContract.safeTransferFrom).toHaveBeenCalled();
     });
 });

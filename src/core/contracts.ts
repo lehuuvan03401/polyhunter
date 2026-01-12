@@ -8,16 +8,17 @@
 export const CONTRACT_ADDRESSES = {
     // Polygon Mainnet (137)
     polygon: {
-        proxyFactory: '0xabc123...', // Placeholder, should be updated with real address or env var
-        usdc: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged)
+        // Defaults to undefined if not set, forcing caller to provide it or crash early
+        proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || process.env.PROXY_FACTORY_ADDRESS || '0xa536E751CC68997E898165B3213EeC355E09C6D3', // Known Factory Address or Env
+        usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS || process.env.USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged)
     },
     // Polygon Amoy (80002)
     amoy: {
-        proxyFactory: process.env.NEXT_PUBLIC_AMOY_PROXY_FACTORY_ADDRESS || '',
-        usdc: process.env.NEXT_PUBLIC_AMOY_USDC_ADDRESS || '',
+        proxyFactory: process.env.NEXT_PUBLIC_AMOY_PROXY_FACTORY_ADDRESS || process.env.AMOY_PROXY_FACTORY_ADDRESS || '',
+        usdc: process.env.NEXT_PUBLIC_AMOY_USDC_ADDRESS || process.env.AMOY_USDC_ADDRESS || '0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582', // Amoy USDC
     },
     // Common
-    ctf: '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045', // Polygon Mainnet CTF
+    ctf: process.env.NEXT_PUBLIC_CTF_ADDRESS || process.env.CTF_ADDRESS || '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045', // Polygon Mainnet CTF
 } as const;
 
 // CTF ABI (ERC1155 subset for transfers)

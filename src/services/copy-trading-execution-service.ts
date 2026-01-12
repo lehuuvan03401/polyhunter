@@ -60,6 +60,18 @@ export class CopyTradingExecutionService {
     }
 
     /**
+     * Get Bot (Operator) USDC balance for Float check
+     */
+    async getBotUsdcBalance(): Promise<number> {
+        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        if (!addresses.usdc) throw new Error("USDC address not configured for this chain");
+
+        const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
+        const balance = await usdc.balanceOf(this.signer.address);
+        return Number(balance) / (10 ** USDC_DECIMALS);
+    }
+
+    /**
      * Resolve User's Proxy Address using Factory
      */
     async resolveProxyAddress(userAddress: string): Promise<string | null> {
@@ -195,12 +207,12 @@ export class CopyTradingExecutionService {
     /**
      * Execute Copy Trade
      * 1. Check/Resolve Proxy
-     * 2. Fund Management (Get USDC or Get Tokens)
+     * 2. Fund Management (Float Check or Standard Pull)
      * 3. Execute Order (Immediate/Market)
-     * 4. Return Assets (Return Tokens or Return USDC)
+     * 4. Return Assets (Settlement)
      */
     async executeOrderWithProxy(params: ExecutionParams): Promise<ExecutionResult> {
-        const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02, orderType = 'limit' } = params;
+        const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02 } = params;
         let { proxyAddress } = params;
 
         // 1. Resolve Proxy
@@ -215,29 +227,41 @@ export class CopyTradingExecutionService {
         console.log(`[CopyExec] Executing for ${walletAddress} via Proxy ${proxyAddress}`);
 
         // 2. Fund Management
-        let useProxyFunds = false;
+        let useProxyFunds = false; // Indicates if we did a Standard Pull (pre-trade)
         let fundTransferTxHash: string | undefined;
         let tokenPullTxHash: string | undefined;
 
+        let usedBotFloat = false; // NEW: Indicates Optimized Float Strategy
+
         try {
             if (side === 'BUY') {
-                // Check USDC Balance
-                const proxyBalance = await this.getProxyUsdcBalance(proxyAddress);
-                if (proxyBalance < amount) {
-                    return { success: false, error: `Insufficient Proxy funds: $${proxyBalance} < $${amount}`, proxyAddress };
-                }
+                // FLOAT STRATEGY: Check Bot's USDC Balance first
+                const botBalance = await this.getBotUsdcBalance();
 
-                // Transfer USDC from Proxy
-                const transferResult = await this.transferFromProxy(proxyAddress, amount);
-                if (!transferResult.success) {
-                    return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}` };
+                if (botBalance >= amount) {
+                    // OPTIMIZED PATH: Use Bot's funds directly
+                    console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
+                    usedBotFloat = true;
+                    // No transfer needed yet.
+                } else {
+                    // FALLBACK PATH: Check Proxy USDC Balance
+                    console.log(`[CopyExec] 🐢 Standard BUY: Bot low funds ($${botBalance}), checking Proxy...`);
+                    const proxyBalance = await this.getProxyUsdcBalance(proxyAddress);
+                    if (proxyBalance < amount) {
+                        return { success: false, error: `Insufficient Proxy funds: $${proxyBalance} < $${amount}`, proxyAddress };
+                    }
+
+                    // Transfer USDC from Proxy
+                    const transferResult = await this.transferFromProxy(proxyAddress, amount);
+                    if (!transferResult.success) {
+                        return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}` };
+                    }
+                    useProxyFunds = true;
+                    fundTransferTxHash = transferResult.txHash;
                 }
-                useProxyFunds = true;
-                fundTransferTxHash = transferResult.txHash;
 
             } else { // SELL
-                // Pull Tokens from Proxy
-                // Calculate Shares
+                // Always Standard Path for SELL (Token Custody in Proxy)
                 const sharesToSell = amount / price;
 
                 const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell);
@@ -254,8 +278,7 @@ export class CopyTradingExecutionService {
         // 3. Execute Order
         let orderResult;
         try {
-            // FORCE Market Order (FOK) or Limit FOK/IOC if supported.
-            // Calculate size in shares
+            // FORCE Market Order (FOK)
             const executionPrice = side === 'BUY' ? price * (1 + slippage) : price * (1 - slippage);
             const effectiveSize = amount / price;
 
@@ -273,14 +296,15 @@ export class CopyTradingExecutionService {
             // START RECOVERY (Refund)
             if (useProxyFunds) {
                 if (side === 'BUY') {
-                    // Refund USDC
+                    // Refund USDC (Standard Path)
                     await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount);
                 } else { // SELL
-                    // Refund Tokens
+                    // Refund Tokens (Standard Path)
                     const sharesToReturn = amount / price;
                     await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn);
                 }
             }
+            // NOTE: If usedBotFloat, we just spent nothing (failed before trade), so nothing to refund.
             return { success: false, error: err.message || 'Execution error', useProxyFunds };
         }
 
@@ -294,20 +318,45 @@ export class CopyTradingExecutionService {
                     await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn);
                 }
             }
-            return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds };
+            return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat };
         }
 
-        // 4. Return Assets (Success)
+        // 4. Return Assets (Settlement)
         let returnTransferTxHash: string | undefined;
         let tokenPushTxHash: string | undefined;
 
-        if (useProxyFunds) {
+        if (usedBotFloat && side === 'BUY') {
+            // OPTIMIZED SETTLEMENT
+            // 1. Push Tokens to Proxy
+            const sharesBought = amount / price;
+            const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
+            if (pushResult.success) {
+                tokenPushTxHash = pushResult.txHash;
+            }
+
+            // 2. Reimburse Bot (Pull USDC from Proxy)
+            console.log(`[CopyExec] 💰 Reimbursing Bot Float...`);
+            // We use `transferFromProxy` but logic is same: Proxy -> Bot
+            // Note: This relies on Proxy having funds. If this fails, Bot is out of pocket (Risk).
+            // A robust system would have a retry queue. For MVP, we log error.
+            try {
+                const reimbursement = await this.transferFromProxy(proxyAddress, amount);
+                if (reimbursement.success) {
+                    returnTransferTxHash = reimbursement.txHash; // Re-use field for simplicity or add new one
+                } else {
+                    console.error(`[CopyExec] 🚨 REIMBURSEMENT FAILED! Bot paid but Proxy didn't pay back: ${reimbursement.error}`);
+                }
+            } catch (err: any) {
+                console.error(`[CopyExec] 🚨 REIMBURSEMENT CRITICAL ERROR!`, err);
+            }
+
+        } else if (useProxyFunds) {
+            // STANDARD SETTLEMENT
             const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
 
             if (side === 'BUY') {
                 // Return tokens to Proxy.
                 const sharesBought = amount / price; // Approx.
-
                 const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
                 if (pushResult.success) {
                     tokenPushTxHash = pushResult.txHash;
@@ -329,7 +378,7 @@ export class CopyTradingExecutionService {
             returnTransferTxHash,
             tokenPullTxHash,
             tokenPushTxHash,
-            useProxyFunds,
+            useProxyFunds: useProxyFunds || usedBotFloat,
             proxyAddress
         };
     }
