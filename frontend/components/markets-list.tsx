@@ -158,10 +158,10 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
                         ? "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                         : "flex flex-col gap-3"
                 )}>
-                    {markets.map((market) => (
+                    {markets.map((market, index) => (
                         viewMode === 'grid'
-                            ? <MarketCard key={`${market.id}-${sort}`} market={market} />
-                            : <MarketListItem key={`${market.id}-${sort}`} market={market} />
+                            ? <MarketCard key={`${market.id || index}-${sort}-${index}`} market={market} />
+                            : <MarketListItem key={`${market.id || index}-${sort}-${index}`} market={market} />
                     ))}
                 </div>
             ) : (

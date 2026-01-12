@@ -7,6 +7,7 @@ import { AlertCircle, RefreshCcw, Wallet } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { TableSkeleton } from './table-skeleton';
 
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 5;
@@ -43,11 +44,7 @@ export function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
     }, [currentPage]);
 
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center py-16">
-                <RefreshCcw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-        );
+        return <TableSkeleton />;
     }
 
     const smartMoneyList = data;

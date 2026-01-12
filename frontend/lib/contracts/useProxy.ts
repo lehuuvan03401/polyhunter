@@ -156,7 +156,13 @@ export function useProxy(): UseProxyReturn {
             throw new Error('No wallet connected');
         }
 
-        const provider = await wallet.getEthereumProvider();
+        let provider;
+        try {
+            provider = await wallet.getEthereumProvider();
+        } catch (err) {
+            // Wallet exists but not connected yet - silently fail
+            throw new Error('Wallet not ready');
+        }
 
         // Check current chain
         const currentChainId = await provider.request({ method: 'eth_chainId' });
@@ -227,6 +233,11 @@ export function useProxy(): UseProxyReturn {
             return null;
         }
 
+        // Check if wallet is available and authenticated before trying to get provider
+        if (wallets.length === 0 || !authenticated) {
+            return null;
+        }
+
         try {
             const { provider } = await getSignerAndProvider();
             const factory = new ethers.Contract(ADDRESSES.proxyFactory, PROXY_FACTORY_ABI, provider);
@@ -237,11 +248,14 @@ export function useProxy(): UseProxyReturn {
             setHasProxy(exists);
             setProxyAddress(exists ? address : null);
             return exists ? address : null;
-        } catch (err) {
-            console.error('Error fetching proxy address:', err);
+        } catch (err: any) {
+            // Only log unexpected errors, not wallet connection issues
+            if (err?.message !== 'Wallet not ready' && err?.message !== 'No wallet connected') {
+                console.error('Error fetching proxy address:', err);
+            }
             return null;
         }
-    }, [walletAddress, getSignerAndProvider]);
+    }, [walletAddress, wallets, authenticated, getSignerAndProvider]);
 
     /**
      * Fetch proxy stats from contract
@@ -277,15 +291,23 @@ export function useProxy(): UseProxyReturn {
     const fetchUsdcBalance = useCallback(async () => {
         if (!walletAddress || !ADDRESSES.usdc) return;
 
+        // Check if wallet is available and authenticated before trying to get provider
+        if (wallets.length === 0 || !authenticated) {
+            return;
+        }
+
         try {
             const { provider } = await getSignerAndProvider();
             const usdc = new ethers.Contract(ADDRESSES.usdc, ERC20_ABI, provider);
             const balance = await usdc.balanceOf(walletAddress);
             setUsdcBalance(formatUSDC(balance));
-        } catch (err) {
-            console.error('Error fetching USDC balance:', err);
+        } catch (err: any) {
+            // Only log unexpected errors, not wallet connection issues
+            if (err?.message !== 'Wallet not ready' && err?.message !== 'No wallet connected') {
+                console.error('Error fetching USDC balance:', err);
+            }
         }
-    }, [walletAddress, getSignerAndProvider]);
+    }, [walletAddress, wallets, authenticated, getSignerAndProvider]);
 
     /**
      * Create a new proxy

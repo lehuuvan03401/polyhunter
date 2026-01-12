@@ -74,9 +74,31 @@ export function ProxyWalletCard() {
 
     if (isLoading) {
         return (
-            <div className="w-full rounded-xl border bg-card p-6 shadow-sm">
-                <div className="flex justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="w-full rounded-xl border bg-card p-6 shadow-sm animate-pulse">
+                {/* Header skeleton */}
+                <div className="flex justify-between items-start pb-4">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <div className="h-5 w-5 rounded bg-muted-foreground/20" />
+                            <div className="h-5 w-24 rounded bg-muted-foreground/20" />
+                        </div>
+                        <div className="h-3 w-32 rounded bg-muted-foreground/20" />
+                    </div>
+                    <div className="text-right">
+                        <div className="h-8 w-24 rounded bg-muted-foreground/20 mb-2" />
+                        <div className="h-3 w-16 rounded bg-muted-foreground/20 ml-auto" />
+                    </div>
+                </div>
+                {/* Tabs skeleton */}
+                <div className="h-9 w-full rounded-lg bg-muted-foreground/10 mb-4" />
+                {/* Input skeleton */}
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <div className="h-4 w-24 rounded bg-muted-foreground/20" />
+                        <div className="h-9 w-full rounded bg-muted-foreground/10" />
+                        <div className="h-3 w-32 rounded bg-muted-foreground/20 ml-auto" />
+                    </div>
+                    <div className="h-9 w-full rounded bg-muted-foreground/20" />
                 </div>
             </div>
         );

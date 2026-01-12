@@ -1,13 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { X, Settings, Filter, RefreshCcw, Copy, TrendingUp, AlertTriangle, Zap, Wallet, ShieldCheck, Fuel, Loader2 } from 'lucide-react';
+import { X, Settings, Filter, RefreshCcw, Copy, TrendingUp, AlertTriangle, Zap, Wallet, ShieldCheck, Fuel, Loader2, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useCopyTradingStore } from '@/lib/copy-trading-store';
 import { usePrivy } from '@privy-io/react-auth';
+import { useProxy } from '@/lib/contracts/useProxy';
 
 interface CopyTraderModalProps {
     isOpen: boolean;
@@ -23,8 +24,14 @@ type SellMode = 'Same %' | 'Fixed Amount' | 'Custom %';
 export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: CopyTraderModalProps) {
     const router = useRouter();
     const { user, authenticated } = usePrivy();
+    const { hasProxy, stats, isLoading: proxyLoading } = useProxy();
     const addConfig = useCopyTradingStore((state) => state.addConfig);
     const [isStarting, setIsStarting] = React.useState(false);
+
+    // Calculate if user has enough in Proxy
+    const proxyBalance = stats?.balance ?? 0;
+    const minRequired = 5; // Minimum $5 to start copying
+    const hasEnoughFunds = proxyBalance >= minRequired;
 
     const [activeTab, setActiveTab] = React.useState<TabType>('Mode');
     const [copyMode, setCopyMode] = React.useState<CopyMode>('% Shares');
@@ -170,6 +177,34 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             </button>
                         </div>
                     </div>
+
+                    {/* Proxy Status Warning */}
+                    {!proxyLoading && (!hasProxy || !hasEnoughFunds) && (
+                        <div className="mx-4 mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                            <div className="flex items-start gap-2">
+                                <Info className="h-4 w-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                                <div className="text-xs">
+                                    {!hasProxy ? (
+                                        <>
+                                            <span className="text-yellow-400 font-medium">Proxy Required</span>
+                                            <p className="text-muted-foreground mt-1">
+                                                Create a Proxy wallet to enable copy trading.
+                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Set up Proxy →</a>
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-yellow-400 font-medium">Deposit Required</span>
+                                            <p className="text-muted-foreground mt-1">
+                                                Proxy balance: ${proxyBalance.toFixed(2)}. Need at least ${minRequired} to start.
+                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Deposit USDC →</a>
+                                            </p>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Tabs */}
                     <div className="flex border-b border-white/5 bg-[#141517]">
@@ -612,9 +647,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                         </div>
 
                         <button
-                            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98] disabled:active:scale-100 flex items-center justify-center gap-2"
+                            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98] disabled:active:scale-100 flex items-center justify-center gap-2"
                             onClick={handleStartCopying}
-                            disabled={isStarting}
+                            disabled={isStarting || !hasProxy || !hasEnoughFunds}
                         >
                             {isStarting ? (
                                 <>
