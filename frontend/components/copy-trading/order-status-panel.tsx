@@ -27,7 +27,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
     // Filter orders
     const filteredOrders = orders.filter(order => {
         if (filter === 'active') {
-            return ['PENDING', 'OPEN', 'PARTIALLY_FILLED'].includes(order.status);
+            return ['PENDING', 'OPEN', 'PARTIALLY_FILLED', 'SETTLEMENT_PENDING'].includes(order.status);
         }
         if (filter === 'completed') {
             return ['FILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'].includes(order.status);

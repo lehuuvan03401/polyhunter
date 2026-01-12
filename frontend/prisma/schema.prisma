@@ -146,7 +146,8 @@ enum CopyTradingMode {
 // Copy trade execution status
 enum CopyTradeStatus {
   PENDING // Waiting for user confirmation
-  EXECUTED // Successfully executed
+  EXECUTED // Successfully executed (Fully settled)
+  SETTLEMENT_PENDING // Executed but Funds/Tokens not returned to Proxy yet
   FAILED // Execution failed
   SKIPPED // Skipped due to filters/conditions
   EXPIRED // User didn't confirm in time
@@ -158,6 +159,10 @@ model CopyTradingConfig {
   walletAddress String // User's wallet address
   traderAddress String // Trader being copied
   traderName    String? // Display name of trader
+
+  // Slippage settings
+  slippageType String @default("FIXED") // 'FIXED' | 'AUTO'
+  maxSlippage  Float  @default(2.0) // Max slippage % (default 2%)
 
   // Copy mode settings
   mode            CopyTradingMode @default(PERCENTAGE)

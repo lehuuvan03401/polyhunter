@@ -6,6 +6,7 @@ import { ethers } from 'ethers';
 // Mock dependencies
 const mockTradingService = {
     createMarketOrder: vi.fn(),
+    getOrderBook: vi.fn(),
 } as unknown as TradingService;
 
 // Use valid addresses
@@ -215,4 +216,93 @@ describe('CopyTradingExecutionService', () => {
         // 6. Push Tokens
         expect(mockContract.safeTransferFrom).toHaveBeenCalled();
     });
+
+    it('should recover settlement for BUY (Float): Push Tokens -> Reimburse', async () => {
+        const result = await service.recoverSettlement(
+            VALID_PROXY_ADDRESS,
+            'BUY',
+            '123456',
+            100, // Amount
+            0.5, // Price
+            true // usedBotFloat
+        );
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+
+        // 1. Push Tokens
+        expect(mockContract.safeTransferFrom).toHaveBeenCalled();
+
+        // 2. Reimburse (Pull USDC)
+        expect(mockContract.execute).toHaveBeenCalled();
+    });
+
+    it('should recover settlement for SELL: Push USDC', async () => {
+        const result = await service.recoverSettlement(
+            VALID_PROXY_ADDRESS,
+            'SELL',
+            '123456',
+            50, // USDC Amount
+            0.5,
+            false // usedBotFloat
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockContract.transfer).toHaveBeenCalled();
+    });
+
+    describe('calculateDynamicSlippage', () => {
+        const mockOrderbook = {
+            hash: '0x',
+            asks: [
+                { price: '0.6', size: '500' },
+                { price: '0.65', size: '1000' }
+            ],
+            bids: [
+                { price: '0.5', size: '500' },
+                { price: '0.45', size: '1000' }
+            ]
+        };
+
+        beforeEach(() => {
+            mockTradingService.getOrderBook = vi.fn().mockResolvedValue(mockOrderbook);
+        });
+
+        it('should calculate minimal slippage for small BUY orders', async () => {
+            // Buy 100 shares @ 0.5 (current). Asks start at 0.6.
+            // Wait, currentPrice passed is 0.5. Asks start at 0.6.
+            // Immediate impact: (0.6 - 0.5) / 0.5 = 20%.
+            // This mock data implies a wide spread or wrong currentPrice.
+            // Let's assume currentPrice is 0.6 (Best Ask).
+
+            const result = await service.calculateDynamicSlippage('t1', 'BUY', 100, 0.6);
+            // 100 shares fits in first level (500). Max price 0.6.
+            // Impact: (0.6 - 0.6) / 0.6 = 0.
+            // Buffer: 0. Total: 0.
+            // Min Slippage: 0.5% (0.005).
+            expect(result).toBe(0.005);
+        });
+
+        it('should calculate higher slippage for large BUY orders hitting depth', async () => {
+            // Buy 1000 shares.
+            // Level 1: 500 @ 0.6. Remaining 500.
+            // Level 2: 1000 @ 0.65. Fits here.
+            // Worst Price: 0.65.
+            // Current Price: 0.6.
+            // Impact: (0.65 - 0.60) / 0.60 = 0.05 / 0.60 = 0.0833 (8.33%).
+            // Buffer: 20% of 8.33% = 1.666%.
+            // Total: ~10%.
+
+            const result = await service.calculateDynamicSlippage('t1', 'BUY', 1000, 0.6);
+            const expected = (0.05 / 0.6) * 1.2;
+            expect(result).toBeCloseTo(expected, 4);
+        });
+
+        it('should use default slippage on error', async () => {
+            mockTradingService.getOrderBook = vi.fn().mockRejectedValue(new Error('API Error'));
+            const result = await service.calculateDynamicSlippage('t1', 'BUY', 100, 0.6);
+            expect(result).toBe(0.02);
+        });
+    });
 });
+

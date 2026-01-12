@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { TradingService } from './trading-service.js'; // Use .js extension for imports in this project
+import { TradingService, Orderbook } from './trading-service.js'; // Use .js extension for imports in this project
 import {
     PROXY_FACTORY_ABI,
     POLY_HUNTER_PROXY_ABI,
@@ -18,6 +18,8 @@ export interface ExecutionParams {
     price: number;
     proxyAddress?: string; // Optional, if already known
     slippage?: number;
+    maxSlippage?: number; // Max allowed slippage (decimal, e.g. 0.05)
+    slippageMode?: 'FIXED' | 'AUTO';
     orderType?: 'market' | 'limit';
 }
 
@@ -278,9 +280,21 @@ export class CopyTradingExecutionService {
         // 3. Execute Order
         let orderResult;
         try {
-            // FORCE Market Order (FOK)
-            const executionPrice = side === 'BUY' ? price * (1 + slippage) : price * (1 - slippage);
             const effectiveSize = amount / price;
+
+            // Calculate Dynamic Slippage if AUTO
+            let finalSlippage = slippage || 0.02;
+            if (params.slippageMode === 'AUTO') {
+                const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, effectiveSize, price);
+                // Assuming maxSlippage passed as percentage (e.g. 2.0 for 2%) -> convert to decimal
+                // Default to 5% max if not specified
+                const maxAllowed = params.maxSlippage ? (params.maxSlippage / 100) : 0.05;
+                finalSlippage = Math.min(calculatedSlippage, maxAllowed);
+                console.log(`[CopyExec] 🌊 Auto Slippage: ${(finalSlippage * 100).toFixed(2)}% (Calc: ${(calculatedSlippage * 100).toFixed(2)}%, Max: ${(maxAllowed * 100).toFixed(2)}%)`);
+            }
+
+            // FORCE Market Order (FOK)
+            const executionPrice = side === 'BUY' ? price * (1 + finalSlippage) : price * (1 - finalSlippage);
 
             console.log(`[CopyExec] Placing MARKET FOK order. Size: ${effectiveSize.toFixed(2)} shares, WorstPrice: ${executionPrice}`);
 
@@ -381,5 +395,107 @@ export class CopyTradingExecutionService {
             useProxyFunds: useProxyFunds || usedBotFloat,
             proxyAddress
         };
+    }
+    /**
+     * Recover Failed Settlement
+     * Retries the "Push Token" or "Push USDC" step.
+     */
+    async recoverSettlement(
+        proxyAddress: string,
+        side: 'BUY' | 'SELL',
+        tokenId: string,
+        amount: number, // Total amount (USDC value for SELL, USDC cost for BUY)
+        price: number,
+        usedBotFloat: boolean
+    ): Promise<{ success: boolean; txHash?: string; error?: string }> {
+        console.log(`[CopyExec] 🚑 Recovering settlement for ${side} trade...`);
+        try {
+            if (side === 'BUY') {
+                // We bought. Need to Push Tokens to Proxy.
+                // Also need to Reimburse Bot (Pull USDC from Proxy) if float was used.
+
+                const sharesBought = amount / price;
+
+                // 1. Push Tokens
+                console.log(`[CopyExec] 🚑 Retry Push Tokens...`);
+                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
+                if (!pushResult.success) {
+                    return { success: false, error: `Retry Push Failed: ${pushResult.error}` };
+                }
+
+                // 2. Reimburse (if float)
+                if (usedBotFloat) {
+                    console.log(`[CopyExec] 🚑 Retry Reimbursement...`);
+                    const reimbursement = await this.transferFromProxy(proxyAddress, amount);
+                    if (!reimbursement.success) {
+                        // Critical but less critical than holding tokens.
+                        console.error(`[CopyExec] 🚨 Reimbursement still failed: ${reimbursement.error}`);
+                        return { success: false, error: `Reimbursement Failed: ${reimbursement.error}`, txHash: pushResult.txHash };
+                    }
+                }
+
+                return { success: true, txHash: pushResult.txHash };
+
+            } else { // SELL
+                // We sold. Need to Push USDC to Proxy.
+                console.log(`[CopyExec] 🚑 Retry Push USDC...`);
+                const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount);
+                if (!returnResult.success) {
+                    return { success: false, error: `Retry Push USDC Failed: ${returnResult.error}` };
+                }
+                return { success: true, txHash: returnResult.txHash };
+            }
+        } catch (e: any) {
+            return { success: false, error: e.message };
+        }
+    }
+
+
+    /**
+     * Calculate dynamic slippage based on Orderbook depth
+     */
+    async calculateDynamicSlippage(
+        tokenId: string,
+        side: 'BUY' | 'SELL',
+        amountShares: number,
+        currentPrice: number
+    ): Promise<number> {
+        try {
+            const orderbook = await this.tradingService.getOrderBook(tokenId);
+            // BUY needs ASKS to fill. SELL needs BIDS to fill.
+            const bookSide = side === 'BUY' ? orderbook.asks : orderbook.bids;
+
+            let accumulatedSize = 0;
+            let worstPrice = currentPrice;
+
+            for (const level of bookSide) {
+                const levelSize = Number(level.size);
+                const levelPrice = Number(level.price);
+
+                accumulatedSize += levelSize;
+                worstPrice = levelPrice;
+
+                if (accumulatedSize >= amountShares) {
+                    break;
+                }
+            }
+
+            // Calculate impact
+            // Slippage = |(Worst - Current) / Current|
+            const impact = Math.abs((worstPrice - currentPrice) / currentPrice);
+
+            // Add 20% safety buffer to the impact
+            const buffer = impact * 0.2;
+            const dynamicSlippage = impact + buffer;
+
+            console.log(`[DynamicSlippage] Impact: ${(impact * 100).toFixed(2)}%, Buffer: ${(buffer * 100).toFixed(2)}%, Total: ${(dynamicSlippage * 100).toFixed(2)}%`);
+
+            // Enforce minimum 0.5%
+            return Math.max(dynamicSlippage, 0.005);
+        } catch (e: any) {
+            console.warn(`[DynamicSlippage] Failed to calc, using default 2%: ${e.message}`);
+            return 0.02;
+        }
     }
 }

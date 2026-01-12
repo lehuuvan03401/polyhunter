@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 // Order status types
-export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED';
+export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'SETTLEMENT_PENDING';
 
 export interface Order {
     tradeId: string;
@@ -30,6 +30,53 @@ export interface Order {
     filledPercent: number;
 }
 
+// ... (keep interface UseOrderStatusReturn)
+
+// Helper to get status color
+export function getOrderStatusColor(status: OrderStatus): string {
+    switch (status) {
+        case 'FILLED':
+            return 'text-green-400';
+        case 'OPEN':
+        case 'PARTIALLY_FILLED':
+            return 'text-blue-400';
+        case 'PENDING':
+            return 'text-yellow-400';
+        case 'SETTLEMENT_PENDING':
+            return 'text-orange-400'; // Distinct color for settlement
+        case 'CANCELLED':
+        case 'EXPIRED':
+            return 'text-gray-400';
+        case 'REJECTED':
+            return 'text-red-400';
+        default:
+            return 'text-muted-foreground';
+    }
+}
+
+// Helper to get status icon
+export function getOrderStatusIcon(status: OrderStatus): string {
+    switch (status) {
+        case 'FILLED':
+            return '✓';
+        case 'OPEN':
+            return '◯';
+        case 'PARTIALLY_FILLED':
+            return '◐';
+        case 'PENDING':
+            return '○';
+        case 'SETTLEMENT_PENDING':
+            return '⇄'; // Settlement/Transfer icon
+        case 'CANCELLED':
+            return '✗';
+        case 'EXPIRED':
+            return '⌛';
+        case 'REJECTED':
+            return '✗';
+        default:
+            return '?';
+    }
+}
 export interface OrderStats {
     total: number;
     pending: number;
@@ -176,44 +223,4 @@ export function useOrderStatus(
     };
 }
 
-// Helper to get status color
-export function getOrderStatusColor(status: OrderStatus): string {
-    switch (status) {
-        case 'FILLED':
-            return 'text-green-400';
-        case 'OPEN':
-        case 'PARTIALLY_FILLED':
-            return 'text-blue-400';
-        case 'PENDING':
-            return 'text-yellow-400';
-        case 'CANCELLED':
-        case 'EXPIRED':
-            return 'text-gray-400';
-        case 'REJECTED':
-            return 'text-red-400';
-        default:
-            return 'text-muted-foreground';
-    }
-}
 
-// Helper to get status icon
-export function getOrderStatusIcon(status: OrderStatus): string {
-    switch (status) {
-        case 'FILLED':
-            return '✓';
-        case 'OPEN':
-            return '◯';
-        case 'PARTIALLY_FILLED':
-            return '◐';
-        case 'PENDING':
-            return '○';
-        case 'CANCELLED':
-            return '✗';
-        case 'EXPIRED':
-            return '⌛';
-        case 'REJECTED':
-            return '✗';
-        default:
-            return '?';
-    }
-}

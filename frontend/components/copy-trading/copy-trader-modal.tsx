@@ -64,6 +64,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [sellFixedAmount, setSellFixedAmount] = React.useState('25');
     const [sellPercentage, setSellPercentage] = React.useState('25');
 
+    // Slippage State
+    const [slippageMode, setSlippageMode] = React.useState<'FIXED' | 'AUTO'>('AUTO');
+    const [maxSlippageInput, setMaxSlippageInput] = React.useState('2.0');
+
     const handleStartCopying = async () => {
         setIsStarting(true);
         try {
@@ -109,6 +113,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     sellMode: apiSellMode,
                     sellFixedAmount: sellMode === 'Fixed Amount' ? Number(sellFixedAmount) : undefined,
                     sellPercentage: sellMode === 'Custom %' ? Number(sellPercentage) / 100 : undefined,
+
+                    // Slippage
+                    slippageType: slippageMode,
+                    maxSlippage: Number(maxSlippageInput) || 2.0,
                 }),
             });
 
@@ -434,6 +442,65 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         </div>
                                     </div>
 
+
+                                    {/* Slippage Settings */}
+                                    <div>
+                                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <Zap className="h-3.5 w-3.5" /> Slippage
+                                        </div>
+                                        <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 space-y-4">
+                                            <div className="flex bg-[#1a1b1e] p-1 rounded-lg border border-[#2c2d33]">
+                                                <button
+                                                    onClick={() => setSlippageMode('AUTO')}
+                                                    className={cn(
+                                                        "flex-1 py-1.5 text-xs font-bold rounded-md transition-colors",
+                                                        slippageMode === 'AUTO' ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-white"
+                                                    )}
+                                                >
+                                                    Auto (Dynamic)
+                                                </button>
+                                                <button
+                                                    onClick={() => setSlippageMode('FIXED')}
+                                                    className={cn(
+                                                        "flex-1 py-1.5 text-xs font-bold rounded-md transition-colors",
+                                                        slippageMode === 'FIXED' ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-white"
+                                                    )}
+                                                >
+                                                    Fixed
+                                                </button>
+                                            </div>
+
+                                            <div>
+                                                <div className="flex justify-between text-xs mb-1.5">
+                                                    <span className="font-bold text-white">
+                                                        {slippageMode === 'AUTO' ? 'Max Allowed Slippage' : 'Fixed Slippage'} (%)
+                                                    </span>
+                                                    {slippageMode === 'AUTO' && (
+                                                        <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded flex items-center">
+                                                            Recommended
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        min="0.1"
+                                                        step="0.1"
+                                                        value={maxSlippageInput}
+                                                        onChange={(e) => setMaxSlippageInput(e.target.value)}
+                                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                                    />
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</div>
+                                                </div>
+                                                <div className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+                                                    {slippageMode === 'AUTO'
+                                                        ? "Slippage is calculated dynamically based on liquidity. Trade will fail if impact exceeds this value."
+                                                        : "Trade will execute with exactly this slippage tolerance."}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <div>
                                         <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Direction</div>
                                         <div className="grid grid-cols-2 gap-3 bg-[#25262b] p-1 rounded-xl border border-[#2c2d33]">
@@ -663,7 +730,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     </div>
 
                 </motion.div>
-            </div>
-        </AnimatePresence>
+            </div >
+        </AnimatePresence >
     );
 }

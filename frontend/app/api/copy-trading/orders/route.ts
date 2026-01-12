@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 // Order status types
-export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED';
+export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'SETTLEMENT_PENDING';
 
 interface OrderStatusInfo {
     orderId: string;
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
         // Get stats
         const stats = {
             total: orders.length,
-            pending: orders.filter((o: OrderItem) => o.status === 'PENDING').length,
+            pending: orders.filter((o: OrderItem) => o.status === 'PENDING' || o.status === 'SETTLEMENT_PENDING').length,
             open: orders.filter((o: OrderItem) => o.status === 'OPEN').length,
             filled: orders.filter((o: OrderItem) => o.status === 'FILLED').length,
             failed: orders.filter((o: OrderItem) => o.status === 'REJECTED').length,
@@ -148,6 +148,8 @@ function mapTradeStatusToOrderStatus(tradeStatus: string): OrderStatus {
     switch (tradeStatus) {
         case 'PENDING':
             return 'PENDING';
+        case 'SETTLEMENT_PENDING':
+            return 'SETTLEMENT_PENDING';
         case 'EXECUTED':
             return 'FILLED';
         case 'FAILED':

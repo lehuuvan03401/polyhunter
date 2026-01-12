@@ -136,6 +136,21 @@ export interface MarketReward {
 }
 
 // ============================================================================
+// Orderbook Types
+// ============================================================================
+
+export interface OrderSummary {
+  price: string;
+  size: string;
+}
+
+export interface Orderbook {
+  hash: string;
+  asks: OrderSummary[];
+  bids: OrderSummary[];
+}
+
+// ============================================================================
 // TradingService Implementation
 // ============================================================================
 
@@ -423,6 +438,13 @@ export class TradingService {
         fee: Number(t.fee_rate_bps) || 0,
         timestamp: Number(t.match_time) || Date.now(),
       }));
+    });
+  }
+
+  async getOrderBook(tokenId: string): Promise<Orderbook> {
+    const client = await this.ensureInitialized();
+    return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+      return await client.getOrderBook(tokenId);
     });
   }
 

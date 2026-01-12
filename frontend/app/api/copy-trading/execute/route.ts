@@ -215,7 +215,9 @@ export async function POST(request: NextRequest) {
                     side: trade.originalSide as 'BUY' | 'SELL',
                     amount: trade.copySize, // In USDC
                     price: trade.originalPrice,
-                    slippage: slippage,
+                    slippage: trade.config.slippageType === 'FIXED' ? (trade.config.maxSlippage / 100) : undefined,
+                    maxSlippage: trade.config.maxSlippage,
+                    slippageMode: trade.config.slippageType as 'FIXED' | 'AUTO',
                     orderType: orderMode as 'market' | 'limit',
                 });
 
