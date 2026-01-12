@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { LineChart, LayoutDashboard, Wallet, Search } from 'lucide-react';
+import { ethers } from 'ethers';
 
 const navItems = [
     { name: 'Home', href: '/', icon: LayoutDashboard },
@@ -19,6 +20,41 @@ import { UserMenu } from './user-menu';
 export function Navbar() {
     const pathname = usePathname();
     const { login, authenticated, user, logout, ready } = usePrivy();
+    const [usdcBalance, setUsdcBalance] = React.useState<number | null>(null);
+
+    // Fetch USDC balance when authenticated
+    React.useEffect(() => {
+        if (!authenticated || !user?.wallet?.address) {
+            setUsdcBalance(null);
+            return;
+        }
+
+        const fetchBalance = async () => {
+            if (!user?.wallet?.address) {
+                setUsdcBalance(null);
+                return;
+            }
+
+            try {
+                const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+                const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
+                const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+                const usdcContract = new ethers.Contract(USDC_CONTRACT, USDC_ABI, provider);
+                const rawBalance = await usdcContract.balanceOf(user.wallet.address);
+                // USDC has 6 decimals
+                const balance = Number(rawBalance) / 1e6;
+                setUsdcBalance(balance);
+            } catch (err) {
+                console.warn("Failed to fetch USDC balance in navbar", err);
+                setUsdcBalance(null);
+            }
+        };
+
+        fetchBalance();
+        // Refresh balance every 30 seconds
+        const interval = setInterval(fetchBalance, 30000);
+        return () => clearInterval(interval);
+    }, [authenticated, user?.wallet?.address]);
 
     const truncateAddress = (address: string) => {
         return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -51,15 +87,30 @@ export function Navbar() {
                     <Link href="/markets" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/markets") ? "text-foreground" : "text-muted-foreground")}>
                         Markets
                     </Link>
-                    <Link href="/pricing" className="text-muted-foreground transition-colors hover:text-foreground/80">
-                        Pricing
-                    </Link>
-                    <Link href="/affiliate" className="text-muted-foreground transition-colors hover:text-foreground/80">
-                        Affiliate
-                    </Link>
-                    <Link href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
-                        Dashboard
-                    </Link>
+                    {authenticated ? (
+                        // 已登录用户看到的菜单
+                        <>
+                            <Link href="/smart-money" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/smart-money") ? "text-foreground" : "text-muted-foreground")}>
+                                Smart Money
+                            </Link>
+                            <Link href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
+                                Dashboard
+                            </Link>
+                            <Link href="/settings" className={cn("transition-colors hover:text-foreground/80", pathname === "/settings" ? "text-foreground" : "text-muted-foreground")}>
+                                Settings
+                            </Link>
+                        </>
+                    ) : (
+                        // 未登录用户看到的菜单
+                        <>
+                            <Link href="/pricing" className={cn("transition-colors hover:text-foreground/80", pathname === "/pricing" ? "text-foreground" : "text-muted-foreground")}>
+                                Pricing
+                            </Link>
+                            <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
+                                Affiliate
+                            </Link>
+                        </>
+                    )}
                 </nav>
 
                 {/* Right Side */}
@@ -73,11 +124,15 @@ export function Navbar() {
                             <div className="hidden lg:flex items-center gap-6 mr-2">
                                 <div className="flex flex-col items-end">
                                     <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">TOTAL</span>
-                                    <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">$0.00</span>
+                                    <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">
+                                        {usdcBalance !== null ? `$${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                                    </span>
                                 </div>
                                 <div className="flex flex-col items-end">
                                     <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">CASH</span>
-                                    <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">$0.00</span>
+                                    <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">
+                                        {usdcBalance !== null ? `$${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                                    </span>
                                 </div>
                             </div>
 

@@ -53,7 +53,6 @@ export default function PortfolioPage() {
 
             setIsLoading(true);
             try {
-
                 if (authenticated && user?.wallet?.address) {
                     const address = user.wallet.address;
 

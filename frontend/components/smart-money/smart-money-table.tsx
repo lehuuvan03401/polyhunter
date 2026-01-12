@@ -1,7 +1,12 @@
+'use client';
+
 import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import Link from 'next/link';
-import { AlertCircle, RefreshCcw } from 'lucide-react';
+import { AlertCircle, RefreshCcw, Wallet } from 'lucide-react';
+import { usePrivy } from '@privy-io/react-auth';
+import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 5;
@@ -20,8 +25,32 @@ interface SmartMoneyTableProps {
     currentPage: number;
 }
 
-export async function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
-    const { data: smartMoneyList, error } = await fetchSmartMoneyData(currentPage);
+export function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
+    const { authenticated, login, ready } = usePrivy();
+    const [data, setData] = useState<SmartMoneyWallet[] | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const loadData = async () => {
+            setIsLoading(true);
+            const result = await fetchSmartMoneyData(currentPage);
+            setData(result.data);
+            setError(result.error);
+            setIsLoading(false);
+        };
+        loadData();
+    }, [currentPage]);
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center py-16">
+                <RefreshCcw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
+
+    const smartMoneyList = data;
 
     // Pagination logic
     const hasNextPage = (smartMoneyList?.length || 0) === ITEMS_PER_PAGE && currentPage < MAX_PAGES;
@@ -97,12 +126,30 @@ export async function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
                                     </div>
                                 </td>
                                 <td className="p-4 align-middle text-right whitespace-nowrap">
-                                    <Link
-                                        href={`/traders/${wallet.address}`}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
-                                    >
-                                        Copy Trader
-                                    </Link>
+                                    {authenticated ? (
+                                        <Link
+                                            href={`/traders/${wallet.address}`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
+                                        >
+                                            Copy Trader
+                                        </Link>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                toast('Please connect your wallet to copy traders', {
+                                                    description: 'You need to sign in to use copy trading features',
+                                                    action: {
+                                                        label: 'Connect Wallet',
+                                                        onClick: () => login(),
+                                                    },
+                                                });
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/50 hover:bg-blue-600 text-white/70 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+                                        >
+                                            <Wallet className="h-3 w-3" />
+                                            Connect to Copy
+                                        </button>
+                                    )}
                                 </td>
                             </tr>
                         ))}

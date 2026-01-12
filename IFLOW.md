@@ -2,14 +2,25 @@
 
 ## 项目简介
 
-`@catalyst-team/poly-sdk` 是一个全面的 TypeScript SDK,为 Polymarket 提供统一的 API 接口。该 SDK 支持交易、市场数据分析、智能资金分析和链上操作。它整合了多个 Polymarket API(Data API、Gamma API、CLOB API)并提供了高级服务如套利检测、智能资金跟踪和实时 WebSocket 数据流。
+**PolyHunter** 是一个完整的 Polymarket 生态系统项目,包含 TypeScript SDK、前端应用、智能合约和后端服务。该项目为 Polymarket 提供统一的 API 接口、交易工具、智能资金分析和用户界面。
 
 **当前版本**: v0.3.0  
 **构建者**: [@hhhx402](https://x.com/hhhx402) | **项目**: [Catalyst.fun](https://x.com/catalystdotfun)
 
 ## 项目架构
 
-### 三层架构
+### 整体架构
+
+```
+poly-hunter/
+├── @catalyst-team/poly-sdk/    # TypeScript SDK (核心)
+├── frontend/                    # Next.js 16 前端应用
+├── contracts/                   # Hardhat 智能合约
+├── backend/                     # Spring Boot 后端服务
+└── scripts/                     # 实用脚本和示例
+```
+
+### SDK 三层架构
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -135,6 +146,26 @@
 - DEX 交换(QuickSwap V3)
 - 桥接存款
 - 余额检查
+
+### 6. 前端应用
+- Next.js 16 + React 19
+- Privy 嵌入式钱包
+- 实时市场数据展示
+- 投资组合管理
+- 智能资金复制交易
+- 联盟推广系统
+
+### 7. 智能合约
+- PolyHunterProxy - 用户交易代理
+- ProxyFactory - 代理工厂
+- Treasury - 费用管理
+- 自动费用收取(仅利润部分)
+
+### 8. 后端服务
+- Spring Boot 3.2.1
+- 联盟推广系统
+- PostgreSQL 数据库
+- OpenAPI 文档
 
 ## 核心实现细节
 
@@ -314,7 +345,7 @@ console.log(`回收: $${clearResult.totalUsdcRecovered.toFixed(2)}`);
 
 ## 构建和测试
 
-### 构建命令
+### SDK 构建
 ```bash
 # 构建项目
 pnpm run build
@@ -326,6 +357,63 @@ pnpm run test:integration
 
 # 运行开发模式(监听变化)
 pnpm run dev
+```
+
+### 前端应用
+```bash
+cd frontend
+
+# 安装依赖
+npm install
+
+# 开发模式
+npm run dev
+
+# 构建
+npm run build
+
+# 启动生产服务器
+npm start
+
+# Lint
+npm run lint
+```
+
+### 智能合约
+```bash
+cd contracts
+
+# 安装依赖
+npm install
+
+# 编译合约
+npm run compile
+
+# 运行测试
+npm run test
+
+# 部署到本地网络
+npm run deploy:local
+
+# 部署到 Amoy 测试网
+npm run deploy:amoy
+
+# 部署到 Polygon 主网
+npm run deploy:polygon
+```
+
+### 后端服务
+```bash
+cd backend/affiliate-service
+
+# 使用 Maven 构建
+mvn clean install
+
+# 运行应用
+mvn spring-boot:run
+
+# 运行测试
+mvn test
 ```
 
 ### 示例运行
@@ -353,25 +441,25 @@ pnpm example:arb-service        # 套利服务
 ## 项目结构
 
 ```
-poly-sdk/
-├── src/
-│   ├── index.ts                 # SDK 入口点
-│   ├── core/                    # 核心基础设施
-│   │   ├── rate-limiter.ts      # 速率限制
-│   │   ├── cache.ts             # 缓存系统
-│   │   ├── errors.ts            # 错误处理
-│   │   ├── types.ts             # 类型定义
-│   │   └── unified-cache.ts     # 统一缓存接口
-│   ├── clients/                 # API 客户端
-│   │   ├── data-api.ts          # Data API
-│   │   ├── gamma-api.ts         # Gamma API
-│   │   ├── subgraph.ts          # Subgraph (Goldsky)
-│   │   ├── ctf-client.ts        # CTF 合约
-│   │   └── bridge-client.ts     # 跨链桥接
-│   ├── services/                # 高级服务
-│   │   ├── trading-service.ts   # 交易服务
-│   │   ├── market-service.ts    # 市场数据服务
-│   │   ├── wallet-service.ts    # 钱包分析服务
+poly-hunter/
+├── src/                        # SDK 源代码
+│   ├── index.ts                # SDK 入口点
+│   ├── core/                   # 核心基础设施
+│   │   ├── rate-limiter.ts     # 速率限制
+│   │   ├── cache.ts            # 缓存系统
+│   │   ├── errors.ts           # 错误处理
+│   │   ├── types.ts            # 类型定义
+│   │   └── unified-cache.ts    # 统一缓存接口
+│   ├── clients/                # API 客户端
+│   │   ├── data-api.ts         # Data API
+│   │   ├── gamma-api.ts        # Gamma API
+│   │   ├── subgraph.ts         # Subgraph (Goldsky)
+│   │   ├── ctf-client.ts       # CTF 合约
+│   │   └── bridge-client.ts    # 跨链桥接
+│   ├── services/               # 高级服务
+│   │   ├── trading-service.ts  # 交易服务
+│   │   ├── market-service.ts   # 市场数据服务
+│   │   ├── wallet-service.ts   # 钱包分析服务
 │   │   ├── smart-money-service.ts  # 智能资金服务
 │   │   ├── arbitrage-service.ts    # 套利服务
 │   │   ├── realtime-service-v2.ts  # 实时数据服务
@@ -380,10 +468,73 @@ poly-sdk/
 │   │   └── swap-service.ts         # 交换服务
 │   └── utils/                   # 工具函数
 │       └── price-utils.ts       # 价格计算工具
+├── frontend/                   # Next.js 前端应用
+│   ├── app/                    # App Router 页面
+│   │   ├── affiliate/          # 联盟推广页面
+│   │   ├── api/                # API 路由
+│   │   │   ├── affiliate/      # 联盟推广 API
+│   │   │   ├── copy-trading/   # 复制交易 API
+│   │   │   ├── markets/        # 市场数据 API
+│   │   │   ├── proxy/          # 代理 API
+│   │   │   └── traders/        # 交易者 API
+│   │   ├── dashboard/          # 仪表板
+│   │   ├── markets/            # 市场页面
+│   │   ├── portfolio/          # 投资组合
+│   │   ├── pricing/            # 定价页面
+│   │   ├── settings/           # 设置页面
+│   │   ├── smart-money/        # 智能资金页面
+│   │   └── traders/            # 交易者页面
+│   ├── components/             # React 组件
+│   │   ├── copy-trading/       # 复制交易组件
+│   │   ├── home/               # 首页组件
+│   │   ├── layout/             # 布局组件
+│   │   ├── market-detail/      # 市场详情组件
+│   │   ├── providers/          # Provider 组件
+│   │   ├── proxy/              # 代理组件
+│   │   └── smart-money/        # 智能资金组件
+│   ├── lib/                    # 工具库
+│   │   ├── affiliate-api.ts    # 联盟推广 API
+│   │   ├── copy-trading-store.ts # 复制交易状态管理
+│   │   ├── polymarket.ts       # Polymarket SDK 封装
+│   │   ├── prisma.ts           # Prisma 客户端
+│   │   ├── utils.ts            # 通用工具
+│   │   ├── contracts/          # 合约交互
+│   │   └── hooks/              # 自定义 Hooks
+│   ├── prisma/                 # Prisma 模型
+│   └── public/                 # 静态资源
+├── contracts/                  # 智能合约(Hardhat)
+│   ├── contracts/              # 合约源码
+│   │   ├── PolyHunterProxy.sol # 用户交易代理
+│   │   ├── ProxyFactory.sol    # 代理工厂
+│   │   ├── Treasury.sol        # 费用管理
+│   │   └── mocks/              # 测试合约
+│   ├── scripts/                # 部署脚本
+│   │   └── deploy.ts           # 部署脚本
+│   └── test/                   # 合约测试
+│       └── ProxySystem.test.ts # 代理系统测试
+├── backend/                    # 后端服务
+│   └── affiliate-service/      # 联盟推广服务(Spring Boot)
+│       ├── src/
+│       │   └── main/
+│       ├── pom.xml             # Maven 配置
+│       └── target/             # 构建输出
 ├── examples/                   # 使用示例
-│   └── README.md                # 示例文档
+│   ├── 01-basic-usage.ts       # 基础使用
+│   ├── 02-smart-money.ts       # 智能资金分析
+│   ├── 03-market-analysis.ts   # 市场分析
+│   ├── 04-kline-aggregation.ts # K线聚合
+│   ├── 05-follow-wallet-strategy.ts # 跟踪钱包策略
+│   ├── 06-services-demo.ts     # 服务演示
+│   ├── 07-realtime-websocket.ts # WebSocket 流
+│   ├── 08-trading-orders.ts    # 交易订单
+│   ├── 09-rewards-tracking.ts  # 奖励跟踪
+│   ├── 10-ctf-operations.ts    # CTF 操作
+│   ├── 11-live-arbitrage-scan.ts # 实时套利扫描
+│   ├── 12-trending-arb-monitor.ts # 趋势套利监控
+│   ├── 13-arbitrage-service.ts # 套利服务
+│   └── README.md               # 示例文档
 ├── scripts/                    # 实用脚本
-│   ├── README.md                # 脚本文档
+│   ├── copy-trading-worker.ts  # 复制交易工作器
 │   ├── api-verification/       # API 验证
 │   ├── approvals/              # 授权操作
 │   ├── arb/                    # 套利相关
@@ -393,7 +544,8 @@ poly-sdk/
 │   ├── trading/                # 交易测试
 │   ├── verify/                 # 验证脚本
 │   ├── wallet/                 # 钱包操作
-│   └── research/               # 市场研究
+│   ├── research/               # 市场研究
+│   └── archive/                # 归档脚本
 ├── docs/                       # 文档
 │   ├── README.md               # 文档导航
 │   ├── api/                    # API 参考
@@ -405,18 +557,11 @@ poly-sdk/
 │   ├── plans/                  # 计划文档
 │   ├── test/                   # 测试文档
 │   └── archive/                # 归档文档
-├── contracts/                  # 智能合约(Hardhat)
-│   ├── contracts/              # 合约源码
-│   ├── scripts/                # 部署脚本
-│   └── test/                   # 合约测试
-├── backend/                    # 后端服务
-│   └── affiliate-service/      # 联盟推广服务(Spring Boot)
-├── frontend/                   # 前端应用(Next.js)
-│   ├── app/                    # App Router 页面
-│   ├── components/             # React 组件
-│   ├── lib/                    # 工具库
-│   └── prisma/                 # 数据库模型
-└── dashboard/                  # Next.js 仪表板
+├── demo/                       # 演示截图
+├── package.json                # SDK 依赖
+├── tsconfig.json               # TypeScript 配置
+├── vitest.config.ts            # Vitest 配置
+└── vitest.integration.config.ts # 集成测试配置
 ```
 
 ## 开发约定
@@ -437,21 +582,56 @@ poly-sdk/
 - 遵循 TypeScript 最佳实践
 - 清晰的接口定义和文档
 
+### 前端约定
+- Next.js 16 App Router
+- React 19
+- Tailwind CSS 4
+- TypeScript 5
+- Privy 嵌入式钱包
+- Prisma ORM
+
+### 智能合约约定
+- Solidity ^0.8.24
+- OpenZeppelin ^5.0.0
+- Hardhat ^2.22.0
+- ReentrancyGuard 保护
+- SafeERC20 使用
+
 ## 依赖
 
-### 核心依赖
+### SDK 核心依赖
 - `@polymarket/clob-client` (^5.1.3) - 官方 CLOB 交易客户端
 - `@polymarket/real-time-data-client` (^1.4.0) - 官方 WebSocket 客户端
 - `ethers@5` - 区块链交互
 - `bottleneck` (^2.19.5) - 速率限制
-- `@catalyst-team/cache` - 缓存适配器
 - `ws` (^8.18.3) - WebSocket
 - `isomorphic-ws` (^5.0.0) - WebSocket 兼容层
 
-### 开发依赖
+### SDK 开发依赖
 - `typescript` (^5.7.2) - TypeScript 编译器
 - `vitest` (^2.1.8) - 测试框架
 - `tsx` (^4.7.0) - TypeScript 执行器
+
+### 前端依赖
+- `next` (16.1.1) - Next.js 框架
+- `react` (19.2.3) - React 库
+- `@privy-io/react-auth` (^3.10.0) - Privy 认证
+- `@prisma/client` (^7.2.0) - Prisma 客户端
+- `@libsql/client` (^0.15.15) - LibSQL 客户端
+- `tailwindcss` (^4) - Tailwind CSS
+- `recharts` (^3.6.0) - 图表库
+- `framer-motion` (^12.23.26) - 动画库
+
+### 智能合约依赖
+- `hardhat` (^2.22.0) - Hardhat 框架
+- `@nomicfoundation/hardhat-toolbox` (^4.0.0) - Hardhat 工具箱
+- `@openzeppelin/contracts` (^5.0.0) - OpenZeppelin 合约
+
+### 后端依赖
+- `spring-boot-starter-parent` (3.2.1) - Spring Boot
+- `postgresql` - PostgreSQL 驱动
+- `springdoc-openapi-starter-webmvc-ui` (2.3.0) - OpenAPI 文档
+- `lombok` (^1.18.36) - Lombok
 
 ## 重要提示
 
@@ -469,6 +649,18 @@ poly-sdk/
 - 使用 `RealtimeServiceV2` 获取实时数据
 - SDK 提供 `start()` 方法一次性完成初始化和连接
 - 记得在结束时调用 `stop()` 清理资源
+
+### 智能合约费用
+- PolyHunterProxy 自动收取利润费用
+- 费用仅在提取利润时收取
+- 费用比例由 Factory 设置(最高 20%)
+- 费用按提取金额比例计算
+
+### 前端钱包
+- 使用 Privy 嵌入式钱包
+- 支持社交登录(Google、Twitter 等)
+- 无需助记词
+- 自动管理私钥
 
 ## 文档资源
 

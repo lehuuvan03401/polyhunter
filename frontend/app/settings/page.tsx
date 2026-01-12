@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { polyClient } from '@/lib/polymarket';
+import { toast } from 'sonner';
 
 export default function SettingsPage() {
     const { user } = usePrivy();
@@ -240,15 +241,45 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-4">
-                        <button className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#2c2d33] hover:border-white/20 transition-colors group">
+                        <a
+                            href={`https://polygonscan.com/address/${user?.wallet?.address}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#2c2d33] hover:border-white/20 transition-colors group cursor-pointer"
+                        >
                             <span className="text-sm font-medium">View on Polygonscan</span>
                             <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-white" />
-                        </button>
-                        <button className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#2c2d33] hover:border-white/20 transition-colors group">
+                        </a>
+                        <button
+                            onClick={async () => {
+                                if (!user?.wallet?.address) return;
+                                try {
+                                    // Get wallet from Privy
+                                    const wallet = await (window as any).privy?.wallets?.getWallet(user.wallet.address);
+                                    if (wallet) {
+                                        const privateKey = await wallet.exportPrivateKey();
+                                        // Copy to clipboard
+                                        await navigator.clipboard.writeText(privateKey);
+                                        toast.success('Private key copied to clipboard! Keep it safe and never share it.');
+                                    }
+                                } catch (err) {
+                                    console.error('Failed to export private key', err);
+                                    toast.error('Failed to export private key. Make sure you have the necessary permissions.');
+                                }
+                            }}
+                            className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#2c2d33] hover:border-white/20 transition-colors group"
+                        >
                             <span className="text-sm font-medium">Export Private Key</span>
                             <Key className="h-4 w-4 text-muted-foreground group-hover:text-white" />
                         </button>
-                        <button className="w-full flex items-center justify-between p-4 rounded-xl bg-red-950/10 border border-red-900/20 hover:border-red-500/30 transition-colors group">
+                        <button
+                            onClick={() => {
+                                if (confirm('Are you sure you want to regenerate your wallet? This will create a new wallet address and you will lose access to your current wallet. This action cannot be undone.')) {
+                                    toast.info('Wallet regeneration is not yet implemented. Please contact support for assistance.');
+                                }
+                            }}
+                            className="w-full flex items-center justify-between p-4 rounded-xl bg-red-950/10 border border-red-900/20 hover:border-red-500/30 transition-colors group"
+                        >
                             <span className="text-sm font-medium text-red-400">Regenerate Wallet</span>
                             <RefreshCw className="h-4 w-4 text-red-500 group-hover:rotate-180 transition-transform" />
                         </button>
