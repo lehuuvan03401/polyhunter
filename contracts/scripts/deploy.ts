@@ -1,4 +1,6 @@
 import { ethers } from "hardhat";
+import * as fs from "fs";
+import * as path from "path";
 
 async function main() {
     const [deployer] = await ethers.getSigners();
@@ -68,6 +70,15 @@ async function main() {
     console.log("Treasury:", treasuryAddress);
     console.log("ProxyFactory:", proxyFactoryAddress);
     console.log("========================================");
+
+    const deploymentPath = path.join(__dirname, "../../deployed-addresses.json");
+    fs.writeFileSync(deploymentPath, JSON.stringify({
+        usdc: usdcAddress,
+        treasury: treasuryAddress,
+        proxyFactory: proxyFactoryAddress,
+        chainId: Number(network.chainId)
+    }, null, 2));
+    console.log(`\n💾 Addresses saved to ${deploymentPath}`);
 
     // Return addresses for verification
     return {

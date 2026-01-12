@@ -38,10 +38,10 @@ export interface ExecutionResult {
 
 export class CopyTradingExecutionService {
     private tradingService: TradingService;
-    private signer: ethers.Wallet;
+    private signer: ethers.Signer;
     private chainId: number;
 
-    constructor(tradingService: TradingService, signer: ethers.Wallet, chainId: number = 137) {
+    constructor(tradingService: TradingService, signer: ethers.Signer, chainId: number = 137) {
         this.tradingService = tradingService;
         this.signer = signer; // Bot signer (Operator)
         this.chainId = chainId;
@@ -69,7 +69,8 @@ export class CopyTradingExecutionService {
         if (!addresses.usdc) throw new Error("USDC address not configured for this chain");
 
         const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
-        const balance = await usdc.balanceOf(this.signer.address);
+        const botAddress = await this.signer.getAddress();
+        const balance = await usdc.balanceOf(botAddress);
         return Number(balance) / (10 ** USDC_DECIMALS);
     }
 
@@ -101,15 +102,16 @@ export class CopyTradingExecutionService {
         try {
             const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, this.signer);
-            const botAddress = this.signer.address;
+            const botAddress = await this.signer.getAddress();
 
-            // Encode USDC transfer call
-            const usdcInterface = new ethers.utils.Interface(ERC20_ABI);
+            // NEW STRATEGY: Use transferFrom (requires User approval)
+            // proxy.execute(usdc, transfer) is BLOCKED by Contract.
+            const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);
-            const transferData = usdcInterface.encodeFunctionData('transfer', [botAddress, amountWei]);
 
-            console.log(`[CopyExec] Transferring $${amount} USDC from Proxy ${proxyAddress} to Bot...`);
-            const tx = await proxy.execute(addresses.usdc, transferData);
+            console.log(`[CopyExec] Transferring $${amount} USDC from Proxy ${proxyAddress} to Bot (via transferFrom)...`);
+            // Bot calls transferFrom(proxy, bot, amount)
+            const tx = await usdc.transferFrom(proxyAddress, botAddress, amountWei);
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Transfer complete: ${receipt.transactionHash}`);
@@ -147,7 +149,7 @@ export class CopyTradingExecutionService {
         try {
             const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, this.signer);
-            const botAddress = this.signer.address;
+            const botAddress = await this.signer.getAddress();
             const ctfInterface = new ethers.utils.Interface(CTF_ABI);
 
             // Amount in shares.
@@ -190,7 +192,7 @@ export class CopyTradingExecutionService {
             // safeTransferFrom(from, to, id, amount, data)
             // Bot is signer, so we can call directly.
             const tx = await ctf.safeTransferFrom(
-                this.signer.address,
+                await this.signer.getAddress(),
                 proxyAddress,
                 tokenId,
                 amountWei,

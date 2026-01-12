@@ -47,6 +47,7 @@ export const POLY_HUNTER_PROXY_ABI = [
     'function operators(address operator) external view returns (bool)',
     // Write functions
     'function setOperator(address operator, bool active) external',
+    'function approveTrading(address spender, uint256 amount) external',
     'function deposit(uint256 amount) external',
     'function withdraw(uint256 amount) external',
     'function execute(address target, bytes calldata data) external returns (bytes memory)',
@@ -61,6 +62,7 @@ export const ERC20_ABI = [
     'function allowance(address owner, address spender) external view returns (uint256)',
     'function balanceOf(address account) external view returns (uint256)',
     'function transfer(address to, uint256 amount) external returns (bool)',
+    'function transferFrom(address from, address to, uint256 amount) external returns (bool)',
     'function decimals() external view returns (uint8)',
 ] as const;
 

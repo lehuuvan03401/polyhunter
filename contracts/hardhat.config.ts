@@ -13,7 +13,10 @@ const config: HardhatUserConfig = {
     },
     networks: {
         hardhat: {
-            chainId: 31337,
+            chainId: 137,
+            forking: {
+                url: process.env.POLYGON_RPC_URL || "https://rpc.ankr.com/polygon/8bcbd6bdb3c597de68e3ec1be4bf2e8433ee789181e3cdb1d9a3e74ceb005aeb",
+            },
         },
         // Polygon Mainnet
         polygon: {
@@ -23,7 +26,7 @@ const config: HardhatUserConfig = {
         },
         // Polygon Amoy Testnet
         amoy: {
-            url: process.env.AMOY_RPC_URL || "https://rpc-amoy.polygon.technology",
+            url: process.env.AMOY_RPC_URL || "https://rpc.ankr.com/polygon_amoy/8bcbd6bdb3c597de68e3ec1be4bf2e8433ee789181e3cdb1d9a3e74ceb005aeb",
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
             chainId: 80002,
         },
