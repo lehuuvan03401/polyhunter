@@ -9,7 +9,7 @@ export const CONTRACT_ADDRESSES = {
     // Polygon Mainnet (137)
     polygon: {
         // Defaults to undefined if not set, forcing caller to provide it or crash early
-        proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || process.env.PROXY_FACTORY_ADDRESS || '0xa536E751CC68997E898165B3213EeC355E09C6D3', // Known Factory Address or Env
+        proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || process.env.PROXY_FACTORY_ADDRESS || '0xa536e751cc68997e898165b3213eec355e09c6d3', // Known Factory Address or Env
         usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS || process.env.USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged)
     },
     // Polygon Amoy (80002)
