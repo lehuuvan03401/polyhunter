@@ -1,6 +1,5 @@
 'use client';
 
-import { polyClient } from '@/lib/polymarket';
 import { MarketsList } from '@/components/markets-list';
 import { GammaMarket } from '@catalyst-team/poly-sdk';
 import { usePrivy } from '@privy-io/react-auth';
@@ -22,38 +21,14 @@ export function MarketsPage() {
             setIsLoading(true);
             let fetchedMarkets: GammaMarket[] = [];
             try {
-                fetchedMarkets = await polyClient.gammaApi.getMarkets({
-                    active: true,
-                    closed: false,
-                    limit: 50,
-                    order: 'volume24hr',
-                    ascending: false,
-                });
-            } catch (error) {
-                console.warn("Failed to fetch markets from Gamma API, trying CLOB fallback...", error);
-                try {
-                    const { markets: clobMarkets } = await polyClient.markets.getClobMarkets();
-                    fetchedMarkets = clobMarkets.map(m => ({
-                        id: m.conditionId,
-                        conditionId: m.conditionId,
-                        slug: m.marketSlug,
-                        question: m.question,
-                        description: m.description,
-                        outcomes: m.tokens.map(t => t.outcome),
-                        outcomePrices: m.tokens.map(t => t.price),
-                        volume: 0,
-                        volume24hr: 0,
-                        liquidity: 0,
-                        endDate: m.endDateIso ? new Date(m.endDateIso) : new Date(),
-                        active: m.active,
-                        closed: m.closed,
-                        image: m.image,
-                        icon: m.icon,
-                        tags: [],
-                    } as GammaMarket));
-                } catch (clobError) {
-                    console.error("Failed to fetch markets from CLOB fallback:", clobError);
+                // Use server-side API route to avoid CORS issues
+                const response = await fetch('/api/markets?active=true&closed=false&limit=50&order=volume24hr&ascending=false');
+                if (!response.ok) {
+                    throw new Error(`API responded with status ${response.status}`);
                 }
+                fetchedMarkets = await response.json();
+            } catch (error) {
+                console.error("Failed to fetch markets from API:", error);
             }
             setMarkets(fetchedMarkets);
             setIsLoading(false);
@@ -89,7 +64,7 @@ export function MarketsPage() {
                         </div>
                         <h2 className="text-2xl font-bold mb-3">Connect Your Wallet to View Markets</h2>
                         <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
-                            Access the complete list of active prediction markets on Polymarket. 
+                            Access the complete list of active prediction markets on Polymarket.
                             View market details, prices, and start trading with a single click.
                         </p>
 
