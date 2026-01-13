@@ -21,6 +21,8 @@ export interface ExecutionParams {
     maxSlippage?: number; // Max allowed slippage (decimal, e.g. 0.05)
     slippageMode?: 'FIXED' | 'AUTO';
     orderType?: 'market' | 'limit';
+    signer?: ethers.Signer; // Explicit signer for this execution (Worker Wallet)
+    tradingService?: TradingService; // Explicit TradingService (with correct CLOB auth)
 }
 
 export interface ExecutionResult {
@@ -38,25 +40,30 @@ export interface ExecutionResult {
 
 export class CopyTradingExecutionService {
     private tradingService: TradingService;
-    private signer: ethers.Signer;
+    private defaultSigner: ethers.Signer;
     private chainId: number;
 
-    constructor(tradingService: TradingService, signer: ethers.Signer, chainId: number = 137) {
+    constructor(tradingService: TradingService, defaultSigner: ethers.Signer, chainId: number = 137) {
         this.tradingService = tradingService;
-        this.signer = signer; // Bot signer (Operator)
+        this.defaultSigner = defaultSigner; // Bot signer (Default Operator)
         this.chainId = chainId;
+    }
+
+    private getSigner(overrideSigner?: ethers.Signer): ethers.Signer {
+        return overrideSigner || this.defaultSigner;
     }
 
     /**
      * Get USDC balance of a Proxy wallet
      */
-    async getProxyUsdcBalance(proxyAddress: string): Promise<number> {
+    async getProxyUsdcBalance(proxyAddress: string, signer?: ethers.Signer): Promise<number> {
         const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const executionSigner = this.getSigner(signer);
 
         // Check if addresses.usdc is set
         if (!addresses.usdc) throw new Error("USDC address not configured for this chain");
 
-        const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
+        const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, executionSigner);
         const balance = await usdc.balanceOf(proxyAddress);
         return Number(balance) / (10 ** USDC_DECIMALS);
     }
@@ -64,12 +71,13 @@ export class CopyTradingExecutionService {
     /**
      * Get Bot (Operator) USDC balance for Float check
      */
-    async getBotUsdcBalance(): Promise<number> {
+    async getBotUsdcBalance(signer?: ethers.Signer): Promise<number> {
         const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const executionSigner = this.getSigner(signer);
         if (!addresses.usdc) throw new Error("USDC address not configured for this chain");
 
-        const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
-        const botAddress = await this.signer.getAddress();
+        const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, executionSigner);
+        const botAddress = await executionSigner.getAddress();
         const balance = await usdc.balanceOf(botAddress);
         return Number(balance) / (10 ** USDC_DECIMALS);
     }
@@ -77,8 +85,9 @@ export class CopyTradingExecutionService {
     /**
      * Resolve User's Proxy Address using Factory
      */
-    async resolveProxyAddress(userAddress: string): Promise<string | null> {
+    async resolveProxyAddress(userAddress: string, signer?: ethers.Signer): Promise<string | null> {
         const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const executionSigner = this.getSigner(signer);
 
         if (!addresses.proxyFactory || addresses.proxyFactory.includes('0xabc123')) {
             if (addresses.proxyFactory.includes('0xabc123')) {
@@ -87,7 +96,7 @@ export class CopyTradingExecutionService {
             }
         }
 
-        const factory = new ethers.Contract(addresses.proxyFactory, PROXY_FACTORY_ABI, this.signer);
+        const factory = new ethers.Contract(addresses.proxyFactory, PROXY_FACTORY_ABI, executionSigner);
         const userProxy = await factory.getUserProxy(userAddress);
         if (userProxy && userProxy !== ethers.constants.AddressZero) {
             return userProxy;
@@ -98,18 +107,19 @@ export class CopyTradingExecutionService {
     /**
      * Transfer funds from Proxy to Bot (Operator)
      */
-    async transferFromProxy(proxyAddress: string, amount: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferFromProxy(proxyAddress: string, amount: number, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, this.signer);
-            const botAddress = await this.signer.getAddress();
+            const executionSigner = this.getSigner(signer);
+            // const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, executionSigner); // Unused
+            const botAddress = await executionSigner.getAddress();
 
             // NEW STRATEGY: Use transferFrom (requires User approval)
             // proxy.execute(usdc, transfer) is BLOCKED by Contract.
-            const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
+            const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, executionSigner);
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);
 
-            console.log(`[CopyExec] Transferring $${amount} USDC from Proxy ${proxyAddress} to Bot (via transferFrom)...`);
+            console.log(`[CopyExec] Transferring $${amount} USDC from Proxy ${proxyAddress} to Bot ${botAddress} (via transferFrom)...`);
             // Bot calls transferFrom(proxy, bot, amount)
             const tx = await usdc.transferFrom(proxyAddress, botAddress, amountWei);
             const receipt = await tx.wait();
@@ -125,9 +135,10 @@ export class CopyTradingExecutionService {
     /**
      * Transfer funds from Bot back to Proxy
      */
-    async transferToProxy(proxyAddress: string, tokenAddress: string, amount: number, decimals: number = USDC_DECIMALS): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferToProxy(proxyAddress: string, tokenAddress: string, amount: number, decimals: number = USDC_DECIMALS, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const token = new ethers.Contract(tokenAddress, ERC20_ABI, this.signer);
+            const executionSigner = this.getSigner(signer);
+            const token = new ethers.Contract(tokenAddress, ERC20_ABI, executionSigner);
             const amountWei = ethers.utils.parseUnits(amount.toFixed(decimals), decimals);
 
             console.log(`[CopyExec] Returning funds to Proxy...`);
@@ -145,11 +156,12 @@ export class CopyTradingExecutionService {
     /**
      * Pull Tokens from Proxy to Bot (for SELL)
      */
-    async transferTokensFromProxy(proxyAddress: string, tokenId: string, amount: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferTokensFromProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, this.signer);
-            const botAddress = await this.signer.getAddress();
+            const executionSigner = this.getSigner(signer);
+            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, executionSigner);
+            const botAddress = await executionSigner.getAddress();
             const ctfInterface = new ethers.utils.Interface(CTF_ABI);
 
             // Amount in shares.
@@ -180,10 +192,11 @@ export class CopyTradingExecutionService {
     /**
      * Push Tokens from Bot to Proxy (after BUY)
      */
-    async transferTokensToProxy(proxyAddress: string, tokenId: string, amount: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferTokensToProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-            const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, this.signer);
+            const executionSigner = this.getSigner(signer);
+            const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
 
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);
 
@@ -192,7 +205,7 @@ export class CopyTradingExecutionService {
             // safeTransferFrom(from, to, id, amount, data)
             // Bot is signer, so we can call directly.
             const tx = await ctf.safeTransferFrom(
-                await this.signer.getAddress(),
+                await executionSigner.getAddress(),
                 proxyAddress,
                 tokenId,
                 amountWei,
@@ -221,7 +234,7 @@ export class CopyTradingExecutionService {
 
         // 1. Resolve Proxy
         if (!proxyAddress) {
-            proxyAddress = await this.resolveProxyAddress(walletAddress) || undefined;
+            proxyAddress = await this.resolveProxyAddress(walletAddress, params.signer) || undefined;
         }
 
         if (!proxyAddress) {
@@ -240,7 +253,7 @@ export class CopyTradingExecutionService {
         try {
             if (side === 'BUY') {
                 // FLOAT STRATEGY: Check Bot's USDC Balance first
-                const botBalance = await this.getBotUsdcBalance();
+                const botBalance = await this.getBotUsdcBalance(params.signer);
 
                 if (botBalance >= amount) {
                     // OPTIMIZED PATH: Use Bot's funds directly
@@ -250,13 +263,13 @@ export class CopyTradingExecutionService {
                 } else {
                     // FALLBACK PATH: Check Proxy USDC Balance
                     console.log(`[CopyExec] 🐢 Standard BUY: Bot low funds ($${botBalance}), checking Proxy...`);
-                    const proxyBalance = await this.getProxyUsdcBalance(proxyAddress);
+                    const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, params.signer);
                     if (proxyBalance < amount) {
                         return { success: false, error: `Insufficient Proxy funds: $${proxyBalance} < $${amount}`, proxyAddress };
                     }
 
                     // Transfer USDC from Proxy
-                    const transferResult = await this.transferFromProxy(proxyAddress, amount);
+                    const transferResult = await this.transferFromProxy(proxyAddress, amount, params.signer);
                     if (!transferResult.success) {
                         return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}` };
                     }
@@ -268,7 +281,7 @@ export class CopyTradingExecutionService {
                 // Always Standard Path for SELL (Token Custody in Proxy)
                 const sharesToSell = amount / price;
 
-                const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell);
+                const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell, params.signer);
                 if (!pullResult.success) {
                     return { success: false, error: `Proxy token pull failed: ${pullResult.error}` };
                 }
@@ -300,24 +313,34 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Placing MARKET FOK order. Size: ${effectiveSize.toFixed(2)} shares, WorstPrice: ${executionPrice}`);
 
-            orderResult = await this.tradingService.createMarketOrder({
+            const execService = params.tradingService || this.tradingService;
+            orderResult = await execService.createMarketOrder({
                 tokenId,
                 side,
                 amount: effectiveSize,
                 price: executionPrice,
-                orderType: 'FOK'
+                orderType: 'FOK',
             });
+            // NOTE: TradingService still uses the GLOBAL signer initialized in its constructor for CLOB orders.
+            // PROD FIX: TradingService needs to accept a signer override too for the CLOB signature.
+            // For now, only the ON-CHAIN parts (transfer, proxy execute) use the dynamic signer.
+            // CLOB keys are API keys + L2 signer. The L2 signer usually must match the API key owner.
+            // If using separate wallets, each wallet needs its own API keys and CLOB client.
+            // TODO: Refactor TradingService to support multi-account CLOB interaction.
+            // For MVP: We assume the same API key can place orders? No, different addresses = different users.
+            // ACTUALLY: The "Operator" places the trade on behalf of themselves (Bot).
+            // So if we switch Bot Wallet, we need a new CLOB Client for that Bot Wallet.
 
         } catch (err: any) {
             // START RECOVERY (Refund)
             if (useProxyFunds) {
                 if (side === 'BUY') {
                     // Refund USDC (Standard Path)
-                    await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount);
+                    await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, params.signer);
                 } else { // SELL
                     // Refund Tokens (Standard Path)
                     const sharesToReturn = amount / price;
-                    await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn);
+                    await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer);
                 }
             }
             // NOTE: If usedBotFloat, we just spent nothing (failed before trade), so nothing to refund.
@@ -328,10 +351,10 @@ export class CopyTradingExecutionService {
             // Failed (Kill part of FOK), refund.
             if (useProxyFunds) {
                 if (side === 'BUY') {
-                    await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount);
+                    await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, params.signer);
                 } else { // SELL
                     const sharesToReturn = amount / price;
-                    await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn);
+                    await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer);
                 }
             }
             return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat };
@@ -345,7 +368,7 @@ export class CopyTradingExecutionService {
             // OPTIMIZED SETTLEMENT
             // 1. Push Tokens to Proxy
             const sharesBought = amount / price;
-            const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
+            const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, params.signer);
             if (pushResult.success) {
                 tokenPushTxHash = pushResult.txHash;
             }
@@ -356,7 +379,7 @@ export class CopyTradingExecutionService {
             // Note: This relies on Proxy having funds. If this fails, Bot is out of pocket (Risk).
             // A robust system would have a retry queue. For MVP, we log error.
             try {
-                const reimbursement = await this.transferFromProxy(proxyAddress, amount);
+                const reimbursement = await this.transferFromProxy(proxyAddress, amount, params.signer);
                 if (reimbursement.success) {
                     returnTransferTxHash = reimbursement.txHash; // Re-use field for simplicity or add new one
                 } else {
@@ -373,13 +396,13 @@ export class CopyTradingExecutionService {
             if (side === 'BUY') {
                 // Return tokens to Proxy.
                 const sharesBought = amount / price; // Approx.
-                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
+                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, params.signer);
                 if (pushResult.success) {
                     tokenPushTxHash = pushResult.txHash;
                 }
             } else {
                 // Return USDC to Proxy.
-                const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount);
+                const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, params.signer);
                 if (returnResult.success) {
                     returnTransferTxHash = returnResult.txHash;
                 }
