@@ -24,6 +24,7 @@ export default function ProxyDashboardPage() {
         deposit,
         withdraw,
         withdrawAll,
+        refreshStats,
         authorizeOperator,
         txPending,
         txHash,
@@ -83,7 +84,11 @@ export default function ProxyDashboardPage() {
     const handleCreateProxy = async () => {
         setActionError(null);
         const result = await createProxy('STARTER');
-        if (!result && error) {
+        if (result) {
+            // Success! Refresh state to show dashboard
+            await refreshStats();
+            // Optional: You could add a toast here if you had a toast library
+        } else if (error) {
             setActionError(error);
         }
     };
@@ -159,11 +164,19 @@ export default function ProxyDashboardPage() {
                 </div>
 
                 {/* Transaction Pending Banner */}
+                {/* Transaction Pending Banner */}
                 {txPending && (
                     <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-6 flex items-center gap-3">
                         <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-blue-500" />
                         <div>
-                            <p className="text-blue-400 font-medium">Transaction Pending...</p>
+                            <p className="text-blue-400 font-medium">
+                                {txHash ? 'Transaction Pending...' : 'Please confirm in your wallet...'}
+                            </p>
+                            {!txHash && (
+                                <p className="text-blue-300/70 text-sm">
+                                    Check your MetaMask popup to sign the transaction.
+                                </p>
+                            )}
                             {txHash && (
                                 <a
                                     href={`https://polygonscan.com/tx/${txHash}`}
@@ -171,7 +184,7 @@ export default function ProxyDashboardPage() {
                                     rel="noopener noreferrer"
                                     className="text-blue-300 text-sm hover:underline"
                                 >
-                                    View on PolygonScan
+                                    View on PolygonScan (or Localhost logs)
                                 </a>
                             )}
                         </div>

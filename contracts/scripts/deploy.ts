@@ -11,11 +11,20 @@ async function main() {
     let usdcAddress: string;
     let ctfExchangeAddress: string;
 
-    if (network.chainId === 137n) {
-        // Polygon Mainnet - USDC.e (required for Polymarket CTF)
-        usdcAddress = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+    // Polygon Mainnet - USDC.e (required for Polymarket CTF)
+    const REAL_USDC = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+    const REAL_CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+
+    // check if we are forking mainnet (code exists at address)
+    const usdcCode = await ethers.provider.getCode(REAL_USDC);
+    const isFork = usdcCode !== "0x";
+
+    if (network.chainId === 137n || isFork) {
+        console.log("📝 Using Real Polygon Addresses (Mainnet or Fork detected)");
+        usdcAddress = REAL_USDC;
         // Polymarket CTF Exchange (Neg Risk)
-        ctfExchangeAddress = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+        // Polymarket CTF Exchange (Neg Risk)
+        ctfExchangeAddress = REAL_CTF;
     } else if (network.chainId === 80002n) {
         // Polygon Amoy Testnet - deploy mock USDC for testing
         console.log("📝 Amoy testnet - deploying mock USDC...");

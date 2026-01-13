@@ -45,7 +45,7 @@ async function main() {
 
     // 4. Setup Provider & Signers
     // Assumes Hardhat Node is running at localhost:8545
-    const provider = new ethers.providers.JsonRpcProvider('http://127.0.0.1:8545');
+    const provider = new ethers.providers.JsonRpcProvider('http://127.0.0.1:8545', 1337);
     const network = await provider.getNetwork();
     console.log(`🔌 Connected to ${network.name} (ChainID: ${network.chainId})`);
 

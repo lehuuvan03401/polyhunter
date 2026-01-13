@@ -61,8 +61,13 @@ export default function PortfolioPage() {
 
                     // Fetch USDC balance on-chain
                     try {
-                        const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
-                        const usdcContract = new ethers.Contract(USDC_CONTRACT, USDC_ABI, provider);
+                        const rpcUrl = process.env.NEXT_PUBLIC_NETWORK === 'localhost'
+                            ? 'http://127.0.0.1:8545'
+                            : 'https://polygon-rpc.com';
+                        const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+
+                        const usdcAddress = process.env.NEXT_PUBLIC_USDC_ADDRESS || USDC_CONTRACT;
+                        const usdcContract = new ethers.Contract(usdcAddress, USDC_ABI, provider);
                         const rawBalance = await usdcContract.balanceOf(address);
                         // USDC has 6 decimals
                         const balance = Number(rawBalance) / 1e6;

@@ -65,7 +65,7 @@ export class CopyTradingExecutionService {
      * Get Bot (Operator) USDC balance for Float check
      */
     async getBotUsdcBalance(): Promise<number> {
-        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
         if (!addresses.usdc) throw new Error("USDC address not configured for this chain");
 
         const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, this.signer);
@@ -78,7 +78,7 @@ export class CopyTradingExecutionService {
      * Resolve User's Proxy Address using Factory
      */
     async resolveProxyAddress(userAddress: string): Promise<string | null> {
-        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
 
         if (!addresses.proxyFactory || addresses.proxyFactory.includes('0xabc123')) {
             if (addresses.proxyFactory.includes('0xabc123')) {
@@ -100,7 +100,7 @@ export class CopyTradingExecutionService {
      */
     async transferFromProxy(proxyAddress: string, amount: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, this.signer);
             const botAddress = await this.signer.getAddress();
 
@@ -147,7 +147,7 @@ export class CopyTradingExecutionService {
      */
     async transferTokensFromProxy(proxyAddress: string, tokenId: string, amount: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, this.signer);
             const botAddress = await this.signer.getAddress();
             const ctfInterface = new ethers.utils.Interface(CTF_ABI);
@@ -182,7 +182,7 @@ export class CopyTradingExecutionService {
      */
     async transferTokensToProxy(proxyAddress: string, tokenId: string, amount: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, this.signer);
 
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);

@@ -23,7 +23,8 @@ import {
 } from './abis';
 
 // Network to use
-const NETWORK = process.env.NEXT_PUBLIC_NETWORK === 'polygon' ? 'polygon' : 'amoy';
+const rawNetwork = process.env.NEXT_PUBLIC_NETWORK || 'amoy';
+const NETWORK = (rawNetwork === 'polygon' || rawNetwork === 'localhost') ? rawNetwork : 'amoy';
 const ADDRESSES = CONTRACT_ADDRESSES[NETWORK];
 
 /**
@@ -142,7 +143,7 @@ export function useProxy(): UseProxyReturn {
     /**
      * Target chain ID based on network setting
      */
-    const targetChainId = NETWORK === 'polygon' ? 137 : 80002;
+    const targetChainId = NETWORK === 'polygon' ? 137 : (NETWORK === 'localhost' ? 1337 : 80002);
 
     /**
      * Switch wallet to the correct network
@@ -181,21 +182,31 @@ export function useProxy(): UseProxyReturn {
                 // If the chain hasn't been added to MetaMask, add it
                 const error = switchError as { code?: number };
                 if (error.code === 4902) {
-                    const networkParams = NETWORK === 'polygon'
-                        ? {
+                    let networkParams;
+                    if (targetChainId === 137) {
+                        networkParams = {
                             chainId: '0x89',
                             chainName: 'Polygon Mainnet',
                             nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
                             rpcUrls: ['https://polygon-rpc.com'],
                             blockExplorerUrls: ['https://polygonscan.com'],
-                        }
-                        : {
+                        };
+                    } else if (targetChainId === 1337) {
+                        networkParams = {
+                            chainId: '0x539', // 1337
+                            chainName: 'Localhost 8545',
+                            nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                            rpcUrls: ['http://127.0.0.1:8545'],
+                        };
+                    } else {
+                        networkParams = {
                             chainId: '0x13882',
                             chainName: 'Polygon Amoy Testnet',
                             nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
                             rpcUrls: ['https://rpc-amoy.polygon.technology'],
                             blockExplorerUrls: ['https://amoy.polygonscan.com'],
                         };
+                    }
 
                     await provider.request({
                         method: 'wallet_addEthereumChain',
@@ -339,8 +350,8 @@ export function useProxy(): UseProxyReturn {
                 setProxyAddress(newProxyAddress);
                 setHasProxy(true);
 
-                // Register in database
-                await fetch('/api/proxy/create', {
+                // Register in database (non-blocking for UI)
+                fetch('/api/proxy/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -348,7 +359,7 @@ export function useProxy(): UseProxyReturn {
                         proxyAddress: newProxyAddress,
                         tier,
                     }),
-                });
+                }).catch(err => console.error('Failed to register proxy in DB:', err));
             }
 
             return newProxyAddress;

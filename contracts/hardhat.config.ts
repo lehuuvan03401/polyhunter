@@ -13,9 +13,10 @@ const config: HardhatUserConfig = {
     },
     networks: {
         hardhat: {
-            chainId: 137,
+            chainId: 1337,
             forking: {
                 url: process.env.POLYGON_RPC_URL || "https://rpc.ankr.com/polygon/8bcbd6bdb3c597de68e3ec1be4bf2e8433ee789181e3cdb1d9a3e74ceb005aeb",
+                blockNumber: 66500000,
             },
         },
         // Polygon Mainnet
