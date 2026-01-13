@@ -82,6 +82,23 @@ export async function GET(request: NextRequest) {
             take: 50,
         });
 
+        // Fetch active configs (Strategies)
+        const activeConfigs = await prisma.copyTradingConfig.findMany({
+            where: {
+                walletAddress: walletAddress.toLowerCase(),
+                isActive: true,
+            },
+            select: {
+                id: true,
+                traderName: true,
+                traderAddress: true,
+                mode: true,
+                fixedAmount: true,
+                sizeScale: true,
+                createdAt: true,
+            }
+        });
+
         // Type alias for trade items
         type TradeType = typeof trades[number];
         type OrderItem = {
@@ -102,8 +119,27 @@ export async function GET(request: NextRequest) {
             filledPercent: number;
         };
 
-        // Transform to order status format
-        const orders: OrderItem[] = trades.map((trade: TradeType) => ({
+        // Transform configs to "Strategy Orders"
+        const strategyOrders: OrderItem[] = activeConfigs.map((config) => ({
+            tradeId: `strategy_${config.id}`,
+            orderId: null,
+            status: 'OPEN', // Use OPEN to signify monitoring
+            side: 'COPY',
+            size: config.mode === 'FIXED_AMOUNT' ? (config.fixedAmount || 0) : (config.sizeScale || 0),
+            price: 0,
+            market: 'Monitoring All Markets',
+            tokenId: null,
+            traderName: config.traderName,
+            traderAddress: config.traderAddress,
+            detectedAt: config.createdAt,
+            executedAt: null,
+            errorMessage: null,
+            filledSize: 0,
+            filledPercent: 0,
+        }));
+
+        // Transform trades to orders
+        const tradeOrders: OrderItem[] = trades.map((trade: TradeType) => ({
             tradeId: trade.id,
             orderId: trade.txHash,
             status: mapTradeStatusToOrderStatus(trade.status),
@@ -121,6 +157,19 @@ export async function GET(request: NextRequest) {
             filledSize: trade.status === 'EXECUTED' ? trade.copySize : 0,
             filledPercent: trade.status === 'EXECUTED' ? 100 : 0,
         }));
+
+        // Combine and sort (Strategies first, then newest trades)
+        const orders = [...strategyOrders, ...tradeOrders].sort((a, b) => {
+            // If one is strategy and other is not, strategy first? Or just simple date sort?
+            // Let's keep strategies at top for visibility
+            const isStrategyA = a.tradeId.startsWith('strategy_');
+            const isStrategyB = b.tradeId.startsWith('strategy_');
+
+            if (isStrategyA && !isStrategyB) return -1;
+            if (!isStrategyA && isStrategyB) return 1;
+
+            return new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime();
+        });
 
         // Get stats
         const stats = {

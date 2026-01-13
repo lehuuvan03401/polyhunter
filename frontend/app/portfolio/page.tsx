@@ -43,10 +43,6 @@ export default function PortfolioPage() {
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isSellingAll, setIsSellingAll] = useState(false);
 
-    // Get copy trading configs from Zustand store
-    const copyConfigs = useCopyTradingStore((state) => state.configs);
-    const removeConfig = useCopyTradingStore((state) => state.removeConfig);
-
     useEffect(() => {
         const loadData = async () => {
             if (!ready) return;
@@ -393,61 +389,9 @@ export default function PortfolioPage() {
             {/* Main Content Split */}
             <div className="grid gap-6 lg:grid-cols-12">
 
-                {/* Left: Active Copies (4 cols) */}
-                <div className="lg:col-span-4 rounded-xl border bg-card shadow-sm flex flex-col h-[600px]">
-                    <div className="p-6 border-b flex items-center justify-between">
-                        <h3 className="font-semibold">Active Copies</h3>
-                        <Link href="/smart-money" className="text-xs font-medium text-blue-400 hover:text-blue-300">
-                            Discover Traders &gt;
-                        </Link>
-                    </div>
 
-                    {copyConfigs.length > 0 ? (
-                        <div className="flex-1 overflow-auto p-4 space-y-3">
-                            {copyConfigs.map((config: CopyTradingConfig) => (
-                                <div key={config.id} className="bg-muted/30 border border-border/50 rounded-lg p-4 flex items-center justify-between">
-                                    <div>
-                                        <div className="font-bold text-sm">{config.traderName || formatAddress(config.traderAddress)}</div>
-                                        <div className="text-xs text-muted-foreground mt-1">
-                                            {config.mode === 'fixed_amount'
-                                                ? `Fixed $${config.fixedAmount}/trade`
-                                                : `${(config.sizeScale || 0) * 100}% of trades`}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        {config.dryRun && (
-                                            <span className="text-xs font-mono bg-yellow-500/10 text-yellow-500 px-2 py-1 rounded">Demo</span>
-                                        )}
-                                        <button
-                                            onClick={() => removeConfig(config.id)}
-                                            className="text-xs font-mono bg-red-500/10 text-red-400 px-2 py-1 rounded hover:bg-red-500/20 transition-colors"
-                                        >
-                                            Stop
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
-                            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-                                <Users className="h-6 w-6" />
-                            </div>
-                            <div>
-                                <h4 className="font-medium">No Active Copies</h4>
-                                <p className="text-xs text-muted-foreground mt-1 max-w-[200px] mx-auto">
-                                    Start copying top traders to update your portfolio
-                                </p>
-                            </div>
-                            <Link href="/smart-money" className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
-                                Discover Traders
-                            </Link>
-                        </div>
-                    )}
-                </div>
-
-                {/* Right: Portfolio Tabs (8 cols) */}
-                <div className="lg:col-span-8 rounded-xl border bg-card shadow-sm flex flex-col h-[600px]">
+                {/* Right: Portfolio Tabs (12 cols - Full Width) */}
+                <div className="lg:col-span-12 rounded-xl border bg-card shadow-sm flex flex-col h-[600px]">
                     <div className="p-4 border-b flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <h3 className="font-semibold px-2">Portfolio</h3>

@@ -7,8 +7,9 @@
 'use client';
 
 import { useState } from 'react';
-import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { useOrderStatus, getOrderStatusColor, getOrderStatusIcon, type Order, type OrderStatus } from '@/lib/hooks/useOrderStatus';
 
 interface OrderStatusPanelProps {
@@ -42,7 +43,42 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);
-        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        return date.toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    const handleStopCopying = async (tradeId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        // Extract real config ID from strategy_ prefix
+        const configId = tradeId.replace('strategy_', '');
+
+        if (!confirm('Are you sure you want to stop copying this trader?')) {
+            return;
+        }
+
+        const toastId = toast.loading('Stopping copy trade...');
+
+        try {
+            const response = await fetch(`/api/copy-trading/config?id=${configId}&wallet=${walletAddress}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to stop copying');
+            }
+
+            toast.success('Stopped copying trader', { id: toastId });
+            refresh(); // Refresh list to remove it
+        } catch (error) {
+            console.error('Stop error:', error);
+            toast.error('Failed to stop copying', { id: toastId });
+        }
     };
 
     return (
@@ -109,7 +145,9 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                         onToggle={() => setExpandedOrder(
                             expandedOrder === order.tradeId ? null : order.tradeId
                         )}
+                        onStop={(e) => handleStopCopying(order.tradeId, e)}
                     />
+
                 ))}
             </div>
         </div>
@@ -155,11 +193,13 @@ function FilterTab({
 function OrderRow({
     order,
     expanded,
-    onToggle
+    onToggle,
+    onStop
 }: {
     order: Order;
     expanded: boolean;
     onToggle: () => void;
+    onStop?: (e: React.MouseEvent) => void;
 }) {
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
@@ -197,15 +237,29 @@ function OrderRow({
                     </div>
                 </div>
 
+                {/* Stop Action for Strategies */}
+                {order.tradeId.startsWith('strategy_') && (
+                    <button
+                        onClick={onStop}
+                        className="mr-2 p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
+                        title="Stop Copying"
+                    >
+                        <StopCircle className="h-4 w-4" />
+                    </button>
+                )}
+
                 {/* Status & Time */}
                 <div className="text-right">
                     <div className={cn('text-xs font-medium', statusColor)}>
                         {order.status}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                        {new Date(order.detectedAt).toLocaleTimeString([], {
+                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(order.detectedAt).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
                             hour: '2-digit',
-                            minute: '2-digit'
+                            minute: '2-digit',
+                            second: '2-digit'
                         })}
                     </div>
                 </div>
@@ -222,22 +276,35 @@ function OrderRow({
             {expanded && (
                 <div className="px-3 pb-3 space-y-2 bg-muted/10">
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                        <DetailItem label="Trade ID" value={order.tradeId.slice(0, 16) + '...'} />
-                        <DetailItem label="Order ID" value={order.orderId?.slice(0, 16) + '...' || 'N/A'} />
-                        <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
-                        <DetailItem
-                            label="Filled"
-                            value={`${order.filledPercent}%`}
-                            color={order.filledPercent === 100 ? 'text-green-400' : undefined}
-                        />
-                        <DetailItem label="Token ID" value={order.tokenId?.slice(0, 12) + '...' || 'N/A'} />
-                        <DetailItem
-                            label="Executed"
-                            value={order.executedAt
-                                ? new Date(order.executedAt).toLocaleString()
-                                : 'Not yet'
-                            }
-                        />
+                        {/* Strategy vs Trade Details */}
+                        {order.tradeId.startsWith('strategy_') ? (
+                            <>
+                                <DetailItem label="Strategy ID" value={order.tradeId.replace('strategy_', '').slice(0, 16) + '...'} />
+                                <DetailItem label="Target" value="All Markets" />
+                                <DetailItem label="Size" value={order.size ? `$${order.size}` : 'Variable'} />
+                                <DetailItem label="Status" value="Active Monitoring" color="text-green-400" />
+                                <DetailItem label="Started" value={new Date(order.detectedAt).toLocaleString()} />
+                            </>
+                        ) : (
+                            <>
+                                <DetailItem label="Trade ID" value={order.tradeId.slice(0, 16) + '...'} />
+                                <DetailItem label="Order ID" value={order.orderId ? (order.orderId.slice(0, 16) + '...') : 'N/A'} />
+                                <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
+                                <DetailItem
+                                    label="Filled"
+                                    value={`${order.filledPercent}%`}
+                                    color={order.filledPercent === 100 ? 'text-green-400' : undefined}
+                                />
+                                <DetailItem label="Token ID" value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
+                                <DetailItem
+                                    label="Executed"
+                                    value={order.executedAt
+                                        ? new Date(order.executedAt).toLocaleString()
+                                        : 'Not yet'
+                                    }
+                                />
+                            </>
+                        )}
                     </div>
 
                     {order.errorMessage && (

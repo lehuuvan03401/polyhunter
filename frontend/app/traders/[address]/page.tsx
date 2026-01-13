@@ -214,28 +214,41 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                 {/* Profile Header */}
                 <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 lg:p-8 mb-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
-                        <div className="flex items-center gap-5">
-                            <div className="h-16 w-16 rounded-2xl bg-blue-500 flex items-center justify-center shadow-lg">
+                        <div className="flex items-center gap-5 min-w-0 flex-1">
+                            <div className="h-16 w-16 rounded-2xl bg-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
                                 <Wallet className="h-8 w-8 text-white" />
                             </div>
-                            <div>
-                                <h1 className="text-3xl font-bold text-white mb-1">{profile?.username || `User ${address.slice(0, 6)}`}</h1>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-3">
+                                    <h1 className="text-3xl font-bold text-white mb-1 truncate">
+                                        {profile?.username || `${address.slice(0, 6)}...${address.slice(-4)}`}
+                                    </h1>
+                                    <button
+                                        onClick={() => navigator.clipboard.writeText(address)}
+                                        className="text-muted-foreground hover:text-white transition-colors p-1"
+                                        title="Copy formatted address"
+                                    >
+                                        <Copy className="h-4 w-4" />
+                                    </button>
+                                </div>
                                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                     <a
                                         href={`https://polymarket.com/${address}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-1 hover:text-blue-400 cursor-pointer"
+                                        className="flex items-center gap-1 hover:text-blue-400 cursor-pointer transition-colors bg-white/5 px-2 py-1 rounded w-fit"
                                     >
-                                        <ExternalLink className="h-3 w-3" /> View real username on Polymarket
+                                        <ExternalLink className="h-3 w-3" /> View on Polymarket
                                     </a>
-                                    <span className="text-blue-500">{address}</span>
+                                    <span className="font-mono bg-white/5 px-2 py-1 rounded truncate">
+                                        {address}
+                                    </span>
                                 </div>
                             </div>
                         </div>
                         <button
                             onClick={() => setIsCopyModalOpen(true)}
-                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20 whitespace-nowrap flex-shrink-0"
                         >
                             <Copy className="h-4 w-4" /> Copy Trader
                         </button>
