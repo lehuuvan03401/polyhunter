@@ -164,6 +164,10 @@ model CopyTradingConfig {
   slippageType String @default("FIXED") // 'FIXED' | 'AUTO'
   maxSlippage  Float  @default(2.0) // Max slippage % (default 2%)
 
+  // Execution settings
+  autoExecute Boolean @default(false) // If true, executes immediately via worker
+  channel     String  @default("POLLING") // 'POLLING' | 'EVENT_LISTENER'
+
   // Copy mode settings
   mode            CopyTradingMode @default(PERCENTAGE)
   sizeScale       Float? // For PERCENTAGE mode: 0.5 = 50%

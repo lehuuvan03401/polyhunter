@@ -69,6 +69,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [slippageMode, setSlippageMode] = React.useState<'FIXED' | 'AUTO'>('AUTO');
     const [maxSlippageInput, setMaxSlippageInput] = React.useState('2.0');
 
+    // Auto Execution
+    const [autoExecute, setAutoExecute] = React.useState(false);
+
     const handleStartCopying = async () => {
         setIsStarting(true);
         try {
@@ -118,6 +121,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     // Slippage
                     slippageType: !isAdvancedMode ? 'AUTO' : slippageMode,
                     maxSlippage: Number(maxSlippageInput) || 2.0,
+
+                    // Auto Execution
+                    autoExecute,
+                    channel: autoExecute ? 'EVENT_LISTENER' : 'POLLING',
                 }),
             });
 
@@ -811,6 +818,37 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             )}
                         </div>
                     )}
+
+                    {/* Auto Execute Toggle - Persistent */}
+                    <div className="px-4 pb-2 z-10 bg-[#1a1b1e]">
+                        <div className={cn(
+                            "p-3 rounded-xl border flex items-center justify-between transition-all",
+                            autoExecute ? "border-yellow-500/50 bg-yellow-500/10" : "border-[#2c2d33] bg-[#25262b]"
+                        )}>
+                            <div className="flex items-center gap-3">
+                                <div className={cn("p-2 rounded-lg flex-shrink-0", autoExecute ? "bg-yellow-500/20 text-yellow-500" : "bg-[#1a1b1e] text-muted-foreground")}>
+                                    <Zap className="h-4 w-4" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <div className={cn("text-xs font-bold transition-colors", autoExecute ? "text-yellow-500" : "text-white")}>
+                                            Hands-Free Mode
+                                        </div>
+                                        {autoExecute && <span className="text-[8px] uppercase tracking-wider font-bold bg-yellow-500 text-black px-1.5 rounded-sm">Beta</span>}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground leading-snug">
+                                        {autoExecute ? "Trades execute instantly via RPC events (Full Auto)" : "Trades require your manual confirmation"}
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setAutoExecute(!autoExecute)}
+                                className={cn("w-10 h-6 rounded-full transition-colors relative flex items-center border flex-shrink-0", autoExecute ? "bg-yellow-500 border-yellow-500" : "bg-transparent border-white/20")}
+                            >
+                                <div className={cn("h-3.5 w-3.5 rounded-full bg-white transition-transform absolute shadow-sm", autoExecute ? "translate-x-5" : "translate-x-0.5")} />
+                            </button>
+                        </div>
+                    </div>
 
                     {/* Footer */}
                     <div className="p-4 border-t border-white/5 bg-[#141517]">
