@@ -460,7 +460,7 @@ export default function PortfolioPage() {
                                         activeTab === 'positions' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Active <span className="ml-1 text-muted-foreground">{positions.length}</span>
+                                    Positions <span className="ml-1 text-muted-foreground">{positions.length}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('orders')}
@@ -533,7 +533,7 @@ export default function PortfolioPage() {
                                         <Layers className="h-6 w-6" />
                                     </div>
                                     <div>
-                                        <h4 className="font-medium text-sm">No Active Positions</h4>
+                                        <h4 className="font-medium text-sm">No Open Positions</h4>
                                         <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
                                             When traders you follow make moves, your positions will appear here.
                                         </p>
