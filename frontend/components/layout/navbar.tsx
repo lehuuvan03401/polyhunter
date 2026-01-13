@@ -93,6 +93,9 @@ export function Navbar() {
                             <Link href="/smart-money" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/smart-money") ? "text-foreground" : "text-muted-foreground")}>
                                 Smart Money
                             </Link>
+                            <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
+                                Affiliate
+                            </Link>
                             <Link href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
                                 Dashboard
                             </Link>

@@ -43,7 +43,7 @@ export function ImportTraderSection() {
         <section className="py-16 px-4">
             <div className="container max-w-4xl mx-auto text-center">
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-                    Automate Your Edge
+                    Mirror the Alpha. Master the Market.
                 </h2>
                 <p className="text-xl text-muted-foreground mb-8">
                     Pro-level Polymarket copy trading, simplified for everyone.

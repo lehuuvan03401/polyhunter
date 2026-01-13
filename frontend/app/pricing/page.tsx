@@ -482,7 +482,7 @@ function PublicPricing() {
             {/* Footer CTA */}
             <section className="py-24 px-4 text-center border-t border-white/5 mt-auto">
                 <div className="container max-w-3xl mx-auto space-y-6">
-                    <h2 className="text-3xl font-bold">Ready to Automate Your Edge?</h2>
+                    <h2 className="text-3xl font-bold">Ready to Mirror the Alpha?</h2>
                     <p className="text-muted-foreground">Start copying the best traders on Polymarket today.</p>
                     <Link
                         href="/smart-money"

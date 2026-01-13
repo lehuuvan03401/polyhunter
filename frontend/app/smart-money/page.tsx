@@ -26,7 +26,7 @@ export function SmartMoneyPage() {
             <div className="container py-10">
                 <div className="mb-8 space-y-4 text-center">
                     <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-                        Automate Your Edge
+                        Mirror the Alpha. Master the Market.
                     </h1>
                     <p className="text-muted-foreground text-lg">
                         Discover and follow the most profitable traders on Polymarket.
@@ -44,7 +44,7 @@ export function SmartMoneyPage() {
                         </div>
                         <h2 className="text-2xl font-bold mb-3">Connect Your Wallet to View Traders</h2>
                         <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
-                            Access the complete leaderboard of top performers on Polymarket. 
+                            Access the complete leaderboard of top performers on Polymarket.
                             View their trading history, profit metrics, and start copy trading with a single click.
                         </p>
 
@@ -89,7 +89,7 @@ export function SmartMoneyPage() {
         <div className="container py-10">
             <div className="mb-8 space-y-4 text-center">
                 <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-                    Automate Your Edge
+                    Mirror the Alpha. Master the Market.
                 </h1>
                 <p className="text-muted-foreground text-lg">
                     Discover and follow the most profitable traders on Polymarket.
