@@ -122,6 +122,7 @@ export interface UseProxyReturn {
 
     // Transaction state
     txPending: boolean;
+    txStatus: 'IDLE' | 'APPROVING' | 'DEPOSITING' | 'WITHDRAWING' | 'AUTHORIZING' | 'CREATING' | 'EXECUTING' | 'CONFIRMING';
     txHash: string | null;
 }
 
@@ -136,6 +137,7 @@ export function useProxy(): UseProxyReturn {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [txPending, setTxPending] = useState(false);
+    const [txStatus, setTxStatus] = useState<UseProxyReturn['txStatus']>('IDLE');
     const [txHash, setTxHash] = useState<string | null>(null);
 
     const walletAddress = user?.wallet?.address;
@@ -331,6 +333,7 @@ export function useProxy(): UseProxyReturn {
 
         setError(null);
         setTxPending(true);
+        setTxStatus('CREATING');
         setTxHash(null);
 
         try {
@@ -339,6 +342,7 @@ export function useProxy(): UseProxyReturn {
 
             const tx = await factory.createProxy(TIERS[tier]);
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
 
             const receipt = await tx.wait();
 
@@ -368,6 +372,7 @@ export function useProxy(): UseProxyReturn {
             return null;
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
     }, [walletAddress, getSignerAndProvider]);
 
@@ -382,6 +387,7 @@ export function useProxy(): UseProxyReturn {
 
         setError(null);
         setTxPending(true);
+        setTxStatus('APPROVING');
         setTxHash(null);
 
         try {
@@ -390,6 +396,7 @@ export function useProxy(): UseProxyReturn {
 
             const tx = await usdc.approve(proxyAddress, parseUSDC(amount).toString());
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
 
             await tx.wait();
             return true;
@@ -398,6 +405,7 @@ export function useProxy(): UseProxyReturn {
             return false;
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
     }, [proxyAddress, getSignerAndProvider]);
 
@@ -412,26 +420,46 @@ export function useProxy(): UseProxyReturn {
 
         setError(null);
         setTxPending(true);
+        setTxStatus('APPROVING'); // Start with allowance check phase
         setTxHash(null);
 
         try {
             const { signer, provider } = await getSignerAndProvider();
-
-            // Check allowance first
             const usdc = new ethers.Contract(ADDRESSES.usdc, ERC20_ABI, provider);
+            const usdcSigner = usdc.connect(signer);
+
+            // 1. Check Allowance
             const allowance = await usdc.allowance(walletAddress, proxyAddress);
             const amountBigInt = parseUSDC(amount);
+            console.log(`Checking allowance: ${allowance.toString()} vs Amount: ${amountBigInt.toString()}`);
 
             if (BigInt(allowance.toString()) < amountBigInt) {
-                // Need to approve first
-                const approved = await approveUSDC(amount * 1.1); // Approve slightly more
-                if (!approved) return false;
+                // 2. Approve if needed
+                console.log('Requesting Approval...');
+                try {
+                    const approveTx = await usdcSigner.approve(proxyAddress, parseUSDC(amount * 1.1).toString()); // Approve slightly more
+                    setTxStatus('CONFIRMING'); // Confirming Approval
+                    console.log('Approval Tx Sent:', approveTx.hash);
+                    await approveTx.wait();
+                    console.log('Approval Confirmed');
+                } catch (approveErr) {
+                    console.error('Approval failed:', approveErr);
+                    throw approveErr;
+                }
             }
 
-            // Deposit
+            // 3. Deposit
+            setTxStatus('DEPOSITING');
+            console.log('Requesting Deposit...');
             const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, signer);
-            const tx = await proxy.deposit(amountBigInt.toString());
+
+            // Add manual gas limit to prevent estimation errors on localhost/Amoy
+            const tx = await proxy.deposit(amountBigInt.toString(), {
+                gasLimit: 300000
+            });
+
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING'); // Confirming Deposit
 
             await tx.wait();
             await refreshStats();
@@ -439,12 +467,14 @@ export function useProxy(): UseProxyReturn {
 
             return true;
         } catch (err: unknown) {
+            console.error('Deposit Error Details:', err);
             setError(parseTransactionError(err));
             return false;
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
-    }, [proxyAddress, walletAddress, getSignerAndProvider, approveUSDC, refreshStats, fetchUsdcBalance]);
+    }, [proxyAddress, walletAddress, getSignerAndProvider, refreshStats, fetchUsdcBalance]);
 
     /**
      * Withdraw USDC from proxy
@@ -457,6 +487,7 @@ export function useProxy(): UseProxyReturn {
 
         setError(null);
         setTxPending(true);
+        setTxStatus('WITHDRAWING');
         setTxHash(null);
 
         try {
@@ -465,6 +496,7 @@ export function useProxy(): UseProxyReturn {
 
             const tx = await proxy.withdraw(parseUSDC(amount).toString());
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
 
             await tx.wait();
             await refreshStats();
@@ -476,6 +508,7 @@ export function useProxy(): UseProxyReturn {
             return false;
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
     }, [proxyAddress, getSignerAndProvider, refreshStats, fetchUsdcBalance]);
 
@@ -490,6 +523,7 @@ export function useProxy(): UseProxyReturn {
 
         setError(null);
         setTxPending(true);
+        setTxStatus('WITHDRAWING');
         setTxHash(null);
 
         try {
@@ -498,6 +532,7 @@ export function useProxy(): UseProxyReturn {
 
             const tx = await proxy.withdrawAll();
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
 
             await tx.wait();
             await refreshStats();
@@ -509,6 +544,7 @@ export function useProxy(): UseProxyReturn {
             return false;
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
     }, [proxyAddress, getSignerAndProvider, refreshStats, fetchUsdcBalance]);
 
@@ -545,6 +581,7 @@ export function useProxy(): UseProxyReturn {
         }
 
         setTxPending(true);
+        setTxStatus('EXECUTING');
         setError(null);
 
         try {
@@ -553,6 +590,7 @@ export function useProxy(): UseProxyReturn {
 
             const tx = await proxy.execute(target, data);
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
 
             await tx.wait();
             await refreshStats();
@@ -564,6 +602,7 @@ export function useProxy(): UseProxyReturn {
             return { success: false, error: errorMsg };
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
     }, [proxyAddress, getSignerAndProvider, refreshStats]);
 
@@ -577,6 +616,7 @@ export function useProxy(): UseProxyReturn {
         }
 
         setTxPending(true);
+        setTxStatus('AUTHORIZING');
         setError(null);
 
         try {
@@ -585,6 +625,7 @@ export function useProxy(): UseProxyReturn {
 
             const tx = await proxy.setOperator(operator, active);
             setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
 
             await tx.wait();
 
@@ -595,6 +636,7 @@ export function useProxy(): UseProxyReturn {
             return { success: false, error: errorMsg };
         } finally {
             setTxPending(false);
+            setTxStatus('IDLE');
         }
     }, [proxyAddress, getSignerAndProvider]);
 
@@ -615,6 +657,7 @@ export function useProxy(): UseProxyReturn {
         executeCall,
         authorizeOperator,
         txPending,
+        txStatus,
         txHash,
     };
 }
