@@ -223,7 +223,7 @@ export default function ProxyDashboardPage() {
                         </div>
 
                         {/* Unified Action Center (Replaces Buttons & Modals) */}
-                        <ProxyActionCenter />
+                        <ProxyActionCenter onSuccess={refreshStats} />
 
                         {/* Upgrade CTA */}
                         {currentTier !== 'WHALE' && (

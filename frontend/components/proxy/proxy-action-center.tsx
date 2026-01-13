@@ -5,7 +5,11 @@ import { useProxy } from '@/lib/contracts/useProxy';
 import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
-export function ProxyActionCenter() {
+interface ProxyActionCenterProps {
+    onSuccess?: () => void;
+}
+
+export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
     const {
         stats,
         usdcBalance,
@@ -40,6 +44,7 @@ export function ProxyActionCenter() {
         if (success) {
             toast.success('Deposit successful!');
             setAmount('');
+            onSuccess?.();
         } else {
             toast.error(error || 'Deposit failed');
         }
@@ -51,6 +56,7 @@ export function ProxyActionCenter() {
         if (success) {
             toast.success('Withdrawal successful!');
             setAmount('');
+            onSuccess?.();
         } else {
             toast.error(error || 'Withdrawal failed');
         }
