@@ -19,14 +19,19 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         txPending,
         txStatus,
         error,
-        isExecutorAuthorized,
-        settleFees
+        isExecutorAuthorized: isAuthFromChain,
+        settleFees,
+        refreshStats
     } = useProxy();
 
     const [amount, setAmount] = useState('');
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
     const [operatorAddress, setOperatorAddress] = useState('');
     const [userWantsAdvanced, setUserWantsAdvanced] = useState(false);
+
+    // Optimistic UI state
+    const [optimisticAuth, setOptimisticAuth] = useState(false);
+    const isExecutorAuthorized = isAuthFromChain || optimisticAuth;
 
     const getStatusText = (status: typeof txStatus) => {
         switch (status) {
@@ -48,6 +53,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
             toast.success('Deposit successful!');
             setAmount('');
             onSuccess?.();
+            await refreshStats();
         } else {
             toast.error(error || 'Deposit failed');
         }
@@ -60,6 +66,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
             toast.success('Withdrawal successful!');
             setAmount('');
             onSuccess?.();
+            await refreshStats();
         } else {
             toast.error(error || 'Withdrawal failed');
         }
@@ -76,8 +83,11 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
 
         const result = await authorizeOperator(targetOp, true);
         if (result.success) {
+            setOptimisticAuth(true); // Immediate feedback
             toast.success('Operator authorized successfully!');
             setOperatorAddress('');
+            onSuccess?.();
+            await refreshStats(); // Ensure chain state matches
         } else {
             toast.error(result.error || 'Authorization failed');
         }
@@ -260,29 +270,73 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                     <div className="space-y-6 max-w-xl mx-auto">
                         <div className="text-center mb-6">
                             <h3 className="text-lg font-bold text-white mb-2">Bot Authorization</h3>
-                            <p className="text-gray-400 text-sm">
-                                {isExecutorAuthorized
-                                    ? "✅ Your proxy is fully authorized to use the PolyHunter Bot."
-                                    : "Authorize the PolyHunter Executor to enable copy trading."}
-                            </p>
+                            {!isExecutorAuthorized && (
+                                <p className="text-gray-400 text-sm animate-in fade-in">
+                                    Authorize the PolyHunter Executor to enable copy trading.
+                                </p>
+                            )}
                         </div>
 
                         {isExecutorAuthorized ? (
-                            <div className="bg-green-900/20 border border-green-900/50 rounded-xl p-6 text-center animate-in fade-in">
-                                <div className="mx-auto w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
-                                    <ShieldCheck className="w-6 h-6 text-green-400" />
+                            <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden animate-in fade-in">
+                                {/* Header Status */}
+                                <div className="p-6 border-b border-gray-700/50 bg-green-900/10">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                                            <ShieldCheck className="w-6 h-6 text-green-400" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-green-400 font-bold text-lg">PolyHunter Execution Bot Active</h4>
+                                            <p className="text-gray-400 text-sm">
+                                                Your proxy is authorized for automated copy trading.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h4 className="text-green-400 font-semibold mb-2">Bot Operational</h4>
-                                <p className="text-green-500/60 text-sm mb-6">
-                                    The Executor Contract is authorized to manage trades on your behalf.
-                                </p>
 
-                                <button
-                                    onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
-                                    className="text-xs text-gray-500 hover:text-gray-400 underline"
-                                >
-                                    {userWantsAdvanced ? 'Hide Advanced Settings' : 'Advanced Settings'}
-                                </button>
+                                {/* Info Grid */}
+                                <div className="p-6 grid gap-6 md:grid-cols-3">
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                            Non-Custodial
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            The bot can only execute trades on your behalf. It <strong>cannot</strong> withdraw funds or transfer assets.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                            High Speed
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            Executes copy trades in &lt;50ms after the target trader, ensuring you get the best possible entry price.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                                            Full Control
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            You can revoke authorization at any time. You maintain 100% ownership of your funds and keys.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Actions Footer */}
+                                <div className="px-6 py-4 bg-gray-900/50 border-t border-gray-700/50 flex justify-between items-center">
+                                    <p className="text-xs text-gray-500">
+                                        Authorization is active indefinitely until revoked.
+                                    </p>
+                                    <button
+                                        onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
+                                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                                    >
+                                        {userWantsAdvanced ? 'Hide Advanced Settings' : 'Advanced Settings'}
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div className="bg-blue-900/10 border border-blue-900/30 rounded-xl p-6 text-center">
@@ -343,7 +397,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                     </div>
                 )}
 
-                {stats?.pendingFee && Number(stats.pendingFee) > 0 && activeTab === 'settings' && (
+                {!!stats?.pendingFee && Number(stats.pendingFee) > 0 && activeTab === 'settings' && (
                     <div className="mt-6 pt-6 border-t border-gray-800">
                         <div className="flex justify-between items-center bg-yellow-900/20 p-4 rounded-lg border border-yellow-900/50 mb-4">
                             <div>

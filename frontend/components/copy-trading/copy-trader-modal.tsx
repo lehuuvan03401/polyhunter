@@ -24,7 +24,7 @@ type SellMode = 'Same %' | 'Fixed Amount' | 'Custom %';
 export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: CopyTraderModalProps) {
     const router = useRouter();
     const { user, authenticated } = usePrivy();
-    const { hasProxy, stats, isLoading: proxyLoading } = useProxy();
+    const { hasProxy, stats, isExecutorAuthorized, isLoading: proxyLoading } = useProxy();
     const addConfig = useCopyTradingStore((state) => state.addConfig);
     const [isStarting, setIsStarting] = React.useState(false);
 
@@ -218,7 +218,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     </div>
 
                     {/* Proxy Status Warning */}
-                    {!proxyLoading && (!hasProxy || !hasEnoughFunds) && (
+                    {!proxyLoading && (!hasProxy || !hasEnoughFunds || !isExecutorAuthorized) && (
                         <div className="mx-4 mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                             <div className="flex items-start gap-2">
                                 <Info className="h-4 w-4 text-yellow-400 mt-0.5 flex-shrink-0" />
@@ -231,12 +231,20 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                 <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Set up Proxy →</a>
                                             </p>
                                         </>
-                                    ) : (
+                                    ) : !hasEnoughFunds ? (
                                         <>
                                             <span className="text-yellow-400 font-medium">Deposit Required</span>
                                             <p className="text-muted-foreground mt-1">
                                                 Proxy balance: ${proxyBalance.toFixed(2)}. Need at least ${minRequired} to start.
                                                 <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Deposit USDC →</a>
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-yellow-400 font-medium">Bot Authorization Required</span>
+                                            <p className="text-muted-foreground mt-1">
+                                                Authorize the trading bot to execute copy trades for you.
+                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Authorize Bot →</a>
                                             </p>
                                         </>
                                     )}
@@ -866,7 +874,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                         <button
                             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98] disabled:active:scale-100 flex items-center justify-center gap-2"
                             onClick={handleStartCopying}
-                            disabled={isStarting || !hasProxy || !hasEnoughFunds}
+                            disabled={isStarting || !hasProxy || !hasEnoughFunds || !isExecutorAuthorized}
                         >
                             {isStarting ? (
                                 <>
