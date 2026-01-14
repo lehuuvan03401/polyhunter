@@ -60,13 +60,14 @@ export const POLY_HUNTER_PROXY_ABI = [
     'function getBalance() external view returns (uint256)',
     'function getProfit() external view returns (int256)',
     'function getEstimatedFee() external view returns (uint256)',
-    'function getStats() external view returns (uint256 balance, uint256 deposited, uint256 withdrawn, uint256 feesPaid, int256 profit, uint256 currentFeePercent)',
+    'function getStats() external view returns (uint256 balance, uint256 deposited, uint256 withdrawn, uint256 feesPaid, int256 profit, uint256 currentFeePercent, uint256 pendingFee)',
     'function operators(address operator) external view returns (bool)',
     // Write functions
     'function setOperator(address operator, bool active) external',
     'function deposit(uint256 amount) external',
     'function withdraw(uint256 amount) external',
     'function withdrawAll() external',
+    'function settleFees() external',
     'function approveTrading(address spender, uint256 amount) external',
     // Execute arbitrary calls for trading
     'function execute(address target, bytes calldata data) external returns (bytes memory)',

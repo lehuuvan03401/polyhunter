@@ -97,6 +97,7 @@ export interface ProxyStats {
     feesPaid: number;
     profit: number;
     feePercent: number;
+    pendingFee: number;
 }
 
 export interface UseProxyReturn {
@@ -114,6 +115,7 @@ export interface UseProxyReturn {
     withdraw: (amount: number) => Promise<boolean>;
     withdrawAll: () => Promise<boolean>;
     refreshStats: () => Promise<void>;
+    settleFees: () => Promise<boolean>;
     approveUSDC: (amount: number) => Promise<boolean>;
     /** Execute arbitrary call through proxy (for trading) */
     executeCall: (target: string, data: string) => Promise<{ success: boolean; txHash?: string; error?: string }>;
@@ -122,7 +124,7 @@ export interface UseProxyReturn {
 
     // Transaction state
     txPending: boolean;
-    txStatus: 'IDLE' | 'APPROVING' | 'DEPOSITING' | 'WITHDRAWING' | 'AUTHORIZING' | 'CREATING' | 'EXECUTING' | 'CONFIRMING';
+    txStatus: 'IDLE' | 'APPROVING' | 'DEPOSITING' | 'WITHDRAWING' | 'AUTHORIZING' | 'CREATING' | 'EXECUTING' | 'CONFIRMING' | 'SETTLING';
     txHash: string | null;
     isExecutorAuthorized: boolean;
 }
@@ -303,6 +305,7 @@ export function useProxy(): UseProxyReturn {
                 feesPaid: formatUSDC(statsResult.feesPaid),
                 profit: Number(statsResult.profit) / 10 ** USDC_DECIMALS,
                 feePercent: Number(statsResult.currentFeePercent) / 100,
+                pendingFee: formatUSDC(statsResult.pendingFee),
             });
             setIsExecutorAuthorized(isAuthorized);
         } catch (err) {
@@ -654,6 +657,42 @@ export function useProxy(): UseProxyReturn {
         }
     }, [proxyAddress, getSignerAndProvider, refreshStats]);
 
+    /**
+     * Settle pending fees manually
+     */
+    const settleFees = useCallback(async (): Promise<boolean> => {
+        if (!proxyAddress) {
+            setError('No proxy address');
+            return false;
+        }
+
+        setError(null);
+        setTxPending(true);
+        setTxStatus('SETTLING');
+        setTxHash(null);
+
+        try {
+            const { signer } = await getSignerAndProvider();
+            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, signer);
+
+            // Execute settleFees
+            const tx = await proxy.settleFees();
+            setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
+
+            await tx.wait();
+            await refreshStats();
+
+            return true;
+        } catch (err: unknown) {
+            setError(parseTransactionError(err));
+            return false;
+        } finally {
+            setTxPending(false);
+            setTxStatus('IDLE');
+        }
+    }, [proxyAddress, getSignerAndProvider, refreshStats]);
+
 
     return {
         proxyAddress,
@@ -667,6 +706,7 @@ export function useProxy(): UseProxyReturn {
         withdraw,
         withdrawAll,
         refreshStats,
+        settleFees,
         approveUSDC,
         executeCall,
         authorizeOperator,

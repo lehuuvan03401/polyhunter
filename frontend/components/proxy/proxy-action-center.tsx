@@ -19,7 +19,8 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         txPending,
         txStatus,
         error,
-        isExecutorAuthorized
+        isExecutorAuthorized,
+        settleFees
     } = useProxy();
 
     const [amount, setAmount] = useState('');
@@ -338,6 +339,29 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                 <ShieldCheck className="h-4 w-4" />
                             )}
                             {txPending ? 'Processing...' : (isExecutorAuthorized ? 'Update Authorization' : 'Authorize Bot')}
+                        </button>
+                    </div>
+                )}
+
+                {stats?.pendingFee && Number(stats.pendingFee) > 0 && activeTab === 'settings' && (
+                    <div className="mt-6 pt-6 border-t border-gray-800">
+                        <div className="flex justify-between items-center bg-yellow-900/20 p-4 rounded-lg border border-yellow-900/50 mb-4">
+                            <div>
+                                <h4 className="text-yellow-500 font-semibold text-sm">Pending Fees</h4>
+                                <p className="text-yellow-600/80 text-xs">Performance fees ready to be settled</p>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-xl font-bold text-yellow-500">${stats.pendingFee}</div>
+                            </div>
+                        </div>
+                        <button
+                            onClick={async () => {
+                                const success = await settleFees();
+                                if (success) toast.success('Fees settled successfully!');
+                            }}
+                            className="w-full py-2 bg-yellow-900/40 hover:bg-yellow-900/60 border border-yellow-700/50 text-yellow-200 text-sm font-semibold rounded-lg transition-colors"
+                        >
+                            Settle Pending Fees
                         </button>
                     </div>
                 )}

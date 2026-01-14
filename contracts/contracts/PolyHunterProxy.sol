@@ -114,76 +114,118 @@ contract PolyHunterProxy is ReentrancyGuard {
         totalDeposited += amount;
         emit Deposited(msg.sender, amount);
     }
+
+    /**
+     * @notice Calculate pending fees based on Lifetime High Water Mark
+     * @return fee Amount of USDC to pay as fee
+     * @return profit Total lifetime profit
+     */
+    function _calculatePendingFee() internal view returns (uint256 fee, int256 profit) {
+        uint256 balance = usdc.balanceOf(address(this));
+        
+        // Lifetime Profit = CurrentBalance + TotalWithdrawn + TotalFeesPaid - TotalDeposited
+        // Using int256 to handle potential negative profit (losses)
+        int256 totalValue = int256(balance) + int256(totalWithdrawn) + int256(totalFeesPaid);
+        int256 lifetimeProfit = totalValue - int256(totalDeposited);
+
+        if (lifetimeProfit > 0 && feePercent > 0) {
+            uint256 totalFeesDue = (uint256(lifetimeProfit) * feePercent) / 10000;
+            if (totalFeesDue > totalFeesPaid) {
+                fee = totalFeesDue - totalFeesPaid;
+            }
+        }
+        
+        return (fee, lifetimeProfit);
+    }
+
+    /**
+     * @notice Settle any pending fees based on current profit
+     * @dev Callable by Operator (Bot) or Owner to realize platform revenue
+     */
+    function settleFees() external onlyOperatorOrOwner nonReentrant {
+        (uint256 fee, ) = _calculatePendingFee();
+        require(fee > 0, "No fees due");
+        require(usdc.balanceOf(address(this)) >= fee, "Insufficient balance for fees");
+
+        totalFeesPaid += fee;
+        usdc.forceApprove(treasury, fee);
+        ITreasury(treasury).receiveFee(fee);
+    }
     
     /**
-     * @notice Withdraw USDC with automatic fee deduction on profits
+     * @notice Withdraw USDC with HWM fee deduction
      * @param amount Amount to withdraw
      */
     function withdraw(uint256 amount) external onlyOwner nonReentrant {
         uint256 balance = usdc.balanceOf(address(this));
         require(amount > 0 && amount <= balance, "Invalid amount");
         
-        // Calculate current profit
-        uint256 netDeposits = totalDeposited > totalWithdrawn ? totalDeposited - totalWithdrawn : 0;
-        uint256 profit = balance > netDeposits ? balance - netDeposits : 0;
+        // 1. Calculate and pay ALL pending fees first
+        // If we only pay partial fees, tracking HWM becomes complex. 
+        // Best practice: Settle accounts before withdrawal.
+        (uint256 fee, ) = _calculatePendingFee();
         
-        // Calculate fee only on the profit portion being withdrawn
-        uint256 fee = 0;
-        if (profit > 0 && feePercent > 0) {
-            // Pro-rata fee based on withdrawal amount vs total balance
-            uint256 profitPortion = (amount * profit) / balance;
-            fee = (profitPortion * feePercent) / 10000;
+        // Cap fee at current balance (shouldn't happen if logic is sound, but safety first)
+        if (fee > balance) {
+            fee = balance; 
         }
         
         // Update accounting
-        totalWithdrawn += amount;
-        
-        // Pay fee to treasury
         if (fee > 0) {
             totalFeesPaid += fee;
             usdc.forceApprove(treasury, fee);
             ITreasury(treasury).receiveFee(fee);
         }
+
+        // 2. Handle User Withdrawal
+        // Deduct fee from balance first. 
+        // If user requested amount > remaining balance, cap it.
+        uint256 remainingBalance = balance - fee;
+        uint256 withdrawAmount = amount;
         
-        // Transfer remaining to owner
-        uint256 netAmount = amount - fee;
-        usdc.safeTransfer(owner, netAmount);
+        // If the fee ate into the requested amount, user gets less.
+        // Or should we treat 'amount' as what user WANTS to receive? 
+        // Standard is: "Withdraw X" -> Deduct Fee -> Send X-Fee? No, we just settled Global Fees.
+        // If global fees were pending, we pay them. 
+        // Then we send 'amount' if available.
         
-        emit Withdrawn(owner, netAmount, fee);
+        if (withdrawAmount > remainingBalance) {
+            withdrawAmount = remainingBalance;
+        }
+
+        if (withdrawAmount > 0) {
+            totalWithdrawn += withdrawAmount;
+            usdc.safeTransfer(owner, withdrawAmount);
+        }
+        
+        emit Withdrawn(owner, withdrawAmount, fee);
     }
     
     /**
-     * @notice Withdraw all USDC with automatic fee deduction
+     * @notice Withdraw all USDC with HWM fee deduction
      */
     function withdrawAll() external onlyOwner nonReentrant {
         uint256 balance = usdc.balanceOf(address(this));
         require(balance > 0, "No balance");
         
-        // Calculate profit
-        uint256 netDeposits = totalDeposited > totalWithdrawn ? totalDeposited - totalWithdrawn : 0;
-        uint256 profit = balance > netDeposits ? balance - netDeposits : 0;
+        (uint256 fee, ) = _calculatePendingFee();
         
-        // Calculate fee on profit
-        uint256 fee = 0;
-        if (profit > 0 && feePercent > 0) {
-            fee = (profit * feePercent) / 10000;
-        }
+        if (fee > balance) fee = balance;
         
-        // Update accounting
-        totalWithdrawn += balance;
-        
-        // Pay fee to treasury
         if (fee > 0) {
             totalFeesPaid += fee;
             usdc.forceApprove(treasury, fee);
             ITreasury(treasury).receiveFee(fee);
         }
         
-        // Transfer remaining to owner
-        uint256 netAmount = balance - fee;
-        usdc.safeTransfer(owner, netAmount);
+        uint256 remaining = balance - fee;
         
-        emit Withdrawn(owner, netAmount, fee);
+        if (remaining > 0) {
+            totalWithdrawn += remaining;
+            usdc.safeTransfer(owner, remaining);
+        }
+        
+        emit Withdrawn(owner, remaining, fee);
     }
     
     /**
@@ -194,23 +236,19 @@ contract PolyHunterProxy is ReentrancyGuard {
     }
     
     /**
-     * @notice Get current unrealized profit
+     * @notice Get current lifetime profit
      */
     function getProfit() external view returns (int256) {
-        uint256 balance = usdc.balanceOf(address(this));
-        uint256 netDeposits = totalDeposited > totalWithdrawn ? totalDeposited - totalWithdrawn : 0;
-        return int256(balance) - int256(netDeposits);
+        (, int256 profit) = _calculatePendingFee();
+        return profit;
     }
     
     /**
-     * @notice Get estimated fee on current profit
+     * @notice Get estimated pending fee
      */
     function getEstimatedFee() external view returns (uint256) {
-        uint256 balance = usdc.balanceOf(address(this));
-        uint256 netDeposits = totalDeposited > totalWithdrawn ? totalDeposited - totalWithdrawn : 0;
-        if (balance <= netDeposits) return 0;
-        uint256 profit = balance - netDeposits;
-        return (profit * feePercent) / 10000;
+        (uint256 fee, ) = _calculatePendingFee();
+        return fee;
     }
     
     /**
@@ -222,14 +260,16 @@ contract PolyHunterProxy is ReentrancyGuard {
         uint256 withdrawn,
         uint256 feesPaid,
         int256 profit,
-        uint256 currentFeePercent
+        uint256 currentFeePercent,
+        uint256 pendingFee
     ) {
         balance = usdc.balanceOf(address(this));
         deposited = totalDeposited;
         withdrawn = totalWithdrawn;
         feesPaid = totalFeesPaid;
-        uint256 netDeposits = totalDeposited > totalWithdrawn ? totalDeposited - totalWithdrawn : 0;
-        profit = int256(balance) - int256(netDeposits);
+        uint256 fee;
+        (fee, profit) = _calculatePendingFee();
+        pendingFee = fee;
         currentFeePercent = feePercent;
     }
     
