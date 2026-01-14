@@ -81,13 +81,30 @@ export default function PortfolioPage() {
                     }
 
                     try {
-                        // Get Portfolio PnL
-                        const profile = await polyClient.wallets.getWalletProfile(address);
-                        setTotalPnL(profile.totalPnL);
 
                         // Get Positions
                         const walletPositions = await polyClient.wallets.getWalletPositions(address);
                         setPositions(walletPositions);
+
+                        // Get Portfolio PnL
+                        const profile = await polyClient.wallets.getWalletProfile(address);
+                        let calculatedPnL = profile.totalPnL;
+
+                        // Fallback: If API returns 0 PnL (common locally/delayed), sum up positions PnL
+                        if (calculatedPnL === 0 && walletPositions.length > 0) {
+                            const positionsPnL = walletPositions.reduce((sum: number, pos: any) => {
+                                // Use cashPnl if available, otherwise estimate
+                                const pnl = typeof pos.cashPnl === 'number' ? pos.cashPnl : 0;
+                                return sum + pnl;
+                            }, 0);
+
+                            if (positionsPnL !== 0) {
+                                console.log('Using calculated PnL from positions:', positionsPnL);
+                                calculatedPnL = positionsPnL;
+                            }
+                        }
+
+                        setTotalPnL(calculatedPnL);
                     } catch (err) {
                         console.warn("Failed to fetch user data", err);
                     }
