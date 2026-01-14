@@ -5,6 +5,8 @@ import { usePrivy } from '@privy-io/react-auth';
 import Link from 'next/link';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { ProxyActionCenter } from '@/components/proxy/proxy-action-center';
+import { Copy, ExternalLink } from 'lucide-react';
+import { toast } from 'sonner';
 
 const TIER_INFO = {
     STARTER: { name: 'Starter', fee: '10%', color: 'text-gray-400', bgColor: 'bg-gray-800' },
@@ -182,9 +184,32 @@ export default function ProxyDashboardPage() {
                             <div className="flex items-center justify-between mb-6">
                                 <div>
                                     <h2 className="text-xl font-bold text-white">Your Trading Proxy</h2>
-                                    <p className="text-gray-400 text-sm font-mono truncate max-w-xs">
-                                        {proxyAddress}
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <p className="text-gray-400 text-sm font-mono bg-gray-950/50 px-2 py-1 rounded select-all">
+                                            {proxyAddress}
+                                        </p>
+                                        <button
+                                            onClick={() => {
+                                                if (proxyAddress) {
+                                                    navigator.clipboard.writeText(proxyAddress);
+                                                    toast.success('Address copied to clipboard');
+                                                }
+                                            }}
+                                            className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-500 hover:text-white transition-colors"
+                                            title="Copy Address"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </button>
+                                        <a
+                                            href={`https://${process.env.NEXT_PUBLIC_NETWORK === 'amoy' ? 'amoy.' : ''}polygonscan.com/address/${proxyAddress}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-500 hover:text-white transition-colors"
+                                            title="View on Explorer"
+                                        >
+                                            <ExternalLink className="w-4 h-4" />
+                                        </a>
+                                    </div>
                                 </div>
                                 <div className={`px-4 py-2 rounded-lg ${TIER_INFO[currentTier].bgColor}`}>
                                     <span className={`font-semibold ${TIER_INFO[currentTier].color}`}>

@@ -1,9 +1,8 @@
-'use client';
-
 import { useState } from 'react';
 import { useProxy } from '@/lib/contracts/useProxy';
-import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck } from 'lucide-react';
+import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useCopyTradingStore } from '@/lib/copy-trading-store';
 
 interface ProxyActionCenterProps {
     onSuccess?: () => void;
@@ -28,10 +27,17 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
     const [operatorAddress, setOperatorAddress] = useState('');
     const [userWantsAdvanced, setUserWantsAdvanced] = useState(false);
+    const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+
+    // Copy Trading Store for safety check
+    const configs = useCopyTradingStore((state) => state.configs);
+    const activeConfigs = configs.filter(c => c.isActive);
+    const hasActiveTrades = activeConfigs.length > 0;
 
     // Optimistic UI state
-    const [optimisticAuth, setOptimisticAuth] = useState(false);
-    const isExecutorAuthorized = isAuthFromChain || optimisticAuth;
+    const [optimisticAuth, setOptimisticAuth] = useState<boolean | null>(null);
+    // If optimisticAuth is null, use chain state. Otherwise use optimistic state.
+    const isExecutorAuthorized = optimisticAuth !== null ? optimisticAuth : isAuthFromChain;
 
     const getStatusText = (status: typeof txStatus) => {
         switch (status) {
@@ -90,6 +96,23 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
             await refreshStats(); // Ensure chain state matches
         } else {
             toast.error(result.error || 'Authorization failed');
+        }
+    };
+
+    const handleRevoke = async () => {
+        const defaultExecutor = process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6';
+        // Use custom address if set, otherwise default
+        const targetOp = operatorAddress.trim() || defaultExecutor;
+
+        const result = await authorizeOperator(targetOp, false); // false = revoke
+        if (result.success) {
+            setOptimisticAuth(false); // Immediate feedback
+            toast.success('Access revoked successfully');
+            setShowRevokeConfirm(false);
+            onSuccess?.();
+            await refreshStats();
+        } else {
+            toast.error(result.error || 'Revocation failed');
         }
     };
 
@@ -277,7 +300,44 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             )}
                         </div>
 
-                        {isExecutorAuthorized ? (
+                        {showRevokeConfirm ? (
+                            <div className="bg-red-900/10 border border-red-900/50 rounded-xl p-6 text-center animate-in fade-in">
+                                <div className="mx-auto w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
+                                    <AlertTriangle className="w-6 h-6 text-red-500" />
+                                </div>
+                                <h4 className="text-red-400 font-bold mb-2">Revoke Authorization?</h4>
+
+                                {hasActiveTrades ? (
+                                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                        <p className="text-red-300 font-semibold mb-1">⚠️ Active Trades Detected</p>
+                                        <p className="text-red-300/80 text-sm">
+                                            You have {activeConfigs.length} active copy trade(s). Revoking access will <strong>stop all future trades</strong> immediately.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-400 text-sm mb-6">
+                                        Are you sure? Use the toggle below to re-enable it later.
+                                    </p>
+                                )}
+
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowRevokeConfirm(false)}
+                                        className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleRevoke}
+                                        disabled={txPending}
+                                        className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2"
+                                    >
+                                        {txPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                                        Revoke Access
+                                    </button>
+                                </div>
+                            </div>
+                        ) : isExecutorAuthorized ? (
                             <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden animate-in fade-in">
                                 {/* Header Status */}
                                 <div className="p-6 border-b border-gray-700/50 bg-green-900/10">
@@ -327,9 +387,13 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
 
                                 {/* Actions Footer */}
                                 <div className="px-6 py-4 bg-gray-900/50 border-t border-gray-700/50 flex justify-between items-center">
-                                    <p className="text-xs text-gray-500">
-                                        Authorization is active indefinitely until revoked.
-                                    </p>
+                                    <button
+                                        onClick={() => setShowRevokeConfirm(true)}
+                                        className="text-xs font-semibold text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
+                                    >
+                                        Revoke Authorization
+                                    </button>
+
                                     <button
                                         onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
                                         className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
@@ -339,18 +403,51 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                 </div>
                             </div>
                         ) : (
-                            <div className="bg-blue-900/10 border border-blue-900/30 rounded-xl p-6 text-center">
-                                <div className="mx-auto w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
-                                    <ShieldCheck className="w-6 h-6 text-blue-400" />
+                            <div className="bg-blue-900/10 border border-blue-900/30 rounded-xl overflow-hidden animate-in fade-in">
+                                <div className="p-6 text-center border-b border-blue-900/30">
+                                    <div className="mx-auto w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
+                                        <ShieldCheck className="w-6 h-6 text-blue-400" />
+                                    </div>
+                                    <h4 className="text-blue-400 font-semibold mb-2">Enable Copy Trading</h4>
+                                    <p className="text-gray-400 text-sm">
+                                        One-click authorization for the PolyHunter Bot.
+                                    </p>
                                 </div>
-                                <h4 className="text-blue-400 font-semibold mb-2">Enable Copy Trading</h4>
-                                <p className="text-gray-400 text-sm mb-6">
-                                    One-click authorization for the PolyHunter Bot.
-                                </p>
+
+                                {/* Info Grid (Same as authorized state) */}
+                                <div className="p-6 grid gap-6 md:grid-cols-3 bg-gray-900/30">
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                            Non-Custodial
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            The bot can only execute trades on your behalf. It <strong>cannot</strong> withdraw funds or transfer assets.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                            High Speed
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            Executes copy trades in &lt;50ms after the target trader, ensuring you get the best possible entry price.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                                            Full Control
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            You can revoke authorization at any time. You maintain 100% ownership of your funds and keys.
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
-                        {(!isExecutorAuthorized || userWantsAdvanced) && (
+                        {(!isExecutorAuthorized || userWantsAdvanced) && !showRevokeConfirm && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-gray-400 flex justify-between">
@@ -378,22 +475,24 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             </div>
                         )}
 
-                        <button
-                            onClick={handleAuthorize}
-                            disabled={txPending || (isExecutorAuthorized && !userWantsAdvanced)}
-                            className={`w-full py-3 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2
-                                ${isExecutorAuthorized && !userWantsAdvanced
-                                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/20'
-                                }`}
-                        >
-                            {txPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <ShieldCheck className="h-4 w-4" />
-                            )}
-                            {txPending ? 'Processing...' : (isExecutorAuthorized ? 'Update Authorization' : 'Authorize Bot')}
-                        </button>
+                        {!isExecutorAuthorized && (
+                            <button
+                                onClick={handleAuthorize}
+                                disabled={txPending || (isExecutorAuthorized && !userWantsAdvanced)}
+                                className={`w-full py-3 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2
+                                    ${isExecutorAuthorized && !userWantsAdvanced
+                                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/20'
+                                    }`}
+                            >
+                                {txPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <ShieldCheck className="h-4 w-4" />
+                                )}
+                                {txPending ? 'Processing...' : (isExecutorAuthorized ? 'Update Authorization' : 'Authorize Bot')}
+                            </button>
+                        )}
                     </div>
                 )}
 
