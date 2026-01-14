@@ -648,6 +648,42 @@
         "IPolyHunterProxy",
         "PolyHunterExecutor"
       ]
+    },
+    "/Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/contracts/contracts/mocks/MockCTF.sol": {
+      "lastModificationDate": 1768395687989,
+      "contentHash": "1cde8df8962bce2df077a7d29a047aff",
+      "sourceName": "contracts/mocks/MockCTF.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "MockCTF"
+      ]
     }
   }
 }
