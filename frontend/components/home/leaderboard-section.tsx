@@ -31,9 +31,44 @@ export function LeaderboardSection() {
     useEffect(() => {
         const loadData = async () => {
             setIsLoading(true);
+
+            // Check cache
+            const CACHE_KEY = 'polyhunter:leaderboard_data';
+            const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+            try {
+                const cached = localStorage.getItem(CACHE_KEY);
+                if (cached) {
+                    const { data, timestamp } = JSON.parse(cached);
+                    const age = Date.now() - timestamp;
+
+                    if (age < CACHE_TTL) {
+                        // Use cache
+                        setActiveTraders(data);
+                        setIsLoading(false);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to parse leaderboard cache', e);
+            }
+
+            // Fetch fresh data
             const data = await fetchActiveTraders();
             setActiveTraders(data);
             setIsLoading(false);
+
+            // Save to cache
+            try {
+                if (data.length > 0) {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify({
+                        data,
+                        timestamp: Date.now()
+                    }));
+                }
+            } catch (e) {
+                console.warn('Failed to save leaderboard cache', e);
+            }
         };
 
         loadData();
