@@ -133,6 +133,45 @@ export class WalletManager {
     }
 
     /**
+     * Check and top-up worker balances from a master wallet.
+     * @param masterWallet The wallet to fund from (must have sufficient balance)
+     * @param threshold Low balance threshold (e.g. 0.5 MATIC)
+     * @param topUpAmount Amount to send (e.g. 1.0 MATIC)
+     */
+    public async ensureFleetBalances(
+        masterWallet: ethers.Wallet,
+        threshold: number = 0.5,
+        topUpAmount: number = 1.0
+    ): Promise<void> {
+        console.log(`[WalletManager] ⛽️ Checking fleet gas balances...`);
+        const workers = Array.from(this.workers.values());
+
+        // Parallel check for speed
+        await Promise.all(workers.map(async (worker) => {
+            try {
+                const balanceWei = await this.provider.getBalance(worker.address);
+                const balanceEth = parseFloat(ethers.utils.formatEther(balanceWei));
+
+                if (balanceEth < threshold) {
+                    console.log(`[WalletManager] ⚠️ Worker ${worker.address.slice(0, 6)} low balance: ${balanceEth.toFixed(4)} MATIC. Refueling...`);
+
+                    const tx = await masterWallet.sendTransaction({
+                        to: worker.address,
+                        value: ethers.utils.parseEther(topUpAmount.toString())
+                    });
+
+                    console.log(`[WalletManager] ✅ Sent ${topUpAmount} MATIC to ${worker.address.slice(0, 6)} (Tx: ${tx.hash})`);
+                    // We don't wait for confirmation to keep things fast, relying on nonce mgmt of master
+                }
+            } catch (error) {
+                console.error(`[WalletManager] Failed to check/refuel worker ${worker.address.slice(0, 6)}:`, error);
+            }
+        }));
+
+        console.log(`[WalletManager] ⛽️ Gas check complete.`);
+    }
+
+    /**
      * Get all worker addresses
      */
     public getAllAddresses(): string[] {

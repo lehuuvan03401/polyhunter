@@ -57,7 +57,7 @@ const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 // Infrastructure
 const rateLimiter = new RateLimiter();
 // Cache: Redis would be better for Prod, currently In-Memory for Supervisor
-const cache = createUnifiedCache({ type: 'memory', ttl: 60 });
+const cache = createUnifiedCache();
 
 // Core Services
 // 1. Master Trading Service (for read-only or fallback)
@@ -95,11 +95,11 @@ if (MASTER_MNEMONIC) {
 
 // --- STATE ---
 interface ActiveConfig {
-    id: number;
+    id: string;
     walletAddress: string; // User
-    targetAddress: string; // Trader
+    traderAddress: string; // Trader
     fixedAmount?: number;
-    percentAmount?: number;
+    sizeScale?: number;
     maxSlippage: number;
     slippageType: 'FIXED' | 'AUTO';
     autoExecute: boolean;
@@ -123,15 +123,15 @@ async function refreshConfigs() {
         activeConfigs = configs.map(c => ({
             id: c.id,
             walletAddress: c.walletAddress,
-            targetAddress: c.targetAddress, // Already normalized in DB?
+            traderAddress: c.traderAddress,
             fixedAmount: c.fixedAmount || undefined,
-            percentAmount: c.percentAmount || undefined,
+            sizeScale: c.sizeScale || undefined,
             maxSlippage: c.maxSlippage,
             slippageType: c.slippageType as 'FIXED' | 'AUTO',
             autoExecute: c.autoExecute
         }));
 
-        monitoredTraders = new Set(activeConfigs.map(c => c.targetAddress.toLowerCase()));
+        monitoredTraders = new Set(activeConfigs.map(c => c.traderAddress.toLowerCase()));
 
         const stats = walletManager ? walletManager.getStats() : { total: 1, available: 1 };
         console.log(`[Supervisor] Refreshed: ${activeConfigs.length} strategies. Fleet: ${stats.available}/${stats.total} ready.`);
@@ -154,6 +154,7 @@ async function handleTransfer(
     try {
         const tokenId = id.toString();
         const amountValues = value.toString(); // Raw share amount
+        const originalSize = parseFloat(amountValues) / 1e6; // Approximation for USDC/Token decimals
 
         // 1. Identify Trader
         // Proxy Transfer logic: 
@@ -179,7 +180,7 @@ async function handleTransfer(
         console.log(`[Supervisor] 🚨 SIGNAL DETECTED: Trader ${trader} ${side} Token ${tokenId}`);
 
         // 2. Dispatch Jobs
-        const subscribers = activeConfigs.filter(c => c.targetAddress.toLowerCase() === trader);
+        const subscribers = activeConfigs.filter(c => c.traderAddress.toLowerCase() === trader);
 
         if (subscribers.length === 0) return;
 
@@ -198,7 +199,7 @@ async function handleTransfer(
 
         // PARALLEL EXECUTION LOOP
         subscribers.forEach(async (sub) => {
-            await processJob(sub, side!, tokenId, price);
+            await processJob(sub, side!, tokenId, price, trader!, originalSize);
         });
 
     } catch (error) {
@@ -210,7 +211,9 @@ async function processJob(
     config: ActiveConfig,
     side: 'BUY' | 'SELL',
     tokenId: string,
-    approxPrice: number
+    approxPrice: number,
+    originalTrader: string,
+    originalSize: number
 ) {
     // 1. Checkout Worker
     let worker: WorkerContext | null = null;
@@ -253,14 +256,25 @@ async function processJob(
         const result = await executionService.executeOrderWithProxy(baseParams);
 
         // 4. Log Result (Async DB write)
+        // 4. Log Result (Async DB write)
         await prisma.copyTrade.create({
             data: {
                 configId: config.id,
-                walletAddress: config.walletAddress,
-                tradeId: result.orderId || "unknown",
+                // Original Info
+                originalTrader: originalTrader,
+                originalSide: side,
+                originalSize: originalSize,
+                originalPrice: approxPrice,
+                tokenId: tokenId,
+
+                // Copy Info
+                copySize: copyAmount,
+                copyPrice: approxPrice, // Ideally get from result
+
+                // Status
                 status: result.success ? 'EXECUTED' : 'FAILED',
-                entryPrice: approxPrice, // TODO: Get real exec price from result
-                result: result.success ? JSON.stringify(result) : result.error,
+                txHash: result.orderId, // In execution service, orderId might be txHash
+                errorMessage: result.error,
                 executedAt: new Date()
             }
         });
@@ -285,6 +299,15 @@ async function main() {
 
     // Refresh configs loop
     setInterval(refreshConfigs, 10000);
+
+    // Maintenance Loop (Auto-Refuel)
+    setInterval(async () => {
+        if (walletManager && masterTradingService.getWallet()) {
+            // Check if workers have < 0.1 MATIC, top up to 0.5 MATIC
+            // Using Master Wallet (Private Key) to fund them
+            await walletManager.ensureFleetBalances(masterTradingService.getWallet(), 0.1, 0.5);
+        }
+    }, 60000 * 5); // Check every 5 minutes
 
     // Listen to Contracts
     const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
