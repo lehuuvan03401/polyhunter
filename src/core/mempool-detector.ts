@@ -1,6 +1,6 @@
 
 import { ethers } from 'ethers';
-import { CONTRACT_ADDRESSES } from './contracts';
+import { CONTRACT_ADDRESSES } from './contracts.js';
 
 // ERC1155 safeTransferFrom selector: 0xf242432a
 // safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)

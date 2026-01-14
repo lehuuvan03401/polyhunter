@@ -1,46 +1,25 @@
 /**
  * Copy Trading Config API
  * 
- * CRUD operations for user's copy trading configurations
+ * CRUD operations for user's copy trading configurations.
  */
 
 import { polyClient } from '@/lib/polymarket';
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
-// ... (existing imports)
 
-// Inside POST function:
+/**
+ * GET /api/copy-trading/config
+ * Get all copy trading configs for a wallet address
+ */
 
-// Fetch real trader profile if name not provided or generic
-let finalTraderName = traderName;
-if (!finalTraderName || finalTraderName.startsWith('Trader 0x')) {
-    try {
-        const profile = await polyClient.wallets.getWalletProfile(traderAddress);
-        if (profile?.username) {
-            finalTraderName = profile.username;
-        } else if (profile?.userName) { // Handle potential casing diffs in SDK types
-            finalTraderName = profile.userName;
-        }
-    } catch (err) {
-        console.warn('Failed to fetch trader profile name', err);
-    }
-}
-
-const config = await prisma.copyTradingConfig.create({
-    data: {
-        walletAddress: walletAddress.toLowerCase(),
-        traderAddress: traderAddress.toLowerCase(),
-        traderName: finalTraderName || null,
-
-        /**
-         * GET /api/copy-trading/config
-         * Get all copy trading configs for a wallet address
-         */
-        export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const walletAddress = searchParams.get('wallet');
 
-        if(!walletAddress) {
+        if (!walletAddress) {
             return NextResponse.json(
                 { error: 'Missing wallet address' },
                 { status: 400 }
@@ -59,7 +38,7 @@ const config = await prisma.copyTradingConfig.create({
         });
 
         return NextResponse.json({ configs });
-    } catch(error) {
+    } catch (error) {
         console.error('Error fetching copy trading configs:', error);
         return NextResponse.json(
             { error: 'Failed to fetch configs' },
@@ -132,7 +111,7 @@ export async function POST(request: NextRequest) {
         if (!finalTraderName || finalTraderName.startsWith('Trader 0x')) {
             try {
                 // @ts-ignore - Handle potential casing diffs in SDK types
-                const profile = await polyClient.wallets.getWalletProfile(traderAddress);
+                const profile = await polyClient.wallets.getWalletProfile(traderAddress) as any;
                 if (profile?.username) {
                     finalTraderName = profile.username;
                     // @ts-ignore

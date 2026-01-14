@@ -46,8 +46,7 @@ export default function PortfolioPage() {
 
     // Fetch order stats for the tab count
     const { stats: orderStats } = useOrderStatus(user?.wallet?.address || '', {
-        pollInterval: 15000,
-        enabled: !!user?.wallet?.address
+        pollInterval: 15000
     });
 
     useEffect(() => {
