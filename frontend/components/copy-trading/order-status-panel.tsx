@@ -206,9 +206,17 @@ function OrderRow({
 
     return (
         <div className="border-b border-border/30 last:border-b-0">
-            <button
+            <div
+                role="button"
+                tabIndex={0}
                 onClick={onToggle}
-                className="w-full p-3 flex items-center gap-3 hover:bg-muted/30 transition-colors text-left"
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onToggle();
+                    }
+                }}
+                className="w-full p-3 flex items-center gap-3 hover:bg-muted/30 transition-colors text-left cursor-pointer outline-none focus-visible:bg-muted/30"
             >
                 {/* Status Icon */}
                 <div className={cn('text-lg', statusColor)}>
@@ -270,7 +278,7 @@ function OrderRow({
                 ) : (
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 )}
-            </button>
+            </div>
 
             {/* Expanded Details */}
             {expanded && (

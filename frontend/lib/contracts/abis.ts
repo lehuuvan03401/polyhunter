@@ -28,10 +28,11 @@ export const CONTRACT_ADDRESSES = {
     },
     // Localhost Hardhat Fork
     localhost: {
-        proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || '',
-        treasury: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '',
-        usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
-        executor: process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6',
+        // Force new addresses to bypass potential stale .env values
+        proxyFactory: '0xc5B86EcB7Cf82213B392D668614429A0d0763745', // process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || 
+        treasury: '0xedEe4820327176Bd433d13421DD558A7191193Aa',      // process.env.NEXT_PUBLIC_TREASURY_ADDRESS || 
+        usdc: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',          // process.env.NEXT_PUBLIC_USDC_ADDRESS || 
+        executor: '0xBb0368cecDcB0759a32aBbc21583af992Fe94dD7',      // process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || 
         clobExchange: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E', // Mainnet Fork
         negRiskExchange: '0xC5d563A36AE78145C45a50134d48A1215220f80a',
         ctfContract: '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',

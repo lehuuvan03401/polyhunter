@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/contracts/contracts/PolyHunterProxy.sol": {
-      "lastModificationDate": 1767716271214,
-      "contentHash": "3f396aa14f06eda172b38116870d4dc6",
+      "lastModificationDate": 1768365722688,
+      "contentHash": "01801465fcd42f158e9e7718872850d7",
       "sourceName": "contracts/PolyHunterProxy.sol",
       "solcConfig": {
         "version": "0.8.24",

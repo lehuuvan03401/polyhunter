@@ -1,3 +1,6 @@
+import * as dotenv from "dotenv";
+dotenv.config({ path: "../.env" });
+
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 

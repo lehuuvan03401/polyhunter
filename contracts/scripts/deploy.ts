@@ -70,6 +70,14 @@ async function main() {
     const proxyFactoryAddress = await proxyFactory.getAddress();
     console.log("✅ ProxyFactory deployed to:", proxyFactoryAddress);
 
+    // Deploy Executor
+    console.log("\n📦 Deploying PolyHunterExecutor...");
+    const Executor = await ethers.getContractFactory("PolyHunterExecutor");
+    const executor = await Executor.deploy(); // No args, Owner = valid msg.sender
+    await executor.waitForDeployment();
+    const executorAddress = await executor.getAddress();
+    console.log("✅ PolyHunterExecutor deployed to:", executorAddress);
+
     // Summary
     console.log("\n========================================");
     console.log("🎉 Deployment Complete!");
@@ -78,6 +86,7 @@ async function main() {
     console.log("USDC:", usdcAddress);
     console.log("Treasury:", treasuryAddress);
     console.log("ProxyFactory:", proxyFactoryAddress);
+    console.log("Executor:", executorAddress);
     console.log("========================================");
 
     const deploymentPath = path.join(__dirname, "../../deployed-addresses.json");
@@ -85,6 +94,7 @@ async function main() {
         usdc: usdcAddress,
         treasury: treasuryAddress,
         proxyFactory: proxyFactoryAddress,
+        executor: executorAddress,
         chainId: Number(network.chainId)
     }, null, 2));
     console.log(`\n💾 Addresses saved to ${deploymentPath}`);
@@ -94,6 +104,7 @@ async function main() {
         usdc: usdcAddress,
         treasury: treasuryAddress,
         proxyFactory: proxyFactoryAddress,
+        executor: executorAddress,
     };
 }
 
