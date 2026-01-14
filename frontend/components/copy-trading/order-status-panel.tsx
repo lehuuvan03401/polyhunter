@@ -11,6 +11,7 @@ import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, Extern
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useOrderStatus, getOrderStatusColor, getOrderStatusIcon, type Order, type OrderStatus } from '@/lib/hooks/useOrderStatus';
+import { AnimatePresence, motion } from 'framer-motion';
 
 interface OrderStatusPanelProps {
     walletAddress: string;
@@ -23,6 +24,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
     });
 
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+    const [orderToStop, setOrderToStop] = useState<string | null>(null);
     const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
 
     // Filter orders
@@ -52,16 +54,16 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
         });
     };
 
-    const handleStopCopying = async (tradeId: string, e: React.MouseEvent) => {
+    const handleStopCopying = (tradeId: string, e: React.MouseEvent) => {
         e.stopPropagation();
+        setOrderToStop(tradeId);
+    };
+
+    const confirmStopCopying = async () => {
+        if (!orderToStop) return;
 
         // Extract real config ID from strategy_ prefix
-        const configId = tradeId.replace('strategy_', '');
-
-        if (!confirm('Are you sure you want to stop copying this trader?')) {
-            return;
-        }
-
+        const configId = orderToStop.replace('strategy_', '');
         const toastId = toast.loading('Stopping copy trade...');
 
         try {
@@ -78,6 +80,8 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
         } catch (error) {
             console.error('Stop error:', error);
             toast.error('Failed to stop copying', { id: toastId });
+        } finally {
+            setOrderToStop(null);
         }
     };
 
@@ -137,9 +141,10 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                     </div>
                 )}
 
-                {filteredOrders.map(order => (
+                {filteredOrders.map((order, i) => (
                     <OrderRow
                         key={order.tradeId}
+                        index={i + 1}
                         order={order}
                         expanded={expandedOrder === order.tradeId}
                         onToggle={() => setExpandedOrder(
@@ -150,6 +155,61 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
                 ))}
             </div>
+
+            {/* Custom Stop Confirmation Modal */}
+            <AnimatePresence>
+                {orderToStop && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+                        {/* Backdrop - High Blur for "Premium" feel */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setOrderToStop(null)}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+
+                        {/* Modal Card */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            transition={{ duration: 0.2, ease: "easeOut" }}
+                            className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-[#0f111a] shadow-2xl ring-1 ring-white/5"
+                        >
+                            {/* Decorative Top Glow */}
+                            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500/0 via-red-500/50 to-red-500/0 opacity-50" />
+
+                            <div className="p-6">
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="mb-4 rounded-full bg-red-500/10 p-3 ring-1 ring-red-500/20">
+                                        <AlertCircle className="h-6 w-6 text-red-500" />
+                                    </div>
+                                    <h3 className="mb-2 text-lg font-semibold text-white">Stop Copying Trader?</h3>
+                                    <p className="text-sm text-muted-foreground leading-relaxed">
+                                        You are about to stop copying this strategy. Any open positions will remain open, but no new trades will be executed.
+                                    </p>
+                                </div>
+
+                                <div className="mt-8 grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setOrderToStop(null)}
+                                        className="inline-flex items-center justify-center rounded-xl bg-white/5 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10 hover:text-white transition-colors border border-white/5"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={confirmStopCopying}
+                                        className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                                    >
+                                        Stop Copying
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
@@ -192,11 +252,13 @@ function FilterTab({
 // Order Row
 function OrderRow({
     order,
+    index,
     expanded,
     onToggle,
     onStop
 }: {
     order: Order;
+    index: number;
     expanded: boolean;
     onToggle: () => void;
     onStop?: (e: React.MouseEvent) => void;
@@ -218,6 +280,11 @@ function OrderRow({
                 }}
                 className="w-full p-3 flex items-center gap-3 hover:bg-muted/30 transition-colors text-left cursor-pointer outline-none focus-visible:bg-muted/30"
             >
+                {/* Index Column */}
+                <div className="text-xs font-mono text-muted-foreground/50 w-6 text-center shrink-0">
+                    #{index}
+                </div>
+
                 {/* Status Icon */}
                 <div className={cn('text-lg', statusColor)}>
                     {statusIcon}
@@ -242,6 +309,18 @@ function OrderRow({
                         <span>${order.size.toFixed(2)}</span>
                         <span>•</span>
                         <span>{order.traderName || order.traderAddress.slice(0, 8)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                        <a
+                            href={`https://polymarket.com/profile/${order.traderAddress}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors z-20 relative pointer-events-auto"
+                        >
+                            <span className="font-mono">{order.traderAddress.slice(0, 6)}...{order.traderAddress.slice(-4)}</span>
+                            <ExternalLink className="h-3 w-3" />
+                        </a>
                     </div>
                 </div>
 
@@ -282,56 +361,73 @@ function OrderRow({
 
             {/* Expanded Details */}
             {expanded && (
-                <div className="px-3 pb-3 space-y-2 bg-muted/10">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                        {/* Strategy vs Trade Details */}
-                        {order.tradeId.startsWith('strategy_') ? (
-                            <>
-                                <DetailItem label="Strategy ID" value={order.tradeId.replace('strategy_', '').slice(0, 16) + '...'} />
-                                <DetailItem label="Target" value="All Markets" />
-                                <DetailItem label="Size" value={order.size ? `$${order.size}` : 'Variable'} />
-                                <DetailItem label="Status" value="Active Monitoring" color="text-green-400" />
-                                <DetailItem label="Started" value={new Date(order.detectedAt).toLocaleString()} />
-                            </>
-                        ) : (
-                            <>
-                                <DetailItem label="Trade ID" value={order.tradeId.slice(0, 16) + '...'} />
-                                <DetailItem label="Order ID" value={order.orderId ? (order.orderId.slice(0, 16) + '...') : 'N/A'} />
-                                <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
-                                <DetailItem
-                                    label="Filled"
-                                    value={`${order.filledPercent}%`}
-                                    color={order.filledPercent === 100 ? 'text-green-400' : undefined}
-                                />
-                                <DetailItem label="Token ID" value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
-                                <DetailItem
-                                    label="Executed"
-                                    value={order.executedAt
-                                        ? new Date(order.executedAt).toLocaleString()
-                                        : 'Not yet'
-                                    }
-                                />
-                            </>
+                <div className="px-3 pb-3 relative">
+                    {/* Vertical line connecting to parent - optional visual link */}
+                    <div className="absolute left-[1.6rem] top-0 bottom-3 w-px bg-border/30 -z-10" />
+
+                    {/* Content wrapper with left margin to align with 'COPY' text */}
+                    {/* w-6 (Index) + gap-3 + approx w-5 (Icon) + gap-3 = ~3.5rem - 4rem offset */}
+                    <div className="ml-[3.5rem] space-y-2 bg-muted/10 rounded-lg p-3">
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            {/* Strategy vs Trade Details */}
+                            {order.tradeId.startsWith('strategy_') ? (
+                                <>
+                                    <DetailItem
+                                        label="Strategy ID"
+                                        value={order.tradeId.replace('strategy_', '')}
+                                        copyable
+                                        className="col-span-2 sm:col-span-1"
+                                    />
+                                    <DetailItem label="Target" value="All Markets" />
+                                    <DetailItem label="Size" value={order.size ? `$${order.size}` : 'Variable'} />
+                                    <DetailItem label="Status" value="Active Monitoring" color="text-green-400" />
+                                    <DetailItem label="Started" value={new Date(order.detectedAt).toLocaleString()} />
+                                </>
+                            ) : (
+                                <>
+                                    <DetailItem
+                                        label="Trade ID"
+                                        value={order.tradeId}
+                                        copyable
+                                        className="col-span-2 sm:col-span-1"
+                                    />
+                                    <DetailItem label="Order ID" value={order.orderId || 'N/A'} copyable={!!order.orderId} />
+                                    <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
+                                    <DetailItem
+                                        label="Filled"
+                                        value={`${order.filledPercent}%`}
+                                        color={order.filledPercent === 100 ? 'text-green-400' : undefined}
+                                    />
+                                    <DetailItem label="Token ID" value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
+                                    <DetailItem
+                                        label="Executed"
+                                        value={order.executedAt
+                                            ? new Date(order.executedAt).toLocaleString()
+                                            : 'Not yet'
+                                        }
+                                    />
+                                </>
+                            )}
+                        </div>
+
+                        {order.errorMessage && (
+                            <div className="p-2 rounded bg-red-500/10 text-red-400 text-xs">
+                                Error: {order.errorMessage}
+                            </div>
+                        )}
+
+                        {order.orderId && (
+                            <a
+                                href={`https://polygonscan.com/tx/${order.orderId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+                            >
+                                <ExternalLink className="h-3 w-3" />
+                                View on Explorer
+                            </a>
                         )}
                     </div>
-
-                    {order.errorMessage && (
-                        <div className="p-2 rounded bg-red-500/10 text-red-400 text-xs">
-                            Error: {order.errorMessage}
-                        </div>
-                    )}
-
-                    {order.orderId && (
-                        <a
-                            href={`https://polygonscan.com/tx/${order.orderId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                            <ExternalLink className="h-3 w-3" />
-                            View on Explorer
-                        </a>
-                    )}
                 </div>
             )}
         </div>
@@ -342,16 +438,49 @@ function OrderRow({
 function DetailItem({
     label,
     value,
-    color
+    color,
+    copyable,
+    className
 }: {
     label: string;
     value: string;
     color?: string;
+    copyable?: boolean;
+    className?: string;
 }) {
+    const handleCopy = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(value);
+        toast.success('Copied to clipboard');
+    };
+
     return (
-        <div>
-            <span className="text-muted-foreground">{label}: </span>
-            <span className={cn('font-medium', color)}>{value}</span>
+        <div className={className}>
+            <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">{label}</span>
+            <div className="flex items-center gap-2">
+                <span className={cn('font-medium font-mono text-xs break-all', color)}>{value}</span>
+                {copyable && (
+                    <button
+                        onClick={handleCopy}
+                        className="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground hover:text-white shrink-0"
+                        title="Copy"
+                    >
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                    </button>
+                )}
+            </div>
         </div>
     );
 }

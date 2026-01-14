@@ -4,19 +4,43 @@
  * CRUD operations for user's copy trading configurations
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { polyClient } from '@/lib/polymarket';
 
-/**
- * GET /api/copy-trading/config
- * Get all copy trading configs for a wallet address
- */
-export async function GET(request: NextRequest) {
+// ... (existing imports)
+
+// Inside POST function:
+
+// Fetch real trader profile if name not provided or generic
+let finalTraderName = traderName;
+if (!finalTraderName || finalTraderName.startsWith('Trader 0x')) {
+    try {
+        const profile = await polyClient.wallets.getWalletProfile(traderAddress);
+        if (profile?.username) {
+            finalTraderName = profile.username;
+        } else if (profile?.userName) { // Handle potential casing diffs in SDK types
+            finalTraderName = profile.userName;
+        }
+    } catch (err) {
+        console.warn('Failed to fetch trader profile name', err);
+    }
+}
+
+const config = await prisma.copyTradingConfig.create({
+    data: {
+        walletAddress: walletAddress.toLowerCase(),
+        traderAddress: traderAddress.toLowerCase(),
+        traderName: finalTraderName || null,
+
+        /**
+         * GET /api/copy-trading/config
+         * Get all copy trading configs for a wallet address
+         */
+        export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const walletAddress = searchParams.get('wallet');
 
-        if (!walletAddress) {
+        if(!walletAddress) {
             return NextResponse.json(
                 { error: 'Missing wallet address' },
                 { status: 400 }
@@ -35,7 +59,7 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({ configs });
-    } catch (error) {
+    } catch(error) {
         console.error('Error fetching copy trading configs:', error);
         return NextResponse.json(
             { error: 'Failed to fetch configs' },
@@ -103,6 +127,24 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Fetch real trader profile if name not provided or generic
+        let finalTraderName = traderName;
+        if (!finalTraderName || finalTraderName.startsWith('Trader 0x')) {
+            try {
+                // @ts-ignore - Handle potential casing diffs in SDK types
+                const profile = await polyClient.wallets.getWalletProfile(traderAddress);
+                if (profile?.username) {
+                    finalTraderName = profile.username;
+                    // @ts-ignore
+                } else if (profile?.userName) {
+                    // @ts-ignore
+                    finalTraderName = profile.userName;
+                }
+            } catch (err) {
+                console.warn('Failed to fetch trader profile name', err);
+            }
+        }
+
         // Determine mode: percentage, fixed_amount, or range
         let copyMode: 'PERCENTAGE' | 'FIXED_AMOUNT' = 'PERCENTAGE';
         if (mode === 'fixed_amount' || mode === 'Fixed $') {
@@ -113,7 +155,7 @@ export async function POST(request: NextRequest) {
             data: {
                 walletAddress: walletAddress.toLowerCase(),
                 traderAddress: traderAddress.toLowerCase(),
-                traderName: traderName || null,
+                traderName: finalTraderName || null,
                 mode: copyMode,
                 sizeScale: sizeScale !== undefined ? Number(sizeScale) : null,
                 fixedAmount: fixedAmount !== undefined ? Number(fixedAmount) : null,

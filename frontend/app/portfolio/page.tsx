@@ -25,6 +25,7 @@ import { ethers } from 'ethers';
 import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
 import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
+import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -42,6 +43,12 @@ export default function PortfolioPage() {
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isSellingAll, setIsSellingAll] = useState(false);
+
+    // Fetch order stats for the tab count
+    const { stats: orderStats } = useOrderStatus(user?.wallet?.address || '', {
+        pollInterval: 15000,
+        enabled: !!user?.wallet?.address
+    });
 
     useEffect(() => {
         const loadData = async () => {
@@ -413,7 +420,7 @@ export default function PortfolioPage() {
                                         activeTab === 'orders' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Orders
+                                    Orders <span className="ml-1 text-muted-foreground">{orderStats.total}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('history')}
