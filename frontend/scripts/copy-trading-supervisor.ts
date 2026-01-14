@@ -283,10 +283,21 @@ async function processJob(
     let worker: WorkerContext | null = null;
     if (walletManager) {
         worker = walletManager.checkoutWorker();
+    } else {
+        // Fallback: Use Master Wallet if no fleet configured
+        const masterWallet = masterTradingService.getWallet();
+        if (masterWallet) {
+            // Must connect to provider for on-chain txs
+            const connectedWallet = masterWallet.connect(provider);
+            worker = {
+                address: masterWallet.address,
+                signer: connectedWallet,
+                tradingService: masterTradingService
+            };
+        }
     }
 
-    // If no worker available (or no fleet), we can try to fall back to Master or fail.
-    // Ideally queue. For now, immediate fail/log.
+    // If still no worker (e.g. Master failed), drop job
     if (!worker) {
         console.error(`[Supervisor] ❌ DROPPED JOB for User ${config.walletAddress}: No workers available.`);
         return;
