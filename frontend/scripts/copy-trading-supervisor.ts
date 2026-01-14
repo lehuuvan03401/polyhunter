@@ -21,6 +21,7 @@ import { TradingService, TradeInfo } from '../../src/services/trading-service';
 import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache, UnifiedCache } from '../../src/core/unified-cache';
 import { WalletManager, WorkerContext } from '../../src/core/wallet-manager';
+import { MempoolDetector } from '../../src/core/mempool-detector';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -135,6 +136,12 @@ async function refreshConfigs() {
 
         const stats = walletManager ? walletManager.getStats() : { total: 1, available: 1 };
         console.log(`[Supervisor] Refreshed: ${activeConfigs.length} strategies. Fleet: ${stats.available}/${stats.total} ready.`);
+
+        // Update Mempool Detector
+        if (mempoolDetector) {
+            mempoolDetector.updateMonitoredTraders(monitoredTraders);
+        }
+
     } catch (e) {
         console.error("[Supervisor] Config refresh failed:", e);
     }
@@ -207,13 +214,70 @@ async function handleTransfer(
     }
 }
 
+// Handler for Mempool Logic
+const handleSniffedTx = async (
+    txHash: string,
+    operator: string,
+    from: string,
+    to: string,
+    id: ethers.BigNumber,
+    value: ethers.BigNumber
+) => {
+    // Deduplication: If we process mempool, we should cache the 'id/hash' so the Event Listener doesn't double-execute?
+    // Or we simply let the second execution fail/idempotency check.
+    // For now, let's just log and trigger.
+
+    if (isProcessing) return;
+
+    try {
+        const tokenId = id.toString();
+        const amountValues = value.toString();
+        const originalSize = parseFloat(amountValues) / 1e6;
+
+        let trader: string | null = null;
+        let side: 'BUY' | 'SELL' | null = null;
+
+        // Sniffed data logic same as Event (SafeTransferFrom)
+        if (monitoredTraders.has(to.toLowerCase())) {
+            trader = to.toLowerCase();
+            side = 'BUY';
+        } else if (monitoredTraders.has(from.toLowerCase())) {
+            trader = from.toLowerCase();
+            side = 'SELL';
+        }
+
+        if (!trader || !side) return;
+
+        console.log(`[Supervisor] 🦈 MEMPOOL SNIPING: Trader ${trader} ${side} Token ${tokenId} (Pending Tx: ${txHash})`);
+
+        // Dispatch Jobs immediately
+        const subscribers = activeConfigs.filter(c => c.traderAddress.toLowerCase() === trader);
+
+        if (subscribers.length === 0) return;
+
+        // Price might be slightly different as it's pending, but we use strict/market anyway.
+        const PRICE_PLACEHOLDER = 0.5;
+
+        subscribers.forEach(async (sub) => {
+            // Pass 'isPreflight' or high gas instructions if needed
+            // For now, reuse processJob. 
+            // Ideally we pass a flag to use HIGHER GAS for the proactive tx.
+            await processJob(sub, side!, tokenId, PRICE_PLACEHOLDER, trader!, originalSize, true);
+        });
+
+    } catch (e) {
+        console.error(`[Supervisor] Mempool sniff error:`, e);
+    }
+};
+
 async function processJob(
     config: ActiveConfig,
     side: 'BUY' | 'SELL',
     tokenId: string,
     approxPrice: number,
     originalTrader: string,
-    originalSize: number
+    originalSize: number,
+    isPreflight: boolean = false
 ) {
     // 1. Checkout Worker
     let worker: WorkerContext | null = null;
@@ -229,7 +293,8 @@ async function processJob(
     }
 
     const workerAddress = worker.address;
-    console.log(`[Supervisor] 🏃 assigning User ${config.walletAddress} -> Worker ${workerAddress}`);
+    const typeLabel = isPreflight ? "🦈 MEMPOOL" : "🐢 BLOCK";
+    console.log(`[Supervisor] 🏃 [${typeLabel}] Assigning User ${config.walletAddress} -> Worker ${workerAddress}`);
 
     try {
         // 2. Calculate Size
@@ -252,6 +317,9 @@ async function processJob(
             signer: worker.signer, // DYNAMIC SIGNER
             tradingService: worker.tradingService // DYNAMIC SERVICE
         };
+
+        // If mempool mode, maybe increase gas?
+        // executionService.setAggressiveGas(isPreflight);
 
         const result = await executionService.executeOrderWithProxy(baseParams);
 
@@ -292,6 +360,8 @@ async function processJob(
 }
 
 // --- MAIN ---
+let mempoolDetector: MempoolDetector;
+
 async function main() {
     console.log("Starting Copy Trading Supervisor (Enterprise)...");
 
@@ -314,6 +384,10 @@ async function main() {
 
     console.log(`[Supervisor] 🎧 Listening for TransferSingle on ${CONTRACT_ADDRESSES.ctf}...`);
     ctf.on("TransferSingle", handleTransfer);
+
+    // Start Mempool Detector
+    mempoolDetector = new MempoolDetector(provider, monitoredTraders, handleSniffedTx);
+    mempoolDetector.start();
 
     // Keep alive
     process.on('SIGINT', () => {
