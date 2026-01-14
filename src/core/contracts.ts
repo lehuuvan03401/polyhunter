@@ -11,11 +11,13 @@ export const CONTRACT_ADDRESSES = {
         // Defaults to undefined if not set, forcing caller to provide it or crash early
         proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || process.env.PROXY_FACTORY_ADDRESS || '0xa536e751cc68997e898165b3213eec355e09c6d3', // Known Factory Address or Env
         usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS || process.env.USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged)
+        executor: process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6', // New Executor Contract
     },
     // Polygon Amoy (80002)
     amoy: {
         proxyFactory: process.env.NEXT_PUBLIC_AMOY_PROXY_FACTORY_ADDRESS || process.env.AMOY_PROXY_FACTORY_ADDRESS || '',
         usdc: process.env.NEXT_PUBLIC_AMOY_USDC_ADDRESS || process.env.AMOY_USDC_ADDRESS || '0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582', // Amoy USDC
+        executor: process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6', // New Executor Contract
     },
     // Common
     ctf: process.env.NEXT_PUBLIC_CTF_ADDRESS || process.env.CTF_ADDRESS || '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045', // Polygon Mainnet CTF
@@ -55,6 +57,14 @@ export const POLY_HUNTER_PROXY_ABI = [
     // Events
     'event Deposited(address indexed user, uint256 amount)',
     'event Withdrawn(address indexed user, uint256 amount, uint256 fee)',
+] as const;
+
+// PolyHunterExecutor ABI (Fleet Commander)
+export const EXECUTOR_ABI = [
+    'function executeOnProxy(address proxy, address target, bytes calldata data) external payable returns (bytes memory)',
+    'function addWorker(address worker) external',
+    'function removeWorker(address worker) external',
+    'function isWorker(address worker) external view returns (bool)',
 ] as const;
 
 // ERC20 ABI (for USDC approvals)

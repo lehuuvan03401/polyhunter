@@ -609,6 +609,45 @@
       "artifacts": [
         "MockERC20"
       ]
+    },
+    "/Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/contracts/contracts/PolyHunterExecutor.sol": {
+      "lastModificationDate": 1768363925130,
+      "contentHash": "1165634562e71609d02cdc20f710df62",
+      "sourceName": "contracts/PolyHunterExecutor.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "IPolyHunterProxy",
+        "PolyHunterExecutor"
+      ]
     }
   }
 }

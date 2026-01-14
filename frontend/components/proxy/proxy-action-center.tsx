@@ -18,12 +18,14 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         authorizeOperator,
         txPending,
         txStatus,
-        error
+        error,
+        isExecutorAuthorized
     } = useProxy();
 
     const [amount, setAmount] = useState('');
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
     const [operatorAddress, setOperatorAddress] = useState('');
+    const [userWantsAdvanced, setUserWantsAdvanced] = useState(false);
 
     const getStatusText = (status: typeof txStatus) => {
         switch (status) {
@@ -63,8 +65,8 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
     };
 
     const handleAuthorize = async () => {
-        const defaultBot = process.env.NEXT_PUBLIC_BOT_ADDRESS || '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
-        const targetOp = operatorAddress.trim() || defaultBot;
+        const defaultExecutor = process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6';
+        const targetOp = operatorAddress.trim() || defaultExecutor;
 
         if (!targetOp || !targetOp.startsWith('0x')) {
             toast.error('Invalid operator address');
@@ -257,25 +259,85 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                     <div className="space-y-6 max-w-xl mx-auto">
                         <div className="text-center mb-6">
                             <h3 className="text-lg font-bold text-white mb-2">Bot Authorization</h3>
-                            <p className="text-gray-400 text-sm">Authorize the platform bot to execute trades on your behalf</p>
+                            <p className="text-gray-400 text-sm">
+                                {isExecutorAuthorized
+                                    ? "✅ Your proxy is fully authorized to use the PolyHunter Bot."
+                                    : "Authorize the PolyHunter Executor to enable copy trading."}
+                            </p>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-400">Operator Address</label>
-                            <input
-                                placeholder={`Default Bot: ${process.env.NEXT_PUBLIC_BOT_ADDRESS ? `${process.env.NEXT_PUBLIC_BOT_ADDRESS.slice(0, 6)}...${process.env.NEXT_PUBLIC_BOT_ADDRESS.slice(-4)}` : '0x...'}`}
-                                value={operatorAddress}
-                                onChange={(e) => setOperatorAddress(e.target.value)}
-                                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500"
-                            />
-                        </div>
+                        {isExecutorAuthorized ? (
+                            <div className="bg-green-900/20 border border-green-900/50 rounded-xl p-6 text-center animate-in fade-in">
+                                <div className="mx-auto w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
+                                    <ShieldCheck className="w-6 h-6 text-green-400" />
+                                </div>
+                                <h4 className="text-green-400 font-semibold mb-2">Bot Operational</h4>
+                                <p className="text-green-500/60 text-sm mb-6">
+                                    The Executor Contract is authorized to manage trades on your behalf.
+                                </p>
+
+                                <button
+                                    onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
+                                    className="text-xs text-gray-500 hover:text-gray-400 underline"
+                                >
+                                    {userWantsAdvanced ? 'Hide Advanced Settings' : 'Advanced Settings'}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="bg-blue-900/10 border border-blue-900/30 rounded-xl p-6 text-center">
+                                <div className="mx-auto w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
+                                    <ShieldCheck className="w-6 h-6 text-blue-400" />
+                                </div>
+                                <h4 className="text-blue-400 font-semibold mb-2">Enable Copy Trading</h4>
+                                <p className="text-gray-400 text-sm mb-6">
+                                    One-click authorization for the PolyHunter Bot.
+                                </p>
+                            </div>
+                        )}
+
+                        {(!isExecutorAuthorized || userWantsAdvanced) && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-gray-400 flex justify-between">
+                                        <span>Executor Address</span>
+                                        {!isExecutorAuthorized && (
+                                            <button
+                                                onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
+                                                className="text-xs text-blue-400 hover:text-blue-300"
+                                            >
+                                                {userWantsAdvanced ? 'Use Default' : 'Custom Address'}
+                                            </button>
+                                        )}
+                                    </label>
+
+                                    {(userWantsAdvanced || !isExecutorAuthorized) && (
+                                        <input
+                                            placeholder={`Default Executor: ${process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS ? `${process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS.slice(0, 6)}...${process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS.slice(-4)}` : '0x...'}`}
+                                            value={operatorAddress}
+                                            onChange={(e) => setOperatorAddress(e.target.value)}
+                                            disabled={!userWantsAdvanced && !isExecutorAuthorized} // Read-only if just showing default
+                                            className={`w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500 ${(!userWantsAdvanced && !isExecutorAuthorized) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         <button
                             onClick={handleAuthorize}
-                            disabled={txPending}
-                            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                            disabled={txPending || (isExecutorAuthorized && !userWantsAdvanced)}
+                            className={`w-full py-3 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2
+                                ${isExecutorAuthorized && !userWantsAdvanced
+                                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/20'
+                                }`}
                         >
-                            {txPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                            Authorize Bot
+                            {txPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <ShieldCheck className="h-4 w-4" />
+                            )}
+                            {txPending ? 'Processing...' : (isExecutorAuthorized ? 'Update Authorization' : 'Authorize Bot')}
                         </button>
                     </div>
                 )}

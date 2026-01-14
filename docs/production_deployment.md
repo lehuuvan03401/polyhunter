@@ -27,6 +27,8 @@ Create a production `.env` file (`frontend/.env`).
 NEXT_PUBLIC_CHAIN_ID=137
 # MUST be a WebSocket URL for Supervisor to sniff mempool correctly
 NEXT_PUBLIC_RPC_URL="wss://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY"
+# Executor Contract (Fleet Commander) - Deployed in Phase 1
+NEXT_PUBLIC_EXECUTOR_ADDRESS="0x..." 
 # Optional: Separate HTTP URL if needed for weak clients
 # HTTP_RPC_URL="https://..."
 
@@ -48,11 +50,28 @@ NEXTAUTH_SECRET="complex_random_string"
 
 Follow this exact order to start the system.
 
-### Phase 1: Database Initialization
+### Phase 1: Smart Contract Deployment (Executor)
+You must deploy the Executor Contract which authorizes the entire wallet fleet to act on users' behalf.
+
+```bash
+cd poly-hunter/contracts
+
+# 1. install dependencies
+npm install
+
+# 2. Deploy Executor & Whitelist Fleet
+# Ensure your TRADING_MNEMONIC is set in frontend/.env beforehand!
+npx hardhat run scripts/deploy-executor.ts --network polygon
+# Output: "PolyHunterExecutor deployed to: 0x123..." -> SAVE THIS ADDRESS
+```
+
+> **Critical**: Copy the deployed address to `NEXT_PUBLIC_EXECUTOR_ADDRESS` in your `.env` file before proceeding.
+
+### Phase 2: Database Initialization
 Before running any code, ensure the DB schema is synced.
 
 ```bash
-cd poly-hunter/frontend
+cd ../frontend
 
 # 1. Install Dependencies
 npm install
@@ -64,7 +83,7 @@ npx prisma generate
 npx prisma db push
 ```
 
-### Phase 2: Start The "Brain" (Supervisor)
+### Phase 3: Start The "Brain" (Supervisor)
 The Supervisor is the most critical process. It *must* run 24/7. We use **PM2** for process management.
 
 ```bash
@@ -89,7 +108,7 @@ pm2 logs poly-supervisor
 # Expect: "[MempoolDetector] 🦈 Starting Mempool Sniffing..."
 ```
 
-### Phase 3: Start The Web Interface
+### Phase 4: Start The Web Interface
 Now start the User Interface (Next.js).
 
 ```bash

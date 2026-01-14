@@ -3,6 +3,7 @@ import { TradingService, Orderbook } from './trading-service.js'; // Use .js ext
 import {
     PROXY_FACTORY_ABI,
     POLY_HUNTER_PROXY_ABI,
+    EXECUTOR_ABI,
     ERC20_ABI,
     CTF_ABI,
     CONTRACT_ADDRESSES,
@@ -111,23 +112,36 @@ export class CopyTradingExecutionService {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const executionSigner = this.getSigner(signer);
-            // const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, executionSigner); // Unused
             const botAddress = await executionSigner.getAddress();
 
-            // NEW STRATEGY: Use transferFrom (requires User approval)
-            // proxy.execute(usdc, transfer) is BLOCKED by Contract.
-            const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, executionSigner);
+            // EXECUTOR STRATEGY: Worker -> Executor -> Proxy -> USDC.transfer(Bot)
+            // This avoids 'transferFrom' approval issues and leverages the single-Executor auth.
+
+            if (!addresses.executor) throw new Error("Executor address not configured");
+            const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, executionSigner);
+            const erc20Interface = new ethers.utils.Interface(ERC20_ABI);
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);
 
-            console.log(`[CopyExec] Transferring $${amount} USDC from Proxy ${proxyAddress} to Bot ${botAddress} (via transferFrom)...`);
-            // Bot calls transferFrom(proxy, bot, amount)
-            const tx = await usdc.transferFrom(proxyAddress, botAddress, amountWei);
+            console.log(`[CopyExec] Requesting Proxy ${proxyAddress} to PUSH $${amount} to Bot ${botAddress} (via Executor)...`);
+
+            // Encode: usdc.transfer(botAddress, amountWei)
+            const transferData = erc20Interface.encodeFunctionData('transfer', [
+                botAddress,
+                amountWei
+            ]);
+
+            // Call: executor.executeOnProxy(proxyAddress, usdcAddress, transferData)
+            const tx = await executor.executeOnProxy(
+                proxyAddress,
+                addresses.usdc,
+                transferData
+            );
             const receipt = await tx.wait();
 
-            console.log(`[CopyExec] Transfer complete: ${receipt.transactionHash}`);
+            console.log(`[CopyExec] Proxy Push (USDC) complete: ${receipt.transactionHash}`);
             return { success: true, txHash: receipt.transactionHash };
         } catch (error: any) {
-            console.error('[CopyExec] Transfer from Proxy failed:', error.message);
+            console.error('[CopyExec] Proxy Fund Push failed:', error.message);
             return { success: false, error: error.message };
         }
     }
@@ -160,14 +174,16 @@ export class CopyTradingExecutionService {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const executionSigner = this.getSigner(signer);
-            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, executionSigner);
             const botAddress = await executionSigner.getAddress();
+
+            if (!addresses.executor) throw new Error("Executor address not configured");
+            const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, executionSigner);
             const ctfInterface = new ethers.utils.Interface(CTF_ABI);
 
             // Amount in shares.
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);
 
-            console.log(`[CopyExec] Pulling ${amount} shares (Token ${tokenId}) from Proxy to Bot...`);
+            console.log(`[CopyExec] Requesting Proxy to PUSH ${amount} shares (Token ${tokenId}) to Bot (via Executor)...`);
 
             // safeTransferFrom(from, to, id, amount, data)
             const transferData = ctfInterface.encodeFunctionData('safeTransferFrom', [
@@ -178,7 +194,12 @@ export class CopyTradingExecutionService {
                 "0x"
             ]);
 
-            const tx = await proxy.execute(CONTRACT_ADDRESSES.ctf, transferData);
+            // Call: executor.executeOnProxy(...)
+            const tx = await executor.executeOnProxy(
+                proxyAddress,
+                CONTRACT_ADDRESSES.ctf,
+                transferData
+            );
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Token Pull complete: ${receipt.transactionHash}`);

@@ -124,6 +124,7 @@ export interface UseProxyReturn {
     txPending: boolean;
     txStatus: 'IDLE' | 'APPROVING' | 'DEPOSITING' | 'WITHDRAWING' | 'AUTHORIZING' | 'CREATING' | 'EXECUTING' | 'CONFIRMING';
     txHash: string | null;
+    isExecutorAuthorized: boolean;
 }
 
 export function useProxy(): UseProxyReturn {
@@ -139,6 +140,7 @@ export function useProxy(): UseProxyReturn {
     const [txPending, setTxPending] = useState(false);
     const [txStatus, setTxStatus] = useState<UseProxyReturn['txStatus']>('IDLE');
     const [txHash, setTxHash] = useState<string | null>(null);
+    const [isExecutorAuthorized, setIsExecutorAuthorized] = useState(false);
 
     const walletAddress = user?.wallet?.address;
 
@@ -280,10 +282,19 @@ export function useProxy(): UseProxyReturn {
             const { provider } = await getSignerAndProvider();
             const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, provider);
 
-            const [statsResult, balanceResult] = await Promise.all([
+            const promises: Promise<any>[] = [
                 proxy.getStats(),
                 provider.getBalance(proxyAddress), // ETH balance (for gas if needed)
-            ]);
+            ];
+
+            // Check if Default Executor is authorized
+            if (ADDRESSES.executor) {
+                promises.push(proxy.operators(ADDRESSES.executor));
+            }
+
+            const results = await Promise.all(promises);
+            const statsResult = results[0];
+            const isAuthorized = ADDRESSES.executor ? results[2] : false;
 
             setStats({
                 balance: formatUSDC(statsResult.balance),
@@ -293,6 +304,7 @@ export function useProxy(): UseProxyReturn {
                 profit: Number(statsResult.profit) / 10 ** USDC_DECIMALS,
                 feePercent: Number(statsResult.currentFeePercent) / 100,
             });
+            setIsExecutorAuthorized(isAuthorized);
         } catch (err) {
             console.error('Error fetching stats:', err);
         }
@@ -628,6 +640,8 @@ export function useProxy(): UseProxyReturn {
             setTxStatus('CONFIRMING');
 
             await tx.wait();
+            // Refresh stats to check if auth status updated
+            await refreshStats();
 
             return { success: true, txHash: tx.hash };
         } catch (err: unknown) {
@@ -638,7 +652,7 @@ export function useProxy(): UseProxyReturn {
             setTxPending(false);
             setTxStatus('IDLE');
         }
-    }, [proxyAddress, getSignerAndProvider]);
+    }, [proxyAddress, getSignerAndProvider, refreshStats]);
 
 
     return {
@@ -659,5 +673,6 @@ export function useProxy(): UseProxyReturn {
         txPending,
         txStatus,
         txHash,
+        isExecutorAuthorized,
     };
 }
