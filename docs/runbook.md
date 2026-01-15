@@ -1,0 +1,65 @@
+全链路仿真验证指南 (Final Runbook)
+为了在本地 100% 真实还原 线上环境，我们需要按顺序初始化所有组件。请打开 4 个终端窗口，严格按以下步骤操作：
+
+🖥️ 终端 1: 启动 Mainnet Fork 节点
+这是我们的模拟“主网”。
+
+bash
+cd contracts
+export ENABLE_FORK=true
+# 确保您已注释掉 .env 中的 POLYGON_RPC_URL，或在此处 export MAINNET_FORK_RPC_URL="..."
+npx hardhat node
+🖥️ 终端 2: 部署基础设施 (合约 & Proxy)
+这步会部署 Factory, Executor，并为您的账号创建 Proxy 和充值 USDC。
+
+bash
+# 1. 部署 Executor & 初始化 Worker Fleet
+cd contracts
+npx hardhat run scripts/deploy-executor.ts --network localhost
+# ⚠️ 记下输出的 Executor Address，更新 .env: NEXT_PUBLIC_EXECUTOR_ADDRESS
+# 2. 部署 Factory & 创建 User Proxy
+npx hardhat run ../frontend/scripts/setup-local-fork.ts --network localhost
+# ⚠️ 记下输出的 Factory Address，更新 .env: NEXT_PUBLIC_PROXY_FACTORY_ADDRESS
+(请确保 .env 更新保存后再进行下一步)
+
+🖥️ 终端 3: 初始化数据 & 启动 Supervisor
+配置跟单关系，并启动监控服务。
+
+bash
+cd frontend
+# 1. 写入数据库配置 (Master 跟单 0x7099...Trader)
+npx tsx scripts/seed-test-config.ts
+# 2. 启动 Supervisor (开启 Multi-Worker 模式)
+npx tsx scripts/copy-trading-supervisor.ts
+您应该看到 Supervisor 启动并显示 Fleet: 20/20 ready
+
+🖥️ 终端 4: 触发模拟交易 (Trigger)
+模拟那个被跟单的大户 (0x7099...) 发起交易。
+
+bash
+cd frontend
+npx tsx scripts/impersonate-mainnet-trade.ts
+
+👀 预期结果 (Success Criteria):
+
+终端 4 显示 ✅ Signal Sent!。
+终端 3 (Supervisor) 显示：
+🚨 SIGNAL DETECTED
+Dispatching 1 jobs...
+CopyExec 日志流畅输出：Funds Check -> Place Order -> Settlement。
+最后显示 ✅ Job Complete。
+如果不报错，恭喜您！这套系统已经准备好上战场了。
+
+
+setup-local-fork.ts的说明：
+
+部署 ProxyFactory (🏭 Deploying ProxyFactory):
+虽然主网上已经有 Factory 了，但我们在本地无法控制它（比如无法随意设置 Owner）。
+所以我们部署一个全新的、属于您的 Factory。通过构造函数，我们将它指向真实的 USDC 和 CTF，这样它创建出来的 Proxy 就能和真实世界的合约交互了。
+创建 Proxy Wallet (👤 Creating Proxy):
+调用刚才部署的新 Factory，为您（Hardhat 默认账号 #0）创建一个智能合约钱包。
+充值 USDC (💰 Funding Proxy):
+这是最酷的一步。您的新 Proxy 钱包刚创建，里面没钱。
+脚本使用 hardhat_impersonateAccount 功能，冒充了一个已知的 USDC 巨鲸用户（Binance 热钱包 0xe780...）。
+脚本强制让这个巨鲸给您的 Proxy 转账 1000 USDC。
+这只有在 Fork 模式下才能做到（我们在本地拥有上帝视角，可以控制任意账户），从而免去了测试时找水龙头领币的麻烦。
