@@ -650,8 +650,8 @@
       ]
     },
     "/Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/contracts/contracts/mocks/MockCTF.sol": {
-      "lastModificationDate": 1768395687989,
-      "contentHash": "1cde8df8962bce2df077a7d29a047aff",
+      "lastModificationDate": 1768431738927,
+      "contentHash": "029c756783d5f7c38a301da596502052",
       "sourceName": "contracts/mocks/MockCTF.sol",
       "solcConfig": {
         "version": "0.8.24",

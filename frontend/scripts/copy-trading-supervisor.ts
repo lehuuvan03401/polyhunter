@@ -11,6 +11,8 @@
  * export $(grep -v '^#' .env | xargs) && npx tsx scripts/copy-trading-supervisor.ts
  */
 
+import 'dotenv/config';
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
 import path from 'path';
@@ -40,11 +42,20 @@ if (!process.env.DATABASE_URL) {
 // Global Master Key (for backup / initialization)
 const MASTER_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 // For Fleet, we ideally want a Mnemonic. 
-// If TRADING_MNEMONIC is not set, we can't derive a fleet easily from a PK.
-// FALLBACK: If only PK offered, we only have 1 worker (Legacy Mode).
-const MASTER_MNEMONIC = process.env.TRADING_MNEMONIC || "";
+let MASTER_MNEMONIC = process.env.TRADING_MNEMONIC || "";
+
+// Fallback: Use default test mnemonic if on Localhost and no mnemonic provided
+if (!MASTER_MNEMONIC && (RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1"))) {
+    console.warn("[Supervisor] ⚠️ Dev Environment detected: Using DEFAULT TEST MNEMONIC for Fleet.");
+    MASTER_MNEMONIC = "test test test test test test test test test test test junk";
+}
 
 // --- INITIALIZATION ---
+console.log(`[Supervisor] 🌍 Network: ${process.env.NEXT_PUBLIC_NETWORK}`);
+console.log(`[Supervisor] 🔌 RPC: ${RPC_URL}`);
+console.log(`[Supervisor] 🏭 ProxyFactory: ${CONTRACT_ADDRESSES.polygon.proxyFactory}`);
+console.log(`[Supervisor] 🏢 Executor: ${CONTRACT_ADDRESSES.polygon.executor}`);
+console.log(`[Supervisor] 🏛️  CTF: ${CONTRACT_ADDRESSES.ctf}`);
 const adapter = new PrismaLibSql({
     url: process.env.DATABASE_URL
 });

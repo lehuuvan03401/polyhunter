@@ -9,6 +9,10 @@ contract MockCTF {
         emit TransferSingle(msg.sender, from, to, id, amount);
     }
 
+    function mint(address to, uint256 id, uint256 amount, bytes calldata data) external {
+        emit TransferSingle(msg.sender, address(0), to, id, amount);
+    }
+
     function setApprovalForAll(address operator, bool approved) external {}
     function isApprovedForAll(address account, address operator) external view returns (bool) { return true; }
 }

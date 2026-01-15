@@ -14,7 +14,15 @@ async function main() {
 
     console.log("Seeding Database with Test Config...");
 
-    // Create or update config
+    // Clear existing to avoid unique constraint errors
+    await prisma.copyTradingConfig.deleteMany({
+        where: {
+            walletAddress: USER,
+            traderAddress: TRADER
+        }
+    });
+
+    // Create fresh config
     await prisma.copyTradingConfig.create({
         data: {
             walletAddress: USER,
@@ -22,7 +30,7 @@ async function main() {
             maxSlippage: 1.0,
             slippageType: 'FIXED',
             autoExecute: true,
-            channel: 'EVENT_LISTENER', // Supervisor filters for this
+            channel: 'EVENT_LISTENER',
             mode: 'FIXED_AMOUNT',
             fixedAmount: 10,
             isActive: true
