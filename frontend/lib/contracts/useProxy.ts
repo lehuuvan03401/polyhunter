@@ -27,6 +27,11 @@ const rawNetwork = process.env.NEXT_PUBLIC_NETWORK || 'amoy';
 const NETWORK = (rawNetwork === 'polygon' || rawNetwork === 'localhost') ? rawNetwork : 'amoy';
 const ADDRESSES = CONTRACT_ADDRESSES[NETWORK];
 
+// Chain Config
+const ENV_CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '');
+const DEFAULT_CHAIN_IDS = { polygon: 137, localhost: 31337, amoy: 80002 };
+const TARGET_CHAIN_ID = ENV_CHAIN_ID || DEFAULT_CHAIN_IDS[NETWORK];
+
 /**
  * Parse blockchain/wallet errors into user-friendly messages
  */
@@ -149,7 +154,7 @@ export function useProxy(): UseProxyReturn {
     /**
      * Target chain ID based on network setting
      */
-    const targetChainId = NETWORK === 'polygon' ? 137 : (NETWORK === 'localhost' ? 1337 : 80002);
+    const targetChainId = TARGET_CHAIN_ID;
 
     /**
      * Switch wallet to the correct network
@@ -197,12 +202,12 @@ export function useProxy(): UseProxyReturn {
                             rpcUrls: ['https://polygon-rpc.com'],
                             blockExplorerUrls: ['https://polygonscan.com'],
                         };
-                    } else if (targetChainId === 1337) {
+                    } else if (targetChainId === 31337 || targetChainId === 1337) {
                         networkParams = {
-                            chainId: '0x539', // 1337
-                            chainName: 'Localhost 8545',
+                            chainId: `0x${targetChainId.toString(16)}`,
+                            chainName: 'Localhost',
                             nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                            rpcUrls: ['http://127.0.0.1:8545'],
+                            rpcUrls: [process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545'],
                         };
                     } else {
                         networkParams = {

@@ -27,7 +27,7 @@ import { MempoolDetector } from '../../src/core/mempool-detector';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "137");
+const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
 
 // Env checks
 if (!process.env.TRADING_PRIVATE_KEY) {
