@@ -4,6 +4,8 @@ dotenv.config({ path: "../.env" });
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
+const PRIVATE_KEY = process.env.PRIVATE_KEY || process.env.TRADING_PRIVATE_KEY || "";
+
 const config: HardhatUserConfig = {
     solidity: {
         version: "0.8.24",
@@ -30,13 +32,13 @@ const config: HardhatUserConfig = {
         // Polygon Mainnet
         polygon: {
             url: process.env.MAINNET_FORK_RPC_URL || "https://polygon-rpc.com",
-            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
             chainId: 137,
         },
         // Polygon Amoy Testnet
         amoy: {
             url: process.env.AMOY_RPC_URL || "https://rpc.ankr.com/polygon_amoy/8bcbd6bdb3c597de68e3ec1be4bf2e8433ee789181e3cdb1d9a3e74ceb005aeb",
-            accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+            accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
             chainId: 80002,
         },
     },
