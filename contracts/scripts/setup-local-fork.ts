@@ -21,29 +21,22 @@ async function main() {
 
     console.log(`Deployer: ${deployer.address}`);
 
+    // 0. Deploy Treasury
+    console.log("🏦 Deploying Treasury...");
+    const Treasury = await ethers.getContractFactory("Treasury");
+    const treasury = await Treasury.deploy(USDC_ADDRESS, deployer.address);
+    await treasury.waitForDeployment();
+    const treasuryAddress = await treasury.getAddress();
+    console.log(`✅ Treasury deployed: ${treasuryAddress}`);
+
     // 1. Deploy ProxyFactory
     console.log("🏭 Deploying ProxyFactory...");
-    // We assume the artifact exists in contracts/artifacts
-    // We can use hardhat-deployed artifacts usually found in ../contracts/artifacts/...
-    // But since this script is in `frontend/scripts`, loading artifacts is tricky without hardhat runtime context.
-    // OPTION: We prefer to run this via `npx hardhat run scripts/setup-local-fork.ts` inside `contracts/` directory?
-    // NO, we are in `frontend`.
-    // Let's use the ABIs from the SDK if possible, OR Require the JSONs from relative path.
-
-    // Actually, `deploy-executor.ts` used `ethers.getContractFactory`. That only works if running via Hardhat.
-    // So this script MUST be run via `npx hardhat run ...` inside `contracts` folder, OR we just use raw ethers + bytecode.
-    // BUT we don't have the bytecode easily here.
-
-    // HACK: We will instruct user to run `npx hardhat run ../frontend/scripts/setup-local-fork.ts` FROM `contracts/` directory.
-    // That way `ethers.getContractFactory` works.
-
-    // However, for this file content, we assume it's running in Hardhat context.
     const ProxyFactory = await ethers.getContractFactory("ProxyFactory");
     // ProxyFactory(usdc, ctfExchange, treasury, owner)
     const factory = await ProxyFactory.deploy(
         USDC_ADDRESS,
         CLOB_EXCHANGE,
-        deployer.address, // Treasury = Deployer for test
+        treasuryAddress, // Actual Treasury Contract
         deployer.address  // Owner = Deployer
     );
     await factory.waitForDeployment();
@@ -100,6 +93,7 @@ async function main() {
     console.log("\n============================================");
     console.log("\n============================================");
     console.log(`✅ Factory Address: ${factoryAddress}`);
+    console.log(`✅ Treasury Address: ${treasuryAddress}`);
 
     // Automate .env update
     try {
@@ -111,18 +105,23 @@ async function main() {
             envContent = fs.readFileSync(envPath, 'utf8');
         }
 
-        const varName = "NEXT_PUBLIC_PROXY_FACTORY_ADDRESS";
-        const newline = `${varName}="${factoryAddress}"`;
+        const updates = {
+            "NEXT_PUBLIC_PROXY_FACTORY_ADDRESS": factoryAddress,
+            "NEXT_PUBLIC_TREASURY_ADDRESS": treasuryAddress
+        };
 
-        if (envContent.includes(varName)) {
-            const regex = new RegExp(`${varName}=.*`, 'g');
-            envContent = envContent.replace(regex, newline);
-        } else {
-            envContent += `\n${newline}\n`;
+        for (const [key, value] of Object.entries(updates)) {
+            const newline = `${key}="${value}"`;
+            if (envContent.includes(key)) {
+                const regex = new RegExp(`${key}=.*`, 'g');
+                envContent = envContent.replace(regex, newline);
+            } else {
+                envContent += `\n${newline}\n`;
+            }
         }
 
         fs.writeFileSync(envPath, envContent);
-        console.log(`🤖 Auto-updated ${varName} in frontend/.env`);
+        console.log(`🤖 Auto-updated .env with Factory and Treasury addresses`);
     } catch (e: any) {
         console.warn(`⚠️ Failed to auto-update .env: ${e.message}`);
     }
