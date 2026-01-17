@@ -17,14 +17,14 @@ bash
 # 1. 部署 Executor & 初始化 Worker Fleet
 cd contracts
 npx hardhat run scripts/deploy-executor.ts --network localhost
-# ⚠️ 记下输出的 Executor Address，更新 .env (NEXT_PUBLIC_EXECUTOR_ADDRESS)
+# ✅ 脚本会自动更新 .env 中的 NEXT_PUBLIC_EXECUTOR_ADDRESS
 
 # 2. 部署 Factory & 创建 User Proxy
 # 注意：此脚本会读取 frontend/.env
-npx hardhat run ../frontend/scripts/setup-local-fork.ts --network localhost
-# ⚠️ 记下输出的 Factory Address，更新 .env (NEXT_PUBLIC_PROXY_FACTORY_ADDRESS)
+npx hardhat run scripts/setup-local-fork.ts --network localhost
+# ✅ 脚本会自动更新 .env 中的 NEXT_PUBLIC_PROXY_FACTORY_ADDRESS，并自动授权 Executor
 
-(确保 .env 更新并保存后再进行下一步)
+(脚本执行完毕后，.env 已自动更新，直接进行下一步)
 
 🖥️ 终端 3: 初始化数据 & 启动 Supervisor
 配置跟单关系，并启动监控服务。
@@ -39,6 +39,10 @@ npx tsx scripts/seed-test-config.ts
 # - 任务队列 (Job Queue): 防止并发丢单
 # - 自动加油站 (Auto-Refuel): 监控 Fleet 余额
 # - 内存池嗅探 (Mempool Sniping): 支持批量转账
+# ✅ 本地仿真优化:
+# 当检测到 Localhost (ChainID 31337) 时，TradingService 会自动进入 "Mock Mode"：
+# 跳过真实 CLOB 鉴权，模拟下单成功，避免 401/404 错误。
+
 npx tsx scripts/copy-trading-supervisor.ts
 
 您应该看到 Supervisor 启动并显示 Fleet: 20/20 ready，且能够看到 [TaskQueue] 日志。

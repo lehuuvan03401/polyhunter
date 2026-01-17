@@ -35,6 +35,7 @@ export const POLYGON_AMOY = 80002;
 
 // CLOB Host
 const CLOB_HOST = 'https://clob.polymarket.com';
+const LOCAL_CHAIN_ID = 31337;
 
 // ============================================================================
 // Types
@@ -180,6 +181,20 @@ export class TradingService {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
+    if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+      console.log(`[TradingService] ⚠️ Localhost detected. Mocking CLOB initialization.`);
+      this.credentials = {
+        key: 'mock-key',
+        secret: 'mock-secret',
+        passphrase: 'mock-passphrase',
+      };
+      // We still create the client but we will bypass it in methods
+      this.clobClient = new ClobClient(CLOB_HOST, this.chainId, this.wallet);
+      console.log(`[TradingService] Initialized with Chain ID: ${this.chainId} (Local=${LOCAL_CHAIN_ID})`);
+      this.initialized = true;
+      return;
+    }
+
     // Create CLOB client with L1 auth (wallet)
     this.clobClient = new ClobClient(CLOB_HOST, this.chainId, this.wallet);
 
@@ -206,6 +221,9 @@ export class TradingService {
     );
 
     this.initialized = true;
+    return;
+
+    this.initialized = true;
   }
 
   private async ensureInitialized(): Promise<ClobClient> {
@@ -227,6 +245,8 @@ export class TradingService {
       return this.tickSizeCache.get(tokenId)! as TickSize;
     }
 
+    if ((this.chainId as any) === LOCAL_CHAIN_ID) return { minimum_tick_size: 0.01 } as any;
+
     const client = await this.ensureInitialized();
     const tickSize = await client.getTickSize(tokenId);
     this.tickSizeCache.set(tokenId, tickSize);
@@ -240,6 +260,8 @@ export class TradingService {
     if (this.negRiskCache.has(tokenId)) {
       return this.negRiskCache.get(tokenId)!;
     }
+
+    if ((this.chainId as any) === LOCAL_CHAIN_ID) return false;
 
     const client = await this.ensureInitialized();
     const negRisk = await client.getNegRisk(tokenId);
@@ -258,6 +280,16 @@ export class TradingService {
     const client = await this.ensureInitialized();
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+      if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+        // Mock success for localhost
+        console.log(`[TradingService] ⚠️ Localhost: Mocking Limit Order for ${params.tokenId}`);
+        return {
+          success: true,
+          orderId: "mock-order-id-" + Date.now(),
+          orderIds: ["mock-order-id-" + Date.now()],
+          transactionHashes: ["0xmockhash"],
+        };
+      }
       try {
         const [tickSize, negRisk] = await Promise.all([
           this.getTickSize(params.tokenId),
@@ -304,6 +336,17 @@ export class TradingService {
    */
   async createMarketOrder(params: MarketOrderParams): Promise<OrderResult> {
     const client = await this.ensureInitialized();
+
+    if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+      // Mock success for localhost
+      console.log(`[TradingService] ⚠️ Localhost: Mocking Market Order for ${params.tokenId}`);
+      return {
+        success: true,
+        orderId: "mock-order-id-" + Date.now(),
+        orderIds: ["mock-order-id-" + Date.now()],
+        transactionHashes: ["0xmockhash"],
+      };
+    }
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       try {
@@ -443,6 +486,13 @@ export class TradingService {
 
   async getOrderBook(tokenId: string): Promise<Orderbook> {
     const client = await this.ensureInitialized();
+    if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+      return {
+        hash: "mock-hash",
+        asks: [{ price: "0.55", size: "1000" }],
+        bids: [{ price: "0.45", size: "1000" }]
+      };
+    }
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       return await client.getOrderBook(tokenId);
     });

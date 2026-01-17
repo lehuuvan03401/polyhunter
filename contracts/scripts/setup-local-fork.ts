@@ -3,66 +3,77 @@ import { ethers, network } from 'hardhat';
 import * as dotenv from 'dotenv';
 import path from 'path';
 
-// Load env from frontend root (adjusted path: ../../frontend/.env)
-dotenv.config({ path: path.resolve(__dirname, '../../frontend/.env') });
+// Load env from frontend root
+// Load env from frontend root
+dotenv.config({ path: path.resolve(__dirname, "../../frontend/.env") });
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const MASTER_PK = process.env.TRADING_PRIVATE_KEY;
+const EXECUTOR_ADDRESS = process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS;
+const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // Polygon USDC
+const CLOB_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"; // Polymarket CLOB
 
 async function main() {
     console.log("🛠️  Setting up Local Fork Environment...");
 
-    // Fallback: If no provider (e.g. not running via hardhat run), this behaves oddly. 
-    // But we are running via hardhat run, so `ethers` and `network` are injected.
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const deployer = MASTER_PK ? new ethers.Wallet(MASTER_PK, provider) : (await ethers.getSigners())[0]; // Fallback to hardhat #0
 
-    // Note: RPC_URL is actually irrelevant inside `npx hardhat run` because Hardhat connects 
-    // to the network specified by `--network localhost`.
-
-    // Get Localhost Signers
-    const signers = await ethers.getSigners();
-    let deployer = signers[0];
-
-    // If TRADING_PRIVATE_KEY is set, we prefer to use that as the "Master Wallet".
-    // But hardhat already derived signers from mnemonic or accounts in config.
-    // If we're on localhost, signers[0] IS the master wallet if we used the same mnemonic.
-    // Let's print to verify.
-    console.log(`Deployer (Hardhat Account #0): ${deployer.address}`);
-
-    // If MASTER_PK is provided but differs from deployer, we might want to use it?
-    // Actually, for simplicity on localhost, we stick to the Hardhat-derived accounts.
-    // They are pre-funded.
+    console.log(`Deployer: ${deployer.address}`);
 
     // 1. Deploy ProxyFactory
     console.log("🏭 Deploying ProxyFactory...");
+    // We assume the artifact exists in contracts/artifacts
+    // We can use hardhat-deployed artifacts usually found in ../contracts/artifacts/...
+    // But since this script is in `frontend/scripts`, loading artifacts is tricky without hardhat runtime context.
+    // OPTION: We prefer to run this via `npx hardhat run scripts/setup-local-fork.ts` inside `contracts/` directory?
+    // NO, we are in `frontend`.
+    // Let's use the ABIs from the SDK if possible, OR Require the JSONs from relative path.
 
-    const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // Polygon USDC
-    const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";   // Polymarket CTF
-    const TREASURY_ADDRESS = deployer.address; // For local test, Master Wallet receives fees
+    // Actually, `deploy-executor.ts` used `ethers.getContractFactory`. That only works if running via Hardhat.
+    // So this script MUST be run via `npx hardhat run ...` inside `contracts` folder, OR we just use raw ethers + bytecode.
+    // BUT we don't have the bytecode easily here.
 
+    // HACK: We will instruct user to run `npx hardhat run ../frontend/scripts/setup-local-fork.ts` FROM `contracts/` directory.
+    // That way `ethers.getContractFactory` works.
+
+    // However, for this file content, we assume it's running in Hardhat context.
     const ProxyFactory = await ethers.getContractFactory("ProxyFactory");
+    // ProxyFactory(usdc, ctfExchange, treasury, owner)
     const factory = await ProxyFactory.deploy(
         USDC_ADDRESS,
-        CTF_ADDRESS,
-        TREASURY_ADDRESS,
-        deployer.address // Owner
+        CLOB_EXCHANGE,
+        deployer.address, // Treasury = Deployer for test
+        deployer.address  // Owner = Deployer
     );
     await factory.waitForDeployment();
     const factoryAddress = await factory.getAddress();
     console.log(`✅ ProxyFactory deployed: ${factoryAddress}`);
 
     // 2. Create Proxy for Master Wallet
-    // We want the proxy to belong to the Deployer (who mimics the User).
     console.log(`👤 Creating Proxy for Master Wallet (${deployer.address})...`);
-    // NOTE: If factory was just deployed, it might not be indexed immediately? No, local is instant.
-    const tx = await factory.connect(deployer).createProxy(1); // Tier 1
+    const tx = await (factory as any).connect(deployer).createProxy(1); // Tier 1
     await tx.wait();
 
     const userProxy = await factory.getUserProxy(deployer.address);
     console.log(`✅ Proxy Created: ${userProxy}`);
 
+    // 3. Authorize Executor on Proxy
+    if (!EXECUTOR_ADDRESS) {
+        throw new Error("❌ NEXT_PUBLIC_EXECUTOR_ADDRESS not found in env. Please run deploy-executor.ts first!");
+    }
+    console.log(`🔑 Authorizing Executor (${EXECUTOR_ADDRESS}) on Proxy...`);
+    // Need Proxy interface. We can use getContractAt if artifact exists, or simpler interface
+    const proxy = await ethers.getContractAt("PolyHunterProxy", userProxy, deployer);
+    const authTx = await proxy.setOperator(EXECUTOR_ADDRESS, true);
+    await authTx.wait();
+    console.log(`✅ Executor Authorized!`);
+
+
     // 3. Fund Proxy with USDC (Simulated)
-    // USDC_ADDRESS is already defined above
-    const IMPERSONATE_USDC_WHALE = "0xe7804c37c13166fF0b37F5aE0BB07A3aEbb6e245"; // Binance Hot Wallet
+    // We need USDC artifact or ABI.
+    // USDC_ADDRESS defined at top
+    const IMPERSONATE_USDC_WHALE = "0xe7804c37c13166fF0b37F5aE0BB07A3aEbb6e245"; // Binace Hot Wallet or similar
 
     console.log("💰 Funding Proxy with USDC (via Whale Impersonation)...");
 
@@ -79,16 +90,42 @@ async function main() {
             "function balanceOf(address account) view returns (uint256)"
         ], whaleSigner);
 
-        const fundAmount = ethers.parseUnits("1000", 6); // 1000 USDC
+        const fundAmount = ethers.parseUnits("100000", 6); // 100000 USDC
         await usdc.transfer(userProxy, fundAmount);
-        console.log(`✅ Funded Proxy with 1000 USDC`);
+        console.log(`✅ Funded Proxy with 100000 USDC`);
     } catch (e: any) {
         console.warn("⚠️ Failed to fund USDC (Are you on a Fork?):", e.message);
     }
 
     console.log("\n============================================");
-    console.log("📝 UPDATE YOUR .env WITH THIS:");
-    console.log(`NEXT_PUBLIC_PROXY_FACTORY_ADDRESS="${factoryAddress}"`);
+    console.log("\n============================================");
+    console.log(`✅ Factory Address: ${factoryAddress}`);
+
+    // Automate .env update
+    try {
+        const fs = require('fs');
+        const envPath = path.resolve(__dirname, "../../frontend/.env"); // relative to contracts/scripts/
+
+        let envContent = "";
+        if (fs.existsSync(envPath)) {
+            envContent = fs.readFileSync(envPath, 'utf8');
+        }
+
+        const varName = "NEXT_PUBLIC_PROXY_FACTORY_ADDRESS";
+        const newline = `${varName}="${factoryAddress}"`;
+
+        if (envContent.includes(varName)) {
+            const regex = new RegExp(`${varName}=.*`, 'g');
+            envContent = envContent.replace(regex, newline);
+        } else {
+            envContent += `\n${newline}\n`;
+        }
+
+        fs.writeFileSync(envPath, envContent);
+        console.log(`🤖 Auto-updated ${varName} in frontend/.env`);
+    } catch (e: any) {
+        console.warn(`⚠️ Failed to auto-update .env: ${e.message}`);
+    }
     console.log("============================================");
 }
 
