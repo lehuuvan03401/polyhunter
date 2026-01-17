@@ -25,6 +25,8 @@ import { createUnifiedCache, UnifiedCache } from '../../src/core/unified-cache';
 import { WalletManager, WorkerContext } from '../../src/core/wallet-manager';
 import { MempoolDetector } from '../../src/core/mempool-detector';
 import { TaskQueue } from '../../src/core/task-queue';
+import { DebtManager } from '../../src/core/debt-manager';
+import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -65,6 +67,9 @@ const prisma = new PrismaClient({
     log: ['error'], // Less logs for supervisor
 });
 
+const debtRepository = new PrismaDebtRepository(prisma);
+const debtLogger = new PrismaDebtLogger(prisma);
+
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 
 // Infrastructure
@@ -84,10 +89,10 @@ const masterTradingService = new TradingService(
 );
 
 // 2. Execution Service (Logic Container)
-const executionService = new CopyTradingExecutionService(masterTradingService, masterTradingService.getWallet(), CHAIN_ID);
+const executionService = new CopyTradingExecutionService(masterTradingService, masterTradingService.getWallet(), CHAIN_ID, debtLogger);
 
 // 3. Wallet Manager (The Fleet)
-let walletManager: WalletManager;
+let walletManager: WalletManager | null = null;
 
 if (MASTER_MNEMONIC) {
     walletManager = new WalletManager(
@@ -105,6 +110,8 @@ if (MASTER_MNEMONIC) {
     // Mock a single-worker manager for compatibility? 
     // Actually, we can just fail or ask user. For now, let's warn.
 }
+
+const debtManager = walletManager ? new DebtManager(debtRepository, walletManager, provider, CHAIN_ID) : null;
 
 // --- STATE ---
 interface ActiveConfig {
@@ -454,6 +461,13 @@ async function main() {
             await walletManager.ensureFleetBalances(masterTradingService.getWallet(), 0.1, 0.5);
         }
     }, 60000 * 5); // Check every 5 minutes
+
+    // Debt Recovery Loop
+    setInterval(async () => {
+        if (debtManager) {
+            await debtManager.recoverPendingDebts();
+        }
+    }, 60000 * 2); // Check every 2 minutes
 
     // Listen to Contracts
     const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);

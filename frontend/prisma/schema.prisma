@@ -259,3 +259,20 @@ model SyncLog {
   @@index([type])
   @@index([startedAt])
 }
+
+// Debt Record for tracking failed reimbursements
+model DebtRecord {
+  id           String    @id @default(cuid())
+  proxyAddress String
+  botAddress   String
+  amount       Float
+  currency     String // e.g. "USDC" or Token Address
+  status       String // "PENDING", "REPAID"
+  errorLog     String?
+  createdAt    DateTime  @default(now())
+  repaidAt     DateTime?
+
+  @@index([proxyAddress])
+  @@index([botAddress])
+  @@index([status])
+}

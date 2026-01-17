@@ -186,4 +186,11 @@ export class WalletManager {
     public getAllAddresses(): string[] {
         return Array.from(this.workers.keys());
     }
+
+    /**
+     * Get signer for a specific address (used for Debt Recovery)
+     */
+    public getSignerForAddress(address: string): ethers.Wallet | undefined {
+        return this.workers.get(address)?.signer;
+    }
 }

@@ -39,15 +39,32 @@ export interface ExecutionResult {
     proxyAddress?: string;
 }
 
+export interface DebtLogger {
+    logDebt(debt: {
+        proxyAddress: string;
+        botAddress: string;
+        amount: number;
+        currency: string;
+        error: string;
+    }): Promise<void>;
+}
+
 export class CopyTradingExecutionService {
     private tradingService: TradingService;
     private defaultSigner: ethers.Signer;
     private chainId: number;
+    private debtLogger?: DebtLogger;
 
-    constructor(tradingService: TradingService, defaultSigner: ethers.Signer, chainId: number = 137) {
+    constructor(
+        tradingService: TradingService,
+        defaultSigner: ethers.Signer,
+        chainId: number = 137,
+        debtLogger?: DebtLogger
+    ) {
         this.tradingService = tradingService;
         this.defaultSigner = defaultSigner; // Bot signer (Default Operator)
         this.chainId = chainId;
+        this.debtLogger = debtLogger;
     }
 
     private getSigner(overrideSigner?: ethers.Signer): ethers.Signer {
@@ -424,9 +441,38 @@ export class CopyTradingExecutionService {
                     returnTransferTxHash = reimbursement.txHash; // Re-use field for simplicity or add new one
                 } else {
                     console.error(`[CopyExec] 🚨 REIMBURSEMENT FAILED! Bot paid but Proxy didn't pay back: ${reimbursement.error}`);
+
+                    // DEBT RECORDING
+                    if (this.debtLogger) {
+                        const botAddr = await params.signer!.getAddress();
+                        this.debtLogger.logDebt({
+                            proxyAddress,
+                            botAddress: botAddr,
+                            amount,
+                            currency: 'USDC',
+                            error: reimbursement.error || 'Transfer Failed'
+                        }).then(() => console.log(`[CopyExec] 📝 Debt recorded for ${proxyAddress}`))
+                            .catch(e => console.error(`[CopyExec] ❌ Failed to record debt:`, e));
+                    }
                 }
             } catch (err: any) {
                 console.error(`[CopyExec] 🚨 REIMBURSEMENT CRITICAL ERROR!`, err);
+
+                // DEBT RECORDING
+                if (this.debtLogger) {
+                    try {
+                        await this.debtLogger.logDebt({
+                            proxyAddress,
+                            botAddress: await params.signer!.getAddress(),
+                            amount,
+                            currency: 'USDC',
+                            error: err.message || 'Unknown Reimbursement Error'
+                        });
+                        console.log(`[CopyExec] 📝 Debt recorded for ${proxyAddress}`);
+                    } catch (logErr) {
+                        console.error(`[CopyExec] ❌ Failed to record debt:`, logErr);
+                    }
+                }
             }
 
         } else if (useProxyFunds) {
