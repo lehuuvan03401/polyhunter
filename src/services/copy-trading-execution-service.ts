@@ -24,6 +24,7 @@ export interface ExecutionParams {
     orderType?: 'market' | 'limit';
     signer?: ethers.Signer; // Explicit signer for this execution (Worker Wallet)
     tradingService?: TradingService; // Explicit TradingService (with correct CLOB auth)
+    overrides?: ethers.Overrides; // Gas overrides for On-Chain txs
 }
 
 export interface ExecutionResult {
@@ -123,9 +124,9 @@ export class CopyTradingExecutionService {
     }
 
     /**
-     * Transfer funds from Proxy to Bot (Operator)
+     * Transfer funds from Proxy to Bot (Pull-First)
      */
-    async transferFromProxy(proxyAddress: string, amount: number, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferFromProxy(proxyAddress: string, amount: number, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const executionSigner = this.getSigner(signer);
@@ -151,7 +152,8 @@ export class CopyTradingExecutionService {
             const tx = await executor.executeOnProxy(
                 proxyAddress,
                 addresses.usdc,
-                transferData
+                transferData,
+                overrides || {} // Apply overrides here
             );
             const receipt = await tx.wait();
 
@@ -166,14 +168,14 @@ export class CopyTradingExecutionService {
     /**
      * Transfer funds from Bot back to Proxy
      */
-    async transferToProxy(proxyAddress: string, tokenAddress: string, amount: number, decimals: number = USDC_DECIMALS, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferToProxy(proxyAddress: string, tokenAddress: string, amount: number, decimals: number = USDC_DECIMALS, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const executionSigner = this.getSigner(signer);
             const token = new ethers.Contract(tokenAddress, ERC20_ABI, executionSigner);
             const amountWei = ethers.utils.parseUnits(amount.toFixed(decimals), decimals);
 
             console.log(`[CopyExec] Returning funds to Proxy...`);
-            const tx = await token.transfer(proxyAddress, amountWei);
+            const tx = await token.transfer(proxyAddress, amountWei, overrides || {});
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Return transfer complete: ${receipt.transactionHash}`);
@@ -187,7 +189,7 @@ export class CopyTradingExecutionService {
     /**
      * Pull Tokens from Proxy to Bot (for SELL)
      */
-    async transferTokensFromProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferTokensFromProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const executionSigner = this.getSigner(signer);
@@ -215,7 +217,8 @@ export class CopyTradingExecutionService {
             const tx = await executor.executeOnProxy(
                 proxyAddress,
                 CONTRACT_ADDRESSES.ctf,
-                transferData
+                transferData,
+                overrides || {} // Apply overrides here
             );
             const receipt = await tx.wait();
 
@@ -230,7 +233,7 @@ export class CopyTradingExecutionService {
     /**
      * Push Tokens from Bot to Proxy (after BUY)
      */
-    async transferTokensToProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    async transferTokensToProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
             const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
             const executionSigner = this.getSigner(signer);
@@ -247,7 +250,8 @@ export class CopyTradingExecutionService {
                 proxyAddress,
                 tokenId,
                 amountWei,
-                "0x"
+                "0x",
+                overrides || {}
             );
             const receipt = await tx.wait();
 
@@ -325,7 +329,7 @@ export class CopyTradingExecutionService {
                     }
 
                     // Transfer USDC from Proxy
-                    const transferResult = await this.transferFromProxy(proxyAddress, amount, params.signer);
+                    const transferResult = await this.transferFromProxy(proxyAddress, amount, params.signer, params.overrides);
                     if (!transferResult.success) {
                         return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}` };
                     }
@@ -337,7 +341,7 @@ export class CopyTradingExecutionService {
                 // Always Standard Path for SELL (Token Custody in Proxy)
                 const sharesToSell = amount / price;
 
-                const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell, params.signer);
+                const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell, params.signer, params.overrides);
                 if (!pullResult.success) {
                     return { success: false, error: `Proxy token pull failed: ${pullResult.error}` };
                 }
@@ -393,11 +397,11 @@ export class CopyTradingExecutionService {
             if (useProxyFunds) {
                 if (side === 'BUY') {
                     // Refund USDC (Standard Path)
-                    await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, params.signer);
+                    await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, params.signer, params.overrides);
                 } else { // SELL
                     // Refund Tokens (Standard Path)
                     const sharesToReturn = amount / price;
-                    await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer);
+                    await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer, params.overrides);
                 }
             }
             // NOTE: If usedBotFloat, we just spent nothing (failed before trade), so nothing to refund.
@@ -569,48 +573,76 @@ export class CopyTradingExecutionService {
     async calculateDynamicSlippage(
         tokenId: string,
         side: 'BUY' | 'SELL',
-        amountShares: number,
+        amountUSDC: number,
         currentPrice: number,
         preFetchedBook?: Orderbook | null // Optional optimization
     ): Promise<number> {
         try {
-            const orderbook = preFetchedBook || await this.tradingService.getOrderBook(tokenId);
-
-            if (!orderbook) throw new Error("No Orderbook data");
-
-            // BUY needs ASKS to fill. SELL needs BIDS to fill.
-            const bookSide = side === 'BUY' ? orderbook.asks : orderbook.bids;
-
-            let accumulatedSize = 0;
-            let worstPrice = currentPrice;
-
-            for (const level of bookSide) {
-                const levelSize = Number(level.size);
-                const levelPrice = Number(level.price);
-
-                accumulatedSize += levelSize;
-                worstPrice = levelPrice;
-
-                if (accumulatedSize >= amountShares) {
-                    break;
-                }
+            // If no orderbook provided, fetch it
+            if (!preFetchedBook) {
+                preFetchedBook = await this.tradingService.getOrderBook(tokenId);
             }
 
-            // Calculate impact
-            // Slippage = |(Worst - Current) / Current|
-            const impact = Math.abs((worstPrice - currentPrice) / currentPrice);
+            const orderbook = preFetchedBook;
+            if (!orderbook) return 0.05;
 
-            // Add 20% safety buffer to the impact
-            const buffer = impact * 0.2;
-            const dynamicSlippage = impact + buffer;
+            // BUY needs ASKS to fill. SELL needs BIDS to fill.
+            const levels = side === 'BUY' ? orderbook.asks : orderbook.bids;
+            if (!levels || levels.length === 0) return 0.05;
 
-            console.log(`[DynamicSlippage] Impact: ${(impact * 100).toFixed(2)}%, Buffer: ${(buffer * 100).toFixed(2)}%, Total: ${(dynamicSlippage * 100).toFixed(2)}%`);
+            let remaining = amountUSDC;
+            // NOTE: amountUSDC is the "Size Value". 
+            // For BUY: We are spending $amountUSDC.
+            // For SELL: We are selling shares worth roughly $amountUSDC (at approx price).
+            //           BUT level.size is SHARES. 
 
-            // Enforce minimum 0.5%
-            return Math.max(dynamicSlippage, 0.005);
-        } catch (e: any) {
-            console.warn(`[DynamicSlippage] Failed to calc, using default 2%: ${e.message}`);
-            return 0.02;
+            let worstPrice = 0;
+            let bestPrice = parseFloat(levels[0].price);
+
+            for (const level of levels) {
+                const levelPrice = parseFloat(level.price);
+                const levelSize = parseFloat(level.size); // Shares
+                const levelValue = levelPrice * levelSize; // USDC Value
+
+                // Consuming Liquidity
+                // If we are BUYING, we eat up Value.
+                // If we are SELLING, we eat up SHARES (but amount passed is usually USDC Value in our current signature?)
+                // Let's assume amount passed to this function is roughly the USDC Value size of the order.
+
+                const valueToTake = Math.min(remaining, levelValue);
+                remaining -= valueToTake;
+                worstPrice = levelPrice;
+
+                if (remaining <= 0) break;
+            }
+
+            if (remaining > 0) {
+                console.warn(`[SmartSlippage] ⚠️ Warning: Orderbook shallow! Requested: ${amountUSDC}, Remaining unfillable: ${remaining}`);
+                return 0.10; // 10% safety cap for illiquid
+            }
+
+            // Impact
+            // BUY: (Worst - Best) / Best
+            // SELL: (Best - Worst) / Best
+            let impact = 0;
+            if (side === 'BUY') {
+                impact = (worstPrice - bestPrice) / bestPrice;
+            } else {
+                impact = (bestPrice - worstPrice) / bestPrice;
+            }
+
+            if (impact < 0) impact = 0;
+
+            const buffer = 0.005; // 0.5% buffer
+            const totalSlippage = impact + buffer;
+
+            console.log(`[SmartSlippage] 🌊 ${side} $${amountUSDC} -> Impact: ${(impact * 100).toFixed(2)}% (Worst: ${worstPrice}), Final: ${(totalSlippage * 100).toFixed(2)}%`);
+
+            return totalSlippage;
+
+        } catch (e) {
+            console.error(`[SmartSlippage] Error calculating:`, e);
+            return 0.05; // Default error fallback
         }
     }
 }

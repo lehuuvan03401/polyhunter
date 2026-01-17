@@ -162,3 +162,69 @@ pm2 stop poly-supervisor
 **扩容 (Scaling)**:
 若需支持更多并发用户，修改 `frontend/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
 *注意: 增加 Worker 数量意味着需要更多的 Gas 储备。*
+
+
+
+要转到 真实生产环境 (Production)，流程大体一致，但有几个关键的“替换”和“注意点”。
+
+以下是生产环境部署的差异与修正清单：
+
+1. 核心差异：不能做的事 (Local vs Prod)
+步骤	本地仿真 (Local)	生产环境 (Production)	为什么？
+部署 Proxy	setup-local-fork.ts	❌ 不要运行此脚本	本地脚本用的是测试账号。生产环境用户是在前端界面点击“创建账户”来部署 Proxy 的。
+资金来源	setup-local-fork.ts (偷大户)	真实充值	生产环境您必须往 Master Wallet 转入真实的 MATIC，用户需往 Proxy 充值真实的 USDC。
+触发交易	impersonate- 脚本 (模拟信号)	真实监听	Supervisor 会自动监听链上 CTF Exchange 的真实交易。不需要手动脚本触发。
+Mock 模式	自动开启 (ChainID 31337)	自动关闭	当您设置 ChainID=137 时，TradingService 会自动尝试连接真实 Polymarket 接口。
+2. 生产环境部署清单 (Checklist)
+请按以下步骤将系统推向 Polygon Mainnet：
+
+A. 环境变量修正 (.env)
+将 .env 修改为真实的主网配置：
+
+bash
+# ⚠️ 必须是 137 (Polygon Mainnet)
+NEXT_PUBLIC_CHAIN_ID=137
+# ⚠️ 必须是高质量的节点 (Alchemy/Infura付费版)，必须支持 WebSocket (wss://)
+# 只有 WebSocket 才能做到毫秒级监听 Mempool
+NEXT_PUBLIC_RPC_URL="wss://polygon-mainnet.g.alchemy.com/v2/您的API_KEY"
+# ⚠️ 您的真实助记词 (管理整个 Fleet)
+TRADING_MNEMONIC="您的 12 个助记词 ..."
+# ⚠️ 生产级数据库 (不要用 SQLite 文件)
+DATABASE_URL="postgresql://user:pass@AWS_RDS_HOST:5432/mydb"
+B. 基础设施部署 (仅需一次)
+您需要在主网上部署一个属于您的 Executor 合约（Fleet Commander）。
+
+bash
+cd contracts
+# 注意：确保此时 .env 里是主网配置
+npx hardhat run scripts/deploy-executor.ts --network polygon
+执行后，将获得的地址填入 .env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS。
+
+C. 启动服务 (PM2)
+生产环境不要直接用 npx tsx 跑前台，要用 PM2 守护进程。 参考 docs/operations/production_deployment.md：
+
+bash
+# 启动 Supervisor (7x24小时运行)
+pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
+# 启动前端
+npm run build
+pm2 start "npm start" --name poly-frontend
+3. 需要特别注意的风险
+CLOB API 鉴权：
+在 Mock 模式下我们跳过了鉴权。
+在生产环境，Worker 钱包第一次启动时，会自动签名消息去 Polymarket 申请 API Key。确保 Worker 钱包里有少量的 MATIC，虽然申请 Key 只需签名不耗 Gas，但建立连接和后续下单需要 Gas。
+Auto-Refuel 机制会自动解决这个问题，只要您的 Master Wallet 有钱。
+RPC 速率限制：
+本地测试没有限制。
+生产环境如果并发 20 个 Worker 同时查余额或下单，可能会瞬间打爆免费的 RPC 节点。务必使用付费的 Alchemy/Infura 节点，或者在代码中调大 src/core/rate-limiter.ts 的限制。
+资金安全：
+TRADING_MNEMONIC 控制所有跟单资金。请务必妥善保管。
+结论： 代码逻辑已经 Ready。只要改一下配置（Env），部署一次合约（Executor），并给钱包充钱，这套系统就能在 Polygon 主网上跑起来。建议先用小资金（10 USDC）进行一次真实验证。
+
+
+
+# 启动 Supervisor (7x24小时运行)
+pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
+# 启动前端
+npm run build
+pm2 start "npm start" --name poly-frontend

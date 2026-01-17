@@ -16,7 +16,8 @@ export type MempoolCallback = (
     from: string,
     to: string,
     id: ethers.BigNumber,
-    value: ethers.BigNumber
+    value: ethers.BigNumber,
+    gasInfo?: { maxFeePerGas?: ethers.BigNumber, maxPriorityFeePerGas?: ethers.BigNumber }
 ) => void;
 
 export class MempoolDetector {
@@ -85,7 +86,15 @@ export class MempoolDetector {
 
                 // Check Trader (Sender or Receiver)
                 if (this.monitoredTraders.has(from) || this.monitoredTraders.has(to)) {
-                    this.callback(txHash, tx.from, from, to, id, amount);
+                    this.callback(
+                        txHash,
+                        tx.from,
+                        from,
+                        to,
+                        id,
+                        amount,
+                        { maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas }
+                    );
                 }
 
             } else if (tx.data.startsWith(SAFE_BATCH_TRANSFER_FROM_SELECTOR)) {
@@ -99,9 +108,16 @@ export class MempoolDetector {
 
                 // Optimization: Check trader ONCE before looping
                 if (this.monitoredTraders.has(from) || this.monitoredTraders.has(to)) {
-                    // Loop through batch and emit individual callbacks
                     for (let i = 0; i < ids.length; i++) {
-                        this.callback(txHash, tx.from, from, to, ids[i], amounts[i]);
+                        this.callback(
+                            txHash,
+                            tx.from,
+                            from,
+                            to,
+                            ids[i],
+                            amounts[i],
+                            { maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas }
+                        );
                     }
                 }
             }

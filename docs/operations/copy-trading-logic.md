@@ -64,3 +64,29 @@ Settlement (回款)：Bot 将得到的 USDC 全部转回 User Proxy。
 对策：必须使用付费的独享 RPC 节点（如 Alchemy Growth Plan），这一点在生产环境通过 .env 配置即可解决，但必须重视。
 总结：逻辑通过测试，流程闭环。只要解决了基础设施（付费 RPC）和初始资金配置，这是一套战斗力很强的系统。
 
+
+
+1. 真实环境监听逻辑 (The Eyes)
+我们在生产环境这套系统的“眼睛”由两部分组成，互为补充：
+
+A. 🐢 区块监听 (Event Listening)
+
+原理：Supervisor 监听 CTF 合约的 TransferSingle 事件。
+代码：ctf.on("TransferSingle", handleTransfer)
+逻辑：
+每当链上有包含 CTF Token 的交易打包上链（Block），事件触发。
+Supervisor 检查 from（卖方）或 
+to
+（买方）是否在我们的 monitoredTraders 列表里。
+如果是，立即触发跟单。
+特点：绝对可靠，不会漏单，但比该大户的交易慢 1 个区块（约 2 秒）。
+B. 🦈 内存池嗅探 (Mempool Sniping - 企业级特性)
+
+原理：Supervisor 通过 WebSocket (ws://...) 监听节点尚未打包的 Pending Transactions。
+代码：src/core/mempool-detector.ts
+逻辑：
+实时捕获全网所有待打包交易。
+解码交易数据 (input data)，看是否调用了 safeTransferFrom 或 safeBatchTransferFrom。
+如果交易发起者 (from) 是我们监控的大户，立即触发跟单。
+优势：理论上能与大户在同一区块甚至在大户之前（如果给更高的 Gas）成交。这就是所谓的“抢跑”。
+

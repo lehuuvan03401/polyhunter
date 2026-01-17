@@ -104,6 +104,8 @@ if (MASTER_MNEMONIC) {
         0,  // Start Index
         CHAIN_ID
     );
+    // CRITICAL: Initialize Fleet Credentials
+    await walletManager.initialize();
 } else {
     console.warn("⚠️ NO MNEMONIC FOUND! Supervisor running in SINGLE WORKER mode (Legacy).");
     console.warn("Please set TRADING_MNEMONIC in .env for parallel scale.");
@@ -130,7 +132,7 @@ let monitoredTraders: Set<string> = new Set();
 let isProcessing = false;
 
 // --- QUEUE ---
-interface JobParams {
+interface JobQueueItem {
     config: ActiveConfig;
     side: 'BUY' | 'SELL';
     tokenId: string;
@@ -138,8 +140,9 @@ interface JobParams {
     originalTrader: string;
     originalSize: number;
     isPreflight: boolean;
+    overrides?: ethers.Overrides;
 }
-const jobQueue = new TaskQueue<JobParams>(1000);
+const jobQueue = new TaskQueue<JobQueueItem>(1000);
 
 async function checkQueue() {
     if (jobQueue.isEmpty) return;
@@ -277,8 +280,21 @@ const handleSniffedTx = async (
     from: string,
     to: string,
     id: ethers.BigNumber,
-    value: ethers.BigNumber
+    value: ethers.BigNumber,
+    gasInfo?: { maxFeePerGas?: ethers.BigNumber, maxPriorityFeePerGas?: ethers.BigNumber }
 ) => {
+    // 0. Calculate Gas Boost (Front-Running)
+    let overrides: ethers.Overrides = {};
+    if (gasInfo && gasInfo.maxFeePerGas && gasInfo.maxPriorityFeePerGas) {
+        // Boost by 10% (1.10) or more
+        const BOOST_FACTOR = 115; // 115 = 1.15
+        overrides = {
+            maxFeePerGas: gasInfo.maxFeePerGas.mul(BOOST_FACTOR).div(100),
+            maxPriorityFeePerGas: gasInfo.maxPriorityFeePerGas.mul(BOOST_FACTOR).div(100)
+        };
+        console.log(`[Supervisor] 🚀 Gas Boost: Target ${ethers.utils.formatUnits(gasInfo.maxPriorityFeePerGas, 'gwei')} -> Boosted ${ethers.utils.formatUnits(overrides.maxPriorityFeePerGas as ethers.BigNumber, 'gwei')} Gwei`);
+    }
+
     // Deduplication: If we process mempool, we should cache the 'id/hash' so the Event Listener doesn't double-execute?
     // Or we simply let the second execution fail/idempotency check.
     // For now, let's just log and trigger.
@@ -314,12 +330,10 @@ const handleSniffedTx = async (
         // Price might be slightly different as it's pending, but we use strict/market anyway.
         const PRICE_PLACEHOLDER = 0.5;
 
-        subscribers.forEach(async (sub) => {
-            // Pass 'isPreflight' or high gas instructions if needed
-            // For now, reuse processJob. 
-            // Ideally we pass a flag to use HIGHER GAS for the proactive tx.
-            await processJob(sub, side!, tokenId, PRICE_PLACEHOLDER, trader!, originalSize, true);
-        });
+        for (const config of subscribers) {
+            // Process Job (Pass 1000 shares example size if needed, mostly fixedAmount uses config)
+            processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, originalSize, true, overrides);
+        }
 
     } catch (e) {
         console.error(`[Supervisor] Mempool sniff error:`, e);
@@ -333,7 +347,8 @@ async function processJob(
     approxPrice: number,
     originalTrader: string,
     originalSize: number,
-    isPreflight: boolean = false
+    isPreflight: boolean = false,
+    overrides?: ethers.Overrides
 ) {
     // 1. Try Checkout Worker
     let worker: WorkerContext | null = null;
@@ -361,7 +376,8 @@ async function processJob(
             approxPrice,
             originalTrader,
             originalSize,
-            isPreflight
+            isPreflight,
+            overrides // Pass overrides to the queued job
         });
         if (queued) {
             console.warn(`[Supervisor] ⏳ All workers busy. Job QUEUED for User ${config.walletAddress}. Queue size: ${jobQueue.length}`);
@@ -372,7 +388,7 @@ async function processJob(
     }
 
     // 3. Execute
-    await executeJobInternal(worker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight);
+    await executeJobInternal(worker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight, overrides);
 }
 
 async function executeJobInternal(
@@ -383,7 +399,8 @@ async function executeJobInternal(
     approxPrice: number,
     originalTrader: string,
     originalSize: number,
-    isPreflight: boolean
+    isPreflight: boolean,
+    overrides?: ethers.Overrides
 ) {
     const workerAddress = worker.address;
     const typeLabel = isPreflight ? "🦈 MEMPOOL" : "🐢 BLOCK";
@@ -405,7 +422,8 @@ async function executeJobInternal(
             maxSlippage: config.maxSlippage,
             slippageMode: config.slippageType,
             signer: worker.signer, // DYNAMIC SIGNER
-            tradingService: worker.tradingService // DYNAMIC SERVICE
+            tradingService: worker.tradingService, // DYNAMIC SERVICE
+            overrides: overrides // GAS OVERRIDES
         };
 
         const result = await executionService.executeOrderWithProxy(baseParams);

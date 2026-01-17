@@ -47,7 +47,7 @@ export class WalletManager {
      * Initialize the wallet fleet from a master mnemonic
      */
     private initializeFleet(mnemonic: string, count: number, startIndex: number) {
-        console.log(`[WalletManager] Initializing fleet of ${count} wallets...`);
+        console.log(`[WalletManager] Scaffolding fleet of ${count} wallets...`);
 
         for (let i = 0; i < count; i++) {
             const index = startIndex + i;
@@ -77,12 +77,34 @@ export class WalletManager {
                 lastUsed: 0,
                 pendingCount: 0
             });
-
-            // Log first few and last to verify
-            if (i < 3 || i === count - 1) {
-                console.log(`[WalletManager] Loaded Worker #${index}: ${wallet.address}`);
-            }
         }
+    }
+
+    /**
+     * Async initialization of all workers (API Keys, L2 Auth)
+     * MUST be called after constructor and before usage.
+     */
+    public async initialize(): Promise<void> {
+        console.log(`[WalletManager] 🚀 Initializing fleet credentials (API Keys) for ${this.workers.size} workers...`);
+        const start = Date.now();
+
+        const workers = Array.from(this.workers.values());
+
+        // Parallel initialization
+        await Promise.all(workers.map(async (worker, idx) => {
+            try {
+                await worker.tradingService.initialize();
+                // console.debug(`[WalletManager] Worker ${worker.address.slice(0,6)} initialized.`);
+            } catch (e: any) {
+                console.error(`[WalletManager] ❌ Failed to init worker ${worker.address.slice(0, 6)}:`, e.message);
+                // We don't throw here to allow partial fleet startup? 
+                // Strict mode: Throw
+                throw e;
+            }
+        }));
+
+        const duration = ((Date.now() - start) / 1000).toFixed(2);
+        console.log(`[WalletManager] ✅ Fleet ready in ${duration}s.`);
     }
 
     /**
