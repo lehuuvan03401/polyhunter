@@ -74,30 +74,36 @@ export class MempoolDetector {
             // 1. Filter: Must be interaction with CTF
             if (tx.to.toLowerCase() !== CONTRACT_ADDRESSES.ctf.toLowerCase()) return;
 
-            // 2. Filter: Must be a known method (safeTransferFrom)
-            if (!tx.data.startsWith(SAFE_TRANSFER_FROM_SELECTOR)) return;
-            // TODO: Handle Batch transfers if needed
+            // 2. Decode based on Selector
+            if (tx.data.startsWith(SAFE_TRANSFER_FROM_SELECTOR)) {
+                // --- Single Transfer ---
+                const decoded = this.iface.parseTransaction({ data: tx.data, value: tx.value });
+                const from = decoded.args.from.toLowerCase();
+                const to = decoded.args.to.toLowerCase();
+                const id = decoded.args.id;
+                const amount = decoded.args.amount;
 
-            // 3. Decode
-            const decoded = this.iface.parseTransaction({ data: tx.data, value: tx.value });
+                // Check Trader (Sender or Receiver)
+                if (this.monitoredTraders.has(from) || this.monitoredTraders.has(to)) {
+                    this.callback(txHash, tx.from, from, to, id, amount);
+                }
 
-            // safeTransferFrom(from, to, id, amount, data)
-            const from = decoded.args.from.toLowerCase();
-            const to = decoded.args.to.toLowerCase();
-            const id = decoded.args.id;
-            const amount = decoded.args.amount;
+            } else if (tx.data.startsWith(SAFE_BATCH_TRANSFER_FROM_SELECTOR)) {
+                // --- Batch Transfer ---
+                console.log(`[Mempool] 📦 Detected BATCH Transfer: ${txHash}`);
+                const decoded = this.iface.parseTransaction({ data: tx.data, value: tx.value });
+                const from = decoded.args.from.toLowerCase();
+                const to = decoded.args.to.toLowerCase();
+                const ids = decoded.args.ids;     // Array
+                const amounts = decoded.args.amounts; // Array
 
-            // 4. Check Trader
-            // Trader could be Sender (Selling/Sending) or Receiver (Buying/Receiving)
-            // Note: In safeTransferFrom, msg.sender is the operator. 'from' is the token owner.
-
-            // If monitored trader is the 'from' (Selling/Sending)
-            if (this.monitoredTraders.has(from)) {
-                this.callback(txHash, tx.from, from, to, id, amount);
-            }
-            // If monitored trader is the 'to' (Buying/Receiving)
-            else if (this.monitoredTraders.has(to)) {
-                this.callback(txHash, tx.from, from, to, id, amount);
+                // Optimization: Check trader ONCE before looping
+                if (this.monitoredTraders.has(from) || this.monitoredTraders.has(to)) {
+                    // Loop through batch and emit individual callbacks
+                    for (let i = 0; i < ids.length; i++) {
+                        this.callback(txHash, tx.from, from, to, ids[i], amounts[i]);
+                    }
+                }
             }
 
         } catch (error) {

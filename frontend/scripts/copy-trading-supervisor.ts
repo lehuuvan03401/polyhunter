@@ -24,6 +24,7 @@ import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache, UnifiedCache } from '../../src/core/unified-cache';
 import { WalletManager, WorkerContext } from '../../src/core/wallet-manager';
 import { MempoolDetector } from '../../src/core/mempool-detector';
+import { TaskQueue } from '../../src/core/task-queue';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -120,6 +121,43 @@ interface ActiveConfig {
 let activeConfigs: ActiveConfig[] = [];
 let monitoredTraders: Set<string> = new Set();
 let isProcessing = false;
+
+// --- QUEUE ---
+interface JobParams {
+    config: ActiveConfig;
+    side: 'BUY' | 'SELL';
+    tokenId: string;
+    approxPrice: number;
+    originalTrader: string;
+    originalSize: number;
+    isPreflight: boolean;
+}
+const jobQueue = new TaskQueue<JobParams>(1000);
+
+async function checkQueue() {
+    if (jobQueue.isEmpty) return;
+
+    // Try to get a worker
+    const worker = walletManager ? walletManager.checkoutWorker() : null;
+    if (!worker) return; // Still no workers
+
+    // Get next job
+    const job = jobQueue.dequeue();
+    if (job) {
+        console.log(`[Supervisor] 📥 Dequeued job for User ${job.config.walletAddress}. Remaining: ${jobQueue.length}`);
+        // Execute (Don't await, let it run in background)
+        executeJobInternal(
+            worker,
+            job.config,
+            job.side,
+            job.tokenId,
+            job.approxPrice,
+            job.originalTrader,
+            job.originalSize,
+            job.isPreflight
+        );
+    }
+}
 
 // --- HELPERS ---
 async function refreshConfigs() {
@@ -290,7 +328,7 @@ async function processJob(
     originalSize: number,
     isPreflight: boolean = false
 ) {
-    // 1. Checkout Worker
+    // 1. Try Checkout Worker
     let worker: WorkerContext | null = null;
     if (walletManager) {
         worker = walletManager.checkoutWorker();
@@ -298,7 +336,6 @@ async function processJob(
         // Fallback: Use Master Wallet if no fleet configured
         const masterWallet = masterTradingService.getWallet();
         if (masterWallet) {
-            // Must connect to provider for on-chain txs
             const connectedWallet = masterWallet.connect(provider);
             worker = {
                 address: masterWallet.address,
@@ -308,12 +345,39 @@ async function processJob(
         }
     }
 
-    // If still no worker (e.g. Master failed), drop job
+    // 2. If no worker, QUEUE IT
     if (!worker) {
-        console.error(`[Supervisor] ❌ DROPPED JOB for User ${config.walletAddress}: No workers available.`);
+        const queued = jobQueue.enqueue({
+            config,
+            side,
+            tokenId,
+            approxPrice,
+            originalTrader,
+            originalSize,
+            isPreflight
+        });
+        if (queued) {
+            console.warn(`[Supervisor] ⏳ All workers busy. Job QUEUED for User ${config.walletAddress}. Queue size: ${jobQueue.length}`);
+        } else {
+            console.error(`[Supervisor] ❌ Job DROPPED (Queue Full) for User ${config.walletAddress}`);
+        }
         return;
     }
 
+    // 3. Execute
+    await executeJobInternal(worker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight);
+}
+
+async function executeJobInternal(
+    worker: WorkerContext,
+    config: ActiveConfig,
+    side: 'BUY' | 'SELL',
+    tokenId: string,
+    approxPrice: number,
+    originalTrader: string,
+    originalSize: number,
+    isPreflight: boolean
+) {
     const workerAddress = worker.address;
     const typeLabel = isPreflight ? "🦈 MEMPOOL" : "🐢 BLOCK";
     console.log(`[Supervisor] 🏃 [${typeLabel}] Assigning User ${config.walletAddress} -> Worker ${workerAddress}`);
@@ -322,9 +386,6 @@ async function processJob(
         // 2. Calculate Size
         let copyAmount = 10; // Default $10
         if (config.fixedAmount) copyAmount = config.fixedAmount;
-        // Logic for percentAmount omitted for brevity in Supervisor, relies on ExecutionService default?
-        // Actually ExecutionService takes absolute amount.
-        // TODO: Implement advanced size calc here using User Balance.
 
         // 3. Execute
         const baseParams: ExecutionParams = {
@@ -340,30 +401,21 @@ async function processJob(
             tradingService: worker.tradingService // DYNAMIC SERVICE
         };
 
-        // If mempool mode, maybe increase gas?
-        // executionService.setAggressiveGas(isPreflight);
-
         const result = await executionService.executeOrderWithProxy(baseParams);
 
-        // 4. Log Result (Async DB write)
         // 4. Log Result (Async DB write)
         await prisma.copyTrade.create({
             data: {
                 configId: config.id,
-                // Original Info
                 originalTrader: originalTrader,
                 originalSide: side,
                 originalSize: originalSize,
                 originalPrice: approxPrice,
                 tokenId: tokenId,
-
-                // Copy Info
                 copySize: copyAmount,
-                copyPrice: approxPrice, // Ideally get from result
-
-                // Status
+                copyPrice: approxPrice,
                 status: result.success ? 'EXECUTED' : 'FAILED',
-                txHash: result.orderId, // In execution service, orderId might be txHash
+                txHash: result.orderId,
                 errorMessage: result.error,
                 executedAt: new Date()
             }
@@ -374,9 +426,11 @@ async function processJob(
     } catch (e: any) {
         console.error(`[Supervisor] 💥 Job Crashed for User ${config.walletAddress}:`, e.message);
     } finally {
-        // 5. Checkin Worker
+        // 5. Checkin Worker AND Trigger Queue
         if (walletManager && worker) {
             walletManager.checkinWorker(worker.address);
+            // TRIGGER NEXT JOB
+            checkQueue();
         }
     }
 }

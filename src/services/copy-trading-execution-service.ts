@@ -251,18 +251,36 @@ export class CopyTradingExecutionService {
      */
     async executeOrderWithProxy(params: ExecutionParams): Promise<ExecutionResult> {
         const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02 } = params;
-        let { proxyAddress } = params;
 
-        // 1. Resolve Proxy
-        if (!proxyAddress) {
-            proxyAddress = await this.resolveProxyAddress(walletAddress, params.signer) || undefined;
-        }
+        console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches...`);
+
+        // 1. Parallel Fetch: Proxy Address + Bot Balance + OrderBook (if Auto Slippage)
+        const fetchStart = Date.now();
+
+        const proxyPromise = params.proxyAddress
+            ? Promise.resolve(params.proxyAddress)
+            : this.resolveProxyAddress(walletAddress, params.signer);
+
+        const botBalancePromise = side === 'BUY' ? this.getBotUsdcBalance(params.signer) : Promise.resolve(0);
+
+        // Optimistic OrderBook fetch if AUTO slippage
+        const orderBookPromise = params.slippageMode === 'AUTO'
+            ? (params.tradingService || this.tradingService).getOrderBook(tokenId).catch(e => null) // Catch error to not block
+            : Promise.resolve(null);
+
+        const [proxyAddress, botBalance, orderbook] = await Promise.all([
+            proxyPromise,
+            botBalancePromise,
+            orderBookPromise
+        ]);
+
+        console.log(`[CopyExec] ⚡️ Fetches complete in ${Date.now() - fetchStart}ms`);
 
         if (!proxyAddress) {
             return { success: false, error: "No Proxy wallet found for user", useProxyFunds: false };
         }
 
-        console.log(`[CopyExec] Executing for ${walletAddress} via Proxy ${proxyAddress}`);
+        console.log(`[CopyExec] Executing via Proxy ${proxyAddress}`);
 
         // 2. Fund Management
         let useProxyFunds = false; // Indicates if we did a Standard Pull (pre-trade)
@@ -274,7 +292,7 @@ export class CopyTradingExecutionService {
         try {
             if (side === 'BUY') {
                 // FLOAT STRATEGY: Check Bot's USDC Balance first
-                const botBalance = await this.getBotUsdcBalance(params.signer);
+                // used botBalance from parallel fetch
 
                 if (botBalance >= amount) {
                     // OPTIMIZED PATH: Use Bot's funds directly
@@ -321,7 +339,8 @@ export class CopyTradingExecutionService {
             // Calculate Dynamic Slippage if AUTO
             let finalSlippage = slippage || 0.02;
             if (params.slippageMode === 'AUTO') {
-                const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, effectiveSize, price);
+                // Pass orderbook if we fetched it
+                const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, effectiveSize, price, orderbook);
                 // Assuming maxSlippage passed as percentage (e.g. 2.0 for 2%) -> convert to decimal
                 // Default to 5% max if not specified
                 const maxAllowed = params.maxSlippage ? (params.maxSlippage / 100) : 0.05;
@@ -505,10 +524,14 @@ export class CopyTradingExecutionService {
         tokenId: string,
         side: 'BUY' | 'SELL',
         amountShares: number,
-        currentPrice: number
+        currentPrice: number,
+        preFetchedBook?: Orderbook | null // Optional optimization
     ): Promise<number> {
         try {
-            const orderbook = await this.tradingService.getOrderBook(tokenId);
+            const orderbook = preFetchedBook || await this.tradingService.getOrderBook(tokenId);
+
+            if (!orderbook) throw new Error("No Orderbook data");
+
             // BUY needs ASKS to fill. SELL needs BIDS to fill.
             const bookSide = side === 'BUY' ? orderbook.asks : orderbook.bids;
 
