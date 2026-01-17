@@ -7,7 +7,7 @@
 bash
 cd contracts
 export ENABLE_FORK=true
-# 确保 frontend/.env 中已设置 NEXT_PUBLIC_CHAIN_ID=31337
+# 确保 frontend/.env 中已设置 NEXT_PUBLIC_CHAIN_ID=1337
 npx hardhat node
 
 🖥️ 终端 2: 部署基础设施 (合约 & Proxy)

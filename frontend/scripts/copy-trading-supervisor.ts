@@ -94,27 +94,7 @@ const executionService = new CopyTradingExecutionService(masterTradingService, m
 
 // 3. Wallet Manager (The Fleet)
 let walletManager: WalletManager | null = null;
-
-if (MASTER_MNEMONIC) {
-    walletManager = new WalletManager(
-        provider,
-        rateLimiter,
-        cache,
-        MASTER_MNEMONIC,
-        20, // Pool Size: 20 Parallel Workers
-        0,  // Start Index
-        CHAIN_ID
-    );
-    // CRITICAL: Initialize Fleet Credentials
-    await walletManager.initialize();
-} else {
-    console.warn("⚠️ NO MNEMONIC FOUND! Supervisor running in SINGLE WORKER mode (Legacy).");
-    console.warn("Please set TRADING_MNEMONIC in .env for parallel scale.");
-    // Mock a single-worker manager for compatibility? 
-    // Actually, we can just fail or ask user. For now, let's warn.
-}
-
-const debtManager = walletManager ? new DebtManager(debtRepository, walletManager, provider, CHAIN_ID) : null;
+let debtManager: DebtManager | null = null;
 
 // --- STATE ---
 interface ActiveConfig {
@@ -536,6 +516,27 @@ let mempoolDetector: MempoolDetector;
 async function main() {
     console.log("Starting Copy Trading Supervisor (Enterprise)...");
 
+    // --- INITIALIZATION ---
+    if (MASTER_MNEMONIC) {
+        walletManager = new WalletManager(
+            provider,
+            rateLimiter,
+            cache,
+            MASTER_MNEMONIC,
+            20, // Pool Size: 20 Parallel Workers
+            0,  // Start Index
+            CHAIN_ID
+        );
+        // CRITICAL: Initialize Fleet Credentials
+        await walletManager.initialize();
+    } else {
+        console.warn("⚠️ NO MNEMONIC FOUND! Supervisor running in SINGLE WORKER mode (Legacy).");
+        console.warn("Please set TRADING_MNEMONIC in .env for parallel scale.");
+    }
+
+    // Initialize Debt Manager
+    debtManager = walletManager ? new DebtManager(debtRepository, walletManager, provider, CHAIN_ID) : null;
+
     await refreshConfigs();
 
     // Refresh configs loop
@@ -574,4 +575,8 @@ async function main() {
     });
 }
 
+
+
+
+// Execute Main
 main().catch(console.error);

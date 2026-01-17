@@ -29,7 +29,7 @@ const ADDRESSES = CONTRACT_ADDRESSES[NETWORK];
 
 // Chain Config
 const ENV_CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '');
-const DEFAULT_CHAIN_IDS = { polygon: 137, localhost: 31337, amoy: 80002 };
+const DEFAULT_CHAIN_IDS = { polygon: 137, localhost: 1337, amoy: 80002 };
 const TARGET_CHAIN_ID = ENV_CHAIN_ID || DEFAULT_CHAIN_IDS[NETWORK];
 
 /**
