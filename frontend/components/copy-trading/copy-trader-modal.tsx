@@ -72,6 +72,11 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     // Auto Execution
     const [autoExecute, setAutoExecute] = React.useState(false);
 
+    // Execution Mode (Security vs Speed)
+    const [executionMode, setExecutionMode] = React.useState<'PROXY' | 'EOA'>('PROXY');
+    const [privateKeyInput, setPrivateKeyInput] = React.useState('');
+
+
     const handleStartCopying = async () => {
         setIsStarting(true);
         try {
@@ -125,6 +130,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     // Auto Execution
                     autoExecute,
                     channel: autoExecute ? 'EVENT_LISTENER' : 'POLLING',
+                    // Execution Mode
+                    executionMode,
+                    privateKey: executionMode === 'EOA' ? privateKeyInput : undefined
                 }),
             });
 
@@ -314,6 +322,62 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+
+                            {/* Execution Mode Selector (Simple Mode) */}
+                            <div className="space-y-3">
+                                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                    <Zap className="h-3.5 w-3.5" /> Execution Speed
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 bg-[#25262b] p-1 rounded-xl border border-[#2c2d33]">
+                                    <button
+                                        onClick={() => setExecutionMode('PROXY')}
+                                        className={cn(
+                                            "py-2.5 rounded-lg text-sm font-bold flex flex-col items-center justify-center gap-1 transition-all",
+                                            executionMode === 'PROXY'
+                                                ? "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                                                : "text-muted-foreground hover:text-white hover:bg-white/5"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Security Mode</div>
+                                        <div className="text-[10px] font-normal opacity-80">Non-Custodial (Proxy)</div>
+                                    </button>
+                                    <button
+                                        onClick={() => setExecutionMode('EOA')}
+                                        className={cn(
+                                            "py-2.5 rounded-lg text-sm font-bold flex flex-col items-center justify-center gap-1 transition-all",
+                                            executionMode === 'EOA'
+                                                ? "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20"
+                                                : "text-muted-foreground hover:text-white hover:bg-white/5"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5" /> Speed Mode</div>
+                                        <div className="text-[10px] font-normal opacity-80">Custodial (Direct Key)</div>
+                                    </button>
+                                </div>
+
+                                {/* Private Key Input for Speed Mode */}
+                                {executionMode === 'EOA' && (
+                                    <div className="p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 space-y-3 animate-in fade-in slide-in-from-top-2">
+                                        <div className="flex items-start gap-2">
+                                            <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
+                                            <div className="text-xs text-yellow-200/80 leading-relaxed">
+                                                <b>Warning:</b> Speed Mode requires your private key to sign transactions instantly without a proxy.
+                                                Please use a dedicated trading wallet with limited funds. Keys are encrypted.
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-xs font-bold text-white mb-1.5">Private Key (0x...)</div>
+                                            <input
+                                                type="password"
+                                                value={privateKeyInput}
+                                                onChange={(e) => setPrivateKeyInput(e.target.value)}
+                                                placeholder="0x..."
+                                                className="w-full bg-[#1a1b1e] border border-yellow-500/30 rounded-lg px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-yellow-500 transition-colors placeholder:text-muted-foreground/30"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Info Card: What happens? */}

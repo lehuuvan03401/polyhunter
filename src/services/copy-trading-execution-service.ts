@@ -25,6 +25,7 @@ export interface ExecutionParams {
     signer?: ethers.Signer; // Explicit signer for this execution (Worker Wallet)
     tradingService?: TradingService; // Explicit TradingService (with correct CLOB auth)
     overrides?: ethers.Overrides; // Gas overrides for On-Chain txs
+    executionMode?: 'PROXY' | 'EOA'; // Execution Mode
 }
 
 export interface ExecutionResult {

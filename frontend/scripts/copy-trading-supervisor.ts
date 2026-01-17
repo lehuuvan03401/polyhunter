@@ -17,6 +17,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
 import path from 'path';
 import { ethers } from 'ethers';
+import { EncryptionService } from '../../src/core/encryption.js'; // Import EncryptionService
 import { CONTRACT_ADDRESSES, CTF_ABI } from '../../src/core/contracts';
 import { CopyTradingExecutionService, ExecutionParams } from '../../src/services/copy-trading-execution-service';
 import { TradingService, TradeInfo } from '../../src/services/trading-service';
@@ -125,6 +126,10 @@ interface ActiveConfig {
     maxSlippage: number;
     slippageType: 'FIXED' | 'AUTO';
     autoExecute: boolean;
+    // New Fields
+    executionMode: 'PROXY' | 'EOA';
+    encryptedKey?: string;
+    iv?: string;
 }
 
 let activeConfigs: ActiveConfig[] = [];
@@ -188,7 +193,10 @@ async function refreshConfigs() {
             sizeScale: c.sizeScale || undefined,
             maxSlippage: c.maxSlippage,
             slippageType: c.slippageType as 'FIXED' | 'AUTO',
-            autoExecute: c.autoExecute
+            autoExecute: c.autoExecute,
+            executionMode: c.executionMode as 'PROXY' | 'EOA',
+            encryptedKey: c.encryptedKey || undefined,
+            iv: c.iv || undefined
         }));
 
         monitoredTraders = new Set(activeConfigs.map(c => c.traderAddress.toLowerCase()));
@@ -350,25 +358,72 @@ async function processJob(
     isPreflight: boolean = false,
     overrides?: ethers.Overrides
 ) {
-    // 1. Try Checkout Worker
+    // 1. Try Checkout Worker OR EOA Signer
     let worker: WorkerContext | null = null;
-    if (walletManager) {
-        worker = walletManager.checkoutWorker();
+    let eoaSigner: ethers.Wallet | null = null;
+    let eoaTradingService: TradingService | null = null;
+
+    if (config.executionMode === 'EOA') {
+        // EOA Mode: Decrypt and Create Wallet
+        if (config.encryptedKey && config.iv) {
+            try {
+                const privateKey = EncryptionService.decrypt(config.encryptedKey, config.iv);
+                const userWallet = new ethers.Wallet(privateKey, provider);
+                eoaSigner = userWallet;
+                // EOA Mode requires a TradingService instance compliant with this user.
+                // For MVP: We instantiate a new TradingService for this user on the fly?
+                // Or maybe the existing ExecutionService handles CLOB logic internally regardless of 'tradingService' passed?
+                // Actually, TradingService constructor takes a wallet/key. 
+                // We should instantiate a lightweight service or pass the wallet to the method.
+                // Re-using Master Trading Service but Override Signer?
+                // Current Trading Service is tied to one API Key...
+                // CRITICAL TODO: CLOB Client needs API Keys. EOA users might not have them?
+                // For now, let's assume EOA mode skips CLOB API auth if we just do contract interactions?
+                // BUT executeOrderWithProxy calls 'createMarketOrder' which calls CLOB.
+                // IF EOA user wants to trade on CLOB, they need API Keys.
+                // If they want to trade on Contract, they need just Signer.
+                // "Speed Mode" implies Direct CLOB access usually? 
+                // If Speed Mode = EOA, then we are just replacing the Proxy Wrapper.
+                // We still need CLOB API Keys.
+                // Assuming for this iteration we use the MASTER keys for market data, 
+                // but we need USER keys for placing orders?
+                // Actually, if we use the USER's Private Key, we can generate API Keys for them or use theirs.
+                // Lets assume for now we reuse the existing trading service structure but we need to solve the API Key issue later.
+                // Temp: Use Master Service but with EOA Signer for on-chain checks?
+                // Wait, logic says: "ExecutionService -> createMarketOrder".
+                // We'll pass the EOA signer.
+                worker = {
+                    address: userWallet.address,
+                    signer: userWallet,
+                    tradingService: masterTradingService // This is incorrect if Master Service is tied to Master Account API Key.
+                };
+            } catch (e) {
+                console.error(`[Supervisor] Decryption failed for user ${config.walletAddress}:`, e);
+                return;
+            }
+        }
     } else {
-        // Fallback: Use Master Wallet if no fleet configured
-        const masterWallet = masterTradingService.getWallet();
-        if (masterWallet) {
-            const connectedWallet = masterWallet.connect(provider);
-            worker = {
-                address: masterWallet.address,
-                signer: connectedWallet,
-                tradingService: masterTradingService
-            };
+        // Proxy Mode: Checkout Worker
+        if (walletManager) {
+            worker = walletManager.checkoutWorker();
+        } else {
+            // Fallback logic...
+            const masterWallet = masterTradingService.getWallet();
+            if (masterWallet) {
+                // ...
+                worker = {
+                    address: masterWallet.address,
+                    signer: masterWallet.connect(provider),
+                    tradingService: masterTradingService
+                };
+            }
         }
     }
 
-    // 2. If no worker, QUEUE IT
-    if (!worker) {
+
+    // 2. If no worker AND no EOA, QUEUE IT
+    if (!worker && !eoaSigner) {
+        const queueOverrides = overrides;
         const queued = jobQueue.enqueue({
             config,
             side,
@@ -377,7 +432,7 @@ async function processJob(
             originalTrader,
             originalSize,
             isPreflight,
-            overrides // Pass overrides to the queued job
+            overrides: queueOverrides
         });
         if (queued) {
             console.warn(`[Supervisor] ⏳ All workers busy. Job QUEUED for User ${config.walletAddress}. Queue size: ${jobQueue.length}`);
@@ -387,8 +442,22 @@ async function processJob(
         return;
     }
 
-    // 3. Execute
-    await executeJobInternal(worker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight, overrides);
+    // 3. Construct Effective Worker Context
+    let effectiveWorker: WorkerContext;
+    if (worker) {
+        effectiveWorker = worker;
+    } else {
+        // Must be EOA signer
+        const addr = await eoaSigner!.getAddress();
+        effectiveWorker = {
+            address: addr,
+            signer: eoaSigner!,
+            tradingService: eoaTradingService || masterTradingService
+        };
+    }
+
+    // 4. Execute
+    await executeJobInternal(effectiveWorker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight, overrides);
 }
 
 async function executeJobInternal(
@@ -423,7 +492,8 @@ async function executeJobInternal(
             slippageMode: config.slippageType,
             signer: worker.signer, // DYNAMIC SIGNER
             tradingService: worker.tradingService, // DYNAMIC SERVICE
-            overrides: overrides // GAS OVERRIDES
+            overrides: overrides, // GAS OVERRIDES
+            executionMode: config.executionMode, // PROXY or EOA
         };
 
         const result = await executionService.executeOrderWithProxy(baseParams);

@@ -7,6 +7,7 @@
 import { polyClient } from '@/lib/polymarket';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { EncryptionService } from '@/lib/encryption'; // Import EncryptionService
 
 
 /**
@@ -80,6 +81,12 @@ export async function POST(request: NextRequest) {
             sellMode,
             sellFixedAmount,
             sellPercentage,
+
+            // Execution Mode
+            executionMode,
+            privateKey,
+            channel,
+            autoExecute
         } = body;
 
         // Validation
@@ -130,6 +137,27 @@ export async function POST(request: NextRequest) {
             copyMode = 'FIXED_AMOUNT';
         }
 
+        // Encryption logic for EOA Mode
+        let encryptedKey: string | null = null;
+        let iv: string | null = null;
+
+        if (executionMode === 'EOA') {
+            if (!privateKey || !privateKey.startsWith('0x') || privateKey.length !== 66) {
+                return NextResponse.json(
+                    { error: 'Invalid Private Key for Speed Mode. Must be 64 hex chars with 0x prefix.' },
+                    { status: 400 }
+                );
+            }
+            try {
+                const encrypted = EncryptionService.encrypt(privateKey);
+                encryptedKey = encrypted.encryptedData;
+                iv = encrypted.iv;
+            } catch (e) {
+                console.error("Encryption failed:", e);
+                return NextResponse.json({ error: 'Encryption failed' }, { status: 500 });
+            }
+        }
+
         const config = await prisma.copyTradingConfig.create({
             data: {
                 walletAddress: walletAddress.toLowerCase(),
@@ -158,6 +186,11 @@ export async function POST(request: NextRequest) {
                 sellFixedAmount: sellFixedAmount !== undefined ? Number(sellFixedAmount) : null,
                 sellPercentage: sellPercentage !== undefined ? Number(sellPercentage) : null,
                 isActive: true,
+                autoExecute: autoExecute || false,
+                channel: channel || 'POLLING',
+                executionMode: executionMode === 'EOA' ? 'EOA' : 'PROXY',
+                encryptedKey,
+                iv,
             },
         });
 

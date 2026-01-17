@@ -2,7 +2,7 @@ PolyHunter 系统就像一个紧密的“三层汉堡”结构：链下大脑 (S
 
 我为您绘制了一张全景交互图，随后详细解释每个组件的角色。
 
-1. 系统全景交互图
+### 1. 系统全景交互图
 mermaid
 graph TD
     subgraph "链下大脑 (Off-Chain Scripts)"
@@ -22,7 +22,7 @@ graph TD
         P -.->|买入| CTF
         CTF -.->|盈利| P
     end
-2. 核心组件详解
+### 2. 核心组件详解
 A. 链下脚本 (The Brain) - frontend/scripts/*.ts
 这是运行在您服务器上的 Node.js 程序。
 
@@ -62,7 +62,7 @@ ProxyFactory.sol
 数量: 全局 1 个。
 角色: 生产 Proxy。
 交互: 用户点击“创建账户” -> Factory Clone 出一个新的 Proxy 合约。
-3. 一个完整的交互剧本
+### 3. 一个完整的交互剧本
 当大户买入 Trump 胜选 Token 时，脚本与合约是这样“接力”的：
 
 侦查: mempool-detector.ts 听到风吹草动。
@@ -80,4 +80,18 @@ ProxyA
 结果: Token 进入 
 ProxyA
  的肚子。Worker #3 深藏功与名，归队休息。
-这就是这套系统即去中心化（资金在 Proxy）又高并发（Worker 集群干活）的奥秘。
+
+### 4. 极速模式 (Speed Mode) 架构
+为了追求极致速度，PolyHunter 2.0 引入了 "Hosted EOA" 模式。
+
+与传统的 "交易所资金池 (Omnibus)" 模式不同，我们采用了 **隔离托管 (Segregated Custody)** 方案：
+*   **不搞大锅饭**: 系统不通过单一热钱包混合存放所有用户资金。
+*   **一人一私钥**: 每个用户提供（或生成）独立的 EOA 私钥。
+*   **资金在链上**: 用户的钱直接存在该私钥对应的链上地址里。
+*   **无需内部记账**: 链上余额即真理。不需要复杂的 "银行级 Ledger" 来记账，因为资金从未混合。
+
+**流程 comparison:**
+*   **Security Mode (Proxy)**: 资金在 Proxy合约 -> Worker借钱 -> 交易 -> 还钱。(安全，但慢)
+*   **Speed Mode (EOA)**: 资金在 User EOA -> Supervisor 用 User Key 签名 -> 直接交易。(极速，但需托管私钥)
+
+> **风险提示**: Speed Mode 的风险在于 "私钥保管" (Database Breach)，而不是 "资金混淆" (Accounting Error)。我们通过 AES 加密存储私钥来降低此风险。

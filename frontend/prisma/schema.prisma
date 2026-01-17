@@ -143,6 +143,12 @@ enum CopyTradingMode {
   FIXED_AMOUNT // Fixed dollar amount per trade
 }
 
+// Execution mode
+enum ExecutionMode {
+  PROXY // Default: Use Smart Contract Proxy (Non-Custodial)
+  EOA // Fast: Use Hosted Private Key (Custodial)
+}
+
 // Copy trade execution status
 enum CopyTradeStatus {
   PENDING // Waiting for user confirmation
@@ -167,6 +173,11 @@ model CopyTradingConfig {
   // Execution settings
   autoExecute Boolean @default(false) // If true, executes immediately via worker
   channel     String  @default("POLLING") // 'POLLING' | 'EVENT_LISTENER'
+
+  // Execution Mode Settings
+  executionMode ExecutionMode @default(PROXY)
+  encryptedKey  String? // For EOA mode (Encrypted Private Key)
+  iv            String? // Initialization Vector for decryption
 
   // Copy mode settings
   mode            CopyTradingMode @default(PERCENTAGE)
