@@ -71,13 +71,39 @@ async function main() {
         const fundAmount = ethers.parseUnits("1000", 6); // 1000 USDC
         await usdc.transfer(userProxy, fundAmount);
         console.log(`✅ Funded Proxy with 1000 USDC`);
-    } catch (e) {
+    } catch (e: any) {
         console.warn("⚠️ Failed to fund USDC (Are you on a Fork?):", e.message);
     }
 
     console.log("\n============================================");
-    console.log("📝 UPDATE YOUR .env WITH THIS:");
-    console.log(`NEXT_PUBLIC_PROXY_FACTORY_ADDRESS="${factoryAddress}"`);
+    console.log("\n============================================");
+    console.log(`✅ Factory Address: ${factoryAddress}`);
+
+    // Automate .env update
+    try {
+        const fs = require('fs');
+        const envPath = path.resolve(__dirname, "../.env"); // relative to frontend/scripts/
+
+        let envContent = "";
+        if (fs.existsSync(envPath)) {
+            envContent = fs.readFileSync(envPath, 'utf8');
+        }
+
+        const varName = "NEXT_PUBLIC_PROXY_FACTORY_ADDRESS";
+        const newline = `${varName}="${factoryAddress}"`;
+
+        if (envContent.includes(varName)) {
+            const regex = new RegExp(`${varName}=.*`, 'g');
+            envContent = envContent.replace(regex, newline);
+        } else {
+            envContent += `\n${newline}\n`;
+        }
+
+        fs.writeFileSync(envPath, envContent);
+        console.log(`🤖 Auto-updated ${varName} in frontend/.env`);
+    } catch (e: any) {
+        console.warn(`⚠️ Failed to auto-update .env: ${e.message}`);
+    }
     console.log("============================================");
 }
 

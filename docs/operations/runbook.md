@@ -7,8 +7,9 @@
 bash
 cd contracts
 export ENABLE_FORK=true
-# 确保您已注释掉 .env 中的 POLYGON_RPC_URL，或在此处 export MAINNET_FORK_RPC_URL="..."
+# 确保 frontend/.env 中已设置 NEXT_PUBLIC_CHAIN_ID=31337
 npx hardhat node
+
 🖥️ 终端 2: 部署基础设施 (合约 & Proxy)
 这步会部署 Factory, Executor，并为您的账号创建 Proxy 和充值 USDC。
 
@@ -16,11 +17,14 @@ bash
 # 1. 部署 Executor & 初始化 Worker Fleet
 cd contracts
 npx hardhat run scripts/deploy-executor.ts --network localhost
-# ⚠️ 记下输出的 Executor Address，更新 .env: NEXT_PUBLIC_EXECUTOR_ADDRESS
+# ⚠️ 记下输出的 Executor Address，更新 .env (NEXT_PUBLIC_EXECUTOR_ADDRESS)
+
 # 2. 部署 Factory & 创建 User Proxy
+# 注意：此脚本会读取 frontend/.env
 npx hardhat run ../frontend/scripts/setup-local-fork.ts --network localhost
-# ⚠️ 记下输出的 Factory Address，更新 .env: NEXT_PUBLIC_PROXY_FACTORY_ADDRESS
-(请确保 .env 更新保存后再进行下一步)
+# ⚠️ 记下输出的 Factory Address，更新 .env (NEXT_PUBLIC_PROXY_FACTORY_ADDRESS)
+
+(确保 .env 更新并保存后再进行下一步)
 
 🖥️ 终端 3: 初始化数据 & 启动 Supervisor
 配置跟单关系，并启动监控服务。
@@ -29,16 +33,25 @@ bash
 cd frontend
 # 1. 写入数据库配置 (Master 跟单 0x7099...Trader)
 npx tsx scripts/seed-test-config.ts
-# 2. 启动 Supervisor (开启 Multi-Worker 模式)
+
+# 2. 启动 Supervisor (企业版)
+# ✅ 特性已激活: 
+# - 任务队列 (Job Queue): 防止并发丢单
+# - 自动加油站 (Auto-Refuel): 监控 Fleet 余额
+# - 内存池嗅探 (Mempool Sniping): 支持批量转账
 npx tsx scripts/copy-trading-supervisor.ts
-您应该看到 Supervisor 启动并显示 Fleet: 20/20 ready
+
+您应该看到 Supervisor 启动并显示 Fleet: 20/20 ready，且能够看到 [TaskQueue] 日志。
 
 🖥️ 终端 4: 触发模拟交易 (Trigger)
 模拟那个被跟单的大户 (0x7099...) 发起交易。
 
 bash
 cd frontend
+# 模拟普通转账
 npx tsx scripts/impersonate-mainnet-trade.ts
+# 或者模拟批量转账 (测试 Mempool Detector)
+# npx tsx scripts/impersonate-batch-trade.ts (如果已创建)
 
 👀 预期结果 (Success Criteria):
 

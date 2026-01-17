@@ -56,8 +56,38 @@ async function main() {
         console.log(`✅ Fleet Whitelisted! Transaction: ${tx.hash}`);
     }
 
-    console.log("\n IMPORTANT: UPDATE YOUR ENV WITH:");
-    console.log(`NEXT_PUBLIC_EXECUTOR_ADDRESS="${executorAddress}"`);
+    console.log("\n============================================");
+    console.log(`✅ PolyHunterExecutor deployed to: ${executorAddress}`);
+
+    // Automate .env update
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const envPath = path.resolve(__dirname, "../../frontend/.env");
+
+        let envContent = "";
+        if (fs.existsSync(envPath)) {
+            envContent = fs.readFileSync(envPath, 'utf8');
+        }
+
+        const varName = "NEXT_PUBLIC_EXECUTOR_ADDRESS";
+        const newline = `${varName}="${executorAddress}"`;
+
+        if (envContent.includes(varName)) {
+            // Replace existing
+            const regex = new RegExp(`${varName}=.*`, 'g');
+            envContent = envContent.replace(regex, newline);
+        } else {
+            // Append
+            envContent += `\n${newline}\n`;
+        }
+
+        fs.writeFileSync(envPath, envContent);
+        console.log(`🤖 Auto-updated ${varName} in frontend/.env`);
+    } catch (e: any) {
+        console.warn(`⚠️ Failed to auto-update .env: ${e.message}`);
+    }
+    console.log("============================================\n");
 }
 
 main().catch((error) => {
