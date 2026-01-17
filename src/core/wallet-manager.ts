@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { TradingService } from '../services/trading-service.js';
 import { RateLimiter } from './rate-limiter.js';
 import { UnifiedCache } from './unified-cache.js';
+import { MulticallService } from './multicall.js';
 
 export interface WorkerContext {
     address: string;
@@ -22,6 +23,7 @@ export class WalletManager {
     private provider: ethers.providers.Provider;
     private rateLimiter: RateLimiter;
     private cache: UnifiedCache;
+    private multicall: MulticallService;
     private chainId: number;
 
     constructor(
@@ -37,6 +39,7 @@ export class WalletManager {
         this.rateLimiter = rateLimiter;
         this.cache = cache;
         this.chainId = chainId;
+        this.multicall = new MulticallService(provider);
         this.initializeFleet(masterMnemonic, count, startIndex);
     }
 
@@ -146,10 +149,16 @@ export class WalletManager {
         console.log(`[WalletManager] ⛽️ Checking fleet gas balances...`);
         const workers = Array.from(this.workers.values());
 
-        // Parallel check for speed
+        // Batch Fetch using Multicall
+        const addresses = workers.map(w => w.address);
+        const balances = await this.multicall.getEthBalances(addresses);
+
+        // Parallel processing of results (Refuel logic is still parallel/individual txs)
         await Promise.all(workers.map(async (worker) => {
             try {
-                const balanceWei = await this.provider.getBalance(worker.address);
+                const balanceWei = balances.get(worker.address);
+                if (!balanceWei) return; // Should not happen if multicall works
+
                 const balanceEth = parseFloat(ethers.utils.formatEther(balanceWei));
 
                 if (balanceEth < threshold) {
