@@ -84,23 +84,44 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
         }
     };
 
-
-
     const handleWithdraw = async () => {
         if (!stats || stats.pendingPayout < 10) {
             toast.error('Minimum withdrawal amount is $10');
             return;
         }
 
-        const confirm = window.confirm(`Request payout of $${stats.pendingPayout.toFixed(2)}?`);
+        const confirm = window.confirm(`Request payout of $${stats.pendingPayout.toFixed(2)}?\n\nYou will be asked to sign a message to authorize this withdrawal.`);
         if (!confirm) return;
 
-        const toastId = toast.loading('Processing withdrawal request...');
+        const toastId = toast.loading('Preparing withdrawal...');
         try {
-            const result = await affiliateApi.requestPayout(walletAddress);
+            // 1. Get the message to sign
+            const timestamp = Date.now();
+            const { message, amount } = await affiliateApi.getPayoutMessage(walletAddress, timestamp);
+
+            toast.loading('Please sign the message in your wallet...', { id: toastId });
+
+            // 2. Request signature from wallet (using window.ethereum as fallback)
+            let signature: string;
+            if (typeof window !== 'undefined' && (window as any).ethereum) {
+                const provider = (window as any).ethereum;
+                signature = await provider.request({
+                    method: 'personal_sign',
+                    params: [message, walletAddress],
+                });
+            } else {
+                toast.dismiss(toastId);
+                toast.error('No wallet detected. Please connect your wallet.');
+                return;
+            }
+
+            toast.loading('Submitting withdrawal request...', { id: toastId });
+
+            // 3. Submit with signature
+            const result = await affiliateApi.requestPayout(walletAddress, signature, timestamp);
             if (result.success) {
                 toast.dismiss(toastId);
-                toast.success('Withdrawal request submitted!');
+                toast.success(`Withdrawal of $${amount.toFixed(2)} submitted!`);
                 // Refresh
                 const [statsData, referralsData] = await Promise.all([
                     affiliateApi.getStats(walletAddress),
@@ -112,9 +133,13 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                 toast.dismiss(toastId);
                 toast.error(result.error || 'Withdrawal failed');
             }
-        } catch (e) {
+        } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error('Network error requesting payout');
+            if (e.code === 4001 || e.message?.includes('rejected')) {
+                toast.error('Signature request was rejected');
+            } else {
+                toast.error(e.message || 'Network error requesting payout');
+            }
         }
     };
 

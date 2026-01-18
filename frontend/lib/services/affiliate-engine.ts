@@ -9,6 +9,22 @@ export interface TradeContext {
     platformFee: number; // The fee collected by platform
 }
 
+// Tier thresholds based on team size (direct referrals and total team)
+const TIER_REQUIREMENTS: Partial<Record<AffiliateTier, { directReferrals: number; teamSize: number }>> = {
+    [AffiliateTier.VIP]: { directReferrals: 3, teamSize: 10 },
+    [AffiliateTier.ELITE]: { directReferrals: 10, teamSize: 100 },
+    [AffiliateTier.PARTNER]: { directReferrals: 30, teamSize: 500 },
+    [AffiliateTier.SUPER_PARTNER]: { directReferrals: 50, teamSize: 1000 },
+};
+
+const TIER_ORDER: AffiliateTier[] = [
+    AffiliateTier.ORDINARY,
+    AffiliateTier.VIP,
+    AffiliateTier.ELITE,
+    AffiliateTier.PARTNER,
+    AffiliateTier.SUPER_PARTNER,
+];
+
 export class AffiliateEngine {
     private prisma: PrismaClient;
 
@@ -49,8 +65,6 @@ export class AffiliateEngine {
 
         if (sponsor) {
             // Copy all ancestors of sponsor and add 1 to depth
-            // Query raw or use loop if efficiency is concern.
-            // For closure table: Insert (A -> New, depth = A->Sponsor + 1) for all A where A is ancestor of Sponsor
             const sponsorAncestors = await this.prisma.teamClosure.findMany({
                 where: { descendantId: sponsor.id }
             });
@@ -71,105 +85,218 @@ export class AffiliateEngine {
 
     /**
      * Calculates and distributes commissions for a completed trade.
+     * Also updates volume tracking and checks for tier upgrades.
      */
     async distributeCommissions(context: TradeContext) {
-        console.log(`[AffiliateEngine] Distributing for ${context.tradeId} (Fee: $${context.platformFee})`);
+        console.log(`[AffiliateEngine] Distributing for ${context.tradeId} (Fee: $${context.platformFee}, Volume: $${context.volume})`);
 
         // 1. Find the User's Referrer (The direct parent)
-        // In the Schema, Referral model links User-defined address to a Referrer.
-        const referralParams = await this.prisma.referral.findUnique({
+        const referralRecord = await this.prisma.referral.findUnique({
             where: { refereeAddress: context.traderAddress },
             include: { referrer: true }
         });
 
-        if (!referralParams) return; // No upline
+        if (!referralRecord) return; // No upline
 
-        const directSponsor = referralParams.referrer;
+        const directSponsor = referralRecord.referrer;
 
-        // 2. Get Ancestry Chain (up to 15 gens)
+        // 2. Update Volume Tracking
+        await this.updateVolumeTracking(referralRecord.id, directSponsor.id, context);
+
+        // 3. Get Ancestry Chain (up to 15 gens)
         const ancestry = await this.prisma.teamClosure.findMany({
             where: {
-                descendantId: directSponsor.id, // Start from the direct sponsor
+                descendantId: directSponsor.id,
                 depth: { lte: 15 }
             },
             include: { ancestor: true },
-            orderBy: { depth: 'asc' } // 0=DirectSponsor, 1=GrandSponsor, etc. (Wait, logic check below)
+            orderBy: { depth: 'asc' }
         });
 
-        // Note: In Closure Table for Member X:
-        // Ancestor=X, Descendant=X, Depth=0
-        // Ancestor=Sponsor, Descendant=X, Depth=1
-        // Ancestor=GrandSponsor, Descendant=X, Depth=2
-
-        // So 'ancestry' list contains the upline.
-        // We iterate them.
-
-        // --- ZERO LINE (Direct Bonus) ---
-        // Paid to the nearest 5 ancestors. 
-        // depth=0 is direct sponsor relative to himself? No.
-        // In 'ancestry' list query above:
-        // ancestor=Sponsor, descendant=Sponsor, depth=0 (Self)
-        // ancestor=GrandSponsor, descendant=Sponsor, depth=1
-
-        // But the TRADER is 'refereeAddress'. The 'Referrer' linked is the direct sponsor.
-        // So for the TRADER, the 'Direct Sponsor' is Generation 1.
-        // The 'Grand Sponsor' is Generation 2.
-
-        // So we iterate `ancestry`:
-        // Item with depth=0 is Direct Sponsor (Gen 1 for Trader)
-        // Item with depth=1 is Grand Sponsor (Gen 2 for Trader)
-        // ...
-
-        // ...
-
+        // Track which referrers received commissions for tier upgrade check
+        const rewardedReferrerIds: string[] = [];
         let maxRatePaid = 0;
 
         for (const record of ancestry) {
             const member = record.ancestor;
             const gen = record.depth + 1; // 1-based generation from Trader
 
-            // Calc Zero Line
+            // --- ZERO LINE (Direct Bonus) ---
             const zeroRate = this.getZeroLineRate(gen);
             if (zeroRate > 0) {
                 const amount = context.platformFee * zeroRate;
-                await this.recordCommission(member.id, amount, 'ZERO_LINE', context.tradeId);
+                await this.recordCommission(
+                    member.id,
+                    amount,
+                    'ZERO_LINE',
+                    context.tradeId,
+                    context.traderAddress,
+                    gen
+                );
+                if (!rewardedReferrerIds.includes(member.id)) {
+                    rewardedReferrerIds.push(member.id);
+                }
             }
 
-
             // --- SUN LINE (Team Differential) ---
-            // Requirement: (UplineBonusRate - DownlineBonusRate) * Volume
-            // Logic:
-            // 1. Traverse up. Keep track of the 'current max rate paid'.
-            // 2. Initial state: maxRatePaid = 0.
-            // 3. For each ancestor:
-            //    a. Determine their 'Team Rate' based on Rank (Tier).
-            //    b. If TeamRate > maxRatePaid:
-            //       - Bonus = (TeamRate - maxRatePaid) * Volume
-            //       - Pay Bonus
-            //       - Update maxRatePaid = TeamRate
-            //    c. If maxRatePaid >= MaxPossibleRate, stop.
-
-            // Get ancestor's tier to determine rate
-            // We need to fetch the ancestor's tier if not available.
-            // In the current `ancestry` query, we included `ancestor`.
-
-            // Map Tier to Rate
             const teamRate = this.getTeamRate(member.tier);
 
             if (teamRate > maxRatePaid) {
                 const differential = teamRate - maxRatePaid;
-                const bonusAmount = context.platformFee * differential; // Based on fee (or volume? Spec says Volume in formula loop but context.platformFee in ZeroLine)
-                // Clarification: Usually MLM is on volume or fee. ZeroLine uses fee. SunLine should likely use fee to be sustainable.
-                // Spec says context.platformFee * differential.
+                const bonusAmount = context.platformFee * differential;
 
                 if (bonusAmount > 0) {
-                    await this.recordCommission(member.id, bonusAmount, 'SUN_LINE', context.tradeId);
+                    await this.recordCommission(
+                        member.id,
+                        bonusAmount,
+                        'SUN_LINE',
+                        context.tradeId,
+                        context.traderAddress,
+                        gen
+                    );
+                    if (!rewardedReferrerIds.includes(member.id)) {
+                        rewardedReferrerIds.push(member.id);
+                    }
                     maxRatePaid = teamRate;
                 }
             }
 
             if (maxRatePaid >= 0.08) break; // SUPER_PARTNER max rate
         }
+
+        // 4. Check tier upgrades for all rewarded referrers
+        for (const referrerId of rewardedReferrerIds) {
+            await this.checkAndUpgradeTier(referrerId);
+        }
+    }
+
+    /**
+     * Updates volume tracking at multiple levels.
+     */
+    private async updateVolumeTracking(
+        referralId: string,
+        directSponsorId: string,
+        context: TradeContext
+    ) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        await this.prisma.$transaction(async (tx) => {
+            // 1. Update Referral.lifetimeVolume and last30DaysVolume
+            await tx.referral.update({
+                where: { id: referralId },
+                data: {
+                    lifetimeVolume: { increment: context.volume },
+                    last30DaysVolume: { increment: context.volume },
+                    lastActiveAt: new Date()
+                }
+            });
+
+            // 2. Update direct sponsor's totalVolume
+            await tx.referrer.update({
+                where: { id: directSponsorId },
+                data: {
+                    totalVolume: { increment: context.volume }
+                }
+            });
+
+            // 3. Cascade teamVolume to all ancestors (up to 15 generations)
+            const ancestors = await tx.teamClosure.findMany({
+                where: {
+                    descendantId: directSponsorId,
+                    depth: { gt: 0, lte: 15 }
+                },
+                select: { ancestorId: true }
+            });
+
+            for (const anc of ancestors) {
+                await tx.referrer.update({
+                    where: { id: anc.ancestorId },
+                    data: {
+                        teamVolume: { increment: context.volume }
+                    }
+                });
+            }
+
+            // 4. Create/Update ReferralVolume daily aggregation
+            const existingDailyRecord = await tx.referralVolume.findFirst({
+                where: {
+                    referrerId: directSponsorId,
+                    date: today
+                }
+            });
+
+            if (existingDailyRecord) {
+                await tx.referralVolume.update({
+                    where: { id: existingDailyRecord.id },
+                    data: {
+                        volumeUsd: { increment: context.volume },
+                        commissionUsd: { increment: context.platformFee },
+                        tradeCount: { increment: 1 }
+                    }
+                });
+            } else {
+                await tx.referralVolume.create({
+                    data: {
+                        referrerId: directSponsorId,
+                        date: today,
+                        volumeUsd: context.volume,
+                        commissionUsd: context.platformFee,
+                        tradeCount: 1
+                    }
+                });
+            }
+        });
+
+        console.log(`[AffiliateEngine] Volume tracking updated: $${context.volume} for sponsor ${directSponsorId}`);
+    }
+
+    /**
+     * Checks and upgrades a referrer's tier based on team metrics.
+     */
+    async checkAndUpgradeTier(referrerId: string): Promise<boolean> {
+        const referrer = await this.prisma.referrer.findUnique({
+            where: { id: referrerId },
+            include: {
+                _count: {
+                    select: { referrals: true }
+                }
+            }
+        });
+
+        if (!referrer) return false;
+
+        // Get team size from closure table
+        const teamSize = await this.prisma.teamClosure.count({
+            where: {
+                ancestorId: referrerId,
+                depth: { gt: 0 }
+            }
+        });
+
+        const directReferrals = referrer._count.referrals;
+        const currentTierIndex = TIER_ORDER.indexOf(referrer.tier);
+
+        // Check each higher tier
+        for (let i = TIER_ORDER.length - 1; i > currentTierIndex; i--) {
+            const targetTier = TIER_ORDER[i];
+            const requirements = TIER_REQUIREMENTS[targetTier];
+
+            if (!requirements) continue;
+
+            if (directReferrals >= requirements.directReferrals &&
+                teamSize >= requirements.teamSize) {
+                // Upgrade!
+                await this.prisma.referrer.update({
+                    where: { id: referrerId },
+                    data: { tier: targetTier }
+                });
+                console.log(`[AffiliateEngine] 🎉 Tier Upgrade: ${referrer.walletAddress} -> ${targetTier}`);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private getZeroLineRate(gen: number): number {
@@ -194,7 +321,14 @@ export class AffiliateEngine {
         }
     }
 
-    private async recordCommission(referrerId: string, amount: number, type: string, refId: string) {
+    private async recordCommission(
+        referrerId: string,
+        amount: number,
+        type: string,
+        tradeId: string,
+        traderAddress: string,
+        generation: number
+    ) {
         await this.prisma.$transaction(async (tx) => {
             // Update referrer balance
             await tx.referrer.update({
@@ -205,17 +339,18 @@ export class AffiliateEngine {
                 }
             });
 
-            // Create ledger entry
+            // Create ledger entry with full details
             await tx.commissionLog.create({
                 data: {
                     referrerId,
                     amount,
                     type,
-                    sourceTradeId: refId,
-                    // generation is not passed here yet, can be added later if needed
+                    sourceTradeId: tradeId,
+                    sourceUserId: traderAddress,
+                    generation: type === 'ZERO_LINE' ? generation : null
                 }
             });
         });
-        console.log(`[AffiliateEngine] Paid $${amount.toFixed(4)} (${type}) to ${referrerId}`);
+        console.log(`[AffiliateEngine] Paid $${amount.toFixed(4)} (${type} Gen${generation}) to ${referrerId}`);
     }
 }

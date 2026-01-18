@@ -112,13 +112,33 @@ export const affiliateApi = {
     },
 
     /**
-     * Request a payout
+     * Get the message that needs to be signed for payout authorization
      */
-    async requestPayout(walletAddress: string): Promise<{ success: boolean; payoutId?: string; message?: string; error?: string }> {
+    async getPayoutMessage(walletAddress: string, timestamp: number): Promise<{ message: string; amount: number }> {
+        const response = await fetch(`${API_BASE_URL}/api/affiliate/payouts`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress, timestamp }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to get payout message');
+        }
+        return response.json();
+    },
+
+    /**
+     * Request a payout (requires wallet signature for security)
+     */
+    async requestPayout(
+        walletAddress: string,
+        signature: string,
+        timestamp: number
+    ): Promise<{ success: boolean; payoutId?: string; amount?: number; message?: string; error?: string }> {
         const response = await fetch(`${API_BASE_URL}/api/affiliate/payouts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress }),
+            body: JSON.stringify({ walletAddress, signature, timestamp }),
         });
         return response.json();
     },
