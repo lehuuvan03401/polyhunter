@@ -21,6 +21,11 @@ export interface AffiliateStats {
     nextTier: string | null;
     sunLineCount: number;
     maxDepth: number;
+    teamSize: number;
+    earningsBreakdown: {
+        zeroLine: number;
+        sunLine: number;
+    };
 }
 
 export interface Referral {

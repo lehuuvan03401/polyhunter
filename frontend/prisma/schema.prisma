@@ -48,9 +48,10 @@ model Referrer {
   descendants TeamClosure[] @relation("AncestorRelation")
 
   // Performance Metrics
-  maxDepth     Int   @default(0) // Deepest level of the team
-  sunLineCount Int   @default(0) // Number of qualified sun lines
-  teamVolume   Float @default(0) // Total volume of the subtree
+  maxDepth       Int             @default(0) // Deepest level of the team
+  sunLineCount   Int             @default(0) // Number of qualified sun lines
+  teamVolume     Float           @default(0) // Total volume of the subtree
+  commissionLogs CommissionLog[]
 }
 
 // Closure Table for efficient tree traversal
@@ -111,6 +112,23 @@ model Payout {
   errorMessage String?
 
   @@index([referrerId])
+}
+
+// Detailed commission ledger
+model CommissionLog {
+  id            String   @id @default(cuid())
+  referrer      Referrer @relation(fields: [referrerId], references: [id])
+  referrerId    String
+  amount        Float
+  type          String // 'ZERO_LINE' | 'SUN_LINE'
+  sourceTradeId String? // ID of the trade that generated this
+  sourceUserId  String? // Wallet address of the user who traded
+  generation    Int? // For Zero Line: which generation (1-5)?
+  createdAt     DateTime @default(now())
+
+  @@index([referrerId])
+  @@index([type])
+  @@index([createdAt])
 }
 
 // ========================================

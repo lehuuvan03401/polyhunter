@@ -195,15 +195,26 @@ export class AffiliateEngine {
     }
 
     private async recordCommission(referrerId: string, amount: number, type: string, refId: string) {
-        if (amount < 0.01) return;
-        // In real app, create a detailed Ledger entry. 
-        // For MVP, update totalEarned and create Payout record or Commission Log.
-        await this.prisma.referrer.update({
-            where: { id: referrerId },
-            data: {
-                totalEarned: { increment: amount },
-                pendingPayout: { increment: amount }
-            }
+        await this.prisma.$transaction(async (tx) => {
+            // Update referrer balance
+            await tx.referrer.update({
+                where: { id: referrerId },
+                data: {
+                    totalEarned: { increment: amount },
+                    pendingPayout: { increment: amount }
+                }
+            });
+
+            // Create ledger entry
+            await tx.commissionLog.create({
+                data: {
+                    referrerId,
+                    amount,
+                    type,
+                    sourceTradeId: refId,
+                    // generation is not passed here yet, can be added later if needed
+                }
+            });
         });
         console.log(`[AffiliateEngine] Paid $${amount.toFixed(4)} (${type}) to ${referrerId}`);
     }

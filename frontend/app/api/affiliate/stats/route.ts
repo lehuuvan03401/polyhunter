@@ -45,13 +45,36 @@ export async function GET(request: NextRequest) {
             ? Math.max(0, TIER_THRESHOLDS[nextTier] - referrer.totalVolume)
             : 0;
 
+        // Calculate real Team Size (Closure)
+        const teamSize = await prisma.teamClosure.count({
+            where: {
+                ancestorId: referrer.id,
+                depth: { gt: 0 }
+            }
+        });
+
+        // Calculate Earnings Breakdown
+        const earnings = await prisma.commissionLog.groupBy({
+            by: ['type'],
+            where: { referrerId: referrer.id },
+            _sum: { amount: true }
+        });
+
+        const zeroLineEarnings = earnings.find(e => e.type === 'ZERO_LINE')?._sum.amount || 0;
+        const sunLineEarnings = earnings.find(e => e.type === 'SUN_LINE')?._sum.amount || 0;
+
         return NextResponse.json({
             walletAddress: referrer.walletAddress,
             referralCode: referrer.referralCode,
             tier: referrer.tier,
             commissionRate: TIER_RATES[currentTier],
             totalVolumeGenerated: referrer.totalVolume,
-            totalReferrals: referrer._count.referrals,
+            totalReferrals: referrer._count.referrals, // Directs
+            teamSize, // Total Downline
+            earningsBreakdown: {
+                zeroLine: zeroLineEarnings,
+                sunLine: sunLineEarnings
+            },
             sunLineCount: referrer.sunLineCount,
             maxDepth: referrer.maxDepth,
             totalEarned: referrer.totalEarned,

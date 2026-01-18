@@ -246,10 +246,9 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     {[
                         { label: "Direct Referrals", value: `${stats?.totalReferrals || 0}`, sub: "Zero Line (Gen 1)", icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
-                        { label: "Team Size", value: `${referrals.reduce((acc, curr) => acc + 1 + (curr.referrals?._count || 0), 0) + (stats?.totalReferrals || 0)}`, sub: "Total Network", icon: Wallet, color: "text-purple-500", bg: "bg-purple-500/10" },
-                        // Note: "Team Size" calculation above is rough estimation based on loaded data. Real API has precise count.
+                        { label: "Team Size", value: `${stats?.teamSize || 0}`, sub: "Total Network (Downline)", icon: Wallet, color: "text-purple-500", bg: "bg-purple-500/10" },
                         { label: "Sun Lines", value: `${stats?.sunLineCount || 0}`, sub: "Strong Legs", icon: Trophy, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-                        { label: "Total Earnings", value: `$${(stats?.totalEarned || 0).toFixed(2)}`, sub: "Direct + Differential", icon: Calendar, color: "text-green-500", bg: "bg-green-500/10" },
+                        { label: "Total Earnings", value: `$${(stats?.totalEarned || 0).toFixed(2)}`, sub: `$${(stats?.earningsBreakdown?.zeroLine || 0).toFixed(2)} Zero / $${(stats?.earningsBreakdown?.sunLine || 0).toFixed(2)} Sun`, icon: Calendar, color: "text-green-500", bg: "bg-green-500/10" },
                     ].map((stat, i) => (
                         <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-6 flex flex-col justify-between h-32 relative overflow-hidden group hover:border-white/10 transition-colors">
                             <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
