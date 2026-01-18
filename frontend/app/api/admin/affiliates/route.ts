@@ -2,15 +2,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, errorResponse, normalizeAddress } from '../../affiliate/utils';
 
-// Helper: Check for Admin authorization
-// In a real app, use session-based auth or verify the signer is an admin.
-// For now, we will check a header `x-admin-wallet` against strict env var.
-const ADMIN_WALLETS = (process.env.ADMIN_WALLETS || '').split(',').map(w => w.toLowerCase());
+// Valid tier values for validation
+const VALID_TIERS = ['ORDINARY', 'VIP', 'ELITE', 'PARTNER', 'SUPER_PARTNER'] as const;
+type TierType = typeof VALID_TIERS[number];
+
+// Admin wallet configuration
+const ADMIN_WALLETS = (process.env.ADMIN_WALLETS || '').split(',').map(w => w.toLowerCase()).filter(Boolean);
+
+// Production safety check - log warning on startup if not configured
+if (process.env.NODE_ENV === 'production' && ADMIN_WALLETS.length === 0) {
+    console.warn('[Admin API] ⚠️ ADMIN_WALLETS not configured - admin endpoints will reject all requests');
+}
 
 function isAdmin(req: NextRequest): boolean {
     const adminWallet = req.headers.get('x-admin-wallet');
-    // For development, allow localhost if no env configured (dangerous in prod!)
-    if (process.env.NODE_ENV === 'development' && !process.env.ADMIN_WALLETS) return true;
+
+    // Development mode bypass with warning
+    if (process.env.NODE_ENV === 'development' && ADMIN_WALLETS.length === 0) {
+        console.warn('[Admin API] ⚠️ Admin auth bypassed in development mode');
+        return true;
+    }
 
     if (!adminWallet) return false;
     return ADMIN_WALLETS.includes(adminWallet.toLowerCase());
@@ -32,7 +43,7 @@ export async function GET(request: NextRequest) {
         const whereClause: any = {};
         if (search) {
             whereClause.OR = [
-                { walletAddress: { contains: search } }, // Case sensitive in SQLite/Prisma depending on DB
+                { walletAddress: { contains: search } },
                 { referralCode: { contains: search } }
             ];
         }
@@ -43,7 +54,7 @@ export async function GET(request: NextRequest) {
                 where: whereClause,
                 skip: offset,
                 take: limit,
-                orderBy: { totalEarned: 'desc' }, // Default sort by earnings
+                orderBy: { totalEarned: 'desc' },
                 include: {
                     _count: {
                         select: { referrals: true }
@@ -52,21 +63,27 @@ export async function GET(request: NextRequest) {
             })
         ]);
 
-        // Get team sizes efficiently
-        // We can't easily join closure table count in one go with default Prisma methods efficiently for a list without raw query or N+1.
-        // For 20 items, N+1 count query is acceptable.
-        const enrichedAffiliates = await Promise.all(affiliates.map(async (aff) => {
-            const teamSize = await prisma.teamClosure.count({
-                where: {
-                    ancestorId: aff.id,
-                    depth: { gt: 0 }
-                }
-            });
-            return {
-                ...aff,
-                teamSize,
-                directReferrals: aff._count.referrals
-            };
+        // Batch query for team sizes - avoid N+1
+        const affiliateIds = affiliates.map(a => a.id);
+        const teamSizeCounts = await prisma.teamClosure.groupBy({
+            by: ['ancestorId'],
+            where: {
+                ancestorId: { in: affiliateIds },
+                depth: { gt: 0 }
+            },
+            _count: { descendantId: true }
+        });
+
+        // Create lookup map for O(1) access
+        const teamSizeMap = new Map(
+            teamSizeCounts.map(t => [t.ancestorId, t._count.descendantId])
+        );
+
+        // Enrich affiliates with team sizes
+        const enrichedAffiliates = affiliates.map(aff => ({
+            ...aff,
+            teamSize: teamSizeMap.get(aff.id) || 0,
+            directReferrals: aff._count.referrals
         }));
 
         return NextResponse.json({
@@ -95,7 +112,12 @@ export async function PUT(request: NextRequest) {
         const { id, tier } = body;
 
         if (!id || !tier) {
-            return errorResponse('Missing required fields');
+            return errorResponse('Missing required fields', 400);
+        }
+
+        // Validate tier value
+        if (!VALID_TIERS.includes(tier as TierType)) {
+            return errorResponse(`Invalid tier value. Must be one of: ${VALID_TIERS.join(', ')}`, 400);
         }
 
         const updated = await prisma.referrer.update({
@@ -103,6 +125,7 @@ export async function PUT(request: NextRequest) {
             data: { tier }
         });
 
+        console.log(`[Admin API] Tier updated: ${id} -> ${tier}`);
         return NextResponse.json({ success: true, data: updated });
     } catch (error) {
         console.error('Admin update error:', error);
