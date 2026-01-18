@@ -357,8 +357,25 @@ export class CopyTradingExecutionService {
                 }
 
             } else { // SELL
-                // Always Standard Path for SELL (Token Custody in Proxy)
-                const sharesToSell = amount / price;
+                // Query actual token balance before SELL to prevent failed transactions
+                const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                const executionSigner = this.getSigner(params.signer);
+                const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
+
+                const actualBalanceRaw = await ctf.balanceOf(proxyAddress, tokenId);
+                const actualShares = Number(ethers.utils.formatUnits(actualBalanceRaw, USDC_DECIMALS));
+
+                const requestedSharesToSell = amount / price;
+                const sharesToSell = Math.min(requestedSharesToSell, actualShares);
+
+                if (sharesToSell <= 0) {
+                    console.log(`[CopyExec] ⚠️ No tokens to sell in Proxy for Token ${tokenId}`);
+                    return { success: false, error: 'No tokens available to sell in Proxy', proxyAddress };
+                }
+
+                if (sharesToSell < requestedSharesToSell) {
+                    console.log(`[CopyExec] ⚠️ Capping sell: requested ${requestedSharesToSell.toFixed(2)}, available ${actualShares.toFixed(2)}`);
+                }
 
                 const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell, params.signer, params.overrides);
                 if (!pullResult.success) {
@@ -367,6 +384,7 @@ export class CopyTradingExecutionService {
                 useProxyFunds = true;
                 tokenPullTxHash = pullResult.txHash;
             }
+
         } catch (e: any) {
             return { success: false, error: `Proxy prep failed: ${e.message}` };
         }

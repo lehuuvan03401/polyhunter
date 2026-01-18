@@ -131,6 +131,50 @@ interface JobQueueItem {
 }
 const jobQueue = new TaskQueue<JobQueueItem>(1000);
 
+// --- PRICE CACHE (5 second TTL) ---
+const priceCache = new Map<string, { price: number; timestamp: number }>();
+const PRICE_CACHE_TTL = 5000;
+
+async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number> {
+    const cached = priceCache.get(tokenId);
+    if (cached && Date.now() - cached.timestamp < PRICE_CACHE_TTL) {
+        return cached.price;
+    }
+    try {
+        const ob = await masterTradingService.getOrderBook(tokenId);
+        const price = side === 'BUY'
+            ? Number(ob.asks[0]?.price || 0.5)
+            : Number(ob.bids[0]?.price || 0.5);
+        priceCache.set(tokenId, { price, timestamp: Date.now() });
+        console.log(`[Supervisor] 💰 Price fetched for ${tokenId}: $${price.toFixed(4)}`);
+        return price;
+    } catch (e: any) {
+        console.warn(`[Supervisor] Price fetch failed for ${tokenId}: ${e.message}`);
+        return cached?.price || 0.5;
+    }
+}
+
+// --- EVENT DEDUPLICATION (60 second TTL) ---
+const processedEvents = new Map<string, number>();
+const EVENT_TTL = 60_000;
+
+function isEventDuplicate(txHash: string, logIndex: number): boolean {
+    const key = `${txHash}:${logIndex}`;
+    const ts = processedEvents.get(key);
+    if (ts && Date.now() - ts < EVENT_TTL) {
+        return true;
+    }
+    processedEvents.set(key, Date.now());
+    // Cleanup old entries periodically
+    if (processedEvents.size > 1000) {
+        const now = Date.now();
+        for (const [k, v] of processedEvents.entries()) {
+            if (now - v > EVENT_TTL) processedEvents.delete(k);
+        }
+    }
+    return false;
+}
+
 async function checkQueue() {
     if (jobQueue.isEmpty) return;
 
@@ -204,22 +248,20 @@ async function handleTransfer(
     value: ethers.BigNumber,
     event: ethers.Event
 ) {
-    if (isProcessing) return; // Simple debounce if needed, but parallel means we shouldn't block?
-    // Actually, we want to process EVERY event.
+    // Deduplicate events to prevent double execution
+    const txHash = event.transactionHash;
+    const logIndex = event.logIndex;
+    if (isEventDuplicate(txHash, logIndex)) {
+        console.log(`[Supervisor] ⏭️ Duplicate event ignored: ${txHash}:${logIndex}`);
+        return;
+    }
 
     try {
         const tokenId = id.toString();
-        const amountValues = value.toString(); // Raw share amount
-        const originalSize = parseFloat(amountValues) / 1e6; // Approximation for USDC/Token decimals
+        const amountValues = value.toString();
+        const originalSize = parseFloat(amountValues) / 1e6;
 
         // 1. Identify Trader
-        // Proxy Transfer logic: 
-        // Mint (Buy): 0x -> Proxy (Usually handled by CTF minting, might not be TransferSingle?)
-        // Actually, Buying on Polymarket usually = CTF split or Order match.
-        // For CTF: Order Match -> ERC1155 Transfer.
-        // If Trader BUYS: Seller -> Trader. (from=Seller, to=Trader)
-        // If Trader SELLS: Trader -> Buyer. (from=Trader, to=Buyer)
-
         let trader: string | null = null;
         let side: 'BUY' | 'SELL' | null = null;
 
@@ -235,25 +277,16 @@ async function handleTransfer(
 
         console.log(`[Supervisor] 🚨 SIGNAL DETECTED: Trader ${trader} ${side} Token ${tokenId}`);
 
-        // 2. Dispatch Jobs
+        // 2. Find subscribers
         const subscribers = activeConfigs.filter(c => c.traderAddress.toLowerCase() === trader);
-
         if (subscribers.length === 0) return;
 
         console.log(`[Supervisor] Dispatching ${subscribers.length} jobs...`);
 
-        // Fetch market price ONCE for all subscribers? 
-        // Optimization: Get price once, pass to executors.
-        // But execution service might re-fetch.
-        // Let's get "approx" price for sizing logic.
-        let price = 0.5; // Default fallback
-        try {
-            // Can use master service to peek price quickly
-            // const ob = await masterTradingService.getOrderBook(tokenId); 
-            // price = side === 'BUY' ? Number(ob.asks[0]?.price || 0.5) : Number(ob.bids[0]?.price || 0.5);
-        } catch (e) { console.warn("Price peek failed, using default"); }
+        // 3. Fetch real market price (cached)
+        const price = await getCachedPrice(tokenId, side);
 
-        // PARALLEL EXECUTION LOOP
+        // 4. PARALLEL EXECUTION LOOP
         subscribers.forEach(async (sub) => {
             await processJob(sub, side!, tokenId, price, trader!, originalSize);
         });
@@ -562,7 +595,17 @@ async function main() {
     // Initialize Debt Manager
     debtManager = walletManager ? new DebtManager(debtRepository, walletManager, provider, CHAIN_ID) : null;
 
+    // Recover any pending debts from previous sessions
+    if (debtManager) {
+        console.log('[Supervisor] 🩺 Checking for pending debts from previous sessions...');
+        const recovery = await debtManager.recoverPendingDebts();
+        if (recovery.recovered > 0 || recovery.errors > 0) {
+            console.log(`[Supervisor] 💰 Debt recovery: ${recovery.recovered} recovered, ${recovery.errors} errors`);
+        }
+    }
+
     await refreshConfigs();
+
 
     // Refresh configs loop
     setInterval(refreshConfigs, 10000);
