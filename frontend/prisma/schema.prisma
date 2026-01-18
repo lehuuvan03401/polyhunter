@@ -10,12 +10,13 @@ datasource db {
 }
 
 // Affiliate tier levels
+// Affiliate tier levels (5-level rank system)
 enum AffiliateTier {
-  BRONZE
-  SILVER
-  GOLD
-  PLATINUM
-  DIAMOND
+  ORDINARY // Level 1
+  VIP // Level 2 (Direct: 3, Team: 10)
+  ELITE // Level 3 (Direct: 10, Team: 100)
+  PARTNER // Level 4 (Direct: 30, Team: 500)
+  SUPER_PARTNER // Level 5 (Direct: 50, Team: 1000)
 }
 
 // Payout status
@@ -31,7 +32,7 @@ model Referrer {
   id            String        @id @default(cuid())
   walletAddress String        @unique
   referralCode  String        @unique
-  tier          AffiliateTier @default(BRONZE)
+  tier          AffiliateTier @default(ORDINARY)
   totalVolume   Float         @default(0)
   totalEarned   Float         @default(0)
   pendingPayout Float         @default(0)
@@ -41,6 +42,32 @@ model Referrer {
   referrals     Referral[]
   payouts       Payout[]
   volumeRecords ReferralVolume[]
+
+  // MLM Hierarchy (Closure Table)
+  ancestors   TeamClosure[] @relation("DescendantRelation")
+  descendants TeamClosure[] @relation("AncestorRelation")
+
+  // Performance Metrics
+  maxDepth     Int   @default(0) // Deepest level of the team
+  sunLineCount Int   @default(0) // Number of qualified sun lines
+  teamVolume   Float @default(0) // Total volume of the subtree
+}
+
+// Closure Table for efficient tree traversal
+model TeamClosure {
+  id String @id @default(cuid())
+
+  ancestor   Referrer @relation("AncestorRelation", fields: [ancestorId], references: [id])
+  ancestorId String
+
+  descendant   Referrer @relation("DescendantRelation", fields: [descendantId], references: [id])
+  descendantId String
+
+  depth Int // 0 = self, 1 = direct, 2 = grand-child, etc.
+
+  @@unique([ancestorId, descendantId])
+  @@index([ancestorId])
+  @@index([descendantId])
 }
 
 // Referral - user referred by an affiliate

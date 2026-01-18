@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, normalizeAddress, errorResponse, TIER_RATES, TIER_THRESHOLDS } from '../utils';
+import { AffiliateTier } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
     try {
@@ -25,10 +26,21 @@ export async function GET(request: NextRequest) {
         }
 
         // Calculate next tier
-        const currentTier = referrer.tier as keyof typeof TIER_THRESHOLDS;
-        const tiers = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'] as const;
+        const currentTier = referrer.tier as AffiliateTier;
+        const tiers = [
+            AffiliateTier.ORDINARY,
+            AffiliateTier.VIP,
+            AffiliateTier.ELITE,
+            AffiliateTier.PARTNER,
+            AffiliateTier.SUPER_PARTNER
+        ] as const;
         const currentIndex = tiers.indexOf(currentTier);
         const nextTier = currentIndex < 4 ? tiers[currentIndex + 1] : null;
+
+        // Use Team Differential Rate for "commissionRate" display, or Zero Line?
+        // Frontend displays "Zero Line" and "Team Diff" separately now, inferred from Tier.
+        // But for backward compat or generic display:
+
         const volumeToNextTier = nextTier
             ? Math.max(0, TIER_THRESHOLDS[nextTier] - referrer.totalVolume)
             : 0;
@@ -40,6 +52,8 @@ export async function GET(request: NextRequest) {
             commissionRate: TIER_RATES[currentTier],
             totalVolumeGenerated: referrer.totalVolume,
             totalReferrals: referrer._count.referrals,
+            sunLineCount: referrer.sunLineCount,
+            maxDepth: referrer.maxDepth,
             totalEarned: referrer.totalEarned,
             pendingPayout: referrer.pendingPayout,
             volumeToNextTier,

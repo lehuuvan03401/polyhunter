@@ -11,7 +11,7 @@ const API_BASE_URL = '';
 export interface AffiliateStats {
     walletAddress: string;
     referralCode: string;
-    tier: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM' | 'DIAMOND';
+    tier: 'ORDINARY' | 'VIP' | 'ELITE' | 'PARTNER' | 'SUPER_PARTNER';
     commissionRate: number;
     totalVolumeGenerated: number;
     totalReferrals: number;
@@ -19,6 +19,8 @@ export interface AffiliateStats {
     pendingPayout: number;
     volumeToNextTier: number;
     nextTier: string | null;
+    sunLineCount: number;
+    maxDepth: number;
 }
 
 export interface Referral {
@@ -129,9 +131,9 @@ export function generateReferralLink(referralCode: string): string {
 
 // Tier display helpers
 export const TIER_INFO = {
-    BRONZE: { name: 'Bronze Partner', color: 'text-orange-400', minVolume: 0, nextTier: 'Silver', nextVolume: 500000 },
-    SILVER: { name: 'Silver Partner', color: 'text-gray-300', minVolume: 500000, nextTier: 'Gold', nextVolume: 2500000 },
-    GOLD: { name: 'Gold Partner', color: 'text-yellow-400', minVolume: 2500000, nextTier: 'Platinum', nextVolume: 10000000 },
-    PLATINUM: { name: 'Platinum Partner', color: 'text-cyan-400', minVolume: 10000000, nextTier: 'Diamond', nextVolume: 50000000 },
-    DIAMOND: { name: 'Diamond Partner', color: 'text-blue-300', minVolume: 50000000, nextTier: null, nextVolume: null },
+    ORDINARY: { name: 'Ordinary Member', color: 'text-gray-400', minDirect: 0, minTeam: 0, nextTier: 'VIP' },
+    VIP: { name: 'VIP Member', color: 'text-blue-400', minDirect: 3, minTeam: 10, nextTier: 'ELITE' },
+    ELITE: { name: 'Elite Agent', color: 'text-purple-400', minDirect: 10, minTeam: 100, nextTier: 'PARTNER' },
+    PARTNER: { name: 'Partner', color: 'text-yellow-400', minDirect: 30, minTeam: 500, nextTier: 'SUPER_PARTNER' },
+    SUPER_PARTNER: { name: 'Super Partner', color: 'text-red-500', minDirect: 50, minTeam: 1000, nextTier: null },
 };
