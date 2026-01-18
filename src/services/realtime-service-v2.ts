@@ -211,6 +211,7 @@ export interface Subscription {
   topic: string;
   type: string;
   unsubscribe: () => void;
+  payload?: any;
 }
 
 export interface MarketSubscription extends Subscription {
@@ -571,13 +572,13 @@ export class RealtimeServiceV2 extends EventEmitter {
     // Create subscription objects - only include filters field if we have filters
     const subscriptions = hasFilter
       ? [
-          { topic: 'activity', type: 'trades', filters: JSON.stringify(filterObj) },
-          { topic: 'activity', type: 'orders_matched', filters: JSON.stringify(filterObj) },
-        ]
+        { topic: 'activity', type: 'trades', filters: JSON.stringify(filterObj) },
+        { topic: 'activity', type: 'orders_matched', filters: JSON.stringify(filterObj) },
+      ]
       : [
-          { topic: 'activity', type: 'trades' },
-          { topic: 'activity', type: 'orders_matched' },
-        ];
+        { topic: 'activity', type: 'trades' },
+        { topic: 'activity', type: 'orders_matched' },
+      ];
 
     this.sendSubscription({ subscriptions });
 
@@ -593,6 +594,7 @@ export class RealtimeServiceV2 extends EventEmitter {
         this.sendUnsubscription({ subscriptions });
         this.subscriptions.delete(subId);
       },
+      payload: { subscriptions },
     };
 
     this.subscriptions.set(subId, subscription);
@@ -889,6 +891,17 @@ export class RealtimeServiceV2 extends EventEmitter {
   private handleConnect(client: RealTimeDataClient): void {
     this.connected = true;
     this.log('Connected to WebSocket server');
+
+    // Resubscribe to all active subscriptions
+    if (this.subscriptions.size > 0) {
+      this.log(`Resubscribing to ${this.subscriptions.size} active subscriptions...`);
+      this.subscriptions.forEach((sub) => {
+        if (sub.payload) {
+          this.sendSubscription(sub.payload);
+        }
+      });
+    }
+
     this.emit('connected');
   }
 
