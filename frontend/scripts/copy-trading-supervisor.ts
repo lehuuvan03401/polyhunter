@@ -661,10 +661,13 @@ async function handleActivityTrade(trade: ActivityTrade) {
         if (subscribers.length === 0) return;
 
         // 3. Execution
-        subscribers.forEach(async (sub) => {
-            // Pass price from WS as "approxPrice"
-            await processJob(sub, side!, tokenId, price, traderAddress!, size);
-        });
+        for (const sub of subscribers) {
+            try {
+                await processJob(sub, side!, tokenId, price, traderAddress!, size);
+            } catch (execError) {
+                console.error(`[Supervisor] WS Execution error for ${sub.walletAddress}:`, execError);
+            }
+        }
 
     } catch (e) {
         console.error(`[Supervisor] WS Handle Error:`, e);
@@ -716,7 +719,7 @@ async function main() {
 
     // Recover any pending debts from previous sessions
     if (debtManager) {
-        console.log('[Supervisor] � Checking for pending debts from previous sessions...');
+        console.log('[Supervisor] 🩺 Checking for pending debts from previous sessions...');
         const recovery = await debtManager.recoverPendingDebts();
         if (recovery.recovered > 0 || recovery.errors > 0) {
             console.log(`[Supervisor] 💰 Debt recovery: ${recovery.recovered} recovered, ${recovery.errors} errors`);
@@ -743,28 +746,25 @@ async function main() {
     }, 120000); // 2 mins
 
     // Start Listeners
-    if (monitoredTraders.size > 0 || true) {
-        // A. WebSocket (Primary - <500ms)
-        startActivityListener();
+    // Always start listeners - monitoredTraders might be populated later via refreshConfigs
+    // A. WebSocket (Primary - <500ms)
+    startActivityListener();
 
-        // B. Chain Events (Fallback - ~2s)
-        console.log(`[Supervisor] 🎧 Listening for TransferSingle events on ${CONTRACT_ADDRESSES.ctf}...`);
-        const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
-        ctf.on("TransferSingle", handleTransfer);
+    // B. Chain Events (Fallback - ~2s)
+    console.log(`[Supervisor] 🎧 Listening for TransferSingle events on ${CONTRACT_ADDRESSES.ctf}...`);
+    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
+    ctf.on("TransferSingle", handleTransfer);
 
-        // C. Mempool (Optional / Legacy)
-        if (process.env.ENABLE_MEMPOOL === 'true') {
-            mempoolDetector = new MempoolDetector(
-                provider,
-                monitoredTraders,
-                (tx: any) => {
-                    console.log(`[Mempool] Signal: ${tx.hash}`);
-                }
-            );
-            mempoolDetector.start();
-        }
-    } else {
-        console.warn("[Supervisor] ⚠️ No traders to monitor. Waiting for configs...");
+    // C. Mempool (Optional / Legacy)
+    if (process.env.ENABLE_MEMPOOL === 'true') {
+        mempoolDetector = new MempoolDetector(
+            provider,
+            monitoredTraders,
+            (tx: any) => {
+                console.log(`[Mempool] Signal: ${tx.hash}`);
+            }
+        );
+        mempoolDetector.start();
     }
 
     // Keep alive
@@ -774,6 +774,5 @@ async function main() {
     });
 }
 
-// Execute Main
 // Execute Main
 main().catch(console.error);

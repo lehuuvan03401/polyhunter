@@ -206,12 +206,16 @@ export interface RFQQuote {
 }
 
 // Subscription types
+export interface SubscriptionPayload {
+  subscriptions: Array<{ topic: string; type: string; filters?: string; clob_auth?: ClobApiKeyCreds }>;
+}
+
 export interface Subscription {
   id: string;
   topic: string;
   type: string;
   unsubscribe: () => void;
-  payload?: any;
+  payload?: SubscriptionPayload;
 }
 
 export interface MarketSubscription extends Subscription {
