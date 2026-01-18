@@ -37,7 +37,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [isAdvancedMode, setIsAdvancedMode] = React.useState(false); // Default to Simple Mode
     const [copyMode, setCopyMode] = React.useState<CopyMode>('% Shares');
     const [sellMode, setSellMode] = React.useState<SellMode>('Same %');
-    const [infiniteMode, setInfiniteMode] = React.useState(false);
+    const [infiniteMode, setInfiniteMode] = React.useState(true); // Default ON for continuous copying
 
     // Form States
     const [sharePercent, setSharePercent] = React.useState('50');
@@ -47,30 +47,30 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [maxPerTrade, setMaxPerTrade] = React.useState('100');
 
     // Range Mode State
-    const [rangeMin, setRangeMin] = React.useState('2');
-    const [rangeMax, setRangeMax] = React.useState('25');
+    const [rangeMin, setRangeMin] = React.useState('5');
+    const [rangeMax, setRangeMax] = React.useState('50');
 
     // Fixed Mode State
     const [fixedAmount, setFixedAmount] = React.useState('50');
 
-    // Filter States
-    const [maxDaysOut, setMaxDaysOut] = React.useState('');
-    const [maxPerMarket, setMaxPerMarket] = React.useState('');
-    const [minLiquidity, setMinLiquidity] = React.useState('');
-    const [minVolume, setMinVolume] = React.useState('');
-    const [maxOdds, setMaxOdds] = React.useState('');
-    const [minTrigger, setMinTrigger] = React.useState('');
+    // Filter States - Default recommended values
+    const [maxDaysOut, setMaxDaysOut] = React.useState('30');        // 30 days max
+    const [maxPerMarket, setMaxPerMarket] = React.useState('500');   // $500 per market cap
+    const [minLiquidity, setMinLiquidity] = React.useState('1000');  // $1000 min liquidity
+    const [minVolume, setMinVolume] = React.useState('1000');        // $1000 min volume
+    const [maxOdds, setMaxOdds] = React.useState('90');              // 90% max odds
+    const [minTrigger, setMinTrigger] = React.useState('100');       // $100 min trigger size
 
     // Sell Mode States
     const [sellFixedAmount, setSellFixedAmount] = React.useState('25');
-    const [sellPercentage, setSellPercentage] = React.useState('25');
+    const [sellPercentage, setSellPercentage] = React.useState('50');
 
     // Slippage State
     const [slippageMode, setSlippageMode] = React.useState<'FIXED' | 'AUTO'>('AUTO');
     const [maxSlippageInput, setMaxSlippageInput] = React.useState('2.0');
 
-    // Auto Execution
-    const [autoExecute, setAutoExecute] = React.useState(false);
+    // Auto Execution - Default ON (Hands-Free mode)
+    const [autoExecute, setAutoExecute] = React.useState(true);
 
     // Execution Mode (Security vs Speed)
     const [executionMode, setExecutionMode] = React.useState<'PROXY' | 'EOA'>('PROXY');
