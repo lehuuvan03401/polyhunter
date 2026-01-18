@@ -84,6 +84,40 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
         }
     };
 
+
+
+    const handleWithdraw = async () => {
+        if (!stats || stats.pendingPayout < 10) {
+            toast.error('Minimum withdrawal amount is $10');
+            return;
+        }
+
+        const confirm = window.confirm(`Request payout of $${stats.pendingPayout.toFixed(2)}?`);
+        if (!confirm) return;
+
+        const toastId = toast.loading('Processing withdrawal request...');
+        try {
+            const result = await affiliateApi.requestPayout(walletAddress);
+            if (result.success) {
+                toast.dismiss(toastId);
+                toast.success('Withdrawal request submitted!');
+                // Refresh
+                const [statsData, referralsData] = await Promise.all([
+                    affiliateApi.getStats(walletAddress),
+                    affiliateApi.getReferrals(walletAddress)
+                ]);
+                setStats(statsData);
+                setReferrals(referralsData);
+            } else {
+                toast.dismiss(toastId);
+                toast.error(result.error || 'Withdrawal failed');
+            }
+        } catch (e) {
+            toast.dismiss(toastId);
+            toast.error('Network error requesting payout');
+        }
+    };
+
     const handleCopyLink = () => {
         if (stats?.referralCode) {
             navigator.clipboard.writeText(generateReferralLink(stats.referralCode));
@@ -248,7 +282,23 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                         { label: "Direct Referrals", value: `${stats?.totalReferrals || 0}`, sub: "Zero Line (Gen 1)", icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
                         { label: "Team Size", value: `${stats?.teamSize || 0}`, sub: "Total Network (Downline)", icon: Wallet, color: "text-purple-500", bg: "bg-purple-500/10" },
                         { label: "Sun Lines", value: `${stats?.sunLineCount || 0}`, sub: "Strong Legs", icon: Trophy, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-                        { label: "Total Earnings", value: `$${(stats?.totalEarned || 0).toFixed(2)}`, sub: `$${(stats?.earningsBreakdown?.zeroLine || 0).toFixed(2)} Zero / $${(stats?.earningsBreakdown?.sunLine || 0).toFixed(2)} Sun`, icon: Calendar, color: "text-green-500", bg: "bg-green-500/10" },
+                        {
+                            label: "Total Earnings",
+                            value: `$${(stats?.totalEarned || 0).toFixed(2)}`,
+                            sub: `$${(stats?.earningsBreakdown?.zeroLine || 0).toFixed(2)} Zero / $${(stats?.earningsBreakdown?.sunLine || 0).toFixed(2)} Sun`,
+                            icon: Calendar,
+                            color: "text-green-500",
+                            bg: "bg-green-500/10",
+                            action: (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleWithdraw(); }}
+                                    className="ml-auto text-xs bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded"
+                                    title="Withdraw Funds"
+                                >
+                                    Withdraw
+                                </button>
+                            )
+                        },
                     ].map((stat, i) => (
                         <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-6 flex flex-col justify-between h-32 relative overflow-hidden group hover:border-white/10 transition-colors">
                             <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>

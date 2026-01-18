@@ -112,6 +112,18 @@ export const affiliateApi = {
     },
 
     /**
+     * Request a payout
+     */
+    async requestPayout(walletAddress: string): Promise<{ success: boolean; payoutId?: string; message?: string; error?: string }> {
+        const response = await fetch(`${API_BASE_URL}/api/affiliate/payouts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress }),
+        });
+        return response.json();
+    },
+
+    /**
      * Check if referral code is valid
      */
     async lookupCode(code: string): Promise<{ valid: boolean; walletAddress?: string }> {
