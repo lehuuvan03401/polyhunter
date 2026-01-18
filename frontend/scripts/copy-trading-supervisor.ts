@@ -30,6 +30,7 @@ import { DebtManager } from '../../src/core/debt-manager';
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 import { AffiliateEngine } from '../lib/services/affiliate-engine';
 import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
+import { TxMonitor, TrackedTx } from '../../src/core/tx-monitor';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -142,6 +143,48 @@ interface JobQueueItem {
 }
 const jobQueue = new TaskQueue<JobQueueItem>(1000);
 
+// --- HEALTH METRICS ---
+interface Metrics {
+    totalExecutions: number;
+    successfulExecutions: number;
+    failedExecutions: number;
+    totalLatencyMs: number;
+    lastResetAt: number;
+}
+const metrics: Metrics = {
+    totalExecutions: 0,
+    successfulExecutions: 0,
+    failedExecutions: 0,
+    totalLatencyMs: 0,
+    lastResetAt: Date.now(),
+};
+
+function recordExecution(success: boolean, latencyMs: number): void {
+    metrics.totalExecutions++;
+    if (success) metrics.successfulExecutions++;
+    else metrics.failedExecutions++;
+    metrics.totalLatencyMs += latencyMs;
+}
+
+function logMetricsSummary(): void {
+    const duration = (Date.now() - metrics.lastResetAt) / 1000 / 60; // minutes
+    const avgLatency = metrics.totalExecutions > 0
+        ? (metrics.totalLatencyMs / metrics.totalExecutions / 1000).toFixed(2)
+        : '0';
+    const successRate = metrics.totalExecutions > 0
+        ? ((metrics.successfulExecutions / metrics.totalExecutions) * 100).toFixed(1)
+        : '100';
+
+    console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: ${metrics.totalExecutions} executions, ${successRate}% success, ${avgLatency}s avg latency`);
+
+    // Reset for next period
+    metrics.totalExecutions = 0;
+    metrics.successfulExecutions = 0;
+    metrics.failedExecutions = 0;
+    metrics.totalLatencyMs = 0;
+    metrics.lastResetAt = Date.now();
+}
+
 // --- PRICE CACHE (5 second TTL) ---
 const priceCache = new Map<string, { price: number; timestamp: number }>();
 const PRICE_CACHE_TTL = 5000;
@@ -166,16 +209,17 @@ async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<nu
 }
 
 // --- EVENT DEDUPLICATION (60 second TTL) ---
+// Uses txHash-only as key for cross-channel deduplication (WS + Chain)
 const processedEvents = new Map<string, number>();
 const EVENT_TTL = 60_000;
 
-function isEventDuplicate(txHash: string, logIndex: number): boolean {
-    const key = `${txHash}:${logIndex}`;
-    const ts = processedEvents.get(key);
+function isEventDuplicate(txHash: string): boolean {
+    const ts = processedEvents.get(txHash);
     if (ts && Date.now() - ts < EVENT_TTL) {
+        console.log(`[Supervisor] 🔁 Duplicate event ignored: ${txHash.slice(0, 10)}...`);
         return true;
     }
-    processedEvents.set(key, Date.now());
+    processedEvents.set(txHash, Date.now());
     // Cleanup old entries periodically
     if (processedEvents.size > 1000) {
         const now = Date.now();
@@ -292,11 +336,9 @@ async function handleTransfer(
     value: ethers.BigNumber,
     event: ethers.Event
 ) {
-    // Deduplicate events to prevent double execution
+    // Deduplicate events to prevent double execution (unified txHash-only)
     const txHash = event.transactionHash;
-    const logIndex = event.logIndex;
-    if (isEventDuplicate(txHash, logIndex)) {
-        console.log(`[Supervisor] ⏭️ Duplicate event ignored: ${txHash}:${logIndex}`);
+    if (isEventDuplicate(txHash)) {
         return;
     }
 
@@ -539,6 +581,7 @@ async function executeJobInternal(
 ) {
     const workerAddress = worker.address;
     const typeLabel = isPreflight ? "🦈 MEMPOOL" : "🐢 BLOCK";
+    const startTime = Date.now(); // Track latency
     console.log(`[Supervisor] 🏃 [${typeLabel}] Assigning User ${config.walletAddress} -> Worker ${workerAddress}`);
 
     try {
@@ -564,6 +607,10 @@ async function executeJobInternal(
 
         const result = await executionService.executeOrderWithProxy(baseParams);
 
+        // Record metrics
+        const latencyMs = Date.now() - startTime;
+        recordExecution(result.success, latencyMs);
+
         // 4. Log Result (Async DB write)
         await prisma.copyTrade.create({
             data: {
@@ -582,7 +629,7 @@ async function executeJobInternal(
             }
         });
 
-        console.log(`[Supervisor] ✅ Job Complete for User ${config.walletAddress}: ${result.success ? "Success" : "Failed (" + result.error + ")"}`);
+        console.log(`[Supervisor] ✅ Job Complete for User ${config.walletAddress}: ${result.success ? "Success" : "Failed (" + result.error + ")"} (${latencyMs}ms)`);
 
         if (result.success) {
             // --- AFFILIATE COMMISSION TRIGGER ---
@@ -608,6 +655,9 @@ async function executeJobInternal(
         }
 
     } catch (e: any) {
+        // Record failed execution
+        const latencyMs = Date.now() - startTime;
+        recordExecution(false, latencyMs);
         console.error(`[Supervisor] 💥 Job Crashed for User ${config.walletAddress}:`, e.message);
     } finally {
         // 5. Checkin Worker AND Trigger Queue
@@ -622,24 +672,9 @@ async function executeJobInternal(
 
 // --- WEB SOCKET HANDLERS ---
 async function handleActivityTrade(trade: ActivityTrade) {
-    // 0. Deduplicate
-    // WS Key: ws:${txHash}:${asset}
-    const dedupKey = `ws:${trade.transactionHash}:${trade.asset}`;
-
-    // Check if this specific WS event was processed
-    if (isEventDuplicate(dedupKey, 0)) return;
-
-    // Mark regular hash as processed to block chain listener?
-    // Chain listener uses `${txHash}:${logIndex}`. We don't have logIndex here.
-    // So chain listener might still fire.
-    // But chain listener has its own dedup check.
-    // If we want to block chain listener from processing SAME trade:
-    // We rely on idempotency or accept double execution if different IDs.
-    // OR: Chain listener should check `ws:${txHash}:${asset}` too? No.
-    // Let's rely on independent streams for now. Duplicate execution for SAME trade
-    // across different channels is bad.
-    // Ideally we block the TX hash.
-    // But blocking whole TX hash might block other valid trades in same TX.
+    // 0. Deduplicate using txHash-only (unified with chain listener)
+    if (!trade.transactionHash) return;
+    if (isEventDuplicate(trade.transactionHash)) return;
 
     try {
         const traderAddress = trade.trader?.address?.toLowerCase();
@@ -744,6 +779,9 @@ async function main() {
             await debtManager.recoverPendingDebts();
         }
     }, 120000); // 2 mins
+
+    // Metrics Logging Loop
+    setInterval(logMetricsSummary, 300000); // 5 mins
 
     // Start Listeners
     // Always start listeners - monitoredTraders might be populated later via refreshConfigs
