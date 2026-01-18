@@ -75,6 +75,30 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     // Execution Mode (Security vs Speed)
     const [executionMode, setExecutionMode] = React.useState<'PROXY' | 'EOA'>('PROXY');
     const [privateKeyInput, setPrivateKeyInput] = React.useState('');
+    const [privateKeyError, setPrivateKeyError] = React.useState('');
+
+    // Validate EOA private key format
+    const validatePrivateKey = (key: string): boolean => {
+        if (!key) {
+            setPrivateKeyError('');
+            return false;
+        }
+        const isValidFormat = /^0x[a-fA-F0-9]{64}$/.test(key);
+        if (!isValidFormat) {
+            setPrivateKeyError('Invalid format: must be 0x + 64 hex characters');
+            return false;
+        }
+        setPrivateKeyError('');
+        return true;
+    };
+
+    const handlePrivateKeyChange = (value: string) => {
+        setPrivateKeyInput(value);
+        validatePrivateKey(value);
+    };
+
+    // Check if start button should be disabled
+    const isEOAInvalid = executionMode === 'EOA' && !validatePrivateKey(privateKeyInput);
 
 
     const handleStartCopying = async () => {
@@ -371,10 +395,16 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             <input
                                                 type="password"
                                                 value={privateKeyInput}
-                                                onChange={(e) => setPrivateKeyInput(e.target.value)}
+                                                onChange={(e) => handlePrivateKeyChange(e.target.value)}
                                                 placeholder="0x..."
-                                                className="w-full bg-[#1a1b1e] border border-yellow-500/30 rounded-lg px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-yellow-500 transition-colors placeholder:text-muted-foreground/30"
+                                                className={cn(
+                                                    "w-full bg-[#1a1b1e] border rounded-lg px-3 py-2.5 text-sm font-mono text-white focus:outline-none transition-colors placeholder:text-muted-foreground/30",
+                                                    privateKeyError ? "border-red-500" : "border-yellow-500/30 focus:border-yellow-500"
+                                                )}
                                             />
+                                            {privateKeyError && (
+                                                <div className="text-xs text-red-400 mt-1.5">{privateKeyError}</div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -402,25 +432,26 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                 </div>
                             </div>
 
-                            {/* Max Loss Protection */}
+                            {/* Max Loss Protection - Coming Soon */}
                             <div>
                                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                                    Max Loss Protection (Optional)
+                                    Max Loss Protection
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-500 rounded">Coming Soon</span>
                                 </div>
-                                <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-3 hover:border-red-500/30 transition-colors flex items-center gap-3">
+                                <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-3 opacity-50 cursor-not-allowed flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
                                         <AlertTriangle className="h-4 w-4 text-red-500" />
                                     </div>
-                                    <div className="flex-1">
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="Set max loss amount ($)"
-                                            value={stopLoss}
-                                            onChange={(e) => setStopLoss(e.target.value)}
-                                            className="w-full bg-transparent text-sm text-white focus:outline-none placeholder:text-muted-foreground/50"
-                                        />
+                                    <div className="flex-1 text-sm text-muted-foreground">
+                                        Auto stop-loss protection will be available soon
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Trade Preview */}
+                            <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3">
+                                <div className="text-xs text-blue-300">
+                                    💡 <strong>Preview:</strong> If the trader buys $1,000 worth, you will spend <strong>${fixedAmount || '50'}</strong>
                                 </div>
                             </div>
                         </div>
@@ -938,7 +969,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                         <button
                             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-sm active:scale-[0.98] disabled:active:scale-100 flex items-center justify-center gap-2"
                             onClick={handleStartCopying}
-                            disabled={isStarting || !hasProxy || !hasEnoughFunds || !isExecutorAuthorized}
+                            disabled={isStarting || !hasProxy || !hasEnoughFunds || !isExecutorAuthorized || (executionMode === 'EOA' && (!privateKeyInput || !!privateKeyError))}
                         >
                             {isStarting ? (
                                 <>
