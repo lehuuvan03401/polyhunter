@@ -216,7 +216,7 @@ const EVENT_TTL = 60_000;
 function isEventDuplicate(txHash: string): boolean {
     const ts = processedEvents.get(txHash);
     if (ts && Date.now() - ts < EVENT_TTL) {
-        console.log(`[Supervisor] 🔁 Duplicate event ignored: ${txHash.slice(0, 10)}...`);
+        // Silently ignore duplicates (dedup working correctly)
         return true;
     }
     processedEvents.set(txHash, Date.now());
