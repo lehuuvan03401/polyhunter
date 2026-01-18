@@ -29,6 +29,7 @@ import { TaskQueue } from '../../src/core/task-queue';
 import { DebtManager } from '../../src/core/debt-manager';
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 import { AffiliateEngine } from '../lib/services/affiliate-engine';
+import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -79,6 +80,12 @@ const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 const rateLimiter = new RateLimiter();
 // Cache: Redis would be better for Prod, currently In-Memory for Supervisor
 const cache = createUnifiedCache();
+
+// Helpers
+const realtimeService = new RealtimeServiceV2({
+    autoReconnect: true,
+    debug: false
+});
 
 // Core Services
 // 1. Master Trading Service (for read-only or fallback)
@@ -612,6 +619,70 @@ async function executeJobInternal(
     }
 }
 
+
+// --- WEB SOCKET HANDLERS ---
+async function handleActivityTrade(trade: ActivityTrade) {
+    // 0. Deduplicate
+    // WS Key: ws:${txHash}:${asset}
+    const dedupKey = `ws:${trade.transactionHash}:${trade.asset}`;
+
+    // Check if this specific WS event was processed
+    if (isEventDuplicate(dedupKey, 0)) return;
+
+    // Mark regular hash as processed to block chain listener?
+    // Chain listener uses `${txHash}:${logIndex}`. We don't have logIndex here.
+    // So chain listener might still fire.
+    // But chain listener has its own dedup check.
+    // If we want to block chain listener from processing SAME trade:
+    // We rely on idempotency or accept double execution if different IDs.
+    // OR: Chain listener should check `ws:${txHash}:${asset}` too? No.
+    // Let's rely on independent streams for now. Duplicate execution for SAME trade
+    // across different channels is bad.
+    // Ideally we block the TX hash.
+    // But blocking whole TX hash might block other valid trades in same TX.
+
+    try {
+        const traderAddress = trade.trader?.address?.toLowerCase();
+        if (!traderAddress) return;
+
+        // 1. Identification & Filtering
+        if (!monitoredTraders.has(traderAddress)) return;
+
+        // trade.side in Activity is "BUY" or "SELL"
+        const side = trade.side;
+        const tokenId = trade.asset;
+        const size = trade.size;
+        const price = trade.price;
+
+        console.log(`[Supervisor] ⚡ WS DETECTED: ${traderAddress} ${side} ${tokenId} ($${price})`);
+
+        // 2. Find subscribers
+        const subscribers = activeConfigs.filter(c => c.traderAddress.toLowerCase() === traderAddress);
+        if (subscribers.length === 0) return;
+
+        // 3. Execution
+        subscribers.forEach(async (sub) => {
+            // Pass price from WS as "approxPrice"
+            await processJob(sub, side!, tokenId, price, traderAddress!, size);
+        });
+
+    } catch (e) {
+        console.error(`[Supervisor] WS Handle Error:`, e);
+    }
+}
+
+function startActivityListener() {
+    console.log("[Supervisor] 🔌 Connecting Activity WebSocket...");
+    realtimeService.connect();
+
+    // Subscribe to ALL activity to catch monitored traders
+    realtimeService.subscribeAllActivity({
+        onTrade: handleActivityTrade
+    });
+
+    console.log("[Supervisor] 🎧 Listening for WS Trades...");
+}
+
 // --- MAIN ---
 let mempoolDetector: MempoolDetector;
 
@@ -637,11 +708,15 @@ async function main() {
     }
 
     // Initialize Debt Manager
-    debtManager = walletManager ? new DebtManager(debtRepository, walletManager, provider, CHAIN_ID) : null;
+    if (walletManager) {
+        debtManager = new DebtManager(debtRepository, walletManager, provider, CHAIN_ID);
+    } else {
+        console.warn("[Supervisor] ⚠️ DebtManager NOT initialized (No WalletManager). Debt recovery disabled.");
+    }
 
     // Recover any pending debts from previous sessions
     if (debtManager) {
-        console.log('[Supervisor] 🩺 Checking for pending debts from previous sessions...');
+        console.log('[Supervisor] � Checking for pending debts from previous sessions...');
         const recovery = await debtManager.recoverPendingDebts();
         if (recovery.recovered > 0 || recovery.errors > 0) {
             console.log(`[Supervisor] 💰 Debt recovery: ${recovery.recovered} recovered, ${recovery.errors} errors`);
@@ -650,15 +725,12 @@ async function main() {
 
     await refreshConfigs();
 
-
     // Refresh configs loop
     setInterval(refreshConfigs, 10000);
 
     // Maintenance Loop (Auto-Refuel)
     setInterval(async () => {
         if (walletManager && masterTradingService.getWallet()) {
-            // Check if workers have < 0.1 MATIC, top up to 0.5 MATIC
-            // Using Master Wallet (Private Key) to fund them
             await walletManager.ensureFleetBalances(masterTradingService.getWallet(), 0.1, 0.5);
         }
     }, 60000 * 5); // Check every 5 minutes
@@ -668,17 +740,32 @@ async function main() {
         if (debtManager) {
             await debtManager.recoverPendingDebts();
         }
-    }, 60000 * 2); // Check every 2 minutes
+    }, 120000); // 2 mins
 
-    // Listen to Contracts
-    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
+    // Start Listeners
+    if (monitoredTraders.size > 0 || true) {
+        // A. WebSocket (Primary - <500ms)
+        startActivityListener();
 
-    console.log(`[Supervisor] 🎧 Listening for TransferSingle on ${CONTRACT_ADDRESSES.ctf}...`);
-    ctf.on("TransferSingle", handleTransfer);
+        // B. Chain Events (Fallback - ~2s)
+        console.log(`[Supervisor] 🎧 Listening for TransferSingle events on ${CONTRACT_ADDRESSES.ctf}...`);
+        const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
+        ctf.on("TransferSingle", handleTransfer);
 
-    // Start Mempool Detector
-    mempoolDetector = new MempoolDetector(provider, monitoredTraders, handleSniffedTx);
-    mempoolDetector.start();
+        // C. Mempool (Optional / Legacy)
+        if (process.env.ENABLE_MEMPOOL === 'true') {
+            mempoolDetector = new MempoolDetector(
+                provider,
+                monitoredTraders,
+                (tx: any) => {
+                    console.log(`[Mempool] Signal: ${tx.hash}`);
+                }
+            );
+            mempoolDetector.start();
+        }
+    } else {
+        console.warn("[Supervisor] ⚠️ No traders to monitor. Waiting for configs...");
+    }
 
     // Keep alive
     process.on('SIGINT', () => {
@@ -687,8 +774,6 @@ async function main() {
     });
 }
 
-
-
-
+// Execute Main
 // Execute Main
 main().catch(console.error);
