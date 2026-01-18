@@ -77,28 +77,26 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [privateKeyInput, setPrivateKeyInput] = React.useState('');
     const [privateKeyError, setPrivateKeyError] = React.useState('');
 
-    // Validate EOA private key format
-    const validatePrivateKey = (key: string): boolean => {
-        if (!key) {
-            setPrivateKeyError('');
-            return false;
-        }
-        const isValidFormat = /^0x[a-fA-F0-9]{64}$/.test(key);
-        if (!isValidFormat) {
-            setPrivateKeyError('Invalid format: must be 0x + 64 hex characters');
-            return false;
-        }
-        setPrivateKeyError('');
-        return true;
+    // Pure validation function for render-time check (no setState)
+    const isValidPrivateKey = (key: string): boolean => {
+        if (!key) return false;
+        return /^0x[a-fA-F0-9]{64}$/.test(key);
     };
 
+    // Validation with error state update (for onChange only)
     const handlePrivateKeyChange = (value: string) => {
         setPrivateKeyInput(value);
-        validatePrivateKey(value);
+        if (!value) {
+            setPrivateKeyError('');
+        } else if (!isValidPrivateKey(value)) {
+            setPrivateKeyError('Invalid format: must be 0x + 64 hex characters');
+        } else {
+            setPrivateKeyError('');
+        }
     };
 
-    // Check if start button should be disabled
-    const isEOAInvalid = executionMode === 'EOA' && !validatePrivateKey(privateKeyInput);
+    // Check if start button should be disabled (pure, no setState)
+    const isEOAInvalid = executionMode === 'EOA' && (!privateKeyInput || !isValidPrivateKey(privateKeyInput));
 
 
     const handleStartCopying = async () => {
