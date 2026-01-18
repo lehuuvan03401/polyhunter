@@ -28,6 +28,7 @@ import { MempoolDetector } from '../../src/core/mempool-detector';
 import { TaskQueue } from '../../src/core/task-queue';
 import { DebtManager } from '../../src/core/debt-manager';
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
+import { AffiliateEngine } from '../lib/services/affiliate-engine';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -70,6 +71,7 @@ const prisma = new PrismaClient({
 
 const debtRepository = new PrismaDebtRepository(prisma);
 const debtLogger = new PrismaDebtLogger(prisma);
+const affiliateEngine = new AffiliateEngine(prisma);
 
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 
@@ -497,6 +499,29 @@ async function executeJobInternal(
         });
 
         console.log(`[Supervisor] ✅ Job Complete for User ${config.walletAddress}: ${result.success ? "Success" : "Failed (" + result.error + ")"}`);
+
+        if (result.success) {
+            // --- AFFILIATE COMMISSION TRIGGER ---
+            try {
+                // Determine Trade Volume (USDC Value)
+                const tradeVolume = copyAmount; // We use copyAmount (USDC) as volume basis
+                // Determine Platform Fee (e.g. 0.1% or virtual)
+                // If we don't charge explicit fee, we treat a portion of volume as 'fee revenue' for payout?
+                // Or we pay OUT of platform pockets based on volume.
+                // Standard: Fee = Volume * 0.001 (0.1%)
+                const platformFee = tradeVolume * 0.001;
+
+                // Distribute
+                await affiliateEngine.distributeCommissions({
+                    tradeId: result.orderId || `trade-${Date.now()}`,
+                    traderAddress: config.walletAddress, // The User who copied (Referee)
+                    volume: tradeVolume,
+                    platformFee: platformFee
+                });
+            } catch (affError) {
+                console.error(`[Supervisor] ⚠️ Affiliate Trigger Failed:`, affError);
+            }
+        }
 
     } catch (e: any) {
         console.error(`[Supervisor] 💥 Job Crashed for User ${config.walletAddress}:`, e.message);
