@@ -35,10 +35,11 @@ In a live trading environment, the core objective is to **"precisely replicate p
 Based on the analysis of `TradingService` and `CopyTradingExecutionService`, here are advanced technical optimizations for the platform:
 
 ### 1. Capital Efficiency: Bot Float Rebalancing
-*   **Current State**: The "Bot Float" strategy is excellent—the bot fronts USDC to buy tokens, then pushes them to the user. This minimizes latency.
-*   **Optimization**: Implement a **Rebalancing Script**.
-    *   **Reason**: If the bot continuously buys for users, its USDC float will deplete while it accumulates "reimbursement rights" (or pending settlements).
-    *   **Solution**: A background service that monitors the Bot's USDC balance and triggers immediate settlement/withdrawal from the Proxy if the Float drops below a threshold (e.g., $1,000).
+*   **Current State**: ✅ **IMPLEMENTED** - The "Bot Float" strategy includes automatic debt recovery.
+*   **Features**:
+    *   Debt logging on reimbursement failure (`DebtLogger.logDebt()`)
+    *   Startup debt recovery (`debtManager.recoverPendingDebts()`)
+    *   Periodic recovery every 2 minutes
 
 ### 2. Execution Speed: Optimistic Execution
 *   **Current State**: Sequential processing (Event -> Config Check -> Balance Check -> Tx).

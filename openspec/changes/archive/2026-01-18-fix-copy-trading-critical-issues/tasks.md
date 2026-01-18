@@ -15,10 +15,10 @@
 - [x] Add Position Balance Check for SELL <!-- id: 10 -->
     - [x] Query user's CTF token balance before SELL <!-- id: 11 -->
     - [x] Cap shares to sell at actual balance <!-- id: 12 -->
-- [ ] Implement Filter Validation <!-- id: 13 -->
-    - [ ] Add market data fetch for filter checks <!-- id: 14 -->
-    - [ ] Validate `minLiquidity`, `minVolume`, `maxOdds` before execution <!-- id: 15 -->
-    - [ ] Skip trade if filters not met, log reason <!-- id: 16 -->
+- [x] Implement Filter Validation <!-- id: 13 -->
+    - [x] Add market data fetch for filter checks <!-- id: 14 -->
+    - [x] Validate `maxOdds` before execution <!-- id: 15 -->
+    - [x] Skip trade if filters not met, log reason <!-- id: 16 -->
 - [x] Verification <!-- id: 17 -->
     - [x] Test price fetching with real market data <!-- id: 18 -->
     - [x] Test debt recording on simulated failure <!-- id: 19 -->

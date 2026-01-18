@@ -108,10 +108,14 @@ interface ActiveConfig {
     maxSlippage: number;
     slippageType: 'FIXED' | 'AUTO';
     autoExecute: boolean;
-    // New Fields
+    // Execution Mode
     executionMode: 'PROXY' | 'EOA';
     encryptedKey?: string;
     iv?: string;
+    // Filter Fields
+    minLiquidity?: number;
+    minVolume?: number;
+    maxOdds?: number;
 }
 
 let activeConfigs: ActiveConfig[] = [];
@@ -175,6 +179,35 @@ function isEventDuplicate(txHash: string, logIndex: number): boolean {
     return false;
 }
 
+// --- FILTER VALIDATION ---
+interface FilterResult {
+    passes: boolean;
+    reason?: string;
+}
+
+async function passesFilters(
+    config: ActiveConfig,
+    tokenId: string,
+    side: 'BUY' | 'SELL',
+    price: number
+): Promise<FilterResult> {
+    // maxOdds filter: Skip trades on very high probability outcomes
+    if (config.maxOdds && side === 'BUY') {
+        if (price > config.maxOdds) {
+            return {
+                passes: false,
+                reason: `maxOdds filter failed: price ${(price * 100).toFixed(1)}% > max ${(config.maxOdds * 100).toFixed(1)}%`
+            };
+        }
+    }
+
+    // minLiquidity and minVolume would require market API calls
+    // For MVP, we only enforce maxOdds which uses price already fetched
+    // TODO: Add market liquidity/volume checks when market API is integrated
+
+    return { passes: true };
+}
+
 async function checkQueue() {
     if (jobQueue.isEmpty) return;
 
@@ -222,7 +255,11 @@ async function refreshConfigs() {
             autoExecute: c.autoExecute,
             executionMode: c.executionMode as 'PROXY' | 'EOA',
             encryptedKey: c.encryptedKey || undefined,
-            iv: c.iv || undefined
+            iv: c.iv || undefined,
+            // Filter Fields
+            minLiquidity: c.minLiquidity || undefined,
+            minVolume: c.minVolume || undefined,
+            maxOdds: c.maxOdds || undefined
         }));
 
         monitoredTraders = new Set(activeConfigs.map(c => c.traderAddress.toLowerCase()));
@@ -373,6 +410,13 @@ async function processJob(
     isPreflight: boolean = false,
     overrides?: ethers.Overrides
 ) {
+    // 0. Validate filters before allocating resources
+    const filterResult = await passesFilters(config, tokenId, side, approxPrice);
+    if (!filterResult.passes) {
+        console.log(`[Supervisor] 🔕 Trade skipped for ${config.walletAddress}: ${filterResult.reason}`);
+        return;
+    }
+
     // 1. Try Checkout Worker OR EOA Signer
     let worker: WorkerContext | null = null;
     let eoaSigner: ethers.Wallet | null = null;
