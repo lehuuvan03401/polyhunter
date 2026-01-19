@@ -4,12 +4,16 @@ import { Suspense, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { ProxyWalletCard } from '@/components/proxy/proxy-wallet-card';
 import { SmartMoneyTable } from '@/components/smart-money/smart-money-table';
+import { RisingStarsTable } from '@/components/smart-money/rising-stars-table';
 import { TableSkeleton } from '@/components/smart-money/table-skeleton';
-import { Shield, Users, TrendingUp, Lock, ArrowRight } from 'lucide-react';
+import { Shield, Users, TrendingUp, Lock, ArrowRight, Crown, Star } from 'lucide-react';
+
+type Tab = 'performers' | 'rising';
 
 export function SmartMoneyPage() {
     const { authenticated, ready, login } = usePrivy();
     const [page, setPage] = useState(1);
+    const [activeTab, setActiveTab] = useState<Tab>('performers');
 
     if (!ready) {
         return (
@@ -118,16 +122,66 @@ export function SmartMoneyPage() {
 
                 <div className="col-span-12 lg:col-span-9">
                     <div className="rounded-xl border bg-card shadow-sm">
-                        <div className="border-b p-6 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold">Top Performers</h2>
-                            <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                                Page {page}
-                            </span>
+                        {/* Tab Header */}
+                        <div className="border-b p-4">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => { setActiveTab('performers'); setPage(1); }}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'performers'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'
+                                        }`}
+                                >
+                                    <Crown className="h-4 w-4" />
+                                    Top Performers
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('rising')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'rising'
+                                        ? 'bg-yellow-600 text-white'
+                                        : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'
+                                        }`}
+                                >
+                                    <Star className="h-4 w-4" />
+                                    Rising Stars
+                                </button>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                {activeTab === 'performers'
+                                    ? 'High-volume traders from Polymarket leaderboard'
+                                    : 'Active traders with strong risk-adjusted metrics (select period in table)'
+                                }
+                            </p>
                         </div>
+
+                        {/* Tab Content */}
                         <div className="p-0">
-                            <Suspense key={page} fallback={<TableSkeleton />}>
-                                <SmartMoneyTable currentPage={page} />
-                            </Suspense>
+                            {activeTab === 'performers' ? (
+                                <>
+                                    <Suspense key={page} fallback={<TableSkeleton />}>
+                                        <SmartMoneyTable currentPage={page} />
+                                    </Suspense>
+                                    {/* Pagination for Top Performers */}
+                                    <div className="flex justify-center gap-2 p-4 border-t">
+                                        {[1, 2, 3, 4, 5].map((p) => (
+                                            <button
+                                                key={p}
+                                                onClick={() => setPage(p)}
+                                                className={`px-3 py-1 text-xs rounded ${page === p
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                                    }`}
+                                            >
+                                                {p}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <Suspense fallback={<TableSkeleton />}>
+                                    <RisingStarsTable limit={20} />
+                                </Suspense>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -137,3 +191,4 @@ export function SmartMoneyPage() {
 }
 
 export default SmartMoneyPage;
+
