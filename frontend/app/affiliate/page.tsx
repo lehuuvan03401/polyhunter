@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch } from 'lucide-react';
+import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePrivy } from '@privy-io/react-auth';
 import { useEffect, useState, useCallback } from 'react';
@@ -274,6 +274,14 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                                     <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-sm font-bold">
                                         Team Diff: {((stats?.tier === 'ORDINARY' ? 0.01 : stats?.tier === 'VIP' ? 0.02 : stats?.tier === 'ELITE' ? 0.03 : stats?.tier === 'PARTNER' ? 0.05 : 0.08) * 100).toFixed(0)}%
                                     </span>
+                                    <Link
+                                        href="/affiliate/rules"
+                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white text-sm transition-colors flex items-center gap-1"
+                                        title="Learn how commissions work"
+                                    >
+                                        <HelpCircle className="h-3 w-3" />
+                                        <span>Learn More</span>
+                                    </Link>
                                 </div>
                             </div>
                         </div>
