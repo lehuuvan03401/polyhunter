@@ -127,6 +127,9 @@ function TreeNode({ member, depth = 0 }: { member: TreeMember; depth?: number })
 }
 
 export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) {
+    const [page, setPage] = useState(1);
+    const pageSize = 10;
+
     if (!directReferrals || directReferrals.length === 0) {
         return (
             <div className={cn("text-center py-12 rounded-xl border border-dashed border-white/10 bg-white/5", className)}>
@@ -139,9 +142,12 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
         );
     }
 
+    const totalPages = Math.ceil(directReferrals.length / pageSize);
+    const paginatedMembers = directReferrals.slice((page - 1) * pageSize, page * pageSize);
+
     return (
         <div className={cn("space-y-1", className)}>
-            {/* Legend */}
+            {/* Legend & Pagination Info */}
             <div className="flex items-center justify-between px-3 mb-3">
                 <div className="text-xs text-muted-foreground uppercase tracking-wider">
                     Direct Referrals ({directReferrals.length})
@@ -157,9 +163,50 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
                     </div>
                 </div>
             </div>
-            {directReferrals.map((member, idx) => (
+
+            {/* List */}
+            {paginatedMembers.map((member, idx) => (
                 <TreeNode key={member.address || idx} member={member} depth={0} />
             ))}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between px-3 py-3 mt-2 border-t border-white/5">
+                    <div className="text-xs text-muted-foreground">
+                        Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, directReferrals.length)} of {directReferrals.length}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                            className="px-2 py-1 text-xs font-medium rounded hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground transition-colors"
+                        >
+                            Previous
+                        </button>
+                        <div className="flex items-center gap-1">
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                <button
+                                    key={p}
+                                    onClick={() => setPage(p)}
+                                    className={cn(
+                                        "w-6 h-6 flex items-center justify-center text-xs font-medium rounded transition-colors",
+                                        page === p ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5"
+                                    )}
+                                >
+                                    {p}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            disabled={page === totalPages}
+                            className="px-2 py-1 text-xs font-medium rounded hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground transition-colors"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

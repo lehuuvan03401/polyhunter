@@ -86,6 +86,7 @@ import { toast } from 'sonner';
 import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink, type Payout } from '@/lib/affiliate-api';
 import { GenerationSummaryBar } from '@/components/affiliate/generation-summary-bar';
 import { TeamTreeView } from '@/components/affiliate/team-tree-view';
+import { TeamSummaryView } from '@/components/affiliate/team-summary-view';
 import { WithdrawDialog } from '@/components/affiliate/withdraw-dialog';
 
 export default function AffiliatePage() {
@@ -961,6 +962,8 @@ interface TreeMember {
     volume: number;
     teamSize: number;
     depth: number;
+    zeroLineEarned?: number;
+    sunLineEarned?: number;
     children: TreeMember[];
 }
 
@@ -1049,53 +1052,8 @@ function TeamNetworkSection({ walletAddress }: { walletAddress: string }) {
                         <TeamTreeView directReferrals={treeData} />
                     ) : (
                         /* Summary Mode: Show only direct referrals in a compact table */
-                        <div className="space-y-2">
-                            <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 px-1">
-                                Direct Referrals ({treeData.length})
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="text-muted-foreground border-b border-white/5 uppercase text-xs">
-                                        <tr>
-                                            <th className="py-2 font-medium pl-2">Member</th>
-                                            <th className="py-2 font-medium">Rank</th>
-                                            <th className="py-2 font-medium text-right">Volume</th>
-                                            <th className="py-2 font-medium text-right pr-2 text-yellow-500">Team</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                        {treeData.map((ref, idx) => (
-                                            <tr key={ref.address || idx} className="hover:bg-white/5 transition-colors">
-                                                <td className="py-2.5 pl-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="h-6 w-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-mono text-muted-foreground">
-                                                            {ref.address?.slice(2, 4) || '??'}
-                                                        </div>
-                                                        <span className="font-mono text-white/80">
-                                                            {ref.referralCode || `${ref.address?.slice(0, 6)}...${ref.address?.slice(-4)}`}
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-2.5">
-                                                    <span className={cn("text-xs px-1.5 py-0.5 rounded border",
-                                                        ref.tier === 'ORDINARY' ? 'text-gray-400 border-gray-400/30' :
-                                                            ref.tier === 'VIP' ? 'text-blue-400 bg-blue-400/10 border-blue-400/30' :
-                                                                ref.tier === 'ELITE' ? 'text-purple-400 bg-purple-400/10 border-purple-400/30' :
-                                                                    'text-yellow-400 bg-yellow-400/10 border-yellow-400/30'
-                                                    )}>{ref.tier}</span>
-                                                </td>
-                                                <td className="py-2.5 text-right font-mono text-white/60">
-                                                    ${(ref.volume || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                </td>
-                                                <td className="py-2.5 text-right pr-2 font-mono text-yellow-500/80">
-                                                    {ref.teamSize > 0 ? ref.teamSize : '-'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                        /* Summary Mode: Show only direct referrals in a compact table */
+                        <TeamSummaryView directReferrals={treeData} />
                     )}
                 </>
             )}

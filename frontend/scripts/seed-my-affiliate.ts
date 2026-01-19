@@ -50,11 +50,11 @@ async function main() {
         myReferrer = await prisma.referrer.update({
             where: { id: myReferrer.id },
             data: {
-                tier: 'ELITE',
-                totalEarned: 1250.75,
-                pendingPayout: 320.50,
-                totalVolume: 45000.00,
-                teamVolume: 125000.00,
+                tier: 'SUPER_PARTNER',
+                totalEarned: 125000.75,
+                pendingPayout: 32000.50,
+                totalVolume: 450000.00,
+                teamVolume: 1250000.00,
             }
         });
     } else {
@@ -63,11 +63,11 @@ async function main() {
             data: {
                 walletAddress: MY_WALLET,
                 referralCode: 'MYWALLET',
-                tier: 'ELITE',
-                totalEarned: 1250.75,
-                pendingPayout: 320.50,
-                totalVolume: 45000.00,
-                teamVolume: 125000.00,
+                tier: 'SUPER_PARTNER',
+                totalEarned: 125000.75,
+                pendingPayout: 32000.50,
+                totalVolume: 450000.00,
+                teamVolume: 1250000.00,
             }
         });
         console.log(`✅ Created new referrer: ${myReferrer.referralCode}`);
@@ -137,18 +137,25 @@ async function main() {
     console.log('   Cleaned existing referrals\n');
 
     // ========================
-    // Create 5 Direct Referrals (VIP level)
+    // Create Direct Referrals (Gen 1)
     // ========================
-    console.log('👥 Creating 5 Direct Referrals...');
+    console.log('👥 Creating 25 Direct Referrals (Gen 1)...');
     const directReferrals: any[] = [];
+    const totalDirects = 25;
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < totalDirects; i++) {
         const directCode = `D${i + 1}_${randomCode(4)}`;
+
+        let tier: any = 'ORDINARY';
+        if (i === 0) tier = 'PARTNER';
+        else if (i === 1) tier = 'ELITE';
+        else if (i === 2 || i === 3) tier = 'VIP';
+
         const direct = await prisma.referrer.create({
             data: {
                 walletAddress: randomWallet(),
                 referralCode: directCode,
-                tier: 'VIP',
+                tier: tier,
                 totalEarned: 100 + Math.random() * 200,
                 pendingPayout: Math.random() * 50,
                 totalVolume: 5000 + Math.random() * 10000,
@@ -172,16 +179,17 @@ async function main() {
             ]
         });
 
-        console.log(`   ⭐ Direct #${i + 1}: ${direct.referralCode} (VIP)`);
+        console.log(`   ⭐ Direct #${i + 1}: ${direct.referralCode} (${direct.tier})`);
     }
 
     // ========================
-    // Create 2nd Level (3 per direct = 15 total)
+    // Create 2nd Level (3 per direct = 15 total) -> Only for the first 5 "active" directs
     // ========================
-    console.log('\n👥 Creating 2nd Level Referrals (3 per direct)...');
+    console.log('\n👥 Creating 2nd Level Referrals (3 per active direct)...');
     const secondLevel: any[] = [];
+    const activeDirects = directReferrals.slice(0, 5); // Only first 5 have teams
 
-    for (const direct of directReferrals) {
+    for (const direct of activeDirects) {
         for (let j = 0; j < 3; j++) {
             const sub = await prisma.referrer.create({
                 data: {
@@ -217,6 +225,8 @@ async function main() {
     // Create 3rd Level (2 per 2nd level = 30 total)
     // ========================
     console.log('\n👥 Creating 3rd Level Referrals (2 per 2nd level)...');
+
+    const thirdLevel: any[] = [];
     let thirdLevelCount = 0;
 
     for (const { referrer: sub, parentId: directId } of secondLevel) {
@@ -231,6 +241,7 @@ async function main() {
                     totalVolume: 500 + Math.random() * 1500,
                 }
             });
+            thirdLevel.push({ referrer: third, parentId: sub.id, grandParentId: directId });
             thirdLevelCount++;
 
             await prisma.referral.create({
@@ -251,6 +262,51 @@ async function main() {
         }
     }
     console.log(`   📎 Created ${thirdLevelCount} 3rd level members`);
+
+    // ========================
+    // Create 4th Level (Randomly ~15 users under Gen 3)
+    // ========================
+    console.log('\n👥 Creating 4th Level Referrals (Random distribution)...');
+
+    let fourthLevelCount = 0;
+    const fourthLevel: any[] = [];
+
+    // Create 15 users, randomly assigned to Gen 3 parents
+    for (let m = 0; m < 15; m++) {
+        // Pick a random parent from Gen 3
+        const { referrer: parent, parentId: grandParentId, grandParentId: greatGrandParentId } = thirdLevel[Math.floor(Math.random() * thirdLevel.length)];
+
+        const fourth = await prisma.referrer.create({
+            data: {
+                walletAddress: randomWallet(),
+                referralCode: randomCode(),
+                tier: 'ORDINARY',
+                totalEarned: Math.random() * 10,
+                pendingPayout: Math.random() * 2,
+                totalVolume: 200 + Math.random() * 800,
+            }
+        });
+        fourthLevel.push(fourth);
+        fourthLevelCount++;
+
+        await prisma.referral.create({
+            data: {
+                referrerId: parent.id,
+                refereeAddress: fourth.walletAddress,
+            }
+        });
+
+        await prisma.teamClosure.createMany({
+            data: [
+                { ancestorId: fourth.id, descendantId: fourth.id, depth: 0 },
+                { ancestorId: parent.id, descendantId: fourth.id, depth: 1 },
+                { ancestorId: grandParentId, descendantId: fourth.id, depth: 2 },
+                { ancestorId: greatGrandParentId, descendantId: fourth.id, depth: 3 },
+                { ancestorId: myReferrer.id, descendantId: fourth.id, depth: 4 },
+            ]
+        });
+    }
+    console.log(`   📎 Created ${fourthLevelCount} 4th level members (Deep Network!)`);
 
     // ========================
     // Update sunLineCount for each direct referral (count their sub-teams)
@@ -333,7 +389,40 @@ async function main() {
             }
         });
     }
-    console.log(`   ☀️ SUN_LINE from 15 Gen2 members: $${totalSunLine.toFixed(2)}`);
+
+    // For Gen 3 (using the thirdLevel array we created)
+    for (const { referrer: third } of thirdLevel) {
+        const diffAmount = third.totalVolume * 0.005; // 0.5% differential
+        totalSunLine += diffAmount;
+        await prisma.commissionLog.create({
+            data: {
+                referrerId: myReferrer.id,
+                amount: diffAmount,
+                type: 'SUN_LINE',
+                sourceUserId: third.walletAddress,
+                generation: 3,
+                createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000)
+            }
+        });
+    }
+
+    // For Gen 4
+    for (const fourth of fourthLevel) {
+        const diffAmount = fourth.totalVolume * 0.0025; // 0.25% differential for deep gen
+        totalSunLine += diffAmount;
+        await prisma.commissionLog.create({
+            data: {
+                referrerId: myReferrer.id,
+                amount: diffAmount,
+                type: 'SUN_LINE',
+                sourceUserId: fourth.walletAddress,
+                generation: 4,
+                createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000)
+            }
+        });
+    }
+
+    console.log(`   ☀️ Total Differential/SunLine Comm: $${totalSunLine.toFixed(2)}`);
 
     // Update my referrer's total earned
     await prisma.referrer.update({
@@ -391,10 +480,9 @@ async function main() {
     console.log('═══════════════════════════════════════');
     console.log(`  🏷️  Referral Code: ${myReferrer.referralCode}`);
     console.log(`  💎 Tier: ${myReferrer.tier}`);
-    console.log(`  👥 Direct Referrals: 5`);
+    console.log(`  👥 Direct Referrals: ${directReferrals.length}`);
     console.log(`  🌳 Total Team Size: ${totalTeam}`);
-    console.log(`  💰 Total Earned: $${myReferrer.totalEarned.toFixed(2)}`);
-    console.log(`  💳 Pending Payout: $${myReferrer.pendingPayout.toFixed(2)}`);
+    console.log(`  💰 Total Earned: ${(totalZeroLine + totalSunLine).toFixed(2)}`); // display computed var for accuracy
     console.log('═══════════════════════════════════════\n');
 
     console.log('🎯 Now visit http://localhost:3000/affiliate to see your dashboard!');
