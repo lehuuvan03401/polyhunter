@@ -25,6 +25,7 @@ enum PayoutStatus {
   PROCESSING
   COMPLETED
   FAILED
+  REJECTED
 }
 
 // Referrer - wallet registered as affiliate

@@ -39,7 +39,7 @@ export interface Referral {
 export interface Payout {
     id: string;
     amount: number;
-    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'REJECTED';
     txHash: string | null;
     createdAt: string;
     processedAt: string | null;
@@ -109,6 +109,13 @@ export const affiliateApi = {
             throw new Error('Failed to fetch payouts');
         }
         return response.json();
+    },
+
+    /**
+     * Alias for getPayouts
+     */
+    async getPayoutHistory(walletAddress: string): Promise<Payout[]> {
+        return this.getPayouts(walletAddress);
     },
 
     /**
