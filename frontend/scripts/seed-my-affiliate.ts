@@ -78,25 +78,63 @@ async function main() {
         });
     }
 
-    // Clean existing referrals for this user (to recreate cleanly)
-    const existingReferrals = await prisma.referral.findMany({
-        where: { referrerId: myReferrer.id }
-    });
 
-    // Delete team closure entries for descendants
-    for (const ref of existingReferrals) {
-        const descendant = await prisma.referrer.findUnique({
-            where: { walletAddress: ref.refereeAddress }
+    // ======== FULL CLEANUP ========
+    // Delete all descendants of myReferrer (except self) to ensure clean data
+    console.log('🧹 Cleaning up old team data...');
+
+    // 1. Get all descendants from TeamClosure
+    const allDescendants = await prisma.teamClosure.findMany({
+        where: {
+            ancestorId: myReferrer.id,
+            depth: { gt: 0 } // Exclude self
+        },
+        select: { descendantId: true }
+    });
+    const descendantIds = [...new Set(allDescendants.map(d => d.descendantId))];
+
+    if (descendantIds.length > 0) {
+        // 2. Delete all TeamClosure entries for these descendants
+        await prisma.teamClosure.deleteMany({
+            where: {
+                OR: [
+                    { descendantId: { in: descendantIds } },
+                    { ancestorId: { in: descendantIds } }
+                ]
+            }
         });
-        if (descendant) {
-            await prisma.teamClosure.deleteMany({
-                where: { descendantId: descendant.id }
-            });
+
+        // 3. Delete all Referral entries involving these descendants
+        for (const descId of descendantIds) {
+            const desc = await prisma.referrer.findUnique({ where: { id: descId } });
+            if (desc) {
+                await prisma.referral.deleteMany({
+                    where: {
+                        OR: [
+                            { referrerId: descId },
+                            { refereeAddress: desc.walletAddress }
+                        ]
+                    }
+                });
+            }
         }
+
+        // 4. Delete commission logs for descendants
+        await prisma.commissionLog.deleteMany({
+            where: { referrerId: { in: descendantIds } }
+        });
+
+        // 5. Delete the descendant Referrer records themselves
+        await prisma.referrer.deleteMany({
+            where: { id: { in: descendantIds } }
+        });
+
+        console.log(`   Deleted ${descendantIds.length} old team members`);
     }
 
+    // Also clean up my referrer's referrals
     await prisma.referral.deleteMany({ where: { referrerId: myReferrer.id } });
-    console.log('🧹 Cleaned existing referrals\n');
+    console.log('   Cleaned existing referrals\n');
 
     // ========================
     // Create 5 Direct Referrals (VIP level)
