@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -61,7 +62,7 @@ const TIERS = [
         teamDiff: 5
     },
     {
-        name: 'SUPER PARTNER',
+        name: 'SUPER_PARTNER',
         icon: Gem,
         color: 'text-orange-400',
         bg: 'bg-orange-500/10',
@@ -129,17 +130,20 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
 }
 
 export default function AffiliateRulesPage() {
-    const [currentTier, setCurrentTier] = useState<string>('ELITE');
+    const { user } = usePrivy();
+    const [currentTier, setCurrentTier] = useState<string>('ORDINARY');
 
     // Fetch user's current tier
     useEffect(() => {
-        fetch('/api/affiliate/stats')
+        if (!user?.wallet?.address) return;
+
+        fetch(`/api/affiliate/stats?walletAddress=${user.wallet.address}`)
             .then(res => res.json())
             .then(data => {
                 if (data.tier) setCurrentTier(data.tier);
             })
             .catch(() => { });
-    }, []);
+    }, [user?.wallet?.address]);
 
     return (
         <div className="min-h-screen bg-[#0d0e10] text-white">
