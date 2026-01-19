@@ -159,8 +159,25 @@ model UserProxy {
   updatedAt      DateTime         @updatedAt
 
   feeTransactions FeeTransaction[]
+  transactions    ProxyTransaction[]
 
   @@index([walletAddress])
+}
+
+// Proxy financial transactions (Deposit/Withdraw)
+model ProxyTransaction {
+  id          String    @id @default(cuid())
+  userProxy   UserProxy @relation(fields: [userProxyId], references: [id])
+  userProxyId String
+  type        String // 'DEPOSIT' | 'WITHDRAW'
+  amount      Float
+  txHash      String?
+  status      String    @default("COMPLETED") // 'PENDING' | 'COMPLETED' | 'FAILED'
+  createdAt   DateTime  @default(now())
+
+  @@index([userProxyId])
+  @@index([type])
+  @@index([createdAt])
 }
 
 // Fee transaction records

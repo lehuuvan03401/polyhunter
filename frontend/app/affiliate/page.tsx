@@ -509,7 +509,7 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                                 <h2 className={cn("text-3xl font-bold mb-1", tierInfo.color)}>{tierInfo.name}</h2>
                                 <div className="inline-flex items-center gap-2">
                                     <span className="px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-sm font-bold">
-                                        Zero Line: {((stats?.commissionRate || 0.25) * 100).toFixed(0)}%
+                                        Direct: 25%
                                     </span>
                                     <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-sm font-bold">
                                         Team Diff: {((stats?.tier === 'ORDINARY' ? 0.01 : stats?.tier === 'VIP' ? 0.02 : stats?.tier === 'ELITE' ? 0.03 : stats?.tier === 'PARTNER' ? 0.05 : 0.08) * 100).toFixed(0)}%

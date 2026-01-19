@@ -482,6 +482,25 @@ export function useProxy(): UseProxyReturn {
             setTxStatus('CONFIRMING'); // Confirming Deposit
 
             await tx.wait();
+
+            // Log transaction to DB
+            try {
+                await fetch('/api/proxy/transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        walletAddress,
+                        proxyAddress,
+                        type: 'DEPOSIT',
+                        amount,
+                        txHash: tx.hash,
+                        status: 'COMPLETED'
+                    })
+                });
+            } catch (logErr) {
+                console.error('Failed to log deposit:', logErr);
+            }
+
             await refreshStats();
             await fetchUsdcBalance();
 
@@ -519,6 +538,25 @@ export function useProxy(): UseProxyReturn {
             setTxStatus('CONFIRMING');
 
             await tx.wait();
+
+            // Log transaction to DB
+            try {
+                await fetch('/api/proxy/transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        walletAddress,
+                        proxyAddress,
+                        type: 'WITHDRAW',
+                        amount,
+                        txHash: tx.hash,
+                        status: 'COMPLETED'
+                    })
+                });
+            } catch (logErr) {
+                console.error('Failed to log withdrawal:', logErr);
+            }
+
             await refreshStats();
             await fetchUsdcBalance();
 

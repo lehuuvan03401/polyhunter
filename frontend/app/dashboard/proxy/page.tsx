@@ -5,6 +5,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import Link from 'next/link';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { ProxyActionCenter } from '@/components/proxy/proxy-action-center';
+import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
 import { Copy, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -30,6 +31,12 @@ export default function ProxyDashboardPage() {
     } = useProxy();
 
     const [actionError, setActionError] = useState<string | null>(null);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const handleActionSuccess = async () => {
+        await refreshStats();
+        setRefreshTrigger(prev => prev + 1);
+    };
 
     // Determine tier from fee percent
     const getTierFromFee = (feePercent: number): 'STARTER' | 'PRO' | 'WHALE' => {
@@ -248,7 +255,7 @@ export default function ProxyDashboardPage() {
                         </div>
 
                         {/* Unified Action Center (Replaces Buttons & Modals) */}
-                        <ProxyActionCenter onSuccess={refreshStats} />
+                        <ProxyActionCenter onSuccess={handleActionSuccess} />
 
                         {/* Upgrade CTA */}
                         {currentTier !== 'WHALE' && (
@@ -267,6 +274,13 @@ export default function ProxyDashboardPage() {
                                 </Link>
                             </div>
                         )}
+
+
+                        {/* Transaction History */}
+                        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                            <h3 className="text-xl font-bold text-white mb-4">Transaction History</h3>
+                            <TransactionHistoryTable refreshTrigger={refreshTrigger} />
+                        </div>
                     </div>
                 )}
             </div>

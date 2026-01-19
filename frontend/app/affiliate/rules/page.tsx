@@ -28,7 +28,6 @@ const TIERS = [
         border: 'border-gray-500/30',
         directsRequired: 0,
         teamRequired: 0,
-        zeroLine: 1,
         teamDiff: 1
     },
     {
@@ -39,7 +38,6 @@ const TIERS = [
         border: 'border-blue-500/30',
         directsRequired: 3,
         teamRequired: 10,
-        zeroLine: 2,
         teamDiff: 2
     },
     {
@@ -50,7 +48,6 @@ const TIERS = [
         border: 'border-purple-500/30',
         directsRequired: 10,
         teamRequired: 100,
-        zeroLine: 3,
         teamDiff: 3
     },
     {
@@ -61,7 +58,6 @@ const TIERS = [
         border: 'border-yellow-500/30',
         directsRequired: 30,
         teamRequired: 500,
-        zeroLine: 5,
         teamDiff: 5
     },
     {
@@ -72,7 +68,6 @@ const TIERS = [
         border: 'border-orange-500/30',
         directsRequired: 50,
         teamRequired: 1000,
-        zeroLine: 8,
         teamDiff: 8
     },
 ];
@@ -227,7 +222,6 @@ export default function AffiliateRulesPage() {
                                     <th className="text-left py-3 px-4 font-medium">Tier</th>
                                     <th className="text-center py-3 px-4 font-medium">Direct Referrals</th>
                                     <th className="text-center py-3 px-4 font-medium">Team Size</th>
-                                    <th className="text-center py-3 px-4 font-medium text-green-400">Zero Line %</th>
                                     <th className="text-center py-3 px-4 font-medium text-yellow-400">Team Diff %</th>
                                 </tr>
                             </thead>
@@ -253,7 +247,6 @@ export default function AffiliateRulesPage() {
                                             </td>
                                             <td className="text-center py-3 px-4 font-mono">{tier.directsRequired}</td>
                                             <td className="text-center py-3 px-4 font-mono">{tier.teamRequired}</td>
-                                            <td className="text-center py-3 px-4 font-mono text-green-400">{tier.zeroLine}%</td>
                                             <td className="text-center py-3 px-4 font-mono text-yellow-400">{tier.teamDiff}%</td>
                                         </tr>
                                     );

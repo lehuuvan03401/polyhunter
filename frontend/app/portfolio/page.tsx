@@ -26,6 +26,7 @@ import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-
 import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
+import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -39,7 +40,7 @@ export default function PortfolioPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     // New state for History and Sell All
-    const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history'>('positions');
+    const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history' | 'transfers'>('positions');
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isSellingAll, setIsSellingAll] = useState(false);
@@ -445,7 +446,16 @@ export default function PortfolioPage() {
                                         activeTab === 'history' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    History
+                                    Trades
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('transfers')}
+                                    className={cn(
+                                        "rounded px-3 py-1 text-xs font-medium transition-all",
+                                        activeTab === 'transfers' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    Transfers
                                 </button>
                             </div>
                         </div>
@@ -579,6 +589,12 @@ export default function PortfolioPage() {
                                     </div>
                                 </div>
                             )
+                        )}
+
+                        {activeTab === 'transfers' && (
+                            <div className="p-4">
+                                <TransactionHistoryTable />
+                            </div>
                         )}
                     </div>
                 </div>
