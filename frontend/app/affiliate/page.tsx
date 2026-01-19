@@ -224,20 +224,193 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     }
 
     if (!isRegistered) {
+        // Landing page data
+        const BENEFITS = [
+            { icon: '💵', title: '25% Commission', desc: 'Earn from every trade your referrals make' },
+            { icon: '🌳', title: '5 Generations Deep', desc: 'Build a team and earn from your entire network' },
+            { icon: '⚡', title: 'Instant Payouts', desc: 'Withdraw your earnings anytime, no minimums' },
+            { icon: '🚀', title: 'Tier Progression', desc: 'Level up to unlock higher commission rates' },
+        ];
+
+        const STEPS = [
+            { num: 1, title: 'Register', desc: 'Sign up and get your unique referral link' },
+            { num: 2, title: 'Share', desc: 'Invite friends with your personal link' },
+            { num: 3, title: 'Earn', desc: 'Get paid on every trade they make' },
+        ];
+
+        const TIERS = [
+            { name: 'ORDINARY', color: 'text-gray-400', directs: 0, team: 0, zero: 1, diff: 1 },
+            { name: 'VIP', color: 'text-blue-400', directs: 3, team: 10, zero: 2, diff: 2 },
+            { name: 'ELITE', color: 'text-purple-400', directs: 10, team: 100, zero: 3, diff: 3 },
+            { name: 'PARTNER', color: 'text-yellow-400', directs: 30, team: 500, zero: 5, diff: 5 },
+            { name: 'SUPER', color: 'text-orange-400', directs: 50, team: 1000, zero: 8, diff: 8 },
+        ];
+
+        const ZERO_LINE_RATES = [
+            { gen: 1, rate: 25, label: 'Direct Referral' },
+            { gen: 2, rate: 10, label: '2nd Generation' },
+            { gen: 3, rate: 5, label: '3rd Generation' },
+            { gen: 4, rate: 3, label: '4th Generation' },
+            { gen: 5, rate: 2, label: '5th Generation' },
+        ];
+
         return (
-            <div className="min-h-screen bg-background pt-24 pb-20">
-                <div className="container max-w-2xl mx-auto px-4 text-center">
-                    <h1 className="text-3xl font-bold text-white mb-4">Join the Affiliate Program</h1>
-                    <p className="text-muted-foreground mb-8">Earn up to 25% commission on trading fees from your referrals</p>
-                    <button
-                        onClick={handleRegister}
-                        disabled={isRegistering}
-                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center gap-2 mx-auto"
-                    >
-                        {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                        {isRegistering ? 'Registering...' : 'Become an Affiliate'}
-                    </button>
-                </div>
+            <div className="min-h-screen bg-[#0d0e10] text-white">
+                {/* Hero Section */}
+                <section className="pt-24 pb-16 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-purple-600/5 to-transparent pointer-events-none" />
+                    <div className="absolute top-20 right-20 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px]" />
+                    <div className="absolute bottom-0 left-20 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px]" />
+
+                    <div className="container max-w-4xl mx-auto px-4 text-center relative z-10">
+                        <div className="inline-flex items-center gap-2 bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full text-sm font-medium mb-6 border border-blue-500/20">
+                            <span className="animate-pulse">✨</span>
+                            Passive Income Opportunity
+                        </div>
+
+                        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                            Earn While <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">You Sleep</span>
+                        </h1>
+
+                        <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+                            Turn your network into income. Earn up to <strong className="text-green-400">25% commission</strong> on every trade your referrals make — plus bonuses from <strong className="text-blue-400">5 generations</strong> of your team.
+                        </p>
+
+                        <button
+                            onClick={handleRegister}
+                            disabled={isRegistering}
+                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40"
+                        >
+                            {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>🚀</span>}
+                            {isRegistering ? 'Registering...' : 'Start Earning Now'}
+                        </button>
+
+                        <p className="text-sm text-muted-foreground mt-4">Free to join • No minimums • Instant setup</p>
+                    </div>
+                </section>
+
+                {/* Benefits Grid */}
+                <section className="py-16 border-t border-white/5">
+                    <div className="container max-w-5xl mx-auto px-4">
+                        <h2 className="text-2xl font-bold text-center mb-10">Why Join Our Affiliate Program?</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            {BENEFITS.map((b, i) => (
+                                <div key={i} className="bg-[#1a1b1e] border border-white/10 rounded-xl p-6 text-center hover:border-blue-500/30 transition-colors">
+                                    <div className="text-4xl mb-4">{b.icon}</div>
+                                    <h3 className="font-bold text-lg mb-2">{b.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{b.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* How It Works */}
+                <section className="py-16 bg-[#15161a] border-y border-white/5">
+                    <div className="container max-w-4xl mx-auto px-4">
+                        <h2 className="text-2xl font-bold text-center mb-12">How It Works</h2>
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+                            {STEPS.map((s, i) => (
+                                <div key={i} className="flex flex-col items-center text-center flex-1">
+                                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-4 shadow-lg">
+                                        {s.num}
+                                    </div>
+                                    <h3 className="font-bold text-lg mb-2">{s.title}</h3>
+                                    <p className="text-sm text-muted-foreground">{s.desc}</p>
+                                    {i < STEPS.length - 1 && (
+                                        <div className="hidden md:block absolute translate-x-20 w-20 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500" />
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Tier System */}
+                <section className="py-16">
+                    <div className="container max-w-5xl mx-auto px-4">
+                        <h2 className="text-2xl font-bold text-center mb-4">Tier System</h2>
+                        <p className="text-muted-foreground text-center mb-10">Level up to unlock higher commission rates</p>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm bg-[#1a1b1e] rounded-xl border border-white/10">
+                                <thead>
+                                    <tr className="border-b border-white/10">
+                                        <th className="text-left py-4 px-6 font-medium text-muted-foreground">Tier</th>
+                                        <th className="text-center py-4 px-4 font-medium text-muted-foreground">Direct Referrals</th>
+                                        <th className="text-center py-4 px-4 font-medium text-muted-foreground">Team Size</th>
+                                        <th className="text-center py-4 px-4 font-medium text-green-400">Zero Line %</th>
+                                        <th className="text-center py-4 px-4 font-medium text-yellow-400">Team Diff %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {TIERS.map((t, i) => (
+                                        <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                                            <td className={`py-4 px-6 font-bold ${t.color}`}>{t.name}</td>
+                                            <td className="text-center py-4 px-4 font-mono">{t.directs}</td>
+                                            <td className="text-center py-4 px-4 font-mono">{t.team}</td>
+                                            <td className="text-center py-4 px-4 font-mono text-green-400">{t.zero}%</td>
+                                            <td className="text-center py-4 px-4 font-mono text-yellow-400">{t.diff}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Zero Line Rates */}
+                <section className="py-16 bg-[#15161a] border-y border-white/5">
+                    <div className="container max-w-3xl mx-auto px-4">
+                        <h2 className="text-2xl font-bold text-center mb-4">Earn From 5 Generations</h2>
+                        <p className="text-muted-foreground text-center mb-10">Your cut from platform fees on every trade</p>
+
+                        <div className="space-y-4">
+                            {ZERO_LINE_RATES.map((r) => (
+                                <div key={r.gen} className="flex items-center gap-4">
+                                    <div className="w-32 text-sm text-muted-foreground">{r.label}</div>
+                                    <div className="flex-1 h-8 bg-[#1a1b1e] rounded-lg overflow-hidden">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-lg flex items-center justify-end px-3"
+                                            style={{ width: `${r.rate * 4}%` }}
+                                        >
+                                            <span className="text-sm font-bold text-white">{r.rate}%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="mt-8 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-center">
+                            <p className="text-sm text-green-400">
+                                <strong>Example:</strong> $10,000 trade → $10 platform fee → <strong>$2.50</strong> to you (Gen 1)
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Final CTA */}
+                <section className="py-20">
+                    <div className="container max-w-2xl mx-auto px-4 text-center">
+                        <h2 className="text-3xl font-bold mb-4">Ready to Start Earning?</h2>
+                        <p className="text-muted-foreground mb-8">Join thousands of affiliates building passive income</p>
+
+                        <button
+                            onClick={handleRegister}
+                            disabled={isRegistering}
+                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-blue-500/25"
+                        >
+                            {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>🚀</span>}
+                            {isRegistering ? 'Registering...' : 'Become an Affiliate'}
+                        </button>
+
+                        <div className="flex items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> Free to join</span>
+                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> No minimum</span>
+                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> Instant setup</span>
+                        </div>
+                    </div>
+                </section>
             </div>
         );
     }
