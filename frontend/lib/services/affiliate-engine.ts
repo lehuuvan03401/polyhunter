@@ -299,6 +299,73 @@ export class AffiliateEngine {
         return false;
     }
 
+    // ========================================
+    // PROFIT-BASED FEE SYSTEM (NEW)
+    // ========================================
+
+    /**
+     * Volume-based fee tiers for profit fees.
+     * Higher cumulative volume = lower fee rate.
+     */
+    private getFeeRateByVolume(cumulativeVolume: number): number {
+        // Hardcoded tiers (can be moved to DB VolumeTier table later)
+        if (cumulativeVolume >= 100000) return 0.10; // 10% (Whale)
+        if (cumulativeVolume >= 10000) return 0.15;  // 15% (Pro)
+        return 0.20;                                  // 20% (Standard)
+    }
+
+    /**
+     * Distributes commissions based on REALIZED PROFIT (not volume).
+     * Only called when profit > 0.
+     * 
+     * @param traderAddress - The follower who made the trade
+     * @param realizedProfit - The profit amount in USDC
+     * @param tradeId - Unique trade identifier
+     */
+    async distributeProfitFee(traderAddress: string, realizedProfit: number, tradeId: string) {
+        // 1. Guard: No fee if no profit
+        if (realizedProfit <= 0) {
+            console.log(`[AffiliateEngine] No profit ($${realizedProfit.toFixed(4)}), skipping fee distribution.`);
+            return;
+        }
+
+        // 2. Find the User's Referrer
+        const referralRecord = await this.prisma.referral.findUnique({
+            where: { refereeAddress: traderAddress.toLowerCase() },
+            include: { referrer: true }
+        });
+
+        if (!referralRecord) {
+            console.log(`[AffiliateEngine] ${traderAddress} has no referrer. Skipping profit fee.`);
+            return;
+        }
+
+        const directSponsor = referralRecord.referrer;
+
+        // 3. Get follower's cumulative volume to determine fee rate
+        const followerVolume = referralRecord.lifetimeVolume || 0;
+        const feeRate = this.getFeeRateByVolume(followerVolume);
+        const feeAmount = realizedProfit * feeRate;
+
+        console.log(`[AffiliateEngine] Profit Fee: $${realizedProfit.toFixed(4)} * ${(feeRate * 100).toFixed(0)}% = $${feeAmount.toFixed(4)} (Volume: $${followerVolume.toFixed(0)})`);
+
+        // 4. Record the commission as a special "PROFIT_FEE" type
+        await this.recordCommission(
+            directSponsor.id,
+            feeAmount,
+            'PROFIT_FEE',
+            tradeId,
+            traderAddress,
+            1 // Generation 1 (direct)
+        );
+
+        // 5. Optionally: Distribute partial to upline (Sun Line style)?
+        // For MVP, we keep it simple and only pay the direct sponsor.
+        // Future: Get ancestry and apply differential rates.
+
+        console.log(`[AffiliateEngine] ✅ Profit Fee Distributed: $${feeAmount.toFixed(4)} to ${directSponsor.walletAddress}`);
+    }
+
     private getZeroLineRate(gen: number): number {
         switch (gen) {
             case 1: return 0.25;

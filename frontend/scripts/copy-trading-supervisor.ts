@@ -29,6 +29,7 @@ import { TaskQueue } from '../../src/core/task-queue';
 import { DebtManager } from '../../src/core/debt-manager';
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 import { AffiliateEngine } from '../lib/services/affiliate-engine';
+import { PositionService } from '../lib/services/position-service';
 import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
 import { TxMonitor, TrackedTx } from '../../src/core/tx-monitor';
 
@@ -74,6 +75,7 @@ const prisma = new PrismaClient({
 const debtRepository = new PrismaDebtRepository(prisma);
 const debtLogger = new PrismaDebtLogger(prisma);
 const affiliateEngine = new AffiliateEngine(prisma);
+const positionService = new PositionService(prisma);
 
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 
@@ -632,25 +634,58 @@ async function executeJobInternal(
         console.log(`[Supervisor] ✅ Job Complete for User ${config.walletAddress}: ${result.success ? "Success" : "Failed (" + result.error + ")"} (${latencyMs}ms)`);
 
         if (result.success) {
-            // --- AFFILIATE COMMISSION TRIGGER ---
+            // --- POSITION TRACKING & PROFIT-BASED FEE ---
             try {
-                // Determine Trade Volume (USDC Value)
-                const tradeVolume = copyAmount; // We use copyAmount (USDC) as volume basis
-                // Determine Platform Fee (e.g. 0.1% or virtual)
-                // If we don't charge explicit fee, we treat a portion of volume as 'fee revenue' for payout?
-                // Or we pay OUT of platform pockets based on volume.
-                // Standard: Fee = Volume * 0.001 (0.1%)
-                const platformFee = tradeVolume * 0.001;
+                // Import is already at top level in this script
+                const tradeValue = copyAmount; // USDC value of this trade
+                const shares = tradeValue / approxPrice; // Approx shares traded
 
-                // Distribute
-                await affiliateEngine.distributeCommissions({
-                    tradeId: result.orderId || `trade-${Date.now()}`,
-                    traderAddress: config.walletAddress, // The User who copied (Referee)
-                    volume: tradeVolume,
-                    platformFee: platformFee
-                });
+                if (side === 'BUY') {
+                    // On BUY: Update position cost basis (no fee yet)
+                    await positionService.recordBuy({
+                        walletAddress: config.walletAddress,
+                        tokenId: tokenId,
+                        side: 'BUY',
+                        amount: shares,
+                        price: approxPrice,
+                        totalValue: tradeValue
+                    });
+                    console.log(`[Supervisor] 📊 Position updated for BUY.`);
+
+                    // Also update volume in referral record (legacy volume-based tracking)
+                    await affiliateEngine.distributeCommissions({
+                        tradeId: result.orderId || `trade-${Date.now()}`,
+                        traderAddress: config.walletAddress,
+                        volume: tradeValue,
+                        platformFee: 0 // No fee on BUY
+                    });
+
+                } else {
+                    // On SELL: Calculate profit and charge fee if profitable
+                    const profitResult = await positionService.recordSell({
+                        walletAddress: config.walletAddress,
+                        tokenId: tokenId,
+                        side: 'SELL',
+                        amount: shares,
+                        price: approxPrice,
+                        totalValue: tradeValue
+                    });
+
+                    console.log(`[Supervisor] 💰 Sell Result: Profit=$${profitResult.profit.toFixed(4)} (${(profitResult.profitPercent * 100).toFixed(2)}%)`);
+
+                    if (profitResult.profit > 0) {
+                        // Charge profit-based fee
+                        await affiliateEngine.distributeProfitFee(
+                            config.walletAddress,
+                            profitResult.profit,
+                            result.orderId || `trade-${Date.now()}`
+                        );
+                    } else {
+                        console.log(`[Supervisor] ❌ No profit, skipping fee.`);
+                    }
+                }
             } catch (affError) {
-                console.error(`[Supervisor] ⚠️ Affiliate Trigger Failed:`, affError);
+                console.error(`[Supervisor] ⚠️ Position/Affiliate Trigger Failed:`, affError);
             }
         }
 

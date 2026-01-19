@@ -350,3 +350,31 @@ model DebtRecord {
   @@index([botAddress])
   @@index([status])
 }
+
+// ========================================
+// Profit-Based Fee System Models
+// ========================================
+
+// User's position for a specific token (for Cost Basis / Profit Calculation)
+model UserPosition {
+  id            String   @id @default(cuid())
+  walletAddress String // Follower's wallet
+  tokenId       String // Polymarket Token ID
+  balance       Float    @default(0) // Current share balance
+  avgEntryPrice Float    @default(0) // Weighted Average Entry Price (USDC)
+  totalCost     Float    @default(0) // Total cost spent (for verification)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([walletAddress, tokenId])
+  @@index([walletAddress])
+}
+
+// Volume-Based Fee Tier Configuration
+model VolumeTier {
+  id              String @id @default(cuid())
+  minVolume       Float // Minimum cumulative volume to qualify
+  maxVolume       Float? // Maximum volume (null = infinity)
+  feeRateOnProfit Float // Fee rate as a decimal (0.20 = 20%)
+  name            String // "Standard", "Pro", "Whale"
+}
