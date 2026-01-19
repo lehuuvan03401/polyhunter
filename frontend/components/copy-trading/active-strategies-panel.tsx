@@ -101,9 +101,9 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
     };
 
     return (
-        <div className={cn('bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl', className)}>
+        <div className={cn('bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl flex flex-col overflow-hidden', className)}>
             {/* Header */}
-            <div className="p-4 border-b border-border/50 flex items-center justify-between">
+            <div className="p-4 border-b border-border/50 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-primary/10">
                         <Target className="h-5 w-5 text-primary" />
@@ -125,13 +125,13 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex border-b border-border/50">
+            <div className="flex border-b border-border/50 flex-shrink-0">
                 <FilterTab active={filter === 'active'} onClick={() => handleFilterChange('active')}>Active</FilterTab>
                 <FilterTab active={filter === 'stopped'} onClick={() => handleFilterChange('stopped')}>Stopped</FilterTab>
             </div>
 
             {/* Strategies List */}
-            <div className="p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3">
                 {error && (
                     <div className="p-4 text-center">
                         <AlertCircle className="h-5 w-5 text-red-400 mx-auto mb-2" />
@@ -160,7 +160,7 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
 
             {/* Pagination */}
             {totalPages > 1 && (
-                <div className="p-3 border-t border-border/50 flex items-center justify-between text-sm">
+                <div className="p-3 border-t border-border/50 flex items-center justify-between text-sm flex-shrink-0 bg-background/50 backdrop-blur-sm z-10">
                     <div className="text-muted-foreground">
                         Showing {startIndex + 1}-{Math.min(endIndex, strategies.length)} of {strategies.length}
                     </div>
@@ -290,6 +290,11 @@ function StrategyCard({
                         <span className="text-sm font-medium truncate">
                             {strategy.traderName || strategy.traderAddress.slice(0, 10) + '...'}
                         </span>
+                        {showStopButton && (
+                            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/10 text-green-500 border border-green-500/20">
+                                Active
+                            </span>
+                        )}
                     </div>
 
                     {/* Strategy Details */}
