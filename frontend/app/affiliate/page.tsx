@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle } from 'lucide-react';
+import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle, Coins, CreditCard, LayoutDashboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePrivy } from '@privy-io/react-auth';
 import { useEffect, useState, useCallback } from 'react';
@@ -596,22 +596,133 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
 function GuestView() {
     const { login } = usePrivy();
 
+    const BENEFITS = [
+        { icon: <Coins className="h-10 w-10" />, title: 'Commission', desc: 'Earn a share of platform fees from trades' },
+        { icon: <LinkIcon className="h-10 w-10" />, title: 'Referral Link', desc: 'Get your unique link to share' },
+        { icon: <LayoutDashboard className="h-10 w-10" />, title: 'Dashboard', desc: 'Track earnings and referrals in real-time' },
+        { icon: <CreditCard className="h-10 w-10" />, title: 'Withdrawals', desc: 'Request payouts anytime' },
+    ];
+
+    const RATES = [
+        { gen: 1, rate: 25, label: 'Direct Referral' },
+        { gen: 2, rate: 10, label: '2nd Level' },
+        { gen: 3, rate: 5, label: '3rd Level' },
+        { gen: 4, rate: 3, label: '4th Level' },
+        { gen: 5, rate: 2, label: '5th Level' },
+    ];
+
     return (
-        <div className="flex flex-col min-h-screen">
-            <section className="pt-20 pb-16 md:pt-32 text-center px-4 relative overflow-hidden">
-                <div className="absolute top-0 left-1/4 -mt-32 h-96 w-96 bg-green-500/10 blur-[100px] rounded-full pointer-events-none" />
-                <div className="container max-w-4xl mx-auto space-y-8 relative z-10">
+        <div className="min-h-screen bg-background text-foreground">
+            {/* Hero */}
+            <section className="pt-24 pb-16 relative overflow-hidden text-center px-4">
+                {/* Background Effects */}
+                <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-20 right-20 w-96 h-96 bg-yellow-500/10 rounded-full blur-[120px] pointer-events-none opacity-50" />
+                <div className="absolute bottom-0 left-20 w-64 h-64 bg-blue-500/5 rounded-full blur-[80px] pointer-events-none opacity-30" />
+
+                <div className="container max-w-4xl mx-auto relative z-10 space-y-6">
                     <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
-                        Earn <span className="text-green-500">Zero & Sun Line</span> Rewards
+                        Affiliate <span className="text-yellow-500">Commission</span> Program
                     </h1>
-                    <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-                        Share your link, earn on 15 generations. <br className="hidden md:block" />
-                        <span className="text-white font-medium">Direct commissions + Team overrides.</span>
+                    <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                        Share your referral link and earn commission when your referrals trade on the platform.
+                        Track your earnings, manage your network, and withdraw anytime.
                     </p>
+
                     <div className="pt-4">
-                        <button onClick={login} className="px-8 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold text-lg transition-all">
-                            Start Earning Now
+                        <button
+                            onClick={login}
+                            className="px-10 py-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/30 active:scale-[0.98]"
+                        >
+                            Connect Wallet to Start
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            {/* How It Works / Benefits */}
+            <section className="py-20 border-y border-white/5 bg-card/30 backdrop-blur-sm">
+                <div className="container max-w-6xl mx-auto px-4">
+                    <div className="text-center mb-12">
+                        <h2 className="text-3xl font-bold mb-4">How It Works</h2>
+                        <p className="text-muted-foreground">Everything you need to build your passive income stream</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {BENEFITS.map((b, i) => (
+                            <div key={i} className="bg-card/50 border border-white/5 hover:border-yellow-500/30 rounded-xl p-8 text-center transition-all group flex flex-col items-center">
+                                <div className="mb-4 text-yellow-500 transform group-hover:scale-110 transition-transform duration-300 bg-yellow-500/10 p-4 rounded-full">
+                                    {b.icon}
+                                </div>
+                                <h3 className="font-bold text-lg mb-2 text-foreground group-hover:text-yellow-500 transition-colors">{b.title}</h3>
+                                <p className="text-sm text-muted-foreground leading-relaxed">{b.desc}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Commission Rates */}
+            <section className="py-20">
+                <div className="container max-w-3xl mx-auto px-4">
+                    <div className="text-center mb-12">
+                        <h2 className="text-3xl font-bold mb-4">Commission Structure</h2>
+                        <p className="text-muted-foreground">
+                            Earn a percentage of platform trading fees from up to 5 generations
+                        </p>
+                    </div>
+
+                    <div className="space-y-6">
+                        {RATES.map((r, index) => (
+                            <div key={r.gen} className="group">
+                                <div className="flex items-center justify-between mb-2 text-sm">
+                                    <span className="text-muted-foreground font-medium">{r.label}</span>
+                                    <span className="font-bold text-yellow-500">{r.rate}% Commission</span>
+                                </div>
+                                <div className="h-4 bg-muted/50 rounded-full overflow-hidden border border-white/5">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full relative group-hover:shadow-[0_0_10px_rgba(234,179,8,0.3)] transition-all duration-500"
+                                        style={{ width: `${r.rate * 4}%` }}
+                                    >
+                                        <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="mt-12 p-6 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-center">
+                        <p className="text-base text-yellow-500/90">
+                            <strong>Example:</strong> Your referral makes a $10,000 trade → $10 platform fee → You earn <strong>$2.50</strong>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            {/* Lower CTA */}
+            <section className="py-24 bg-gradient-to-t from-yellow-500/5 to-transparent">
+                <div className="container max-w-2xl mx-auto px-4 text-center space-y-8">
+                    <h2 className="text-3xl md:text-4xl font-bold">Ready to Get Started?</h2>
+                    <p className="text-lg text-muted-foreground">
+                        Connect your wallet now to generate your unique referral link and start building your network.
+                    </p>
+                    <button
+                        onClick={login}
+                        className="px-12 py-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-500/20"
+                    >
+                        Connect Wallet
+                    </button>
+
+                    <div className="flex items-center justify-center gap-6 pt-4 text-sm text-center">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <span className="text-green-500">✓</span> Free to join
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <span className="text-green-500">✓</span> No minimums
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <span className="text-green-500">✓</span> Instant setup
+                        </div>
                     </div>
                 </div>
             </section>
