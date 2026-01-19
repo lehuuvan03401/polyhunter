@@ -13,6 +13,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { polyClient } from '@/lib/polymarket';
+import {
+    calculateScientificScore,
+    Trade,
+    TraderMetrics,
+} from '@/lib/services/trader-scoring-service';
 
 // ===== Types =====
 
@@ -31,6 +36,14 @@ interface ActiveTrader {
     volume: number;
     winRate: number;
 
+    // Scientific metrics
+    profitFactor: number;
+    maxDrawdown: number;
+    volumeWeightedWinRate: number;
+    sharpeRatio: number;
+    copyFriendliness: number;
+    dataQuality: 'full' | 'limited' | 'insufficient';
+
     // Scoring
     copyScore: number;
     rank: number;
@@ -47,27 +60,37 @@ const cache: Record<string, CachedData> = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // ===== Score Calculation =====
+// Now uses trader-scoring-service for scientific scoring
 
-function calculateCopyScore(
-    activePositions: number,
-    recentTrades: number,
-    pnl: number,
-    winRate: number,
-    periodMultiplier: number = 1
-): number {
-    // Active Positions: 25 points max (must have positions to score)
-    const positionScore = activePositions > 0 ? 25 : 0;
+function convertActivitiesToTrades(activities: any[]): Trade[] {
+    return activities
+        .filter(a => a.type === 'TRADE' && a.side && a.size && a.price)
+        .map(a => ({
+            timestamp: a.timestamp,
+            side: a.side as 'BUY' | 'SELL',
+            size: a.size,
+            price: a.price,
+            value: a.usdcSize || (a.size * a.price),
+            pnl: undefined,
+        }));
+}
 
-    // Recent Trades: 25 points max
-    const tradeScore = Math.min(25, (recentTrades / 5) * 25);
+function enrichTradesWithPositionPnL(trades: Trade[], positions: any[]): Trade[] {
+    // Calculate total realized PnL from positions
+    const totalPnL = positions.reduce((sum, p) => sum + (p.cashPnl || 0), 0);
+    const sellTrades = trades.filter(t => t.side === 'SELL');
 
-    // PnL: 30 points (profitable in period)
-    const pnlScore = pnl > 0 ? 30 : 0;
+    if (sellTrades.length === 0) return trades;
 
-    // Win Rate: 20 points max
-    const winRateScore = winRate * 20;
+    // Distribute PnL across sell trades proportionally
+    const pnlPerTrade = totalPnL / sellTrades.length;
 
-    return Math.round(positionScore + tradeScore + pnlScore + winRateScore);
+    return trades.map(t => {
+        if (t.side === 'SELL') {
+            return { ...t, pnl: pnlPerTrade };
+        }
+        return t;
+    });
 }
 
 // ===== Data Fetching =====
@@ -118,7 +141,7 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
                 // Count recent trades (only TRADE type) in the specific period
                 const periodTrades = activities.filter(a => a.type === 'TRADE' && a.timestamp >= startTime);
 
-                // Calculate win rate from positions
+                // Calculate simple win rate from positions for display
                 const profitablePositions = positions.filter(p => (p.cashPnl || 0) > 0);
                 const winRate = positions.length > 0
                     ? profitablePositions.length / positions.length
@@ -129,14 +152,12 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
                     ? periodTrades[0].timestamp
                     : 0;
 
-                // If asking for 15d or 90d, we might need to rely on the 'MONTH' or 'ALL' PnL returned by leaderboard
-                // as exact 15d PnL isn't easily queryable without full history.
-                // However, the Leaderboard 'WEEK'/'MONTH'/'ALL' return that specific PnL.
-                // For 15d, using MONTH PnL is "close enough" for candidate sorting, 
-                // but ideally we'd filter trades. For MVP, we use the leaderboard's PnL value.
-                // Caveat: For '15d', we are identifying traders who are top of 'MONTH' list, so their PnL is 30d PnL.
-                // We should probably denote if it's strictly matching.
-                // For this implementation, we will use the returned PnL as the display PnL for simplicity/performance.
+                // Convert activities to trades and enrich with PnL for scientific scoring
+                const trades = convertActivitiesToTrades(activities);
+                const enrichedTrades = enrichTradesWithPositionPnL(trades, positions);
+
+                // Calculate scientific metrics
+                const metrics = calculateScientificScore(enrichedTrades, { periodDays: days });
 
                 return {
                     address: trader.address.toLowerCase(),
@@ -151,7 +172,15 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
                     volume: trader.volume,
                     winRate,
 
-                    copyScore: 0, // Calculated below
+                    // Scientific metrics
+                    profitFactor: metrics.profitFactor,
+                    maxDrawdown: metrics.maxDrawdown,
+                    volumeWeightedWinRate: metrics.volumeWeightedWinRate,
+                    sharpeRatio: metrics.sharpeRatio,
+                    copyFriendliness: metrics.copyFriendliness,
+                    dataQuality: metrics.dataQuality,
+
+                    copyScore: metrics.scientificScore,
                     rank: 0, // Assigned below
                 };
             } catch (error) {
@@ -165,22 +194,11 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
     const validTraders = enrichedTraders.filter((t): t is NonNullable<typeof t> =>
         t !== null &&
         t.activePositions > 0 && // Must have current positions
-        (t.recentTrades >= 1 || period === '90d') // Relax trade count for longer periods? Or keep strict? Keeping >=1 for activity.
+        (t.recentTrades >= 1 || period === '90d') // Relax trade count for longer periods
     );
 
-    // Step 4: Calculate copy scores
-    const scoredTraders = validTraders.map(trader => ({
-        ...trader,
-        copyScore: calculateCopyScore(
-            trader.activePositions,
-            trader.recentTrades,
-            trader.pnl,
-            trader.winRate
-        ),
-    }));
-
-    // Step 5: Sort by copy score and assign ranks
-    const ranked = scoredTraders
+    // Step 4: Sort by scientific score and assign ranks
+    const ranked = validTraders
         .sort((a, b) => b.copyScore - a.copyScore)
         .slice(0, limit)
         .map((trader, index) => ({

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Info } from 'lucide-react';
 
 export interface ActiveTrader {
     address: string;
@@ -11,11 +11,31 @@ export interface ActiveTrader {
     activePositions: number;
     recentTrades: number;
     lastTradeTime: number;
-    pnl: number; // Changed from weeklyPnl
-    volume: number; // Changed from weeklyVolume
+    pnl: number;
+    volume: number;
     winRate: number;
+    // Scientific metrics
+    profitFactor?: number;
+    maxDrawdown?: number;
+    volumeWeightedWinRate?: number;
+    sharpeRatio?: number;
+    copyFriendliness?: number;
+    dataQuality?: 'full' | 'limited' | 'insufficient';
     copyScore: number;
     rank: number;
+}
+
+// Tooltip component for metric explanations
+function MetricTooltip({ label, description }: { label: string; description: string }) {
+    return (
+        <div className="group relative inline-flex items-center gap-1 cursor-help">
+            <span>{label}</span>
+            <Info className="h-3 w-3 text-muted-foreground" />
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover border rounded text-xs text-popover-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                {description}
+            </div>
+        </div>
+    );
 }
 
 type Period = '7d' | '15d' | '30d' | '90d';
@@ -75,8 +95,8 @@ export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
                             key={p}
                             onClick={() => setPeriod(p)}
                             className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${period === p
-                                    ? 'bg-background text-foreground shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                                ? 'bg-background text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                                 }`}
                         >
                             {p.toUpperCase()} PnL
@@ -86,13 +106,22 @@ export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
             </div>
 
             {/* Column Headers */}
-            <div className="grid grid-cols-12 gap-4 p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b bg-muted/50">
+            <div className="grid grid-cols-12 gap-2 p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b bg-muted/50">
                 <div className="col-span-1 text-center">Rank</div>
-                <div className="col-span-3">Trader</div>
-                {/* Dynamically update header text? Or keep it generic? User asked for 7d PnL, 15d PnL options. */}
+                <div className="col-span-2">Trader</div>
                 <div className="col-span-2 text-right">{period.toUpperCase()} PnL</div>
-                <div className="col-span-2 text-center">Positions</div>
-                <div className="col-span-2 text-center">Score</div>
+                <div className="col-span-1 text-center">
+                    <MetricTooltip label="PF" description="Profit Factor: Total gains / Total losses. >2 is excellent" />
+                </div>
+                <div className="col-span-1 text-center">
+                    <MetricTooltip label="DD" description="Max Drawdown: Largest peak-to-trough decline" />
+                </div>
+                <div className="col-span-1 text-center">
+                    <MetricTooltip label="WR" description="Volume-Weighted Win Rate" />
+                </div>
+                <div className="col-span-2 text-center">
+                    <MetricTooltip label="Score" description="Scientific copy score based on risk-adjusted metrics" />
+                </div>
                 <div className="col-span-2 text-right">Action</div>
             </div>
 
@@ -105,27 +134,40 @@ export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
                 )}
 
                 {traders.length > 0 ? traders.map((trader) => (
-                    <div key={trader.address} className="grid grid-cols-12 gap-4 p-4 border-b last:border-0 hover:bg-white/5 items-center transition-colors">
+                    <div key={trader.address} className="grid grid-cols-12 gap-2 p-4 border-b last:border-0 hover:bg-white/5 items-center transition-colors">
                         <div className="col-span-1 text-center font-bold text-muted-foreground">#{trader.rank}</div>
-                        <div className="col-span-3 flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs">
+                        <div className="col-span-2 flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs flex-shrink-0">
                                 {trader.address.substring(2, 4).toUpperCase()}
                             </div>
-                            <div className="flex flex-col">
-                                <Link href={`/traders/${trader.address}`} className="font-medium text-sm truncate max-w-[120px] hover:text-blue-400 transition-colors">
+                            <div className="flex flex-col min-w-0">
+                                <Link href={`/traders/${trader.address}`} className="font-medium text-sm truncate hover:text-blue-400 transition-colors">
                                     {trader.name || `${trader.address.slice(0, 6)}...`}
                                 </Link>
-                                <span className="text-xs text-muted-foreground">{trader.address.slice(0, 8)}...</span>
                             </div>
                         </div>
                         <div className={`col-span-2 text-right font-mono font-medium ${trader.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                             {trader.pnl >= 0 ? '+' : ''}{trader.pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </div>
-                        <div className="col-span-2 text-center">
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-medium">
-                                {trader.activePositions} <span className="text-muted-foreground">active</span>
+                        {/* Profit Factor */}
+                        <div className="col-span-1 text-center">
+                            <span className={`text-xs font-mono ${(trader.profitFactor ?? 1) >= 2 ? 'text-green-500' : (trader.profitFactor ?? 1) >= 1 ? 'text-yellow-500' : 'text-red-500'}`}>
+                                {(trader.profitFactor ?? 1).toFixed(1)}
                             </span>
                         </div>
+                        {/* Max Drawdown */}
+                        <div className="col-span-1 text-center">
+                            <span className={`text-xs font-mono ${(trader.maxDrawdown ?? 0) <= 10 ? 'text-green-500' : (trader.maxDrawdown ?? 0) <= 30 ? 'text-yellow-500' : 'text-red-500'}`}>
+                                {(trader.maxDrawdown ?? 0).toFixed(0)}%
+                            </span>
+                        </div>
+                        {/* Win Rate */}
+                        <div className="col-span-1 text-center">
+                            <span className={`text-xs font-mono ${(trader.volumeWeightedWinRate ?? 50) >= 60 ? 'text-green-500' : (trader.volumeWeightedWinRate ?? 50) >= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
+                                {(trader.volumeWeightedWinRate ?? 50).toFixed(0)}%
+                            </span>
+                        </div>
+                        {/* Scientific Score */}
                         <div className="col-span-2 text-center">
                             <div className="inline-flex items-center gap-2">
                                 <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">

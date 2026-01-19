@@ -95,23 +95,60 @@ export async function GET(
         const trades = activity.activities.filter(a => a.type === 'TRADE');
         const totalTrades = trades.length;
 
-        // Win Rate: Calculate based on positions with positive PnL
-        // A "win" is a position that is currently profitable
-        let profitablePositions = 0;
-        let totalPositionsWithPnl = 0;
+        // Improved Win Rate Calculation:
+        // Strategy: Use volume-weighted approach considering multiple sources:
+        // 1. Positions with realized PnL (cashPnl defined and != 0)
+        // 2. Positions with positive current value vs avg price (for unrealized)
+        // 3. Fall back to trade-level analysis if no position PnL available
 
-        positions.forEach((pos: { cashPnl?: number }) => {
-            if (pos.cashPnl !== undefined && pos.cashPnl !== null) {
-                totalPositionsWithPnl++;
+        let winningValue = 0;
+        let totalValue = 0;
+        let hasValidData = false;
+
+        // Method 1: Check positions for PnL
+        positions.forEach((pos: { cashPnl?: number; size?: number; avgPrice?: number; currentValue?: number }) => {
+            const positionValue = pos.currentValue || ((pos.size || 0) * (pos.avgPrice || 0));
+
+            if (pos.cashPnl !== undefined && pos.cashPnl !== null && pos.cashPnl !== 0) {
+                // Has realized PnL
+                hasValidData = true;
+                totalValue += positionValue;
                 if (pos.cashPnl > 0) {
-                    profitablePositions++;
+                    winningValue += positionValue;
+                }
+            } else if (pos.currentValue && pos.size && pos.avgPrice) {
+                // Calculate unrealized based on current value vs cost basis
+                hasValidData = true;
+                totalValue += positionValue;
+                const costBasis = pos.size * pos.avgPrice;
+                if (pos.currentValue > costBasis) {
+                    winningValue += positionValue;
                 }
             }
         });
 
-        // Win Rate = % of positions that are profitable
-        const winRate = totalPositionsWithPnl > 0
-            ? Math.round((profitablePositions / totalPositionsWithPnl) * 100)
+        // Method 2: If no position data, analyze trades for profitable patterns
+        if (!hasValidData && trades.length > 0) {
+            // Heuristic: If total PnL is positive, estimate win rate from PnL/volume ratio
+            const pnl = typeof profile?.totalPnL === 'number' ? profile.totalPnL : (typeof profile?.pnl === 'number' ? profile.pnl : 0);
+            const volume = typeof profile?.volume === 'number' ? profile.volume : 0;
+
+            if (volume > 0 && pnl !== 0) {
+                hasValidData = true;
+                // Estimate: If PnL/Volume ratio is positive, estimate win rate
+                // This is a rough approximation when detailed position data isn't available
+                const profitRatio = pnl / volume;
+                // A profitRatio of 0.1 (10% profit on volume) suggests ~55% win rate
+                // A profitRatio of 0.2+ suggests ~65%+ win rate
+                const estimatedWinRate = Math.min(80, Math.max(20, 50 + (profitRatio * 200)));
+                winningValue = estimatedWinRate;
+                totalValue = 100;
+            }
+        }
+
+        // Win Rate = % of value that is profitable (volume-weighted)
+        const winRate = hasValidData && totalValue > 0
+            ? Math.round((winningValue / totalValue) * 100)
             : 0;
 
         // Type-safe property access with defaults

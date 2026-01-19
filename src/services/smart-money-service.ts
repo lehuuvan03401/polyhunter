@@ -44,6 +44,12 @@ export interface SmartMoneyWallet {
   volume: number;
   score: number;
   rank?: number;
+  // Scientific metrics (optional - populated when available)
+  profitFactor?: number;
+  maxDrawdown?: number;
+  volumeWeightedWinRate?: number;
+  copyFriendliness?: number;
+  dataQuality?: 'full' | 'limited' | 'insufficient';
 }
 
 /**
@@ -251,13 +257,24 @@ export class SmartMoneyService {
             const isRecent = Date.now() - profile.lastActiveAt.getTime() < 7 * 24 * 60 * 60 * 1000;
 
             if (hasPositions || isRecent) {
+              // Improved score calculation:
+              // - PnL contribution (40%): Normalize around $50k as baseline good performance
+              // - Volume contribution (30%): Normalize around $500k as baseline
+              // - Activity bonus (20%): For having positions
+              // - Recency bonus (10%): For recent trades
+              const pnlScore = Math.min(40, Math.max(0, (trader.pnl / 50000) * 40));
+              const volumeScore = Math.min(30, Math.max(0, (trader.volume / 500000) * 30));
+              const activityScore = hasPositions ? 20 : 0;
+              const recencyScore = isRecent ? 10 : 0;
+
               return {
                 address: trader.address.toLowerCase(),
                 name: trader.userName,
                 pnl: trader.pnl,
                 volume: trader.volume,
-                score: Math.min(100, Math.round((trader.pnl / 100000) * 50 + (trader.volume / 1000000) * 50)),
+                score: Math.round(pnlScore + volumeScore + activityScore + recencyScore),
                 rank: trader.rank,
+                dataQuality: 'limited' as const, // SDK doesn't have trade-level data
               };
             }
           } catch (e) {
