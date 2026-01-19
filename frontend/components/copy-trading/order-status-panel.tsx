@@ -25,16 +25,16 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [orderToStop, setOrderToStop] = useState<string | null>(null);
-    const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+    const [filter, setFilter] = useState<'all' | 'open' | 'history'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
     // Filter orders
     const filteredOrders = orders.filter(order => {
-        if (filter === 'active') {
+        if (filter === 'open') {
             return ['PENDING', 'OPEN', 'PARTIALLY_FILLED', 'SETTLEMENT_PENDING'].includes(order.status);
         }
-        if (filter === 'completed') {
+        if (filter === 'history') {
             return ['FILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'].includes(order.status);
         }
         return true;
@@ -49,7 +49,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
 
     // Reset to page 1 when filter changes
-    const handleFilterChange = (newFilter: 'all' | 'active' | 'completed') => {
+    const handleFilterChange = (newFilter: 'all' | 'open' | 'history') => {
         setFilter(newFilter);
         setCurrentPage(1);
     };
@@ -137,8 +137,8 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
             {/* Filters */}
             <div className="flex border-b border-border/50 flex-shrink-0">
                 <FilterTab active={filter === 'all'} onClick={() => handleFilterChange('all')}>All</FilterTab>
-                <FilterTab active={filter === 'active'} onClick={() => handleFilterChange('active')}>Active</FilterTab>
-                <FilterTab active={filter === 'completed'} onClick={() => handleFilterChange('completed')}>Completed</FilterTab>
+                <FilterTab active={filter === 'open'} onClick={() => handleFilterChange('open')}>Open</FilterTab>
+                <FilterTab active={filter === 'history'} onClick={() => handleFilterChange('history')}>History</FilterTab>
             </div>
 
             {/* Orders List */}
@@ -416,65 +416,48 @@ function OrderRow({
                     {/* w-6 (Index) + gap-3 + approx w-5 (Icon) + gap-3 = ~3.5rem - 4rem offset */}
                     <div className="ml-[3.5rem] space-y-2 bg-muted/10 rounded-lg p-3">
                         <div className="grid grid-cols-2 gap-4 text-xs">
-                            {/* Strategy vs Trade Details */}
-                            {order.tradeId.startsWith('strategy_') ? (
-                                <>
-                                    <DetailItem
-                                        label="Strategy ID"
-                                        value={order.tradeId.replace('strategy_', '')}
-                                        copyable
-                                        className="col-span-2 sm:col-span-1"
-                                    />
-                                    <DetailItem label="Target" value="All Markets" />
-                                    <DetailItem label="Size" value={order.size ? `$${order.size}` : 'Variable'} />
-                                    <DetailItem label="Status" value="Active Monitoring" color="text-green-400" />
-                                    <DetailItem label="Started" value={new Date(order.detectedAt).toLocaleString()} />
-                                </>
-                            ) : (
-                                <>
-                                    <DetailItem
-                                        label="Trade ID"
-                                        value={order.tradeId}
-                                        copyable
-                                        className="col-span-2 sm:col-span-1"
-                                    />
-                                    <DetailItem label="Order ID" value={order.orderId || 'N/A'} copyable={!!order.orderId} />
-                                    <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
-                                    <DetailItem
-                                        label="Filled"
-                                        value={`${order.filledPercent}%`}
-                                        color={order.filledPercent === 100 ? 'text-green-400' : undefined}
-                                    />
-                                    <DetailItem label="Token ID" value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
-                                    <DetailItem
-                                        label="Executed"
-                                        value={order.executedAt
-                                            ? new Date(order.executedAt).toLocaleString()
-                                            : 'Not yet'
-                                        }
-                                    />
-                                </>
-                            )}
+                            <DetailItem
+                                label="Trade ID"
+                                value={order.tradeId}
+                                copyable
+                                className="col-span-2 sm:col-span-1"
+                            />
+                            <DetailItem label="Order ID" value={order.orderId || 'N/A'} copyable={!!order.orderId} />
+                            <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
+                            <DetailItem
+                                label="Filled"
+                                value={`${order.filledPercent}%`}
+                                color={order.filledPercent === 100 ? 'text-green-400' : undefined}
+                            />
+                            <DetailItem label="Token ID" value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
+                            <DetailItem
+                                label="Executed"
+                                value={order.executedAt
+                                    ? new Date(order.executedAt).toLocaleString()
+                                    : 'Not yet'}
+                            />
                         </div>
+                    </div>
 
-                        {order.errorMessage && (
-                            <div className="p-2 rounded bg-red-500/10 text-red-400 text-xs">
-                                Error: {order.errorMessage}
-                            </div>
-                        )}
+                    {order.errorMessage && (
+                        <div className="p-2 rounded bg-red-500/10 text-red-400 text-xs">
+                            Error: {order.errorMessage}
+                        </div>
+                    )}
 
-                        {order.orderId && (
+                    {order.orderId && (
+                        <div className="mt-3 ml-[3.5rem]">
                             <a
                                 href={`https://polygonscan.com/tx/${order.orderId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+                                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 w-fit"
                             >
+                                View on PolygonScan
                                 <ExternalLink className="h-3 w-3" />
-                                View on Explorer
                             </a>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

@@ -540,7 +540,11 @@ export default function PortfolioPage() {
                                     <div>
                                         <h4 className="font-medium text-sm">No Open Positions</h4>
                                         <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
-                                            When traders you follow make moves, your positions will appear here.
+                                            Real positions will appear here.
+                                            <br />
+                                            <span className="text-muted-foreground/70 italic mt-1 block">
+                                                Note: Simulation trades do not create real positions.
+                                            </span>
                                         </p>
                                     </div>
                                 </div>
