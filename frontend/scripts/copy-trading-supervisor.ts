@@ -214,6 +214,81 @@ async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<nu
     }
 }
 
+// --- POSITION CACHE (for fast sell-skip checks) ---
+// Maps: walletAddress -> tokenId -> balance
+const userPositionsCache = new Map<string, Map<string, number>>();
+const POSITION_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh every 5 minutes
+
+/**
+ * Preload all user positions from database into memory cache
+ * This enables instant sell-skip checks without database queries
+ */
+async function preloadUserPositions(): Promise<void> {
+    try {
+        console.log('[Supervisor] 📦 Preloading user positions...');
+
+        const positions = await prisma.userPosition.findMany({
+            where: {
+                balance: { gt: 0 } // Only load positions with balance
+            },
+            select: {
+                walletAddress: true,
+                tokenId: true,
+                balance: true
+            }
+        });
+
+        // Clear and rebuild cache
+        userPositionsCache.clear();
+
+        for (const pos of positions) {
+            const wallet = pos.walletAddress.toLowerCase();
+            if (!userPositionsCache.has(wallet)) {
+                userPositionsCache.set(wallet, new Map());
+            }
+            userPositionsCache.get(wallet)!.set(pos.tokenId, pos.balance);
+        }
+
+        console.log(`[Supervisor] ✅ Loaded ${positions.length} positions for ${userPositionsCache.size} wallets`);
+    } catch (error: any) {
+        console.error('[Supervisor] ❌ Failed to preload positions:', error.message);
+    }
+}
+
+/**
+ * Fast check if user has position in a token (no database query)
+ * Returns true if user has balance > 0
+ */
+function hasPosition(walletAddress: string, tokenId: string): boolean {
+    const wallet = walletAddress.toLowerCase();
+    const positions = userPositionsCache.get(wallet);
+    if (!positions) return false;
+
+    const balance = positions.get(tokenId) || 0;
+    return balance > 0;
+}
+
+/**
+ * Update position cache after trade execution
+ * Call this after successful buy/sell to keep cache in sync
+ */
+function updatePositionCache(walletAddress: string, tokenId: string, balanceChange: number): void {
+    const wallet = walletAddress.toLowerCase();
+    if (!userPositionsCache.has(wallet)) {
+        userPositionsCache.set(wallet, new Map());
+    }
+
+    const positions = userPositionsCache.get(wallet)!;
+    const currentBalance = positions.get(tokenId) || 0;
+    const newBalance = currentBalance + balanceChange;
+
+    if (newBalance <= 0) {
+        positions.delete(tokenId); // Remove zero/negative balances
+    } else {
+        positions.set(tokenId, newBalance);
+    }
+}
+
 // --- EVENT DEDUPLICATION (60 second TTL) ---
 // Uses txHash-only as key for cross-channel deduplication (WS + Chain)
 const processedEvents = new Map<string, number>();
@@ -465,7 +540,15 @@ async function processJob(
     isPreflight: boolean = false,
     overrides?: ethers.Overrides
 ) {
-    // 0. Validate filters before allocating resources
+    // 0. Fast SELL-skip check (no database query needed)
+    if (side === 'SELL') {
+        if (!hasPosition(config.walletAddress, tokenId)) {
+            console.log(`[Supervisor] ⏭️  SKIPPED SELL (no position): ${config.walletAddress.substring(0, 10)}... token ${tokenId.substring(0, 20)}...`);
+            return;
+        }
+    }
+
+    // 1. Validate filters before allocating resources
     const filterResult = await passesFilters(config, tokenId, side, approxPrice);
     if (!filterResult.passes) {
         console.log(`[Supervisor] 🔕 Trade skipped for ${config.walletAddress}: ${filterResult.reason}`);
@@ -690,6 +773,9 @@ async function executeJobInternal(
                     });
                     console.log(`[Supervisor] 📊 Position updated for BUY.`);
 
+                    // Update position cache for fast sell-skip checks
+                    updatePositionCache(config.walletAddress, tokenId, shares);
+
                     // Also update volume in referral record (legacy volume-based tracking)
                     await affiliateEngine.distributeCommissions({
                         tradeId: result.orderId || `trade-${Date.now()}`,
@@ -710,6 +796,9 @@ async function executeJobInternal(
                     });
 
                     console.log(`[Supervisor] 💰 Sell Result: Profit=$${profitResult.profit.toFixed(4)} (${(profitResult.profitPercent * 100).toFixed(2)}%)`);
+
+                    // Update position cache (negative for sell)
+                    updatePositionCache(config.walletAddress, tokenId, -shares);
 
                     if (profitResult.profit > 0) {
                         // Charge profit-based fee
@@ -836,8 +925,14 @@ async function main() {
 
     await refreshConfigs();
 
+    // Preload user positions for fast sell-skip checks
+    await preloadUserPositions();
+
     // Refresh configs loop
     setInterval(refreshConfigs, 10000);
+
+    // Refresh position cache periodically (every 5 minutes)
+    setInterval(preloadUserPositions, POSITION_CACHE_REFRESH_INTERVAL);
 
     // Maintenance Loop (Auto-Refuel)
     setInterval(async () => {

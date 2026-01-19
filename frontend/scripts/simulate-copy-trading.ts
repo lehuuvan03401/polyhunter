@@ -23,23 +23,23 @@ const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6a
 const SIMULATION_DURATION_MS = parseInt(process.env.SIMULATION_DURATION_MS || '300000'); // 5 minutes
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '10'); // $10 per trade
 
-// Validation
-if (!process.env.DATABASE_URL) {
-    console.error('❌ Missing DATABASE_URL in .env');
-    process.exit(1);
-}
+// No validation needed - using local dev.db
 
 console.log('═══════════════════════════════════════════════════════════════');
 console.log('🎮 COMPREHENSIVE COPY TRADING SIMULATION');
 console.log('═══════════════════════════════════════════════════════════════');
 console.log(`Target Trader: ${TARGET_TRADER}`);
 console.log(`Follower Wallet: ${FOLLOWER_WALLET}`);
-console.log(`Duration: ${SIMULATION_DURATION_MS / 1000 / 60} minutes`);
+console.log(`Duration: ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes`);
 console.log(`Fixed Copy Amount: $${FIXED_COPY_AMOUNT}`);
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 // --- PRISMA ---
-const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL });
+import path from 'path';
+
+// Use absolute path for database to avoid timeout issues
+const dbPath = path.join(process.cwd(), 'dev.db');
+const adapter = new PrismaLibSql({ url: `file:${dbPath}` });
 const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 // --- TRACKING STATE ---
@@ -222,6 +222,16 @@ async function handleTrade(trade: ActivityTrade) {
     // Calculate copy shares based on fixed amount
     const copyShares = FIXED_COPY_AMOUNT / trade.price;
 
+    // 🔥 CRITICAL: Skip SELL trades if we don't have a position
+    // In real copy trading, we only sell what we've bought
+    if (trade.side === 'SELL') {
+        const existing = positions.get(trade.asset);
+        if (!existing || existing.balance <= 0) {
+            console.log(`\n⏭️  SKIPPED SELL (no position): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+            return;
+        }
+    }
+
     console.log('\n🎯 ═══════════════════════════════════════════════════════════');
     console.log(`   [${elapsed}s] COPY TRADE EXECUTED`);
     console.log('   ───────────────────────────────────────────────────────────');
@@ -339,7 +349,7 @@ async function main() {
     });
 
     console.log('🎧 Simulation started - tracking 0x8dxd trades...');
-    console.log(`   (Will run for ${SIMULATION_DURATION_MS / 1000 / 60} minutes)\n`);
+    console.log(`   (Will run for ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes)\n`);
 
     // 4. Progress updates
     const progressInterval = setInterval(() => {

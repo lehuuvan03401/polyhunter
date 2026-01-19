@@ -20,12 +20,14 @@ interface OrderStatusPanelProps {
 
 export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelProps) {
     const { orders, stats, isLoading, error, refresh, lastUpdated } = useOrderStatus(walletAddress, {
-        pollInterval: 15000, // 15 seconds
+        pollInterval: 60000, // 60 seconds (reduced frequency)
     });
 
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [orderToStop, setOrderToStop] = useState<string | null>(null);
     const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 20;
 
     // Filter orders
     const filteredOrders = orders.filter(order => {
@@ -37,6 +39,20 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
         }
         return true;
     });
+
+    // Pagination
+    const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
+
+
+
+    // Reset to page 1 when filter changes
+    const handleFilterChange = (newFilter: 'all' | 'active' | 'completed') => {
+        setFilter(newFilter);
+        setCurrentPage(1);
+    };
 
     const formatTime = (dateStr: string) => {
         const date = new Date(dateStr);
@@ -86,7 +102,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
     };
 
     return (
-        <div className={cn('bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden', className)}>
+        <div className={cn('bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl', className)}>
             {/* Header */}
             <div className="p-4 border-b border-border/50 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -120,13 +136,13 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
             {/* Filter Tabs */}
             <div className="flex border-b border-border/50">
-                <FilterTab active={filter === 'all'} onClick={() => setFilter('all')}>All</FilterTab>
-                <FilterTab active={filter === 'active'} onClick={() => setFilter('active')}>Active</FilterTab>
-                <FilterTab active={filter === 'completed'} onClick={() => setFilter('completed')}>Completed</FilterTab>
+                <FilterTab active={filter === 'all'} onClick={() => handleFilterChange('all')}>All</FilterTab>
+                <FilterTab active={filter === 'active'} onClick={() => handleFilterChange('active')}>Active</FilterTab>
+                <FilterTab active={filter === 'completed'} onClick={() => handleFilterChange('completed')}>Completed</FilterTab>
             </div>
 
             {/* Orders List */}
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 500px)', minHeight: '300px' }}>
                 {error && (
                     <div className="p-4 text-center">
                         <AlertCircle className="h-5 w-5 text-red-400 mx-auto mb-2" />
@@ -141,20 +157,51 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                     </div>
                 )}
 
-                {filteredOrders.map((order, i) => (
-                    <OrderRow
-                        key={order.tradeId}
-                        index={i + 1}
-                        order={order}
-                        expanded={expandedOrder === order.tradeId}
-                        onToggle={() => setExpandedOrder(
-                            expandedOrder === order.tradeId ? null : order.tradeId
-                        )}
-                        onStop={(e) => handleStopCopying(order.tradeId, e)}
-                    />
-
-                ))}
+                {paginatedOrders.map((order, i) => {
+                    // Calculate global index (descending from total)
+                    const globalIndex = filteredOrders.length - (startIndex + i);
+                    return (
+                        <OrderRow
+                            key={order.tradeId}
+                            index={globalIndex}
+                            order={order}
+                            expanded={expandedOrder === order.tradeId}
+                            onToggle={() => setExpandedOrder(
+                                expandedOrder === order.tradeId ? null : order.tradeId
+                            )}
+                            onStop={(e) => handleStopCopying(order.tradeId, e)}
+                        />
+                    );
+                })}
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="p-3 border-t border-border/50 flex items-center justify-between text-sm">
+                    <div className="text-muted-foreground">
+                        Showing {startIndex + 1}-{Math.min(endIndex, filteredOrders.length)} of {filteredOrders.length}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 rounded-lg bg-muted/50 hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Previous
+                        </button>
+                        <span className="text-muted-foreground">
+                            Page {currentPage} of {totalPages}
+                        </span>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 rounded-lg bg-muted/50 hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Custom Stop Confirmation Modal */}
             <AnimatePresence>

@@ -1,20 +1,25 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
+import { createClient } from '@libsql/client';
 import path from 'path';
 
-// Get database URL from environment variable or use local file
+// Get database URL with absolute path fallback
 const getDatabaseUrl = () => {
     if (process.env.DATABASE_URL) {
         return process.env.DATABASE_URL;
     }
-    // Fallback to local file database
+    // Fallback to absolute path
     const dbPath = path.join(process.cwd(), 'dev.db');
     return `file:${dbPath}`;
 };
 
-// Create adapter with config URL
+// Debug: Log the database URL
+const dbUrl = getDatabaseUrl();
+console.log('[Prisma] Database URL:', dbUrl);
+
+// Create adapter with URL config (not libsql client)
 const adapter = new PrismaLibSql({
-    url: getDatabaseUrl(),
+    url: dbUrl,
 });
 
 const globalForPrisma = globalThis as unknown as {
@@ -29,3 +34,4 @@ export const prisma =
     });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
