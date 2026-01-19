@@ -1,7 +1,84 @@
 'use client';
 
 import Link from 'next/link';
-import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle, Coins, CreditCard, LayoutDashboard } from 'lucide-react';
+import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle, Coins, CreditCard, LayoutDashboard, Quote } from 'lucide-react';
+// ... existing imports ...
+
+// ... inside GuestView ...
+const TESTIMONIALS = [
+    {
+        name: "Alex M.",
+        role: "Super Partner",
+        earnings: "$12,450",
+        period: "last month",
+        quote: "I started sharing my link in a few discord groups. Now I'm earning more from commissions than my actual trading.",
+        avatar: "👨‍💻"
+    },
+    {
+        name: "Sarah K.",
+        role: "Elite Affiliate",
+        earnings: "$4,200",
+        period: "this week",
+        quote: "The 5-generation system is a game changer. My network keeps growing automatically as my referrals invite their friends.",
+        avatar: "👩‍💼"
+    },
+    {
+        name: "CryptoDave",
+        role: "VIP Member",
+        earnings: "$850",
+        period: "passive income",
+        quote: "I just posted my link on Twitter and forgot about it. Woke up to free USDC in my wallet. Easiest money ever.",
+        avatar: "🚀"
+    }
+];
+
+// ... render return ...
+
+{/* Commission Rates (Existing) */ }
+{/* ... */ }
+
+{/* Success Stories Section (New) */ }
+<section className="py-20 border-t border-white/5 bg-gradient-to-b from-transparent to-yellow-500/5">
+    <div className="container max-w-6xl mx-auto px-4">
+        <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Success Stories</h2>
+            <p className="text-muted-foreground">See what our top partners are earning</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {TESTIMONIALS.map((t, i) => (
+                <div key={i} className="bg-card/40 backdrop-blur-md border border-white/5 hover:border-yellow-500/30 p-8 rounded-2xl relative group transition-all duration-300 hover:-translate-y-1">
+                    <div className="absolute top-6 right-6 text-yellow-500/10 group-hover:text-yellow-500/20 transition-colors">
+                        <Quote className="h-10 w-10" />
+                    </div>
+
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="h-12 w-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-2xl border border-yellow-500/20">
+                            {t.avatar}
+                        </div>
+                        <div>
+                            <div className="font-bold text-white">{t.name}</div>
+                            <div className="text-xs text-yellow-500 font-medium uppercase tracking-wide">{t.role}</div>
+                        </div>
+                    </div>
+
+                    <p className="text-muted-foreground mb-6 leading-relaxed relative z-10">
+                        "{t.quote}"
+                    </p>
+
+                    <div className="pt-6 border-t border-white/5 flex items-center justify-between">
+                        <div className="text-sm text-muted-foreground">Total Earned</div>
+                        <div className="text-green-500 font-bold font-mono text-lg">
+                            {t.earnings} <span className="text-xs text-muted-foreground font-normal ml-1">/ {t.period}</span>
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
+    </div>
+</section>
+
+{/* CTA (Existing) */ }
 import { cn } from '@/lib/utils';
 import { usePrivy } from '@privy-io/react-auth';
 import { useEffect, useState, useCallback } from 'react';
@@ -611,6 +688,33 @@ function GuestView() {
         { gen: 5, rate: 2, label: '5th Level' },
     ];
 
+    const TESTIMONIALS = [
+        {
+            name: "Alex M.",
+            role: "Super Partner",
+            earnings: "$12,450",
+            period: "last month",
+            quote: "I started sharing my link in a few discord groups. Now I'm earning more from commissions than my actual trading.",
+            avatar: "👨‍💻"
+        },
+        {
+            name: "Sarah K.",
+            role: "Elite Affiliate",
+            earnings: "$4,200",
+            period: "this week",
+            quote: "The 5-generation system is a game changer. My network keeps growing automatically as my referrals invite their friends.",
+            avatar: "👩‍💼"
+        },
+        {
+            name: "CryptoDave",
+            role: "VIP Member",
+            earnings: "$850",
+            period: "passive income",
+            quote: "I just posted my link on Twitter and forgot about it. Woke up to free USDC in my wallet. Easiest money ever.",
+            avatar: "🚀"
+        }
+    ];
+
     return (
         <div className="min-h-screen bg-background text-foreground">
             {/* Hero */}
@@ -695,6 +799,47 @@ function GuestView() {
                         <p className="text-base text-yellow-500/90">
                             <strong>Example:</strong> Your referral makes a $10,000 trade → $10 platform fee → You earn <strong>$2.50</strong>
                         </p>
+                    </div>
+                </div>
+            </section>
+
+            {/* Testimonials Section */}
+            <section className="py-20 border-t border-white/5 bg-gradient-to-b from-transparent to-yellow-500/5">
+                <div className="container max-w-6xl mx-auto px-4">
+                    <div className="text-center mb-12">
+                        <h2 className="text-3xl font-bold mb-4">Success Stories</h2>
+                        <p className="text-muted-foreground">See what our top partners are earning</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {TESTIMONIALS.map((t, i) => (
+                            <div key={i} className="bg-card/40 backdrop-blur-md border border-white/5 hover:border-yellow-500/30 p-8 rounded-2xl relative group transition-all duration-300 hover:-translate-y-1">
+                                <div className="absolute top-6 right-6 text-yellow-500/10 group-hover:text-yellow-500/20 transition-colors">
+                                    <Quote className="h-10 w-10" />
+                                </div>
+
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="h-12 w-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-2xl border border-yellow-500/20">
+                                        {t.avatar}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-white">{t.name}</div>
+                                        <div className="text-xs text-yellow-500 font-medium uppercase tracking-wide">{t.role}</div>
+                                    </div>
+                                </div>
+
+                                <p className="text-muted-foreground mb-6 leading-relaxed relative z-10">
+                                    "{t.quote}"
+                                </p>
+
+                                <div className="pt-6 border-t border-white/5 flex items-center justify-between">
+                                    <div className="text-sm text-muted-foreground">Total Earned</div>
+                                    <div className="text-green-500 font-bold font-mono text-lg">
+                                        {t.earnings} <span className="text-xs text-muted-foreground font-normal ml-1">/ {t.period}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </section>
