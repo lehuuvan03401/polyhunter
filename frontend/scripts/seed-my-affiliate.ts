@@ -189,13 +189,24 @@ async function main() {
     const secondLevel: any[] = [];
     const activeDirects = directReferrals.slice(0, 5); // Only first 5 have teams
 
-    for (const direct of activeDirects) {
+    for (let i = 0; i < activeDirects.length; i++) {
+        const direct = activeDirects[i];
+
+        // If this is the main PARTNER (first direct), give them a stronger team
+        const isMainPartner = i === 0;
+
         for (let j = 0; j < 3; j++) {
+            let subTier = 'ORDINARY';
+            if (isMainPartner) {
+                if (j === 0) subTier = 'ELITE';
+                else if (j === 1) subTier = 'VIP';
+            }
+
             const sub = await prisma.referrer.create({
                 data: {
                     walletAddress: randomWallet(),
                     referralCode: randomCode(),
-                    tier: 'ORDINARY',
+                    tier: subTier as any,
                     totalEarned: Math.random() * 50,
                     pendingPayout: Math.random() * 10,
                     totalVolume: 1000 + Math.random() * 3000,
@@ -218,7 +229,7 @@ async function main() {
                 ]
             });
         }
-        console.log(`   📎 Created 3 under ${direct.referralCode}`);
+        console.log(`   📎 Created 3 under ${direct.referralCode} ${isMainPartner ? '(Strong Team)' : ''}`);
     }
 
     // ========================
@@ -226,11 +237,21 @@ async function main() {
     // ========================
     console.log('\n👥 Creating 3rd Level Referrals (2 per 2nd level)...');
 
+    // ========================
+    // Create 3rd Level (Variable per 2nd level)
+    // ========================
+    console.log('\n👥 Creating 3rd Level Referrals...');
+
     const thirdLevel: any[] = [];
     let thirdLevelCount = 0;
 
     for (const { referrer: sub, parentId: directId } of secondLevel) {
-        for (let k = 0; k < 2; k++) {
+        // Determine how many children to create based on Gen 2 tier
+        let childCount = 2; // Default for ORDINARY
+        if (sub.tier === 'ELITE') childCount = 5;
+        else if (sub.tier === 'VIP') childCount = 4;
+
+        for (let k = 0; k < childCount; k++) {
             const third = await prisma.referrer.create({
                 data: {
                     walletAddress: randomWallet(),
@@ -261,7 +282,7 @@ async function main() {
             });
         }
     }
-    console.log(`   📎 Created ${thirdLevelCount} 3rd level members`);
+    console.log(`   📎 Created ${thirdLevelCount} 3rd level members (Boosted for VIP/ELITE parents)`);
 
     // ========================
     // Create 4th Level (Randomly ~15 users under Gen 3)
