@@ -36,6 +36,7 @@ import { TxMonitor, TrackedTx } from '../../src/core/tx-monitor';
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
+const DRY_RUN = process.env.DRY_RUN === 'true';
 
 // Env checks
 if (!process.env.TRADING_PRIVATE_KEY) {
@@ -59,6 +60,9 @@ if (!MASTER_MNEMONIC && (RPC_URL.includes("localhost") || RPC_URL.includes("127.
 }
 
 // --- INITIALIZATION ---
+if (DRY_RUN) {
+    console.log('[Supervisor] ⚠️ DRY_RUN MODE ENABLED - No trades will be executed');
+}
 console.log(`[Supervisor] 🌍 Network: ${process.env.NEXT_PUBLIC_NETWORK}`);
 console.log(`[Supervisor] 🔌 RPC: ${RPC_URL}`);
 console.log(`[Supervisor] 🏭 ProxyFactory: ${CONTRACT_ADDRESSES.polygon.proxyFactory}`);
@@ -590,6 +594,40 @@ async function executeJobInternal(
         // 2. Calculate Size
         let copyAmount = 10; // Default $10
         if (config.fixedAmount) copyAmount = config.fixedAmount;
+
+        // DRY_RUN Mode: Log execution decision without placing order
+        if (DRY_RUN) {
+            const latencyMs = Date.now() - startTime;
+            console.log(`[DRY_RUN] ════════════════════════════════════════`);
+            console.log(`[DRY_RUN] Would execute: ${side} $${copyAmount.toFixed(2)} of token ${tokenId.substring(0, 20)}...`);
+            console.log(`[DRY_RUN]   User: ${config.walletAddress}`);
+            console.log(`[DRY_RUN]   Price: $${approxPrice.toFixed(4)}`);
+            console.log(`[DRY_RUN]   Slippage: ${config.maxSlippage}% (${config.slippageType})`);
+            console.log(`[DRY_RUN]   Mode: ${config.executionMode}`);
+            console.log(`[DRY_RUN]   Original: ${originalTrader} ${side} ${originalSize.toFixed(2)} shares`);
+            console.log(`[DRY_RUN]   Latency: ${latencyMs}ms`);
+            console.log(`[DRY_RUN] ════════════════════════════════════════`);
+
+            recordExecution(true, latencyMs);
+
+            // Log to DB as SKIPPED
+            await prisma.copyTrade.create({
+                data: {
+                    configId: config.id,
+                    originalTrader: originalTrader,
+                    originalSide: side,
+                    originalSize: originalSize,
+                    originalPrice: approxPrice,
+                    tokenId: tokenId,
+                    copySize: copyAmount,
+                    copyPrice: approxPrice,
+                    status: 'SKIPPED',
+                    errorMessage: 'DRY_RUN mode - execution skipped',
+                    executedAt: new Date()
+                }
+            });
+            return;
+        }
 
         // 3. Execute
         const baseParams: ExecutionParams = {
