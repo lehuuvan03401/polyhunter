@@ -105,8 +105,8 @@ export function Home() {
           {authenticated ? (
             <>
               <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold">Top 10 Most Followed Traders</h2>
-                <p className="text-sm text-muted-foreground hidden md:block">Live rankings based on on-chain Polymarket data. Updated in real-time.</p>
+                <h2 className="text-2xl font-bold">Top 10 Traders by Copy Score</h2>
+                <p className="text-sm text-muted-foreground hidden md:block">Ranked by scientific metrics: risk-adjusted returns, profit factor, and consistency.</p>
               </div>
 
               <Suspense fallback={<LeaderboardSkeleton />}>
@@ -126,7 +126,7 @@ export function Home() {
               </div>
               <h2 className="text-2xl font-bold mb-3">Connect Your Wallet to View Top Traders</h2>
               <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
-                Access the complete leaderboard of top performers on Polymarket. 
+                Access the complete leaderboard of top performers on Polymarket.
                 View their trading history, profit metrics, and start copy trading with a single click.
               </p>
 

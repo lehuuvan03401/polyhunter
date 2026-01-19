@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Loader2, Info } from 'lucide-react';
+import { Loader2, Info, RefreshCw } from 'lucide-react';
 
 export interface ActiveTrader {
     address: string;
@@ -25,6 +25,30 @@ export interface ActiveTrader {
     rank: number;
 }
 
+// Client-side cache for trader data (stale-while-revalidate pattern)
+const traderCache: Map<string, { data: ActiveTrader[]; timestamp: number }> = new Map();
+const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const REFRESH_COOLDOWN = 5 * 60 * 1000; // 5 minutes - rate limit for manual refresh
+let lastManualRefresh = 0;
+
+function getCachedData(period: string): ActiveTrader[] | null {
+    const cached = traderCache.get(period);
+    if (cached) {
+        return cached.data;
+    }
+    return null;
+}
+
+function setCachedData(period: string, data: ActiveTrader[]) {
+    traderCache.set(period, { data, timestamp: Date.now() });
+}
+
+function isCacheStale(period: string): boolean {
+    const cached = traderCache.get(period);
+    if (!cached) return true;
+    return Date.now() - cached.timestamp > CACHE_TTL;
+}
+
 // Tooltip component for metric explanations
 function MetricTooltip({ label, description }: { label: string; description: string }) {
     return (
@@ -45,50 +69,115 @@ interface LeaderboardTableProps {
 }
 
 export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
-    const [period, setPeriod] = useState<Period>('7d');
-    const [traders, setTraders] = useState<ActiveTrader[]>(initialData);
+    const [period, setPeriod] = useState<Period>('30d');
+    const [traders, setTraders] = useState<ActiveTrader[]>(() => {
+        // Try to use cached data first, fall back to initialData
+        const cached = getCachedData('30d');
+        if (cached && cached.length > 0) return cached;
+        // Store initialData in cache
+        if (initialData.length > 0) {
+            setCachedData('30d', initialData);
+        }
+        return initialData;
+    });
     const [isLoading, setIsLoading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [canRefresh, setCanRefresh] = useState(() => Date.now() - lastManualRefresh > REFRESH_COOLDOWN);
+    const mountedRef = useRef(true);
 
     useEffect(() => {
-        // Skip fetching for initial 7d render if we want to rely on initialData
-        // But if user clicks back to 7d, we might want to re-fetch or use cache.
-        // For simplicity, we'll fetch when period changes, except maybe the very first mount if period is default.
-        // Actually, let's just fetch when period changes.
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
 
-        const fetchData = async () => {
-            setIsLoading(true);
+    useEffect(() => {
+        const fetchData = async (showLoader: boolean) => {
+            if (showLoader) setIsLoading(true);
+            else setIsRefreshing(true);
+
             try {
                 const response = await fetch(`/api/traders/active?limit=10&period=${period}`);
-                if (response.ok) {
+                if (response.ok && mountedRef.current) {
                     const data = await response.json();
-                    setTraders(data.traders || []);
+                    const newTraders = data.traders || [];
+                    setTraders(newTraders);
+                    setCachedData(period, newTraders);
                 }
             } catch (error) {
                 console.error('Failed to fetch traders:', error);
             } finally {
-                setIsLoading(false);
+                if (mountedRef.current) {
+                    setIsLoading(false);
+                    setIsRefreshing(false);
+                }
             }
         };
 
-        // If it's the first render and period is 7d, we might already have data from props.
-        // We can optimize this later, for now let's just fetch to be consistent 
-        // OR checks if initialData matches the period.
-        // As a simple start, we can just allow re-fetching or check if it's the specific transition.
-        if (period === '7d' && initialData.length > 0 && traders === initialData) {
-            // Do nothing if we're on default and have data
-            return;
+        // Check cache first
+        const cached = getCachedData(period);
+        if (cached && cached.length > 0) {
+            // Show cached data immediately
+            setTraders(cached);
+            setIsLoading(false);
+
+            // Refresh in background if stale
+            if (isCacheStale(period)) {
+                fetchData(false);
+            }
+        } else {
+            // No cache, show loading and fetch
+            fetchData(true);
+        }
+    }, [period]);
+
+    // Manual refresh handler with rate limiting
+    const handleManualRefresh = async () => {
+        const now = Date.now();
+        if (now - lastManualRefresh < REFRESH_COOLDOWN) {
+            return; // Rate limited
         }
 
-        fetchData();
-    }, [period]);
+        lastManualRefresh = now;
+        setCanRefresh(false);
+        setIsRefreshing(true);
+
+        try {
+            const response = await fetch(`/api/traders/active?limit=10&period=${period}`);
+            if (response.ok && mountedRef.current) {
+                const data = await response.json();
+                const newTraders = data.traders || [];
+                setTraders(newTraders);
+                setCachedData(period, newTraders);
+            }
+        } catch (error) {
+            console.error('Failed to refresh traders:', error);
+        } finally {
+            if (mountedRef.current) {
+                setIsRefreshing(false);
+                // Re-enable refresh button after cooldown
+                setTimeout(() => {
+                    if (mountedRef.current) setCanRefresh(true);
+                }, REFRESH_COOLDOWN);
+            }
+        }
+    };
 
     return (
         <div className="bg-card border rounded-xl overflow-hidden">
             {/* Header / Tabs */}
             <div className="flex items-center justify-between p-4 border-b bg-muted/30">
-                <div className="flex items-center gap-2">
-                    {/* Title or other Left side content could go here */}
-                </div>
+                <button
+                    onClick={handleManualRefresh}
+                    disabled={!canRefresh || isRefreshing}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all ${canRefresh && !isRefreshing
+                        ? 'bg-muted hover:bg-muted/80 text-foreground'
+                        : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
+                        }`}
+                    title={canRefresh ? 'Refresh data' : 'Refresh available in 5 min'}
+                >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
                 <div className="flex bg-muted rounded-lg p-1">
                     {(['7d', '15d', '30d', '90d'] as Period[]).map((p) => (
                         <button
