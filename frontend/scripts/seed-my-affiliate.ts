@@ -105,10 +105,11 @@ async function main() {
     const directReferrals: any[] = [];
 
     for (let i = 0; i < 5; i++) {
+        const directCode = `D${i + 1}_${randomCode(4)}`;
         const direct = await prisma.referrer.create({
             data: {
                 walletAddress: randomWallet(),
-                referralCode: `DIRECT${i + 1}`,
+                referralCode: directCode,
                 tier: 'VIP',
                 totalEarned: 100 + Math.random() * 200,
                 pendingPayout: Math.random() * 50,
@@ -214,24 +215,100 @@ async function main() {
     console.log(`   📎 Created ${thirdLevelCount} 3rd level members`);
 
     // ========================
-    // Add Commission Logs for your wallet
+    // Update sunLineCount for each direct referral (count their sub-teams)
+    // A "Sun Line" is a direct referral who has built their own team
     // ========================
-    console.log('\n💰 Creating Commission History...');
-    const commissionTypes = ['ZERO_LINE', 'SUN_LINE'];
+    console.log('\n☀️ Updating Sun Line counts...');
+    let strongLegsCount = 0;
 
-    for (let i = 0; i < 15; i++) {
+    for (const direct of directReferrals) {
+        // Count how many sub-members this direct has
+        const subTeamSize = await prisma.teamClosure.count({
+            where: {
+                ancestorId: direct.id,
+                depth: { gt: 0 }
+            }
+        });
+
+        // If they have sub-team members, mark them as a "sun line" contributor
+        if (subTeamSize > 0) {
+            await prisma.referrer.update({
+                where: { id: direct.id },
+                data: { sunLineCount: subTeamSize }
+            });
+            strongLegsCount++;
+            console.log(`   ☀️ ${direct.referralCode}: Team of ${subTeamSize} (Strong Leg)`);
+        }
+    }
+
+    // Update my referrer's sunLineCount (direct referrals with active teams)
+    await prisma.referrer.update({
+        where: { id: myReferrer.id },
+        data: { sunLineCount: strongLegsCount }
+    });
+    console.log(`   ✅ You have ${strongLegsCount} Sun Lines (Strong Legs)`);
+
+    // ========================
+    // Add Commission Logs for your wallet - LINKED TO ACTUAL TEAM MEMBERS
+    // ========================
+    console.log('\n💰 Creating Commission History (linked to team members)...');
+
+    // Clear old commission logs first
+    await prisma.commissionLog.deleteMany({ where: { referrerId: myReferrer.id } });
+
+    // For each direct referral, create ZERO_LINE commission (direct bonus)
+    let totalZeroLine = 0;
+    let totalSunLine = 0;
+
+    for (const direct of directReferrals) {
+        // Direct referral generates ZERO_LINE commission (3% of their volume for ELITE tier)
+        const zeroLineAmount = direct.totalVolume * 0.03;
+        totalZeroLine += zeroLineAmount;
+
         await prisma.commissionLog.create({
             data: {
                 referrerId: myReferrer.id,
-                amount: 20 + Math.random() * 150,
-                type: commissionTypes[Math.floor(Math.random() * commissionTypes.length)],
-                sourceUserId: randomWallet(),
-                generation: Math.floor(Math.random() * 3) + 1,
-                createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000)
+                amount: zeroLineAmount,
+                type: 'ZERO_LINE',
+                sourceUserId: direct.walletAddress, // Link to this member!
+                generation: 1,
+                createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000)
+            }
+        });
+        console.log(`   ⚡ DIRECT ${direct.referralCode}: Zero Line $${zeroLineAmount.toFixed(2)}`);
+    }
+
+    // For each 2nd level member, create SUN_LINE commission (team differential)
+    for (const { referrer: sub } of secondLevel) {
+        // 2nd level generates SUN_LINE commission (ELITE 3% - VIP 2% = 1% differential)
+        const sunLineAmount = sub.totalVolume * 0.01;
+        totalSunLine += sunLineAmount;
+
+        await prisma.commissionLog.create({
+            data: {
+                referrerId: myReferrer.id,
+                amount: sunLineAmount,
+                type: 'SUN_LINE',
+                sourceUserId: sub.walletAddress, // Link to this member!
+                generation: 2,
+                createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000)
             }
         });
     }
-    console.log('   📊 Created 15 commission logs');
+    console.log(`   ☀️ SUN_LINE from 15 Gen2 members: $${totalSunLine.toFixed(2)}`);
+
+    // Update my referrer's total earned
+    await prisma.referrer.update({
+        where: { id: myReferrer.id },
+        data: {
+            totalEarned: totalZeroLine + totalSunLine,
+            pendingPayout: (totalZeroLine + totalSunLine) * 0.25 // 25% pending
+        }
+    });
+
+    console.log(`\n   📊 Total Zero Line: $${totalZeroLine.toFixed(2)}`);
+    console.log(`   📊 Total Sun Line: $${totalSunLine.toFixed(2)}`);
+    console.log(`   📊 TOTAL COMMISSION: $${(totalZeroLine + totalSunLine).toFixed(2)}`);
 
     // ========================
     // Add ReferralVolume records

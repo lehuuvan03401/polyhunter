@@ -9,6 +9,8 @@ interface TreeMember {
     volume: number;
     teamSize: number;
     depth: number;
+    zeroLineEarned: number;  // Commission from this member's direct trades
+    sunLineEarned: number;   // Commission from this member's team (differential)
     children: TreeMember[];
 }
 
@@ -57,7 +59,7 @@ export async function GET(request: Request) {
             });
 
             // Build tree recursively (limit to 3 levels for performance)
-            const buildTree = async (parentId: string, currentDepth: number, maxDepth: number): Promise<TreeMember[]> => {
+            const buildTree = async (parentId: string, currentDepth: number, maxDepth: number, viewerId: string): Promise<TreeMember[]> => {
                 if (currentDepth > maxDepth) return [];
 
                 const children = await prisma.teamClosure.findMany({
@@ -87,7 +89,20 @@ export async function GET(request: Request) {
                         }
                     });
 
-                    const subChildren = await buildTree(child.descendant.id, currentDepth + 1, maxDepth);
+                    // Get commission earned FROM this member (for the viewer)
+                    const commissions = await prisma.commissionLog.groupBy({
+                        by: ['type'],
+                        where: {
+                            referrerId: viewerId,
+                            sourceUserId: child.descendant.walletAddress
+                        },
+                        _sum: { amount: true }
+                    });
+
+                    const zeroLineEarned = commissions.find((c: any) => c.type === 'ZERO_LINE')?._sum?.amount || 0;
+                    const sunLineEarned = commissions.find((c: any) => c.type === 'SUN_LINE')?._sum?.amount || 0;
+
+                    const subChildren = await buildTree(child.descendant.id, currentDepth + 1, maxDepth, viewerId);
 
                     return {
                         address: child.descendant.walletAddress,
@@ -96,6 +111,8 @@ export async function GET(request: Request) {
                         volume: child.descendant.totalVolume,
                         teamSize,
                         depth: currentDepth,
+                        zeroLineEarned,
+                        sunLineEarned,
                         children: subChildren
                     };
                 }));
@@ -110,7 +127,20 @@ export async function GET(request: Request) {
                     }
                 });
 
-                const children = await buildTree(dr.descendant.id, 2, 4); // Start at depth 2, max 4
+                // Get commission earned FROM this direct referral (for the viewer)
+                const commissions = await prisma.commissionLog.groupBy({
+                    by: ['type'],
+                    where: {
+                        referrerId: referrer.id,
+                        sourceUserId: dr.descendant.walletAddress
+                    },
+                    _sum: { amount: true }
+                });
+
+                const zeroLineEarned = commissions.find((c: any) => c.type === 'ZERO_LINE')?._sum?.amount || 0;
+                const sunLineEarned = commissions.find((c: any) => c.type === 'SUN_LINE')?._sum?.amount || 0;
+
+                const children = await buildTree(dr.descendant.id, 2, 4, referrer.id);
 
                 return {
                     address: dr.descendant.walletAddress,
@@ -119,6 +149,8 @@ export async function GET(request: Request) {
                     volume: dr.descendant.totalVolume,
                     teamSize,
                     depth: 1,
+                    zeroLineEarned,
+                    sunLineEarned,
                     children
                 };
             }));

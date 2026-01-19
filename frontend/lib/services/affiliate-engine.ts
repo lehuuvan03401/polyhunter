@@ -354,3 +354,7 @@ export class AffiliateEngine {
         console.log(`[AffiliateEngine] Paid $${amount.toFixed(4)} (${type} Gen${generation}) to ${referrerId}`);
     }
 }
+
+// Singleton instance for API routes
+import { prisma } from '@/lib/prisma';
+export const affiliateEngine = new AffiliateEngine(prisma);
