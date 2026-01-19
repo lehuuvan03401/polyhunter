@@ -93,18 +93,26 @@ export async function GET(
 
         // Calculate derived stats
         const trades = activity.activities.filter(a => a.type === 'TRADE');
-        let wins = 0;
-        let totalTrades = trades.length;
+        const totalTrades = trades.length;
 
-        // Simple win rate calculation based on recent trades
-        trades.forEach(trade => {
-            // A trade is a "win" if selling at profit (simplified)
-            if (trade.side === 'SELL' && trade.usdcSize && trade.usdcSize > 0) {
-                wins++;
+        // Win Rate: Calculate based on positions with positive PnL
+        // A "win" is a position that is currently profitable
+        let profitablePositions = 0;
+        let totalPositionsWithPnl = 0;
+
+        positions.forEach((pos: { cashPnl?: number }) => {
+            if (pos.cashPnl !== undefined && pos.cashPnl !== null) {
+                totalPositionsWithPnl++;
+                if (pos.cashPnl > 0) {
+                    profitablePositions++;
+                }
             }
         });
 
-        const winRate = totalTrades > 0 ? Math.round((wins / totalTrades) * 100) : 0;
+        // Win Rate = % of positions that are profitable
+        const winRate = totalPositionsWithPnl > 0
+            ? Math.round((profitablePositions / totalPositionsWithPnl) * 100)
+            : 0;
 
         // Type-safe property access with defaults
         const pnl = typeof profile?.totalPnL === 'number' ? profile.totalPnL : (typeof profile?.pnl === 'number' ? profile.pnl : 0);
