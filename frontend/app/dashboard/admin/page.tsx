@@ -6,6 +6,7 @@ import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, ERC20_ABI, formatUSDC } from '@/lib/contracts/abis';
 import { AlertTriangle, CheckCircle, Fuel, Gauge, RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ApprovePayoutDialog } from '@/components/admin/approve-payout-dialog';
 
 // Configurable constants
 const LOW_GAS_THRESHOLD = 2.0; // MATIC
@@ -66,6 +67,7 @@ export default function AdminDashboardPage() {
     const [isPayoutsLoading, setIsPayoutsLoading] = useState(false);
     const [payoutsSummary, setPayoutsSummary] = useState({ pendingCount: 0, processingCount: 0, pendingTotal: 0 });
     const [txHashInput, setTxHashInput] = useState<{ [key: string]: string }>({});
+    const [approvalDialog, setApprovalDialog] = useState<{ isOpen: boolean; payout: any | null }>({ isOpen: false, payout: null });
 
     // --- INFRASTRUCTURE STATE ---
     const [treasury, setTreasury] = useState<WalletStatus>({
@@ -173,27 +175,38 @@ export default function AdminDashboardPage() {
     }, [activeTab, payoutFilter, authenticated, fetchPayouts]);
 
     const handlePayoutAction = async (id: string, action: 'approve' | 'reject' | 'complete', txHash?: string) => {
-        const actionLabel = action === 'approve' ? 'Approve' : action === 'reject' ? 'Reject' : 'Complete';
+        // Intercept approve action to show custom dialog
+        if (action === 'approve') {
+            const payout = payouts.find(p => p.id === id);
+            if (payout) {
+                setApprovalDialog({ isOpen: true, payout });
+            }
+            return;
+        }
+
+        const actionLabel = action === 'reject' ? 'Reject' : 'Complete';
         if (!window.confirm(`${actionLabel} this payout?`)) return;
 
-        try {
-            const res = await fetch('/api/admin/payouts', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-wallet': wallets[0]?.address || ''
-                },
-                body: JSON.stringify({ id, action, txHash })
-            });
-            if (res.ok) {
+        await processPayoutAction(id, action, txHash);
+    };
+
+    const processPayoutAction = async (id: string, action: 'approve' | 'reject' | 'complete', txHash?: string) => {
+        const res = await fetch('/api/admin/payouts', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-admin-wallet': wallets[0]?.address || ''
+            },
+            body: JSON.stringify({ id, action, txHash })
+        });
+        if (res.ok) {
+            if (action !== 'approve') { // Approve toast is handled by dialog
                 toast.success(`Payout ${action}d successfully`);
-                fetchPayouts();
-            } else {
-                const data = await res.json();
-                toast.error(data.error || 'Action failed');
             }
-        } catch (e) {
-            toast.error('Network error');
+            fetchPayouts();
+        } else {
+            const data = await res.json();
+            throw new Error(data.error || 'Action failed');
         }
     };
 
@@ -615,6 +628,18 @@ export default function AdminDashboardPage() {
                     </div>
                 ) : null}
             </div>
+
+            <ApprovePayoutDialog
+                isOpen={approvalDialog.isOpen}
+                onClose={() => setApprovalDialog({ ...approvalDialog, isOpen: false })}
+                payout={approvalDialog.payout}
+                onConfirm={async () => {
+                    if (approvalDialog.payout) {
+                        await processPayoutAction(approvalDialog.payout.id, 'approve');
+                        setApprovalDialog({ ...approvalDialog, isOpen: false });
+                    }
+                }}
+            />
         </div>
     );
 }
