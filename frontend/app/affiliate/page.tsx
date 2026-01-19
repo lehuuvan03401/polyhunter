@@ -83,9 +83,10 @@ import { cn } from '@/lib/utils';
 import { usePrivy } from '@privy-io/react-auth';
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink } from '@/lib/affiliate-api';
+import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink, type Payout } from '@/lib/affiliate-api';
 import { GenerationSummaryBar } from '@/components/affiliate/generation-summary-bar';
 import { TeamTreeView } from '@/components/affiliate/team-tree-view';
+import { WithdrawDialog } from '@/components/affiliate/withdraw-dialog';
 
 export default function AffiliatePage() {
     const { authenticated, user, ready } = usePrivy();
@@ -112,6 +113,8 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     const [isRegistering, setIsRegistering] = useState(false);
     const [isRegistered, setIsRegistered] = useState(false);
     const [referrals, setReferrals] = useState<any[]>([]);
+    const [payouts, setPayouts] = useState<Payout[]>([]);
+    const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [simVolume, setSimVolume] = useState('1000');
     const [isSimulating, setIsSimulating] = useState(false);
 
@@ -122,12 +125,14 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                 const lookup = await affiliateApi.lookupWallet(walletAddress);
                 if (lookup.registered) {
                     setIsRegistered(true);
-                    const [statsData, referralsData] = await Promise.all([
+                    const [statsData, referralsData, payoutsData] = await Promise.all([
                         affiliateApi.getStats(walletAddress),
-                        affiliateApi.getReferrals(walletAddress)
+                        affiliateApi.getReferrals(walletAddress),
+                        affiliateApi.getPayouts(walletAddress)
                     ]);
                     setStats(statsData);
                     setReferrals(referralsData);
+                    setPayouts(payoutsData);
                 } else {
                     setIsRegistered(false);
                 }
@@ -163,62 +168,47 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
         }
     };
 
-    const handleWithdraw = async () => {
+    const handleWithdrawClick = () => {
         if (!stats || stats.pendingPayout < 10) {
             toast.error('Minimum withdrawal amount is $10');
             return;
         }
+        setIsWithdrawOpen(true);
+    };
 
-        const confirm = window.confirm(`Request payout of $${stats.pendingPayout.toFixed(2)}?\n\nYou will be asked to sign a message to authorize this withdrawal.`);
-        if (!confirm) return;
+    const onConfirmWithdraw = async () => {
+        if (!stats) return;
 
-        const toastId = toast.loading('Preparing withdrawal...');
-        try {
-            // 1. Get the message to sign
-            const timestamp = Date.now();
-            const { message, amount } = await affiliateApi.getPayoutMessage(walletAddress, timestamp);
+        // 1. Get the message to sign
+        const timestamp = Date.now();
+        const { message, amount } = await affiliateApi.getPayoutMessage(walletAddress, timestamp);
 
-            toast.loading('Please sign the message in your wallet...', { id: toastId });
+        // 2. Request signature from wallet (using window.ethereum as fallback)
+        let signature: string;
+        if (typeof window !== 'undefined' && (window as any).ethereum) {
+            const provider = (window as any).ethereum;
+            signature = await provider.request({
+                method: 'personal_sign',
+                params: [message, walletAddress],
+            });
+        } else {
+            throw new Error('No wallet detected. Please connect your wallet.');
+        }
 
-            // 2. Request signature from wallet (using window.ethereum as fallback)
-            let signature: string;
-            if (typeof window !== 'undefined' && (window as any).ethereum) {
-                const provider = (window as any).ethereum;
-                signature = await provider.request({
-                    method: 'personal_sign',
-                    params: [message, walletAddress],
-                });
-            } else {
-                toast.dismiss(toastId);
-                toast.error('No wallet detected. Please connect your wallet.');
-                return;
-            }
-
-            toast.loading('Submitting withdrawal request...', { id: toastId });
-
-            // 3. Submit with signature
-            const result = await affiliateApi.requestPayout(walletAddress, signature, timestamp);
-            if (result.success) {
-                toast.dismiss(toastId);
-                toast.success(`Withdrawal of $${amount.toFixed(2)} submitted!`);
-                // Refresh
-                const [statsData, referralsData] = await Promise.all([
-                    affiliateApi.getStats(walletAddress),
-                    affiliateApi.getReferrals(walletAddress)
-                ]);
-                setStats(statsData);
-                setReferrals(referralsData);
-            } else {
-                toast.dismiss(toastId);
-                toast.error(result.error || 'Withdrawal failed');
-            }
-        } catch (e: any) {
-            toast.dismiss(toastId);
-            if (e.code === 4001 || e.message?.includes('rejected')) {
-                toast.error('Signature request was rejected');
-            } else {
-                toast.error(e.message || 'Network error requesting payout');
-            }
+        // 3. Submit with signature
+        const result = await affiliateApi.requestPayout(walletAddress, signature, timestamp);
+        if (result.success) {
+            // Refresh ALL data
+            const [statsData, referralsData, payoutsData] = await Promise.all([
+                affiliateApi.getStats(walletAddress),
+                affiliateApi.getReferrals(walletAddress),
+                affiliateApi.getPayouts(walletAddress)
+            ]);
+            setStats(statsData);
+            setReferrals(referralsData);
+            setPayouts(payoutsData);
+        } else {
+            throw new Error(result.error || 'Withdrawal failed');
         }
     };
 
@@ -570,32 +560,45 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                         {
                             label: "Total Earnings",
                             value: `$${(stats?.totalEarned || 0).toFixed(2)}`,
-                            sub: `$${(stats?.earningsBreakdown?.zeroLine || 0).toFixed(2)} Zero / $${(stats?.earningsBreakdown?.sunLine || 0).toFixed(2)} Sun`,
+                            sub: `${(stats?.earningsBreakdown?.zeroLine || 0).toFixed(2)} Zero / ${(stats?.earningsBreakdown?.sunLine || 0).toFixed(2)} Sun`,
                             icon: Calendar,
                             color: "text-green-500",
                             bg: "bg-green-500/10",
                             action: (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); handleWithdraw(); }}
-                                    className="ml-auto text-xs bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded"
-                                    title="Withdraw Funds"
-                                >
-                                    Withdraw
-                                </button>
+                                <div className="flex items-center justify-between w-full">
+                                    <div className="text-xs font-medium text-green-500">
+                                        Available: ${(stats?.pendingPayout || 0).toFixed(2)}
+                                    </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleWithdrawClick(); }}
+                                        className="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg font-bold transition-colors"
+                                        title="Withdraw Funds"
+                                    >
+                                        Withdraw
+                                    </button>
+                                </div>
                             )
                         },
                     ].map((stat, i) => (
-                        <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-6 flex flex-col justify-between h-32 relative overflow-hidden group hover:border-white/10 transition-colors">
-                            <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
-                                <stat.icon className="h-5 w-5" />
+                        <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl flex flex-col relative overflow-hidden group hover:border-white/10 transition-colors">
+                            <div className="p-6">
+                                <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
+                                    <stat.icon className="h-5 w-5" />
+                                </div>
+                                <div className="mb-2">
+                                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</div>
+                                    <div className="text-2xl font-bold text-white">{stat.value}</div>
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                    {stat.label === "Total Earnings" && "$"}
+                                    {stat.sub}
+                                </div>
                             </div>
-                            <div>
-                                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</div>
-                                <div className="text-2xl font-bold text-white">{stat.value}</div>
-                            </div>
-                            <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                {stat.sub}
-                            </div>
+                            {'action' in stat && (
+                                <div className="mt-auto border-t border-white/5 bg-white/5 px-6 py-3">
+                                    {stat.action}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -632,7 +635,76 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                 {/* 4. Team Network - IMPROVED */}
                 <TeamNetworkSection walletAddress={walletAddress} />
 
-                {/* 5. Developer Tools (Simulation) - Unchanged essentially, maybe label updates */}
+
+                {/* 5. Payout History (New) */}
+                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
+                    <h3 className="font-bold text-white flex items-center gap-2 mb-6">
+                        <Calendar className="h-4 w-4 text-green-500" />
+                        Payout History
+                    </h3>
+
+                    {payouts.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border border-dashed border-white/10">
+                            No withdrawal history yet
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-muted-foreground border-b border-white/5 uppercase text-xs">
+                                    <tr>
+                                        <th className="py-2 pl-2">Status</th>
+                                        <th className="py-2">Amount</th>
+                                        <th className="py-2">Date</th>
+                                        <th className="py-2 text-right pr-2">Tx Hash</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {payouts.map((p) => (
+                                        <tr key={p.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="py-3 pl-2">
+                                                <span className={cn(
+                                                    "text-xs px-2 py-0.5 rounded-full font-bold",
+                                                    p.status === 'COMPLETED' ? "bg-green-500/10 text-green-500" :
+                                                        p.status === 'PENDING' ? "bg-yellow-500/10 text-yellow-500" :
+                                                            p.status === 'PROCESSING' ? "bg-blue-500/10 text-blue-500" :
+                                                                "bg-red-500/10 text-red-500"
+                                                )}>
+                                                    {p.status === 'COMPLETED' ? 'Paid' :
+                                                        p.status === 'PENDING' ? 'Pending Approval' :
+                                                            p.status === 'PROCESSING' ? 'Approved (Processing)' :
+                                                                'Rejected'}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 font-mono text-white">
+                                                ${p.amount.toFixed(2)}
+                                            </td>
+                                            <td className="py-3 text-muted-foreground">
+                                                {new Date(p.createdAt).toLocaleDateString()}
+                                            </td>
+                                            <td className="py-3 text-right pr-2 font-mono text-xs text-blue-400">
+                                                {p.txHash ? (
+                                                    <a href={`https://polygonscan.com/tx/${p.txHash}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                                        {p.txHash.slice(0, 6)}...{p.txHash.slice(-4)}
+                                                    </a>
+                                                ) : '-'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+
+                {/* Withdraw Dialog */}
+                <WithdrawDialog
+                    isOpen={isWithdrawOpen}
+                    onClose={() => setIsWithdrawOpen(false)}
+                    pendingAmount={stats?.pendingPayout || 0}
+                    onConfirm={onConfirmWithdraw}
+                />
+
+                {/* 6. Developer Tools (Simulation) - Unchanged essentially, maybe label updates */}
                 <div className="rounded-xl border border-dashed border-yellow-500/30 bg-yellow-500/5 p-6">
                     {/* ... (Kept similar for testing commissions) ... */}
                     <div className="flex items-center gap-2 mb-4 text-yellow-500">
