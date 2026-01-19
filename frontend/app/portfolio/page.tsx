@@ -25,6 +25,7 @@ import { ethers } from 'ethers';
 import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
 import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
+import { ActiveStrategiesPanel } from '@/components/copy-trading/active-strategies-panel';
 import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
 import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
 
@@ -40,7 +41,7 @@ export default function PortfolioPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     // New state for History and Sell All
-    const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history' | 'transfers'>('positions');
+    const [activeTab, setActiveTab] = useState<'positions' | 'strategies' | 'orders' | 'history' | 'transfers'>('positions');
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isSellingAll, setIsSellingAll] = useState(false);
@@ -49,6 +50,7 @@ export default function PortfolioPage() {
     const { stats: orderStats } = useOrderStatus(user?.wallet?.address || '', {
         pollInterval: 15000
     });
+    const [activeStrategiesCount, setActiveStrategiesCount] = useState(0);
 
     useEffect(() => {
         const loadData = async () => {
@@ -145,6 +147,23 @@ export default function PortfolioPage() {
 
         fetchHistory();
     }, [activeTab, authenticated, user?.wallet?.address]);
+
+    // Fetch active strategies count
+    useEffect(() => {
+        const fetchStrategiesCount = async () => {
+            if (!user?.wallet?.address) return;
+            try {
+                const response = await fetch(`/api/copy-trading/strategies?wallet=${user.wallet.address}&status=active`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setActiveStrategiesCount(data.strategies?.length || 0);
+                }
+            } catch (err) {
+                console.error('Failed to fetch strategies count:', err);
+            }
+        };
+        fetchStrategiesCount();
+    }, [user?.wallet?.address]);
 
     const handleSellAll = async () => {
         if (positions.length === 0) return;
@@ -422,13 +441,13 @@ export default function PortfolioPage() {
                             {/* Tabs */}
                             <div className="flex items-center rounded-lg bg-muted/50 p-1">
                                 <button
-                                    onClick={() => setActiveTab('positions')}
+                                    onClick={() => setActiveTab('strategies')}
                                     className={cn(
                                         "rounded px-3 py-1 text-xs font-medium transition-all",
-                                        activeTab === 'positions' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                                        activeTab === 'strategies' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Positions <span className="ml-1 text-muted-foreground">{positions.length}</span>
+                                    Strategies <span className="ml-1 text-muted-foreground">{activeStrategiesCount}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('orders')}
@@ -438,6 +457,15 @@ export default function PortfolioPage() {
                                     )}
                                 >
                                     Orders <span className="ml-1 text-muted-foreground">{orderStats.total}</span>
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('positions')}
+                                    className={cn(
+                                        "rounded px-3 py-1 text-xs font-medium transition-all",
+                                        activeTab === 'positions' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    Positions <span className="ml-1 text-muted-foreground">{positions.length}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('history')}
@@ -517,6 +545,22 @@ export default function PortfolioPage() {
                                     </div>
                                 </div>
                             )
+                        )}
+
+                        {activeTab === 'strategies' && (
+                            // --- STRATEGIES VIEW ---
+                            <div className="h-full flex flex-col">
+                                {user?.wallet?.address ? (
+                                    <ActiveStrategiesPanel
+                                        walletAddress={user.wallet.address}
+                                        className="border-0 rounded-none bg-transparent shadow-none h-full"
+                                    />
+                                ) : (
+                                    <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                                        Connect wallet to view strategies
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {activeTab === 'orders' && (
