@@ -28,6 +28,8 @@ import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 import { ActiveStrategiesPanel } from '@/components/copy-trading/active-strategies-panel';
 import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
 import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
+import { useCopyTradingMetrics } from '@/lib/hooks/useCopyTradingMetrics';
+import { useSimulatedPositions } from '@/lib/hooks/useSimulatedPositions';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -39,6 +41,7 @@ export default function PortfolioPage() {
     const [totalPnL, setTotalPnL] = useState(0);
     const [positions, setPositions] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [positionsPage, setPositionsPage] = useState(1);
 
     // New state for History and Sell All
     const [activeTab, setActiveTab] = useState<'positions' | 'strategies' | 'orders' | 'history' | 'transfers'>('positions');
@@ -50,6 +53,11 @@ export default function PortfolioPage() {
     const { stats: orderStats } = useOrderStatus(user?.wallet?.address || '', {
         pollInterval: 15000
     });
+
+    // Fetch simulated metrics and positions
+    const { metrics: ctMetrics } = useCopyTradingMetrics(user?.wallet?.address || '');
+    const { positions: simPositions } = useSimulatedPositions(user?.wallet?.address || '');
+
     const [activeStrategiesCount, setActiveStrategiesCount] = useState(0);
 
     useEffect(() => {
@@ -106,7 +114,15 @@ export default function PortfolioPage() {
                             }
                         }
 
+                        // Add simulated PnL if any
+                        // We use `ctMetrics.totalPnL` which comes from our local DB aggregation
+                        // Note: ctMetrics might be 0 initially until hook loads, but that's fine.
+                        // Ideally we sum them up.
+                        // However, since `ctMetrics` is from a hook, accessing it inside this useEffect (which runs once/auth change) won't work reactively.
+                        // We should calculate final PnL in rendering or a separate effect.
+                        // For now, let's just set the base PnL here.
                         setTotalPnL(calculatedPnL);
+
                     } catch (err) {
                         console.warn("Failed to fetch user data", err);
                     }
@@ -363,7 +379,7 @@ export default function PortfolioPage() {
                     </div>
                 </div>
 
-                {/* PnL Card - Now with real data */}
+                {/* PnL Card - Now with Real + Simulated PnL */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px]">
                     <div>
                         <div className="flex items-center justify-between mb-4">
@@ -373,48 +389,58 @@ export default function PortfolioPage() {
                             </div>
                             <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">All Time</div>
                         </div>
-                        <div className={cn("text-3xl font-bold tracking-tight", totalPnL >= 0 ? "text-green-500" : "text-red-500")}>
-                            {totalPnL >= 0 ? '+' : ''}${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
+                        {(() => {
+                            const effectivePnL = totalPnL + (ctMetrics?.totalPnL || 0);
+                            return (
+                                <div className={cn("text-3xl font-bold tracking-tight", effectivePnL >= 0 ? "text-green-500" : "text-red-500")}>
+                                    {effectivePnL >= 0 ? '+' : ''}${effectivePnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                            );
+                        })()}
                     </div>
 
-                    {/* PnL Trend Visualization (stylized, not historical data) */}
+                    {/* PnL Trend Visualization (stylized) */}
                     <div className="mt-4 h-16 w-full flex items-end opacity-50">
-                        <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", totalPnL >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
+                        <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", (totalPnL + (ctMetrics?.totalPnL || 0)) >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
                             <path d="M0 20 L0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2 L 100 20 Z" strokeWidth="0" />
                             <path d="M0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2" fill="none" strokeWidth="2" />
                         </svg>
                     </div>
                 </div>
 
-                {/* Plan Card */}
+                {/* Invested Funds Card (NEW) */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px] relative overflow-hidden">
                     {/* Background Gradient Effect */}
-                    <div className="absolute top-0 right-0 -mr-16 -mt-16 h-48 w-48 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+                    <div className="absolute top-0 right-0 -mr-16 -mt-16 h-48 w-48 rounded-full bg-yellow-500/10 blur-3xl pointer-events-none" />
 
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                                <Zap className="h-4 w-4" />
-                                <span>Your Plan</span>
+                                <Coins className="h-4 w-4" />
+                                <span>Invested Funds</span>
                             </div>
                             <Zap className="h-5 w-5 text-yellow-500" />
                         </div>
-                        <div className="text-2xl font-bold tracking-tight mb-1">Starter</div>
-                        <div className="text-sm text-muted-foreground">10% profit fee</div>
+                        <div className="text-3xl font-bold tracking-tight mb-1">
+                            ${(ctMetrics?.totalInvested || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                            Across {ctMetrics?.activePositions || 0} active positions
+                        </div>
                     </div>
 
                     <div className="mt-6 space-y-3">
                         <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">Total Volume</span>
-                            <span className="font-medium">$0.0k</span>
+                            <span className="text-muted-foreground">Current Plan</span>
+                            <span className="font-medium text-yellow-500">Starter</span>
                         </div>
+                        {/* Fake progress bar for plan usage */}
                         <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                            <div className="h-full w-[5%] bg-blue-500 rounded-full" />
+                            <div className="h-full w-[25%] bg-yellow-500 rounded-full" />
                         </div>
 
-                        <Link href="/pricing" className="flex items-center text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
-                            View Plans <ChevronRight className="h-3 w-3 ml-0.5" />
+                        <Link href="/pricing" className="flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+                            View Plan Limits <ChevronRight className="h-3 w-3 ml-0.5" />
                         </Link>
                     </div>
                 </div>
@@ -465,7 +491,7 @@ export default function PortfolioPage() {
                                         activeTab === 'positions' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Positions <span className="ml-1 text-muted-foreground">{positions.length}</span>
+                                    Positions <span className="ml-1 text-muted-foreground">{positions.length + (simPositions?.length || 0)}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('history')}
@@ -502,53 +528,117 @@ export default function PortfolioPage() {
                     <div className="flex-1 overflow-auto bg-card">
                         {activeTab === 'positions' && (
                             // --- POSITIONS VIEW ---
-                            positions.length > 0 ? (
-                                <table className="w-full caption-bottom text-sm">
-                                    <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
-                                        <tr className="border-b transition-colors">
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Market</th>
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Outcome</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Size</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Price</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">PnL</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {positions.map((pos, i) => (
-                                            <tr key={i} className="border-b transition-colors hover:bg-muted/50">
-                                                <td className="p-4 align-middle font-medium max-w-[200px] truncate" title={pos.title}>{pos.title}</td>
-                                                <td className="p-4 align-middle">
-                                                    <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
-                                                        pos.outcome === 'YES' ? "bg-green-400/10 text-green-400 ring-green-400/20" : "bg-red-400/10 text-red-400 ring-red-400/20")}>
-                                                        {pos.outcome}
-                                                    </span>
-                                                </td>
-                                                <td className="p-4 align-middle text-right font-mono text-xs">{pos.size.toFixed(2)}</td>
-                                                <td className="p-4 align-middle text-right font-mono text-xs">${(pos.curPrice || pos.avgPrice)?.toFixed(2)}</td>
-                                                <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
-                                                    {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            ) : (
-                                <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
-                                    <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">
-                                        <Layers className="h-6 w-6" />
+                            // --- POSITIONS VIEW ---
+                            (() => {
+                                // Combine and tag positions
+                                const allPositions = [
+                                    ...positions.map(p => ({ ...p, _type: 'real' })),
+                                    ...simPositions.map(p => ({ ...p, _type: 'sim' }))
+                                ];
+
+                                const ITEMS_PER_PAGE = 10;
+                                const totalPages = Math.ceil(allPositions.length / ITEMS_PER_PAGE);
+                                const currentPositions = allPositions.slice(
+                                    (positionsPage - 1) * ITEMS_PER_PAGE,
+                                    positionsPage * ITEMS_PER_PAGE
+                                );
+
+                                if (allPositions.length === 0) {
+                                    return (
+                                        <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
+                                            <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">
+                                                <Layers className="h-6 w-6" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-medium text-sm">No Open Positions</h4>
+                                                <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
+                                                    Real and simulated positions will appear here.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div className="flex flex-col h-full">
+                                        <div className="flex-1 overflow-auto">
+                                            <table className="w-full caption-bottom text-sm">
+                                                <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
+                                                    <tr className="border-b transition-colors bg-card">
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[140px]">Time</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Outcome</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Price</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {currentPositions.map((pos, i) => (
+                                                        <tr
+                                                            key={`${pos._type}-${pos.tokenId || i}`}
+                                                            className={cn(
+                                                                "border-b transition-colors hover:bg-muted/50",
+                                                                pos._type === 'sim' && "bg-blue-500/5"
+                                                            )}
+                                                        >
+                                                            <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
+                                                                {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '-'}
+                                                            </td>
+                                                            <td className="p-4 align-middle font-medium max-w-[200px] truncate" title={pos.title}>
+                                                                {pos._type === 'sim' ? (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold">SIM</span>
+                                                                        {pos.title}
+                                                                    </div>
+                                                                ) : pos.title}
+                                                            </td>
+                                                            <td className="p-4 align-middle">
+                                                                <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                                                                    (pos.outcome === 'Yes' || pos.outcome === 'YES') ? "bg-green-400/10 text-green-400 ring-green-400/20" :
+                                                                        (pos.outcome === 'No' || pos.outcome === 'NO') ? "bg-red-400/10 text-red-400 ring-red-400/20" : "bg-gray-400/10 text-gray-400 ring-gray-400/20")}>
+                                                                    {pos.outcome}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-4 align-middle text-right font-mono text-xs">{pos.size?.toFixed(2)}</td>
+                                                            <td className="p-4 align-middle text-right font-mono text-xs">${(pos.curPrice || pos.avgPrice)?.toFixed(2) || '0.00'}</td>
+                                                            <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
+                                                                {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        {/* Pagination Controls */}
+                                        {totalPages > 1 && (
+                                            <div className="flex items-center justify-between px-4 py-3 border-t bg-card">
+                                                <div className="text-xs text-muted-foreground">
+                                                    Showing {(positionsPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(positionsPage * ITEMS_PER_PAGE, allPositions.length)} of {allPositions.length} positions
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <button
+                                                        onClick={() => setPositionsPage(p => Math.max(1, p - 1))}
+                                                        disabled={positionsPage === 1}
+                                                        className="px-2 py-1 border rounded text-xs font-medium disabled:opacity-50 hover:bg-muted"
+                                                    >
+                                                        Previous
+                                                    </button>
+                                                    <span className="text-xs font-medium">Page {positionsPage} of {totalPages}</span>
+                                                    <button
+                                                        onClick={() => setPositionsPage(p => Math.min(totalPages, p + 1))}
+                                                        disabled={positionsPage === totalPages}
+                                                        className="px-2 py-1 border rounded text-xs font-medium disabled:opacity-50 hover:bg-muted"
+                                                    >
+                                                        Next
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div>
-                                        <h4 className="font-medium text-sm">No Open Positions</h4>
-                                        <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
-                                            Real positions will appear here.
-                                            <br />
-                                            <span className="text-muted-foreground/70 italic mt-1 block">
-                                                Note: Simulation trades do not create real positions.
-                                            </span>
-                                        </p>
-                                    </div>
-                                </div>
-                            )
+                                );
+                            })()
                         )}
 
                         {activeTab === 'strategies' && (
