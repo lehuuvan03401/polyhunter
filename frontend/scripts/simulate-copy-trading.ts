@@ -158,9 +158,88 @@ function updatePositionOnSell(tokenId: string, shares: number, price: number): n
     return pnl;
 }
 
+// Cache for market metadata to avoid repeated API calls
+const marketCache = new Map<string, { slug: string; tokens: any[] }>();
+const CLOB_API_URL = 'https://clob.polymarket.com';
+
+/**
+ * Fetch market metadata from CLOB API
+ */
+async function fetchMarketFromClob(conditionId: string): Promise<{ slug: string; tokens: any[] } | null> {
+    try {
+        const resp = await fetch(`${CLOB_API_URL}/markets/${conditionId}`);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        return {
+            slug: data.market_slug || '',
+            tokens: (data.tokens || []).map((t: any) => ({
+                tokenId: t.token_id,
+                outcome: t.outcome
+            }))
+        };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Enrich trade with market metadata if missing
+ * Uses conditionId to fetch from CLOB API
+ */
+async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
+    marketSlug: string | null;
+    conditionId: string | null;
+    outcome: string | null;
+}> {
+    // If we already have all data, return as-is
+    if (trade.marketSlug && trade.conditionId && trade.outcome) {
+        return {
+            marketSlug: trade.marketSlug,
+            conditionId: trade.conditionId,
+            outcome: trade.outcome
+        };
+    }
+
+    // Try to fetch via conditionId if we have it
+    if (trade.conditionId && !trade.marketSlug) {
+        // Check cache first
+        if (marketCache.has(trade.conditionId)) {
+            const cached = marketCache.get(trade.conditionId)!;
+            const tokenOutcome = cached.tokens.find((t: any) => t.tokenId === trade.asset)?.outcome;
+            return {
+                marketSlug: cached.slug,
+                conditionId: trade.conditionId,
+                outcome: tokenOutcome || trade.outcome || null
+            };
+        }
+
+        const market = await fetchMarketFromClob(trade.conditionId);
+        if (market && market.slug) {
+            marketCache.set(trade.conditionId, market);
+            const tokenOutcome = market.tokens.find((t: any) => t.tokenId === trade.asset)?.outcome;
+            console.log(`   📦 Fetched market metadata: ${market.slug}`);
+            return {
+                marketSlug: market.slug,
+                conditionId: trade.conditionId,
+                outcome: tokenOutcome || trade.outcome || null
+            };
+        }
+    }
+
+    // Return whatever we have
+    return {
+        marketSlug: trade.marketSlug || null,
+        conditionId: trade.conditionId || null,
+        outcome: trade.outcome || null
+    };
+}
+
 // --- DATABASE RECORDING ---
 async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: number) {
     try {
+        // Enrich trade metadata if missing
+        const enriched = await enrichTradeMetadata(trade);
+
         await prisma.copyTrade.create({
             data: {
                 configId: configId,
@@ -169,8 +248,9 @@ async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: n
                 originalSize: trade.size,
                 originalPrice: trade.price,
                 tokenId: trade.asset,
-                marketSlug: trade.marketSlug || null,
-                outcome: trade.outcome || null,
+                conditionId: enriched.conditionId,
+                marketSlug: enriched.marketSlug,
+                outcome: enriched.outcome,
                 copySize: FIXED_COPY_AMOUNT,
                 copyPrice: trade.price,
                 status: 'EXECUTED',
@@ -221,6 +301,12 @@ async function handleTrade(trade: ActivityTrade) {
 
     // Filter for 15m Options only
     if (!trade.marketSlug?.includes('-15m-')) {
+        return;
+    }
+
+    // Skip trades without conditionId (can't get metadata)
+    if (!trade.conditionId && !trade.marketSlug) {
+        console.log(`\n⏭️  SKIPPED (no metadata): tokenId ${trade.asset.slice(0, 20)}...`);
         return;
     }
 

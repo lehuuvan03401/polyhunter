@@ -560,12 +560,14 @@ export default function PortfolioPage() {
                                             <table className="w-full caption-bottom text-sm">
                                                 <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
                                                     <tr className="border-b transition-colors bg-card">
-                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[140px]">Time</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[100px]">Time</th>
                                                         <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
-                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Outcome</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">Outcome</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[70px]">Status</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Avg Entry</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Entry</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Current</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Est. Value</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
                                                     </tr>
                                                 </thead>
@@ -581,24 +583,54 @@ export default function PortfolioPage() {
                                                             <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
                                                                 {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '-'}
                                                             </td>
-                                                            <td className="p-4 align-middle font-medium max-w-[200px] truncate" title={pos.title}>
-                                                                {pos._type === 'sim' ? (
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold">SIM</span>
-                                                                        {pos.title}
-                                                                    </div>
-                                                                ) : pos.title}
+                                                            <td className="p-4 align-middle font-medium max-w-[250px]" title={pos.title}>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    {pos._type === 'sim' && (
+                                                                        <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold shrink-0">SIM</span>
+                                                                    )}
+                                                                    {pos.slug ? (
+                                                                        <a
+                                                                            href={`https://polymarket.com/event/${pos.slug}`}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-blue-400 hover:text-blue-300 hover:underline truncate transition-colors"
+                                                                        >
+                                                                            {pos.title}
+                                                                            <ArrowUpRight className="inline-block w-3 h-3 ml-0.5 opacity-50" />
+                                                                        </a>
+                                                                    ) : (
+                                                                        <span className="truncate text-muted-foreground">{pos.title}</span>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                             <td className="p-4 align-middle">
                                                                 <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
-                                                                    (pos.outcome === 'Yes' || pos.outcome === 'YES') ? "bg-green-400/10 text-green-400 ring-green-400/20" :
-                                                                        (pos.outcome === 'No' || pos.outcome === 'NO') ? "bg-red-400/10 text-red-400 ring-red-400/20" : "bg-gray-400/10 text-gray-400 ring-gray-400/20")}>
-                                                                    {pos.outcome}
+                                                                    (pos.outcome === 'Yes' || pos.outcome === 'YES' || pos.outcome === 'Up')
+                                                                        ? "bg-green-400/10 text-green-400 ring-green-400/20"
+                                                                        : (pos.outcome === 'No' || pos.outcome === 'NO' || pos.outcome === 'Down')
+                                                                            ? "bg-red-400/10 text-red-400 ring-red-400/20"
+                                                                            : "bg-gray-400/10 text-gray-400 ring-gray-400/20")}>
+                                                                    {pos.outcome || '?'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-4 align-middle">
+                                                                <span className={cn("inline-flex items-center gap-1 text-[10px] font-medium",
+                                                                    pos.status === 'SETTLED_WIN' ? "text-green-400" :
+                                                                        pos.status === 'SETTLED_LOSS' ? "text-red-400" :
+                                                                            "text-emerald-400/70")}>
+                                                                    <span className={cn("w-1.5 h-1.5 rounded-full",
+                                                                        pos.status === 'SETTLED_WIN' ? "bg-green-400" :
+                                                                            pos.status === 'SETTLED_LOSS' ? "bg-red-400" :
+                                                                                "bg-emerald-400 animate-pulse")} />
+                                                                    {pos.status === 'SETTLED_WIN' ? 'WON' :
+                                                                        pos.status === 'SETTLED_LOSS' ? 'LOST' :
+                                                                            'OPEN'}
                                                                 </span>
                                                             </td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs">{pos.size?.toFixed(2)}</td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${pos.avgPrice?.toFixed(2) || '0.00'}</td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs font-medium">${(pos.curPrice || pos.avgPrice)?.toFixed(2) || '0.00'}</td>
+                                                            <td className="p-4 align-middle text-right font-mono text-xs font-medium text-blue-400">${(pos.estValue || 0).toFixed(2)}</td>
                                                             <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
                                                                 {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
                                                             </td>
