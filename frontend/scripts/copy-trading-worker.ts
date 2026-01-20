@@ -23,6 +23,7 @@ const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const POLL_INTERVAL_MS = 30000; // Refresh configs every 30s
+const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
 
 if (!TRADING_PRIVATE_KEY) {
     console.error('Missing TRADING_PRIVATE_KEY env var');
@@ -128,9 +129,39 @@ async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string;
             marketQuestion: question
         };
     } catch (e) {
-        console.warn(`[Worker] ⚠️ Metadata fetch failed for ${tokenId}:`, e);
-        return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
+        console.warn(`[Worker] ⚠️ CLOB Metadata fetch failed for ${tokenId}, trying Gamma...`);
     }
+
+    // 4. Fallback to Gamma API
+    try {
+        const orderbook = await tradingService.getOrderBook(tokenId) as any;
+        const conditionId = orderbook.market;
+
+        if (conditionId) {
+            const url = `${GAMMA_API_URL}/markets?condition_id=${conditionId}`;
+            const resp = await fetch(url);
+            if (resp.ok) {
+                const data = await resp.json();
+                let marketData: any = null;
+                if (Array.isArray(data) && data.length > 0) marketData = data[0];
+                else if (data.slug) marketData = data;
+
+                if (marketData) {
+                    const tokenData = (marketData.tokens || []).find((t: any) => (t.tokenId || t.token_id) === tokenId);
+                    return {
+                        marketSlug: marketData.slug || '',
+                        conditionId: conditionId,
+                        outcome: tokenData?.outcome || 'Yes',
+                        marketQuestion: marketData.question || ''
+                    };
+                }
+            }
+        }
+    } catch (e) {
+        console.warn(`[Worker] ⚠️ Gamma Metadata fetch failed for ${tokenId}:`, e);
+    }
+
+    return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
 }
 
 /**

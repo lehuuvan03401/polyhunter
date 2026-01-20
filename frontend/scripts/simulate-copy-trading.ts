@@ -165,21 +165,71 @@ const CLOB_API_URL = 'https://clob.polymarket.com';
 /**
  * Fetch market metadata from CLOB API
  */
+const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
+
+/**
+ * Fetch market metadata from CLOB API or Gamma API (Fallback)
+ */
 async function fetchMarketFromClob(conditionId: string): Promise<{ slug: string; tokens: any[] } | null> {
+    // 1. Try CLOB API first
     try {
         const resp = await fetch(`${CLOB_API_URL}/markets/${conditionId}`);
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        return {
-            slug: data.market_slug || '',
-            tokens: (data.tokens || []).map((t: any) => ({
-                tokenId: t.token_id,
-                outcome: t.outcome
-            }))
-        };
-    } catch {
-        return null;
+        if (resp.ok) {
+            const data = await resp.json();
+            return {
+                slug: data.market_slug || '',
+                tokens: (data.tokens || []).map((t: any) => ({
+                    tokenId: t.token_id,
+                    outcome: t.outcome
+                }))
+            };
+        } else {
+            console.warn(`   ⚠️ CLOB API Error for ${conditionId}: ${resp.status} ${resp.statusText}`);
+        }
+    } catch (e) {
+        // Ignore network errors, try fallback
     }
+
+    // 2. Fallback to Gamma API
+    try {
+        const url = `${GAMMA_API_URL}/markets?condition_id=${conditionId}`;
+        const resp = await fetch(url);
+        if (resp.ok) {
+            const data = await resp.json();
+
+            let marketData: any = null;
+            if (Array.isArray(data) && data.length > 0) {
+                marketData = data[0];
+            } else if (data.slug) {
+                marketData = data;
+            }
+
+            if (marketData) {
+                return {
+                    slug: marketData.slug || '',
+                    tokens: (marketData.tokens || []).map((t: any) => ({
+                        tokenId: t.tokenId || t.token_id,
+                        outcome: t.outcome
+                    }))
+                };
+            } else {
+                console.warn(`   ⚠️ Gamma API returned no market data for ${conditionId}`);
+                const fs = require('fs');
+                fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - Gamma returned empty/invalid data: ${JSON.stringify(data)}\n`);
+            }
+        } else {
+            console.warn(`   ⚠️ Gamma API Error for ${conditionId}: ${resp.status} ${resp.statusText}`);
+            const fs = require('fs');
+            fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - Gamma API HTTP Error: ${resp.status}\n`);
+        }
+    } catch (e: any) {
+        console.warn(`   ❌ Metadata fetch failed for ${conditionId}:`, e.message);
+        // Log to file for debugging
+        const fs = require('fs');
+        fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - ${e.message}\n`);
+    }
+
+    return null;
 }
 
 /**
@@ -200,27 +250,49 @@ async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
         };
     }
 
-    // Try to fetch via conditionId if we have it
-    if (trade.conditionId && !trade.marketSlug) {
+    let conditionId = trade.conditionId;
+
+    // 1. If Condition ID is missing, fetch it from Orderbook
+    if (!conditionId) {
+        try {
+            const fetchUrl = `${CLOB_API_URL}/book?token_id=${trade.asset}`;
+            const resp = await fetch(fetchUrl);
+            if (resp.ok) {
+                const book = await resp.json();
+                console.log(`[DEBUG] /book resp for ${trade.asset}:`, JSON.stringify(book));
+                conditionId = book.market; // 'market' field is conditionId
+                if (!conditionId) {
+                    console.warn(`[DEBUG] 'market' field missing in book for ${trade.asset}`);
+                }
+            } else {
+                console.warn(`[DEBUG] /book fetch failed: ${resp.status} ${resp.statusText}`);
+            }
+        } catch (e) {
+            console.warn(`Error fetching conditionId for ${trade.asset}:`, e);
+        }
+    }
+
+    // 2. Now try to fetch metadata via conditionId
+    if (conditionId) {
         // Check cache first
-        if (marketCache.has(trade.conditionId)) {
-            const cached = marketCache.get(trade.conditionId)!;
+        if (marketCache.has(conditionId)) {
+            const cached = marketCache.get(conditionId)!;
             const tokenOutcome = cached.tokens.find((t: any) => t.tokenId === trade.asset)?.outcome;
             return {
                 marketSlug: cached.slug,
-                conditionId: trade.conditionId,
+                conditionId: conditionId,
                 outcome: tokenOutcome || trade.outcome || null
             };
         }
 
-        const market = await fetchMarketFromClob(trade.conditionId);
+        const market = await fetchMarketFromClob(conditionId);
         if (market && market.slug) {
-            marketCache.set(trade.conditionId, market);
+            marketCache.set(conditionId, market);
             const tokenOutcome = market.tokens.find((t: any) => t.tokenId === trade.asset)?.outcome;
             console.log(`   📦 Fetched market metadata: ${market.slug}`);
             return {
                 marketSlug: market.slug,
-                conditionId: trade.conditionId,
+                conditionId: conditionId,
                 outcome: tokenOutcome || trade.outcome || null
             };
         }
@@ -229,7 +301,7 @@ async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
     // Return whatever we have
     return {
         marketSlug: trade.marketSlug || null,
-        conditionId: trade.conditionId || null,
+        conditionId: conditionId || null,
         outcome: trade.outcome || null
     };
 }
