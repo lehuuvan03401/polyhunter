@@ -629,7 +629,7 @@ export default function PortfolioPage() {
                                                             </td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs">{pos.size?.toFixed(2)}</td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${pos.avgPrice?.toFixed(2) || '0.00'}</td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs font-medium">${(pos.curPrice || pos.avgPrice)?.toFixed(2) || '0.00'}</td>
+                                                            <td className="p-4 align-middle text-right font-mono text-xs font-medium">${(pos.curPrice !== undefined && pos.curPrice !== null ? pos.curPrice : pos.avgPrice)?.toFixed(2) || '0.00'}</td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs font-medium text-blue-400">${(pos.estValue || 0).toFixed(2)}</td>
                                                             <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
                                                                 {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%

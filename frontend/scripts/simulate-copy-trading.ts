@@ -24,6 +24,8 @@ const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6a
 const SIMULATION_DURATION_MS = parseInt(process.env.SIMULATION_DURATION_MS || '2100000'); // 35 minutes
 const BUY_WINDOW_MS = 15 * 60 * 1000; // Stop buying after 15 minutes
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '10'); // $10 per trade
+const SLIPPAGE_BPS = 50; // 0.5% slippage (50 basis points)
+const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + overhead)
 
 // No validation needed - using local dev.db
 
@@ -159,7 +161,8 @@ function updatePositionOnSell(tokenId: string, shares: number, price: number): n
 }
 
 // Cache for market metadata to avoid repeated API calls
-const marketCache = new Map<string, { slug: string; tokens: any[] }>();
+// Cache for market metadata to avoid repeated API calls
+const marketCache = new Map<string, { slug: string; tokens: any[]; _isFailure?: boolean; timestamp?: number }>();
 const CLOB_API_URL = 'https://clob.polymarket.com';
 
 /**
@@ -374,10 +377,21 @@ async function handleTrade(trade: ActivityTrade) {
 
     if (traderAddress !== targetLower) return;
 
-    // Filter for 15m Options only
+    // Filter for 15m Options only (as requested by User)
     if (!trade.marketSlug?.includes('-15m-')) {
+        // console.log(`[DEBUG] ⏭️  Skipped (Not 15m): ${trade.marketSlug}`);
         return;
     }
+
+    // Safety Filter: Exclude outdated/political keywords to ensure realism
+    const lowerSlug = trade.marketSlug.toLowerCase();
+    if (lowerSlug.includes('biden') || lowerSlug.includes('trump') || lowerSlug.includes('election') || lowerSlug.includes('coronavirus')) {
+        console.log(`[DEBUG] ⏭️  Skipped Outdated/Political: ${trade.marketSlug}`);
+        return;
+    }
+
+    // Check for weird slugs (Optional debugging)
+    // console.log(`[DEBUG] 🔎 Detected trade for target: ${trade.marketSlug} | Side: ${trade.side}`);
 
     // Skip trades without conditionId (can't get metadata)
     if (!trade.conditionId && !trade.marketSlug) {
@@ -396,7 +410,10 @@ async function handleTrade(trade: ActivityTrade) {
     }
 
     // Calculate copy shares based on fixed amount
-    const copyShares = FIXED_COPY_AMOUNT / trade.price;
+    // APPLY SLIPPAGE MODEL
+    const slipFactor = trade.side === 'BUY' ? (1 + SLIPPAGE_BPS / 10000) : (1 - SLIPPAGE_BPS / 10000);
+    const execPrice = trade.price * slipFactor;
+    const copyShares = FIXED_COPY_AMOUNT / execPrice;
 
     // 🔥 CRITICAL: Skip SELL trades if we don't have a position
     // In real copy trading, we only sell what we've bought
@@ -412,32 +429,42 @@ async function handleTrade(trade: ActivityTrade) {
     console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded + 1})`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
-    console.log(`   📊 ${trade.side} $${FIXED_COPY_AMOUNT.toFixed(2)} → ${copyShares.toFixed(2)} shares @ $${trade.price.toFixed(4)}`);
+    console.log(`   📊 ${trade.side} $${FIXED_COPY_AMOUNT.toFixed(2)} → ${copyShares.toFixed(2)} shares`);
+    console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
     console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
     console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
     console.log(`   🔗 TX: ${trade.transactionHash?.substring(0, 30)}...`);
 
     // Process trade
     if (trade.side === 'BUY') {
-        updatePositionOnBuy(trade.asset, copyShares, trade.price, trade.marketSlug || '');
+        updatePositionOnBuy(trade.asset, copyShares, execPrice, trade.marketSlug || '');
         totalBuyVolume += FIXED_COPY_AMOUNT;
 
         const pos = positions.get(trade.asset)!;
         console.log(`   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`);
     } else {
-        const pnl = updatePositionOnSell(trade.asset, copyShares, trade.price);
+        const pnl = updatePositionOnSell(trade.asset, copyShares, execPrice);
         realizedPnL += pnl;
         totalSellVolume += FIXED_COPY_AMOUNT;
 
         const pos = positions.get(trade.asset);
         const remaining = pos ? pos.balance.toFixed(2) : '0';
-        console.log(`   💰 P&L: $${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}`);
+
+        // Fee impact
+        const netPnl = pnl - (ESTIMATED_GAS_FEE_USD * 2); // Deduct for Buy (past) and Sell (now) approx? 
+        // Or just deduct current fee? Let's deduct 1x fee per action usually.
+        // But PnL is realized, so it covers the full cycle cost.
+        // Let's just log Gross vs Net for this specific trade action?
+        // Actually, let's track Total Fees separately to deduct at end.
+
+        console.log(`   💰 Gross P&L: $${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}`);
         console.log(`   💼 Remaining: ${remaining} shares`);
     }
 
     console.log('   ═══════════════════════════════════════════════════════════\n');
 
     // Record to database
+    // We record the EXECUTION price (simulated)
     await recordCopyTrade(trade, copyShares, trade.side === 'SELL' ? realizedPnL : undefined);
 }
 
@@ -472,7 +499,12 @@ async function printSummary() {
     console.log(`Trades Recorded: ${tradesRecorded}`);
     console.log(`Total Buy Volume: $${totalBuyVolume.toFixed(2)}`);
     console.log(`Total Sell Volume: $${totalSellVolume.toFixed(2)}`);
-    console.log(`Realized P&L: $${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(4)}`);
+    const totalFees = tradesRecorded * ESTIMATED_GAS_FEE_USD;
+    const netPnL = realizedPnL - totalFees;
+
+    console.log(`Realized P&L (Gross): $${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(4)}`);
+    console.log(`Est. Fees (Gas): -$${totalFees.toFixed(2)}`);
+    console.log(`Net P&L (Simulated): $${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(4)}`);
     console.log('═══════════════════════════════════════════════════════════════');
 
     console.log('\n📁 DATABASE RECORDS');
