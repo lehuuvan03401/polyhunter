@@ -43,6 +43,7 @@ export default function PortfolioPage() {
     const [positions, setPositions] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [positionsPage, setPositionsPage] = useState(1);
+    const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'WON' | 'LOST'>('ALL');
 
     // New state for History and Sell All
     const [activeTab, setActiveTab] = useState<'positions' | 'strategies' | 'orders' | 'history' | 'transfers'>('positions');
@@ -523,7 +524,6 @@ export default function PortfolioPage() {
                     <div className="flex-1 overflow-auto bg-card">
                         {activeTab === 'positions' && (
                             // --- POSITIONS VIEW ---
-                            // --- POSITIONS VIEW ---
                             (() => {
                                 // Combine and tag positions
                                 const allPositions = [
@@ -531,9 +531,18 @@ export default function PortfolioPage() {
                                     ...simPositions.map(p => ({ ...p, _type: 'sim' }))
                                 ];
 
+                                // Filter logic
+                                const filteredPositions = allPositions.filter(p => {
+                                    if (statusFilter === 'ALL') return true;
+                                    if (statusFilter === 'OPEN') return p.status === 'OPEN';
+                                    if (statusFilter === 'WON') return p.status === 'SETTLED_WIN';
+                                    if (statusFilter === 'LOST') return p.status === 'SETTLED_LOSS';
+                                    return true;
+                                });
+
                                 const ITEMS_PER_PAGE = 10;
-                                const totalPages = Math.ceil(allPositions.length / ITEMS_PER_PAGE);
-                                const currentPositions = allPositions.slice(
+                                const totalPages = Math.ceil(filteredPositions.length / ITEMS_PER_PAGE);
+                                const currentPositions = filteredPositions.slice(
                                     (positionsPage - 1) * ITEMS_PER_PAGE,
                                     positionsPage * ITEMS_PER_PAGE
                                 );
@@ -556,6 +565,38 @@ export default function PortfolioPage() {
 
                                 return (
                                     <div className="flex flex-col h-full">
+                                        {/* Status Filter Bar */}
+                                        <div className="px-4 py-2 border-b flex items-center gap-2 overflow-x-auto">
+                                            {(['ALL', 'OPEN', 'WON', 'LOST'] as const).map((filter) => (
+                                                <button
+                                                    key={filter}
+                                                    onClick={() => {
+                                                        setStatusFilter(filter);
+                                                        setPositionsPage(1); // Reset page on filter change
+                                                    }}
+                                                    className={cn(
+                                                        "px-3 py-1 rounded-full text-xs font-medium transition-colors border",
+                                                        statusFilter === filter
+                                                            ? "bg-primary text-primary-foreground border-primary"
+                                                            : "bg-background text-muted-foreground border-border hover:bg-muted"
+                                                    )}
+                                                >
+                                                    {filter === 'ALL' ? 'All' :
+                                                        filter === 'OPEN' ? 'Open' :
+                                                            filter === 'WON' ? 'Won' : 'Lost'}
+                                                    <span className="ml-1.5 opacity-60">
+                                                        {allPositions.filter(p => {
+                                                            if (filter === 'ALL') return true;
+                                                            if (filter === 'OPEN') return p.status === 'OPEN';
+                                                            if (filter === 'WON') return p.status === 'SETTLED_WIN';
+                                                            if (filter === 'LOST') return p.status === 'SETTLED_LOSS';
+                                                            return true;
+                                                        }).length}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+
                                         <div className="flex-1 overflow-auto">
                                             <table className="w-full caption-bottom text-sm">
                                                 <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
@@ -572,78 +613,84 @@ export default function PortfolioPage() {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {currentPositions.map((pos, i) => (
-                                                        <tr
-                                                            key={`${pos._type}-${pos.tokenId || i}`}
-                                                            className={cn(
-                                                                "border-b transition-colors hover:bg-muted/50",
-                                                                pos._type === 'sim' && "bg-blue-500/5"
-                                                            )}
-                                                        >
-                                                            <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
-                                                                {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '-'}
-                                                            </td>
-                                                            <td className="p-4 align-middle font-medium max-w-[250px]" title={pos.title}>
-                                                                <div className="flex items-center gap-1.5">
-                                                                    {pos._type === 'sim' && (
-                                                                        <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold shrink-0">SIM</span>
-                                                                    )}
-                                                                    {pos.slug ? (
-                                                                        <a
-                                                                            href={`https://polymarket.com/event/${pos.slug}`}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="text-blue-400 hover:text-blue-300 hover:underline truncate transition-colors"
-                                                                        >
-                                                                            {pos.title}
-                                                                            <ArrowUpRight className="inline-block w-3 h-3 ml-0.5 opacity-50" />
-                                                                        </a>
-                                                                    ) : (
-                                                                        <span className="truncate text-muted-foreground">{pos.title}</span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="p-4 align-middle">
-                                                                <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
-                                                                    (pos.outcome === 'Yes' || pos.outcome === 'YES' || pos.outcome === 'Up')
-                                                                        ? "bg-green-400/10 text-green-400 ring-green-400/20"
-                                                                        : (pos.outcome === 'No' || pos.outcome === 'NO' || pos.outcome === 'Down')
-                                                                            ? "bg-red-400/10 text-red-400 ring-red-400/20"
-                                                                            : "bg-gray-400/10 text-gray-400 ring-gray-400/20")}>
-                                                                    {pos.outcome || '?'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="p-4 align-middle">
-                                                                <span className={cn("inline-flex items-center gap-1 text-[10px] font-medium",
-                                                                    pos.status === 'SETTLED_WIN' ? "text-green-400" :
-                                                                        pos.status === 'SETTLED_LOSS' ? "text-red-400" :
-                                                                            "text-emerald-400/70")}>
-                                                                    <span className={cn("w-1.5 h-1.5 rounded-full",
-                                                                        pos.status === 'SETTLED_WIN' ? "bg-green-400" :
-                                                                            pos.status === 'SETTLED_LOSS' ? "bg-red-400" :
-                                                                                "bg-emerald-400 animate-pulse")} />
-                                                                    {pos.status === 'SETTLED_WIN' ? 'WON' :
-                                                                        pos.status === 'SETTLED_LOSS' ? 'LOST' :
-                                                                            'OPEN'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs">{pos.size?.toFixed(2)}</td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${pos.avgPrice?.toFixed(2) || '0.00'}</td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${pos.avgPrice?.toFixed(2) || '0.00'}</td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs font-medium">
-                                                                {(() => {
-                                                                    const price = pos.curPrice !== undefined && pos.curPrice !== null ? pos.curPrice : pos.avgPrice;
-                                                                    if (price === 0) return '$0.00';
-                                                                    if (price && price < 0.01) return '$' + price.toFixed(4);
-                                                                    return '$' + (price?.toFixed(2) || '0.00');
-                                                                })()}
-                                                            </td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs font-medium text-blue-400">${(pos.estValue || 0).toFixed(2)}</td>
-                                                            <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
-                                                                {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
+                                                    {currentPositions.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={9} className="h-24 text-center align-middle text-muted-foreground text-xs">
+                                                                No {statusFilter.toLowerCase()} positions found
                                                             </td>
                                                         </tr>
-                                                    ))}
+                                                    ) : (
+                                                        currentPositions.map((pos, i) => (
+                                                            <tr
+                                                                key={`${pos._type}-${pos.tokenId || i}`}
+                                                                className={cn(
+                                                                    "border-b transition-colors hover:bg-muted/50",
+                                                                    pos._type === 'sim' && "bg-blue-500/5"
+                                                                )}
+                                                            >
+                                                                <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
+                                                                    {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '-'}
+                                                                </td>
+                                                                <td className="p-4 align-middle font-medium max-w-[250px]" title={pos.title}>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        {pos._type === 'sim' && (
+                                                                            <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold shrink-0">SIM</span>
+                                                                        )}
+                                                                        {pos.slug ? (
+                                                                            <a
+                                                                                href={`https://polymarket.com/event/${pos.slug}`}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="text-blue-400 hover:text-blue-300 hover:underline truncate transition-colors"
+                                                                            >
+                                                                                {pos.title}
+                                                                                <ArrowUpRight className="inline-block w-3 h-3 ml-0.5 opacity-50" />
+                                                                            </a>
+                                                                        ) : (
+                                                                            <span className="truncate text-muted-foreground">{pos.title}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-4 align-middle">
+                                                                    <span className={cn("inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                                                                        (pos.outcome === 'Yes' || pos.outcome === 'YES' || pos.outcome === 'Up')
+                                                                            ? "bg-green-400/10 text-green-400 ring-green-400/20"
+                                                                            : (pos.outcome === 'No' || pos.outcome === 'NO' || pos.outcome === 'Down')
+                                                                                ? "bg-red-400/10 text-red-400 ring-red-400/20"
+                                                                                : "bg-gray-400/10 text-gray-400 ring-gray-400/20")}>
+                                                                        {pos.outcome || '?'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-4 align-middle">
+                                                                    <span className={cn("inline-flex items-center gap-1 text-[10px] font-medium",
+                                                                        pos.status === 'SETTLED_WIN' ? "text-green-400" :
+                                                                            pos.status === 'SETTLED_LOSS' ? "text-red-400" :
+                                                                                "text-emerald-400/70")}>
+                                                                        <span className={cn("w-1.5 h-1.5 rounded-full",
+                                                                            pos.status === 'SETTLED_WIN' ? "bg-green-400" :
+                                                                                pos.status === 'SETTLED_LOSS' ? "bg-red-400" :
+                                                                                    "bg-emerald-400 animate-pulse")} />
+                                                                        {pos.status === 'SETTLED_WIN' ? 'WON' :
+                                                                            pos.status === 'SETTLED_LOSS' ? 'LOST' :
+                                                                                'OPEN'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-4 align-middle text-right font-mono text-xs">{pos.size?.toFixed(2)}</td>
+                                                                <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${pos.avgPrice?.toFixed(2) || '0.00'}</td>
+                                                                <td className="p-4 align-middle text-right font-mono text-xs font-medium">
+                                                                    {(() => {
+                                                                        const price = pos.curPrice !== undefined && pos.curPrice !== null ? pos.curPrice : pos.avgPrice;
+                                                                        if (price === 0) return '$0.00';
+                                                                        if (price && price < 0.01) return '$' + price.toFixed(4);
+                                                                        return '$' + (price?.toFixed(2) || '0.00');
+                                                                    })()}
+                                                                </td>
+                                                                <td className="p-4 align-middle text-right font-mono text-xs font-medium text-blue-400">${(pos.estValue || 0).toFixed(2)}</td>
+                                                                <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
+                                                                    {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
+                                                                </td>
+                                                            </tr>
+                                                        )))}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -652,7 +699,7 @@ export default function PortfolioPage() {
                                         {totalPages > 1 && (
                                             <div className="flex items-center justify-between px-4 py-3 border-t bg-card">
                                                 <div className="text-xs text-muted-foreground">
-                                                    Showing {(positionsPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(positionsPage * ITEMS_PER_PAGE, allPositions.length)} of {allPositions.length} positions
+                                                    Showing {(positionsPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(positionsPage * ITEMS_PER_PAGE, filteredPositions.length)} of {filteredPositions.length} positions
                                                 </div>
                                                 <div className="flex items-center space-x-2">
                                                     <button
