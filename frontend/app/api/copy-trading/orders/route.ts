@@ -9,7 +9,7 @@ export const revalidate = 0;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-
+import { parseMarketSlug } from '@/lib/utils';
 // Order status types
 export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'SETTLEMENT_PENDING';
 
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
             side: trade.originalSide,
             size: trade.copySize,
             price: trade.copyPrice || trade.originalPrice,
-            market: trade.marketSlug,
+            market: parseMarketSlug(trade.marketSlug, trade.tokenId),
             tokenId: trade.tokenId,
             traderName: trade.config.traderName,
             traderAddress: trade.config.traderAddress,

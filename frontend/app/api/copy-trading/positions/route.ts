@@ -3,69 +3,12 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
 import { GammaMarket } from '@catalyst-team/poly-sdk';
+import { parseMarketSlug, parseOutcome } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-/**
- * Parse market slug into human-readable title
- * e.g., "btc-updown-15m-1768895100" -> "BTC 15min Up/Down (3:45 PM)"
- */
-function parseMarketSlug(slug: string | null | undefined, tokenId?: string): string {
-    if (!slug) {
-        // Fallback: show truncated tokenId if available
-        if (tokenId) {
-            return `Market ${tokenId.slice(0, 8)}...`;
-        }
-        return 'Unknown Market';
-    }
-
-    // Known patterns for time-based markets
-    const timePatterns: Record<string, string> = {
-        '15m': '15min',
-        '1h': '1 Hour',
-        '4h': '4 Hour',
-        '1d': '1 Day',
-    };
-
-    // Try to parse common formats
-    // Pattern: {asset}-updown-{timeframe}-{timestamp}
-    const upDownMatch = slug.match(/^([a-z]+)-updown-(\d+[mhd])-(\d+)$/i);
-    if (upDownMatch) {
-        const [, asset, timeframe, timestamp] = upDownMatch;
-        const tf = timePatterns[timeframe] || timeframe;
-        const date = new Date(parseInt(timestamp) * 1000);
-        const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        return `${asset.toUpperCase()} ${tf} Up/Down (${time})`;
-    }
-
-    // Pattern: {asset}-price-{target}-{timestamp}
-    const priceMatch = slug.match(/^([a-z]+)-price-(\d+)-(\d+)$/i);
-    if (priceMatch) {
-        const [, asset, target] = priceMatch;
-        return `${asset.toUpperCase()} > $${parseInt(target).toLocaleString()}`;
-    }
-
-    // Fallback: capitalize and clean up slug
-    const cleaned = slug
-        .replace(/-\d{10,}$/, '') // Remove trailing timestamp (10+ digits)
-        .split('-')
-        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
-
-    return cleaned || slug;
-}
-
-/**
- * Normalize outcome display
- */
-function parseOutcome(outcome: string | null | undefined): string {
-    if (!outcome) return 'N/A';
-    const normalized = outcome.toLowerCase();
-    if (normalized === 'yes' || normalized === 'up') return 'Up';
-    if (normalized === 'no' || normalized === 'down') return 'Down';
-    return outcome; // Return as-is if not recognized
-}
+// parsers moved to @/lib/utils
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
