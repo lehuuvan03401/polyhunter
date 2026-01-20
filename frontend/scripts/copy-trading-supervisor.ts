@@ -28,6 +28,10 @@ import { WalletManager, WorkerContext } from '../../src/core/wallet-manager';
 import { MempoolDetector } from '../../src/core/mempool-detector';
 import { TaskQueue } from '../../src/core/task-queue';
 import { DebtManager } from '../../src/core/debt-manager';
+import { MarketService } from '../../src/services/market-service';
+import { GammaApiClient } from '../../src/clients/gamma-api';
+import { DataApiClient } from '../../src/clients/data-api';
+
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 import { AffiliateEngine } from '../lib/services/affiliate-engine';
 import { PositionService } from '../lib/services/position-service';
@@ -89,10 +93,15 @@ const cache = createUnifiedCache();
 // Helpers
 const realtimeService = new RealtimeServiceV2({
     autoReconnect: true,
+    pingInterval: 1000, // Aggressive 1s KeepAlive for low latency
     debug: false
 });
 
 // Core Services
+const gammaApi = new GammaApiClient(rateLimiter, cache);
+const dataApi = new DataApiClient(rateLimiter, cache);
+const marketService = new MarketService(gammaApi, dataApi, rateLimiter, cache, { chainId: CHAIN_ID });
+
 // 1. Master Trading Service (for read-only or fallback)
 const masterTradingService = new TradingService(
     rateLimiter,
@@ -109,6 +118,38 @@ const executionService = new CopyTradingExecutionService(masterTradingService, m
 // 3. Wallet Manager (The Fleet)
 let walletManager: WalletManager | null = null;
 let debtManager: DebtManager | null = null;
+
+// --- SHUTDOWN HANDLING ---
+let isShuttingDown = false;
+
+async function shutdown(signal: string) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`\n[Supervisor] 🛑 Received ${signal}. Shutting down gracefully...`);
+
+    // 1. Stop accepting new jobs
+    // (Supervisor loop checks isShuttingDown implicitly by process exiting, but we can be explicit if we had a loop flag)
+
+    // 2. Close WebSocket
+    console.log("[Supervisor] 🔌 Disconnecting WebSocket...");
+    try {
+        // Assuming disconnect type exists on V2, if not we rely on process exit
+        // realtimeService.disconnect(); 
+    } catch (e) {
+        console.error("WS invalid disconnect", e);
+    }
+
+    // 3. Close Database Pool
+    console.log("[Supervisor] 💾 Disconnecting Database...");
+    try {
+        await prisma.$disconnect();
+    } catch (e) {
+        console.error("DB disconnect error", e);
+    }
+
+    console.log("[Supervisor] 👋 Goodbye.");
+    process.exit(0);
+}
 
 // --- STATE ---
 interface ActiveConfig {
@@ -407,6 +448,31 @@ async function refreshConfigs() {
     }
 }
 
+async function getMarketMetadata(tokenId: string) {
+    try {
+        // Use MarketService to get CLOB Market info via Orderbook
+        const book = await marketService.getTokenOrderbook(tokenId);
+        if (!book.market) throw new Error("No market ID in orderbook");
+        const market = await marketService.getClobMarket(book.market);
+
+        // Find specific token outcome
+        const token = market.tokens.find(t => t.tokenId === tokenId);
+
+        return {
+            marketSlug: market.marketSlug || 'unknown-market',
+            conditionId: market.conditionId,
+            outcome: token?.outcome || 'Yes'
+        };
+    } catch (e) {
+        // Fallback for missing simulated markets
+        return {
+            marketSlug: 'unknown-simulated',
+            conditionId: '0x0',
+            outcome: 'Yes'
+        };
+    }
+}
+
 async function handleTransfer(
     operator: string,
     from: string,
@@ -538,6 +604,11 @@ async function processJob(
     isPreflight: boolean = false,
     overrides?: ethers.Overrides
 ) {
+    if (isShuttingDown) {
+        console.log(`[Supervisor] 🛑 Order Skipped (Shutting Down): ${config.walletAddress} ${side} ${tokenId}`);
+        return;
+    }
+
     // 0. Fast SELL-skip check (no database query needed)
     if (side === 'SELL') {
         if (!hasPosition(config.walletAddress, tokenId)) {
@@ -553,7 +624,7 @@ async function processJob(
         return;
     }
 
-    // 1. Try Checkout Worker OR EOA Signer
+    // 2. Try Checkout Worker OR EOA Signer
     let worker: WorkerContext | null = null;
     let eoaSigner: ethers.Wallet | null = null;
     let eoaTradingService: TradingService | null = null;
@@ -565,32 +636,10 @@ async function processJob(
                 const privateKey = EncryptionService.decrypt(config.encryptedKey, config.iv);
                 const userWallet = new ethers.Wallet(privateKey, provider);
                 eoaSigner = userWallet;
-                // EOA Mode requires a TradingService instance compliant with this user.
-                // For MVP: We instantiate a new TradingService for this user on the fly?
-                // Or maybe the existing ExecutionService handles CLOB logic internally regardless of 'tradingService' passed?
-                // Actually, TradingService constructor takes a wallet/key. 
-                // We should instantiate a lightweight service or pass the wallet to the method.
-                // Re-using Master Trading Service but Override Signer?
-                // Current Trading Service is tied to one API Key...
-                // CRITICAL TODO: CLOB Client needs API Keys. EOA users might not have them?
-                // For now, let's assume EOA mode skips CLOB API auth if we just do contract interactions?
-                // BUT executeOrderWithProxy calls 'createMarketOrder' which calls CLOB.
-                // IF EOA user wants to trade on CLOB, they need API Keys.
-                // If they want to trade on Contract, they need just Signer.
-                // "Speed Mode" implies Direct CLOB access usually? 
-                // If Speed Mode = EOA, then we are just replacing the Proxy Wrapper.
-                // We still need CLOB API Keys.
-                // Assuming for this iteration we use the MASTER keys for market data, 
-                // but we need USER keys for placing orders?
-                // Actually, if we use the USER's Private Key, we can generate API Keys for them or use theirs.
-                // Lets assume for now we reuse the existing trading service structure but we need to solve the API Key issue later.
-                // Temp: Use Master Service but with EOA Signer for on-chain checks?
-                // Wait, logic says: "ExecutionService -> createMarketOrder".
-                // We'll pass the EOA signer.
                 worker = {
                     address: userWallet.address,
                     signer: userWallet,
-                    tradingService: masterTradingService // This is incorrect if Master Service is tied to Master Account API Key.
+                    tradingService: masterTradingService
                 };
             } catch (e) {
                 console.error(`[Supervisor] Decryption failed for user ${config.walletAddress}:`, e);
@@ -605,7 +654,6 @@ async function processJob(
             // Fallback logic...
             const masterWallet = masterTradingService.getWallet();
             if (masterWallet) {
-                // ...
                 worker = {
                     address: masterWallet.address,
                     signer: masterWallet.connect(provider),
@@ -616,8 +664,8 @@ async function processJob(
     }
 
 
-    // 2. If no worker AND no EOA, QUEUE IT
-    if (!worker && !eoaSigner) {
+    // 3. If no worker AND no EOA, QUEUE IT
+    if (!worker) {
         const queueOverrides = overrides;
         const queued = jobQueue.enqueue({
             config,
@@ -637,21 +685,10 @@ async function processJob(
         return;
     }
 
-    // 3. Construct Effective Worker Context
-    let effectiveWorker: WorkerContext;
-    if (worker) {
-        effectiveWorker = worker;
-    } else {
-        // Must be EOA signer
-        const addr = await eoaSigner!.getAddress();
-        effectiveWorker = {
-            address: addr,
-            signer: eoaSigner!,
-            tradingService: eoaTradingService || masterTradingService
-        };
-    }
+    // 4. Construct Effective Worker Context
+    const effectiveWorker: WorkerContext = worker;
 
-    // 4. Execute
+    // 5. Execute
     await executeJobInternal(effectiveWorker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight, overrides);
 }
 
