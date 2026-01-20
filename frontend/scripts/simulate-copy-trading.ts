@@ -21,7 +21,8 @@ import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-se
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-const SIMULATION_DURATION_MS = parseInt(process.env.SIMULATION_DURATION_MS || '300000'); // 5 minutes
+const SIMULATION_DURATION_MS = parseInt(process.env.SIMULATION_DURATION_MS || '2100000'); // 35 minutes
+const BUY_WINDOW_MS = 15 * 60 * 1000; // Stop buying after 15 minutes
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '10'); // $10 per trade
 
 // No validation needed - using local dev.db
@@ -38,6 +39,7 @@ console.log('══════════════════════�
 // --- PRISMA ---
 import path from 'path';
 
+console.log('DEBUG: DATABASE_URL loaded:', process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':****@'));
 const connectionString = `${process.env.DATABASE_URL}`;
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
@@ -217,8 +219,20 @@ async function handleTrade(trade: ActivityTrade) {
 
     if (traderAddress !== targetLower) return;
 
+    // Filter for 15m Options only
+    if (!trade.marketSlug?.includes('-15m-')) {
+        return;
+    }
+
     const now = new Date();
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    const elapsedMs = Date.now() - startTime;
+    const elapsed = (elapsedMs / 1000).toFixed(0);
+
+    // Stop buying after window closes
+    if (trade.side === 'BUY' && elapsedMs > BUY_WINDOW_MS) {
+        console.log(`\n🛑 Buy window closed (${(elapsedMs / 60000).toFixed(1)}m elapsed). Skipping BUY for ${trade.marketSlug}...`);
+        return;
+    }
 
     // Calculate copy shares based on fixed amount
     const copyShares = FIXED_COPY_AMOUNT / trade.price;
@@ -234,7 +248,7 @@ async function handleTrade(trade: ActivityTrade) {
     }
 
     console.log('\n🎯 ═══════════════════════════════════════════════════════════');
-    console.log(`   [${elapsed}s] COPY TRADE EXECUTED`);
+    console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded + 1})`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
     console.log(`   📊 ${trade.side} $${FIXED_COPY_AMOUNT.toFixed(2)} → ${copyShares.toFixed(2)} shares @ $${trade.price.toFixed(4)}`);

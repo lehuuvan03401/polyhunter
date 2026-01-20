@@ -63,7 +63,7 @@ export function MarketOrderbook({ market }: MarketOrderbookProps) {
                     <div className="space-y-0.5">
                         {/* YES Bids */}
                         <div className="text-xs font-semibold text-muted-foreground mb-1">
-                            {market.tokens.find(t => t.tokenId === orderbook.yes.tokenId)?.outcome || 'YES'}
+                            {market.outcomes?.[0] || 'YES'}
                         </div>
                         <div className="text-center italic text-xs text-muted-foreground">
                             Displaying aggregated top of book
@@ -84,7 +84,7 @@ export function MarketOrderbook({ market }: MarketOrderbookProps) {
                     </div>
                     <div className="space-y-0.5">
                         <div className="text-xs font-semibold text-muted-foreground mb-1">
-                            {market.tokens.find(t => t.tokenId === orderbook.yes.tokenId)?.outcome || 'YES'}
+                            {market.outcomes?.[0] || 'YES'}
                         </div>
                         {renderRow(orderbook.yes.ask, orderbook.yes.askSize, 'ask')}
                     </div>

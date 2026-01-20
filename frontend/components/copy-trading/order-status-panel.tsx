@@ -20,7 +20,7 @@ interface OrderStatusPanelProps {
 
 export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelProps) {
     const { orders, stats, isLoading, error, refresh, lastUpdated } = useOrderStatus(walletAddress, {
-        pollInterval: 60000, // 60 seconds (reduced frequency)
+        pollInterval: 30000, // 30 seconds for real-time updates
     });
 
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);

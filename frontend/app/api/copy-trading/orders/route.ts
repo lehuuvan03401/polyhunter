@@ -4,6 +4,9 @@
  * Track and monitor order execution status for copy trades
  */
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
@@ -79,7 +82,6 @@ export async function GET(request: NextRequest) {
                 },
             },
             orderBy: { detectedAt: 'desc' },
-            take: 50,
         });
 
         // Type alias for trade items
