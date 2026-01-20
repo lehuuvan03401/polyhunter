@@ -81,7 +81,7 @@ export default function PortfolioPage() {
 
                 // 1. Fetch USDC Balance
                 try {
-                    const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+                    const provider = new ethers.providers.JsonRpcProvider("https://polygon-bor-rpc.publicnode.com");
                     const usdc = new ethers.Contract(USDC_CONTRACT, USDC_ABI, provider);
                     const balanceRaw = await usdc.balanceOf(address);
                     const balance = parseFloat(ethers.utils.formatUnits(balanceRaw, 6));
