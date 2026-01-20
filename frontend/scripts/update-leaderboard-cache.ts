@@ -12,75 +12,90 @@ import 'dotenv/config';
  *   npm run cache:update -- --force
  */
 
-import { updateLeaderboardCache } from '../lib/services/leaderboard-cache-service';
+import {
+    updateLeaderboardCache,
+    Period,
+    updateSmartMoneyCache
+} from '../lib/services/leaderboard-cache-service';
 
-type Period = '7d' | '15d' | '30d' | '90d';
-
+/**
+ * Update Leaderboard Cache Script
+ * 
+ * Manual run:
+ * npx tsx scripts/update-leaderboard-cache.ts --period 7d
+ * 
+ * Update all:
+ * npx tsx scripts/update-leaderboard-cache.ts --all
+ * 
+ * Update only Smart Money:
+ * npx tsx scripts/update-leaderboard-cache.ts --smart-money
+ */
 async function main() {
     console.log('[UpdateCache] Starting leaderboard cache update...');
     const startTime = Date.now();
 
     // Parse CLI arguments
     const args = process.argv.slice(2);
-    let period: Period = '7d';
-    let limit = 20;
-    let force = false;
 
-    for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--period' && args[i + 1]) {
-            const p = args[i + 1];
-            if (['7d', '15d', '30d', '90d'].includes(p)) {
-                period = p as Period;
-            } else {
-                console.error(`Invalid period: ${p}. Must be one of: 7d, 15d, 30d, 90d`);
-                process.exit(1);
-            }
-            i++;
-        } else if (args[i] === '--limit' && args[i + 1]) {
-            limit = parseInt(args[i + 1], 10);
-            if (isNaN(limit) || limit < 1) {
-                console.error(`Invalid limit: ${args[i + 1]}. Must be a positive number.`);
-                process.exit(1);
-            }
-            i++;
-        } else if (args[i] === '--force') {
-            force = true;
-        } else if (args[i] === '--help' || args[i] === '-h') {
-            console.log(`
+    const isAll = args.includes('--all');
+    const isSmartMoneyOnly = args.includes('--smart-money');
+
+    const periodIdx = args.indexOf('--period');
+    const period = periodIdx !== -1 ? args[periodIdx + 1] as Period : '7d';
+
+    const limitIdx = args.indexOf('--limit');
+    const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : 20;
+
+    const forceIdx = args.indexOf('--force');
+    const force = forceIdx !== -1;
+
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log(`
 Usage: npm run cache:update -- [options]
 
 Options:
   --period <7d|15d|30d|90d>  Time period to cache (default: 7d)
   --limit <number>           Number of top traders to cache (default: 20)
   --force                    Force refresh even if recently updated
+  --all                      Update all leaderboard periods and smart money
+  --smart-money              Update only smart money leaderboard
   --help, -h                 Show this help message
 
 Examples:
   npm run cache:update
   npm run cache:update -- --period 30d --limit 10
   npm run cache:update -- --force
-            `);
-            process.exit(0);
-        }
+  npm run cache:update -- --all
+  npm run cache:update -- --smart-money
+        `);
+        process.exit(0);
     }
 
-    console.log(`[UpdateCache] Period: ${period}, Limit: ${limit}, Force: ${force}`);
+    console.log('[UpdateCache] Starting cache update process...');
 
     try {
-        const result = await updateLeaderboardCache(period, limit);
+        if (isAll) {
+            console.log('[UpdateCache] Updating all leaderboard periods...');
+            const periods: Period[] = ['7d', '15d', '30d', '90d'];
+            for (const p of periods) {
+                console.log(`[UpdateCache] Updating leaderboard for period: ${p}`);
+                await updateLeaderboardCache(p, limit);
+            }
+            console.log('[UpdateCache] Starting Smart Money update...');
+            await updateSmartMoneyCache(100);
+        } else if (isSmartMoneyOnly) {
+            console.log('[UpdateCache] Updating Smart Money only...');
+            await updateSmartMoneyCache(limit > 20 ? limit : 100);
+        } else {
+            console.log(`[UpdateCache] Updating period: ${period}, Limit: ${limit}, Force: ${force}`);
+            await updateLeaderboardCache(period, limit);
+        }
 
         const duration = Date.now() - startTime;
-
-        if (result.success) {
-            console.log(`✓ [UpdateCache] Successfully cached ${result.traderCount} traders for ${period}`);
-            console.log(`✓ [UpdateCache] Completed in ${duration}ms`);
-            process.exit(0);
-        } else {
-            console.error(`✗ [UpdateCache] Failed to update cache: ${result.error}`);
-            process.exit(1);
-        }
+        console.log(`✓ [UpdateCache] Completed successfully in ${duration}ms`);
+        process.exit(0);
     } catch (error) {
-        console.error(`✗ [UpdateCache] Unexpected error:`, error);
+        console.error('✗ [UpdateCache] Failed:', error);
         process.exit(1);
     }
 }

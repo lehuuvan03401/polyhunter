@@ -7,8 +7,8 @@ async function fetchActiveTraders(): Promise<ActiveTrader[]> {
     try {
         // Use the new active traders API that filters for copy-worthy traders
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        // Default to 7d period for initial server render
-        const response = await fetch(`${baseUrl}/api/traders/active?limit=10&period=7d`, {
+        // Default to 30d period to match LeaderboardTable default
+        const response = await fetch(`${baseUrl}/api/traders/active?limit=10&period=30d`, {
             next: { revalidate: 60 }, // Next.js ISR cache
         });
 

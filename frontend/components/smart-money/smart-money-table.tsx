@@ -14,8 +14,11 @@ const MAX_PAGES = 5;
 
 async function fetchSmartMoneyData(page: number): Promise<{ data: SmartMoneyWallet[] | null; error: string | null }> {
     try {
-        const smartMoneyList = await polyClient.smartMoney.getSmartMoneyList({ page, limit: ITEMS_PER_PAGE });
-        return { data: smartMoneyList, error: null };
+        const response = await fetch(`/api/traders/smart-money?page=${page}&limit=${ITEMS_PER_PAGE}`);
+        if (!response.ok) throw new Error('Failed to fetch');
+
+        const result = await response.json();
+        return { data: result.traders, error: null };
     } catch (e) {
         console.error("Smart Money fetch failed", e);
         return { data: null, error: "Failed to load trader data. Please try again." };

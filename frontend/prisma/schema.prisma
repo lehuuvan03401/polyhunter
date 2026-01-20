@@ -379,6 +379,27 @@ model VolumeTier {
   name            String // "Standard", "Pro", "Whale"
 }
 
+model CachedSmartMoney {
+  id         String   @id @default(cuid())
+  page       Int
+  rank       Int
+  traderData Json // Full SmartMoneyWallet object
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([page, rank])
+  @@index([page])
+}
+
+model SmartMoneyCacheMeta {
+  id           String   @id @default(cuid())
+  lastUpdateAt DateTime
+  status       String // "SUCCESS", "FAILED", "IN_PROGRESS"
+  traderCount  Int?
+  errorMessage String?
+  updatedAt    DateTime @updatedAt
+}
+
 // ========================================
 // Trader Leaderboard Caching
 // ========================================
