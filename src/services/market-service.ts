@@ -286,8 +286,14 @@ export class MarketService {
    */
   async getProcessedOrderbook(conditionId: string): Promise<ProcessedOrderbook> {
     const market = await this.getClobMarket(conditionId);
-    const yesToken = market.tokens.find(t => t.outcome === 'Yes');
-    const noToken = market.tokens.find(t => t.outcome === 'No');
+    let yesToken = market.tokens.find(t => t.outcome === 'Yes');
+    let noToken = market.tokens.find(t => t.outcome === 'No');
+
+    // Fallback for non-standard binary markets (use first two tokens)
+    if ((!yesToken || !noToken) && market.tokens.length >= 2) {
+      yesToken = market.tokens[0];
+      noToken = market.tokens[1];
+    }
 
     if (!yesToken || !noToken) {
       throw new PolymarketError(ErrorCode.INVALID_RESPONSE, 'Missing tokens in market');
