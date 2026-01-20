@@ -44,7 +44,7 @@ async function main() {
     const period = periodIdx !== -1 ? args[periodIdx + 1] as Period : '7d';
 
     const limitIdx = args.indexOf('--limit');
-    const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : 20;
+    const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : 100;
 
     const forceIdx = args.indexOf('--force');
     const force = forceIdx !== -1;

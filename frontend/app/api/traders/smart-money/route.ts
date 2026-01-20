@@ -30,19 +30,16 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        // 2. Layer: Database Cache
+        // 2. Layer: Database Cache (Preferred)
         const meta = await getSmartMoneyCacheMetadata();
         const useCache = !forceRefresh && process.env.USE_LEADERBOARD_CACHE !== 'false';
 
+        // Check DB first if allowed
         if (useCache && meta && meta.status === 'SUCCESS') {
             const cachedTraders = await getSmartMoneyFromCache(page, limit);
-
             if (cachedTraders && cachedTraders.length > 0) {
                 const fresh = isCacheFresh(meta.lastUpdateAt, 10);
-
-                // Update memory cache
                 memoryCache[cacheKey] = { data: cachedTraders, fetchedAt: now };
-
                 return NextResponse.json({
                     source: 'database',
                     cached: true,
@@ -53,22 +50,39 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        // 3. Layer: Live Fallback (Slow)
-        console.log(`[SmartMoneyAPI] Cache miss or stale for page ${page}. Fetching live...`);
-        const liveTraders = await polyClient.smartMoney.getSmartMoneyList({ page, limit });
+        // 3. Layer: Live Fallback
+        console.log(`[SmartMoneyAPI] Cache miss for page ${page}. Fetching live...`);
+        let liveTraders: any[] = [];
+
+        try {
+            liveTraders = await polyClient.smartMoney.getSmartMoneyList({ page, limit });
+        } catch (fetchError) {
+            console.warn(`[SmartMoneyAPI] Live fetch failed for page ${page}:`, fetchError);
+            // If live fetch fails, try DB cache one last time even if metadata says it might be stale/partial
+            const fallbackTraders = await getSmartMoneyFromCache(page, limit);
+            if (fallbackTraders && fallbackTraders.length > 0) {
+                return NextResponse.json({
+                    source: 'database-fallback',
+                    cached: true,
+                    traders: fallbackTraders
+                });
+            }
+            // If completely failed, return empty list instead of 500 to keep UI alive
+            return NextResponse.json({
+                traders: [],
+                error: "Unable to load live data and cache is empty."
+            });
+        }
 
         if (!liveTraders || liveTraders.length === 0) {
             return NextResponse.json({ traders: [], source: 'live' });
         }
 
-        // Update memory cache
         memoryCache[cacheKey] = { data: liveTraders, fetchedAt: now };
 
-        // If cache was totally empty, trigger an async background update for the whole thing
+        // Trigger background update if cache is empty/missing
         if (!meta) {
-            updateSmartMoneyCache(100).catch(err => {
-                console.error('[SmartMoneyAPI] Async cache update failed:', err);
-            });
+            updateSmartMoneyCache(100).catch(err => console.error('[SmartMoneyAPI] BG Update failed:', err));
         }
 
         return NextResponse.json({
@@ -78,10 +92,10 @@ export async function GET(req: NextRequest) {
         });
 
     } catch (error) {
-        console.error('[SmartMoneyAPI] Error:', error);
+        console.error('[SmartMoneyAPI] Critical Error:', error);
         return NextResponse.json(
-            { error: 'Failed to fetch smart money data' },
-            { status: 500 }
+            { error: 'Failed to fetch smart money data', traders: [] }, // Return empty list + error so UI handles it gracefully
+            { status: 200 } // Soft fail
         );
     }
 }

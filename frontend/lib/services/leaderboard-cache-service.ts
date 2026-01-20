@@ -62,8 +62,7 @@ function convertActivitiesToTrades(activities: any[]): Trade[] {
         }));
 }
 
-function enrichTradesWithPositionPnL(trades: Trade[], positions: any[]): Trade[] {
-    const totalPnL = positions.reduce((sum, p) => sum + (p.cashPnl || 0), 0);
+function enrichTradesWithTotalPnL(trades: Trade[], totalPnL: number): Trade[] {
     const sellTrades = trades.filter(t => t.side === 'SELL');
 
     if (sellTrades.length === 0) return trades;
@@ -118,10 +117,11 @@ export async function updateLeaderboardCache(
 
         // Fetch trader data using existing logic
         const timePeriod = mapPeriodToSdk(period);
+        // Fetch larger pool to ensure we have enough active traders after filtering
         const leaderboard = await polyClient.dataApi.getLeaderboard({
             timePeriod,
             orderBy: 'PNL',
-            limit: 50,
+            limit: 200, // Increased from 50 to 200
         });
 
         const nowSeconds = Math.floor(Date.now() / 1000);
@@ -155,7 +155,7 @@ export async function updateLeaderboardCache(
                         : 0;
 
                     const trades = convertActivitiesToTrades(activities);
-                    const enrichedTrades = enrichTradesWithPositionPnL(trades, positions);
+                    const enrichedTrades = enrichTradesWithTotalPnL(trades, trader.pnl || 0);
 
                     const metrics = calculateScientificScore(enrichedTrades, { periodDays: days });
 
@@ -412,9 +412,10 @@ export async function getSmartMoneyFromCache(
     limit: number = 20
 ): Promise<any[] | null> {
     try {
+        const skip = (page - 1) * limit;
         const cached = await prisma.cachedSmartMoney.findMany({
-            where: { page },
             orderBy: { rank: 'asc' },
+            skip,
             take: limit,
         });
 

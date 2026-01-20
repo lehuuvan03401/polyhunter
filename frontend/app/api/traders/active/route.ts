@@ -82,14 +82,13 @@ function convertActivitiesToTrades(activities: any[]): Trade[] {
         }));
 }
 
-function enrichTradesWithPositionPnL(trades: Trade[], positions: any[]): Trade[] {
-    // Calculate total realized PnL from positions
-    const totalPnL = positions.reduce((sum, p) => sum + (p.cashPnl || 0), 0);
+function enrichTradesWithTotalPnL(trades: Trade[], totalPnL: number): Trade[] {
     const sellTrades = trades.filter(t => t.side === 'SELL');
 
     if (sellTrades.length === 0) return trades;
 
-    // Distribute PnL across sell trades proportionally
+    // Distribute Total PnL across sell trades proportionally (Average)
+    // NOTE: This destroys variance metrics (Sharpe, etc) but preserves Total PnL correctness
     const pnlPerTrade = totalPnL / sellTrades.length;
 
     return trades.map(t => {
@@ -161,7 +160,7 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
 
                 // Convert activities to trades and enrich with PnL for scientific scoring
                 const trades = convertActivitiesToTrades(activities);
-                const enrichedTrades = enrichTradesWithPositionPnL(trades, positions);
+                const enrichedTrades = enrichTradesWithTotalPnL(trades, trader.pnl || 0);
 
                 // Calculate scientific metrics
                 const metrics = calculateScientificScore(enrichedTrades, { periodDays: days });

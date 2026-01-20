@@ -27,9 +27,10 @@ async function fetchSmartMoneyData(page: number): Promise<{ data: SmartMoneyWall
 
 interface SmartMoneyTableProps {
     currentPage: number;
+    onPageChange: (page: number) => void;
 }
 
-export function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
+export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTableProps) {
     const { authenticated, login, ready } = usePrivy();
     const [data, setData] = useState<SmartMoneyWallet[] | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -66,12 +67,12 @@ export function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
                     <h3 className="font-medium text-lg mb-1">Unable to Load Traders</h3>
                     <p className="text-muted-foreground text-sm max-w-md">{error}</p>
                 </div>
-                <Link
-                    href="/smart-money"
+                <button
+                    onClick={() => { setIsLoading(true); setError(null); }} // Simple retry logic
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors"
                 >
                     <RefreshCcw className="h-4 w-4" /> Retry
-                </Link>
+                </button>
             </div>
         );
     }
@@ -81,9 +82,12 @@ export function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
             <div className="flex flex-col items-center justify-center py-16 text-center">
                 <p className="text-muted-foreground">No traders found on this page.</p>
                 {currentPage > 1 && (
-                    <Link href="/smart-money" className="mt-4 text-blue-500 hover:underline">
+                    <button
+                        onClick={() => onPageChange(1)}
+                        className="mt-4 text-blue-500 hover:underline"
+                    >
                         Go back to first page
-                    </Link>
+                    </button>
                 )}
             </div>
         );
@@ -159,29 +163,29 @@ export function SmartMoneyTable({ currentPage }: SmartMoneyTableProps) {
 
             {/* Pagination Controls */}
             <div className="flex items-center justify-between p-4 border-t">
-                <Link
-                    href={hasPrevPage ? `/smart-money?page=${currentPage - 1}` : '#'}
+                <button
+                    onClick={() => hasPrevPage && onPageChange(currentPage - 1)}
+                    disabled={!hasPrevPage}
                     className={`px-4 py-2 text-sm font-medium rounded-lg border bg-card transition-colors ${hasPrevPage
-                        ? "hover:bg-muted hover:text-foreground text-foreground"
-                        : "pointer-events-none opacity-50 text-muted-foreground"
+                        ? "hover:bg-muted hover:text-foreground text-foreground cursor-pointer"
+                        : "opacity-50 text-muted-foreground cursor-not-allowed"
                         }`}
-                    aria-disabled={!hasPrevPage}
                 >
                     Previous
-                </Link>
+                </button>
                 <span className="text-sm text-muted-foreground">
                     Page {currentPage}
                 </span>
-                <Link
-                    href={hasNextPage ? `/smart-money?page=${currentPage + 1}` : '#'}
+                <button
+                    onClick={() => hasNextPage && onPageChange(currentPage + 1)}
+                    disabled={!hasNextPage}
                     className={`px-4 py-2 text-sm font-medium rounded-lg border bg-card transition-colors ${hasNextPage
-                        ? "hover:bg-muted hover:text-foreground text-foreground"
-                        : "pointer-events-none opacity-50 text-muted-foreground"
+                        ? "hover:bg-muted hover:text-foreground text-foreground cursor-pointer"
+                        : "opacity-50 text-muted-foreground cursor-not-allowed"
                         }`}
-                    aria-disabled={!hasNextPage}
                 >
                     Next
-                </Link>
+                </button>
             </div>
         </>
     );

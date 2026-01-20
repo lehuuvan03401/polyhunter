@@ -159,7 +159,10 @@ export function SmartMoneyPage() {
                             {activeTab === 'performers' ? (
                                 <>
                                     <Suspense key={page} fallback={<TableSkeleton />}>
-                                        <SmartMoneyTable currentPage={page} />
+                                        <SmartMoneyTable
+                                            currentPage={page}
+                                            onPageChange={setPage}
+                                        />
                                     </Suspense>
                                     {/* Pagination for Top Performers */}
                                     <div className="flex justify-center gap-2 p-4 border-t">

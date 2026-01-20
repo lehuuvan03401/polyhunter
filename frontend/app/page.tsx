@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { polyClient } from '@/lib/polymarket';
+
 import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck, Lock, TrendingUp, BarChart3 } from 'lucide-react';
 import { Suspense, useEffect, useState } from 'react';
 import { LeaderboardSection } from '@/components/home/leaderboard-section';
@@ -19,10 +19,14 @@ export function Home() {
   useEffect(() => {
     const fetchHomeStats = async () => {
       try {
-        const leaderboard = await polyClient.dataApi.getLeaderboard({ limit: 100 });
-        const traderCount = leaderboard.total;
-        const totalVolume = leaderboard.entries.reduce((sum, e) => sum + (e.volume || 0), 0);
-        setHomeStats({ traderCount, totalVolume });
+        const res = await fetch('/api/home/stats');
+        if (!res.ok) throw new Error('Failed to fetch stats');
+
+        const data = await res.json();
+        setHomeStats({
+          traderCount: data.traderCount,
+          totalVolume: data.totalVolume
+        });
       } catch (e) {
         console.error("Failed to fetch homepage stats", e);
         setHomeStats({ traderCount: null, totalVolume: null });
@@ -39,13 +43,7 @@ export function Home() {
     return `$${volume.toLocaleString()}`;
   }
 
-  if (!ready) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
-      </div>
-    );
-  }
+
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -102,7 +100,7 @@ export function Home() {
       {/* Leaderboard Preview - Only show when authenticated */}
       <section className="py-16 bg-card/30 border-y border-white/5">
         <div className="container max-w-5xl mx-auto px-4">
-          {authenticated ? (
+          {(!ready || authenticated) ? (
             <>
               <div className="flex items-center justify-between mb-8">
                 <h2 className="text-2xl font-bold">Top 10 Traders by Copy Score</h2>
@@ -110,7 +108,8 @@ export function Home() {
               </div>
 
               <Suspense fallback={<LeaderboardSkeleton />}>
-                <LeaderboardSection />
+                {/* Show skeleton if not ready, otherwise real component */}
+                {!ready ? <LeaderboardSkeleton /> : <LeaderboardSection />}
               </Suspense>
 
               <div className="text-center mt-8">

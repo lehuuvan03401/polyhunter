@@ -24,6 +24,8 @@ async function fetchActiveTraders(): Promise<ActiveTrader[]> {
     }
 }
 
+import { LeaderboardSkeleton } from './leaderboard-skeleton';
+
 export function LeaderboardSection() {
     const [activeTraders, setActiveTraders] = useState<ActiveTrader[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -75,7 +77,7 @@ export function LeaderboardSection() {
     }, []);
 
     if (isLoading) {
-        return <div className="text-center py-8 text-muted-foreground">Loading...</div>;
+        return <LeaderboardSkeleton />;
     }
 
     return <LeaderboardTable initialData={activeTraders} />;
