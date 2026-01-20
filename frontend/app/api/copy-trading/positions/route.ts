@@ -68,7 +68,7 @@ export async function GET(request: Request) {
             // If we use the map set, we should do it such that the latest one sticks.
             // If the query ordered by detectedAt DESC, the first one in the list is the latest.
             // So we set if not exists.
-            if (!metadataMap.has(trade.tokenId)) {
+            if (trade.tokenId && !metadataMap.has(trade.tokenId)) {
                 metadataMap.set(trade.tokenId, trade);
             }
         });
@@ -92,6 +92,11 @@ export async function GET(request: Request) {
         } catch (err) {
             console.error("Failed to batch fetch prices", err);
             // Fallback to empty map, prices will be null/0
+        }
+
+        console.log(`Debug: Fetched ${priceMap.size} prices for ${uniqueTokenIds.length} tokens.`);
+        if (priceMap.size === 0 && uniqueTokenIds.length > 0) {
+            console.warn("Debug: Price map is empty! Orderbooks might have returned empty.");
         }
 
         const enrichedPositions = positions.map((pos) => {

@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import useSWR from 'swr';
 
 export interface SimulatedPosition {
     tokenId: string;
@@ -11,40 +10,24 @@ export interface SimulatedPosition {
     percentPnl: number;
     totalCost: number;
     simulated: boolean;
+    timestamp?: number;
 }
 
-export function useSimulatedPositions(walletAddress: string, pollInterval = 3000) {
-    const [positions, setPositions] = useState<SimulatedPosition[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-    useEffect(() => {
-        if (!walletAddress) return;
+export function useSimulatedPositions(walletAddress: string) {
+    const { data, error, isLoading } = useSWR<SimulatedPosition[]>(
+        walletAddress ? `/api/copy-trading/positions?wallet=${walletAddress}` : null,
+        fetcher,
+        {
+            refreshInterval: 3000,
+            fallbackData: []
+        }
+    );
 
-        let isMounted = true;
-
-        const fetchPositions = async () => {
-            try {
-                const res = await fetch(`/api/copy-trading/positions?wallet=${walletAddress}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (isMounted) {
-                        setPositions(data);
-                        setIsLoading(false);
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to fetch simulated positions", err);
-            }
-        };
-
-        fetchPositions();
-        const interval = setInterval(fetchPositions, pollInterval);
-
-        return () => {
-            isMounted = false;
-            clearInterval(interval);
-        };
-    }, [walletAddress, pollInterval]);
-
-    return { positions, isLoading };
+    return {
+        positions: data || [],
+        isLoading,
+        isError: error
+    };
 }

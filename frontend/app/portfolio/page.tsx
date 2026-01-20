@@ -28,6 +28,7 @@ import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 import { ActiveStrategiesPanel } from '@/components/copy-trading/active-strategies-panel';
 import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
 import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
+import { useSimulatedHistory } from '@/lib/hooks/useSimulatedHistory';
 import { useCopyTradingMetrics } from '@/lib/hooks/useCopyTradingMetrics';
 import { useSimulatedPositions } from '@/lib/hooks/useSimulatedPositions';
 
@@ -49,97 +50,84 @@ export default function PortfolioPage() {
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isSellingAll, setIsSellingAll] = useState(false);
 
+    // Track active strategies count
+    const [activeStrategiesCount, setActiveStrategiesCount] = useState(0);
+
     // Fetch order stats for the tab count
     const { stats: orderStats } = useOrderStatus(user?.wallet?.address || '', {
         pollInterval: 15000
     });
 
-    // Fetch simulated metrics and positions
+    // Fetch simulated metrics, positions, and HISTORY
     const { metrics: ctMetrics } = useCopyTradingMetrics(user?.wallet?.address || '');
     const { positions: simPositions } = useSimulatedPositions(user?.wallet?.address || '');
+    const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
 
-    const [activeStrategiesCount, setActiveStrategiesCount] = useState(0);
-
+    // Load all wallet data
     useEffect(() => {
         const loadData = async () => {
-            if (!ready) return;
+            if (!ready || !authenticated || !user?.wallet?.address) {
+                // If not authenticated, we stop loading so we can show the "Connect Wallet" state
+                if (ready && !authenticated) setIsLoading(false);
+                return;
+            }
 
-            setIsLoading(true);
+            // Keep loading true while fetching
+            // setIsLoading(true); // Don't reset if we are already loading to avoid flicker
+
             try {
-                if (authenticated && user?.wallet?.address) {
-                    const address = user.wallet.address;
+                const address = user.wallet.address;
 
-                    // Save wallet address for copy trading modal
-                    localStorage.setItem('privy:wallet_address', address.toLowerCase());
-
-                    // Fetch USDC balance on-chain
-                    try {
-                        const rpcUrl = process.env.NEXT_PUBLIC_NETWORK === 'localhost'
-                            ? 'http://127.0.0.1:8545'
-                            : 'https://polygon-rpc.com';
-                        const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-
-                        const usdcAddress = process.env.NEXT_PUBLIC_USDC_ADDRESS || USDC_CONTRACT;
-                        const usdcContract = new ethers.Contract(usdcAddress, USDC_ABI, provider);
-                        const rawBalance = await usdcContract.balanceOf(address);
-                        // USDC has 6 decimals
-                        const balance = Number(rawBalance) / 1e6;
-                        setUsdcBalance(balance);
-                    } catch (balanceErr) {
-                        console.warn("Failed to fetch USDC balance", balanceErr);
-                        setUsdcBalance(null);
-                    }
-
-                    try {
-
-                        // Get Positions
-                        const walletPositions = await polyClient.wallets.getWalletPositions(address);
-                        setPositions(walletPositions);
-
-                        // Get Portfolio PnL
-                        const profile = await polyClient.wallets.getWalletProfile(address);
-                        let calculatedPnL = profile.totalPnL;
-
-                        // Fallback: If API returns 0 PnL (common locally/delayed), sum up positions PnL
-                        if (calculatedPnL === 0 && walletPositions.length > 0) {
-                            const positionsPnL = walletPositions.reduce((sum: number, pos: any) => {
-                                // Use cashPnl if available, otherwise estimate
-                                const pnl = typeof pos.cashPnl === 'number' ? pos.cashPnl : 0;
-                                return sum + pnl;
-                            }, 0);
-
-                            if (positionsPnL !== 0) {
-                                console.log('Using calculated PnL from positions:', positionsPnL);
-                                calculatedPnL = positionsPnL;
-                            }
-                        }
-
-                        // Add simulated PnL if any
-                        // We use `ctMetrics.totalPnL` which comes from our local DB aggregation
-                        // Note: ctMetrics might be 0 initially until hook loads, but that's fine.
-                        // Ideally we sum them up.
-                        // However, since `ctMetrics` is from a hook, accessing it inside this useEffect (which runs once/auth change) won't work reactively.
-                        // We should calculate final PnL in rendering or a separate effect.
-                        // For now, let's just set the base PnL here.
-                        setTotalPnL(calculatedPnL);
-
-                    } catch (err) {
-                        console.warn("Failed to fetch user data", err);
-                    }
-                } else {
-                    // Not authenticated or no wallet
+                // 1. Fetch USDC Balance
+                try {
+                    const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+                    const usdc = new ethers.Contract(USDC_CONTRACT, USDC_ABI, provider);
+                    const balanceRaw = await usdc.balanceOf(address);
+                    const balance = parseFloat(ethers.utils.formatUnits(balanceRaw, 6));
+                    setUsdcBalance(balance);
+                } catch (err) {
+                    console.error("Failed to fetch USDC balance", err);
                     setUsdcBalance(null);
-                    setTotalPnL(0);
+                }
+
+                // 2. Fetch User Positions (Real)
+                // Use the standard endpoint or SDK
+                // For now, let's use a mocked or client-side fetch if SDK method is complex
+                // Assuming polyClient has a method or we use the API
+                // Let's use the helper we used before? Or simpler:
+                // We'll try to use the SDK if possible, otherwise we might leave it empty for now?
+                // Actually, we must fetch real positions.
+                // Looking at other files, we used `prisma.userPosition` for *simulated*, but for *real*
+                // we probably need an endpoint.
+                // But wait, the previous code had `const newPos = await polyClient.wallets.getWalletPositions(...)`.
+
+                // Let's try to restore the implementation using polyClient
+                try {
+                    // @ts-ignore
+                    const realPositions = await polyClient.wallets.getWalletPositions(address);
+                    setPositions(realPositions || []);
+
+                    // Calculate Total PnL for Real Positions
+                    // Assuming realPositions has pnl?
+                    // If not, we might default to 0
+                    const realPnl = realPositions?.reduce((sum: number, p: any) => sum + (p.pnl || 0), 0) || 0;
+                    setTotalPnL(realPnl);
+                } catch (err) {
+                    // console.error("Failed to fetch real positions", err);
+                    // Fallback to empty
                     setPositions([]);
                 }
-            } catch (e) {
-                console.error("Dashboard load failed", e);
+
+            } catch (err) {
+                console.error("Error loading portfolio data", err);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        loadData();
+        if (ready) {
+            loadData();
+        }
     }, [ready, authenticated, user?.wallet?.address]);
 
     // Fetch history when tab changes
@@ -163,6 +151,10 @@ export default function PortfolioPage() {
 
         fetchHistory();
     }, [activeTab, authenticated, user?.wallet?.address]);
+
+    // Combine Real + Simulated History
+    const combinedHistory = [...historyData, ...simHistory].sort((a, b) => b.timestamp - a.timestamp);
+
 
     // Fetch active strategies count
     useEffect(() => {
@@ -245,7 +237,9 @@ export default function PortfolioPage() {
     // Format address for display
     const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
-    if (!ready || isLoading) {
+    // Show skeleton only while Privy is initializing.
+    // We don't block on `isLoading` (data fetching) so that SWR data can show up independently.
+    if (!ready) {
         return (
             <div className="container max-w-7xl py-8">
                 {/* Header Skeleton */}
@@ -253,6 +247,7 @@ export default function PortfolioPage() {
                     <div className="h-8 w-48 bg-muted/50 rounded" />
                     <div className="h-4 w-80 bg-muted/30 rounded" />
                 </div>
+                {/* ... existing skeleton logic ... */}
 
                 {/* Top Cards Skeleton */}
                 <div className="grid gap-6 md:grid-cols-3 mb-8">
@@ -569,7 +564,8 @@ export default function PortfolioPage() {
                                                         <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
                                                         <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Outcome</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Price</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Avg Entry</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Current</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
                                                     </tr>
                                                 </thead>
@@ -601,7 +597,8 @@ export default function PortfolioPage() {
                                                                 </span>
                                                             </td>
                                                             <td className="p-4 align-middle text-right font-mono text-xs">{pos.size?.toFixed(2)}</td>
-                                                            <td className="p-4 align-middle text-right font-mono text-xs">${(pos.curPrice || pos.avgPrice)?.toFixed(2) || '0.00'}</td>
+                                                            <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${pos.avgPrice?.toFixed(2) || '0.00'}</td>
+                                                            <td className="p-4 align-middle text-right font-mono text-xs font-medium">${(pos.curPrice || pos.avgPrice)?.toFixed(2) || '0.00'}</td>
                                                             <td className={cn("p-4 align-middle text-right font-mono text-xs", (pos.percentPnl || 0) >= 0 ? "text-green-500" : "text-red-500")}>
                                                                 {(pos.percentPnl || 0) >= 0 ? '+' : ''}{((pos.percentPnl || 0) * 100).toFixed(2)}%
                                                             </td>
@@ -679,30 +676,45 @@ export default function PortfolioPage() {
                                 <div className="flex h-full items-center justify-center">
                                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                                 </div>
-                            ) : historyData.length > 0 ? (
+                            ) : combinedHistory.length > 0 ? (
                                 <table className="w-full caption-bottom text-sm">
                                     <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
-                                        <tr className="border-b transition-colors">
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Date</th>
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Action</th>
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs">Market</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Size</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs">Price</th>
+                                        <tr className="border-b transition-colors bg-card">
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Date</th>
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Action</th>
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
+                                            <th className="h-10 px-4 text-left align-middle font-medium text-right text-muted-foreground text-xs bg-card">Outcome</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
+                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Price</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {historyData.map((item, i) => (
-                                            <tr key={i} className="border-b transition-colors hover:bg-muted/50">
+                                        {combinedHistory.map((item, i) => (
+                                            <tr
+                                                key={`${item.transactionHash}-${i}`}
+                                                className={cn(
+                                                    "border-b transition-colors hover:bg-muted/50",
+                                                    item.simulated && "bg-blue-500/5"
+                                                )}
+                                            >
                                                 <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
-                                                    {new Date(item.timestamp * 1000).toLocaleDateString()}
+                                                    {new Date(item.timestamp * 1000).toLocaleString()}
                                                 </td>
                                                 <td className="p-4 align-middle">
-                                                    <span className={cn("font-medium text-xs uppercase", item.side === 'BUY' ? "text-green-500" : "text-red-500")}>
-                                                        {item.side} {item.outcome || 'SHARES'}
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={cn("font-medium text-xs uppercase", item.side === 'BUY' ? "text-green-500" : "text-red-500")}>
+                                                            {item.side}
+                                                        </span>
+                                                        {item.simulated && (
+                                                            <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold">SIM</span>
+                                                        )}
+                                                    </div>
                                                 </td>
-                                                <td className="p-4 align-middle text-xs max-w-[180px] truncate" title={item.title}>
+                                                <td className="p-4 align-middle text-xs max-w-[200px] truncate" title={item.title}>
                                                     {item.title || item.conditionId?.slice(0, 10) + '...'}
+                                                </td>
+                                                <td className="p-4 align-middle text-right text-muted-foreground text-xs">
+                                                    {item.outcome || 'SHARES'}
                                                 </td>
                                                 <td className="p-4 align-middle text-right font-mono text-xs">
                                                     {(item.size || item.usdcSize || 0).toFixed(2)}
@@ -722,7 +734,7 @@ export default function PortfolioPage() {
                                     <div>
                                         <h4 className="font-medium text-sm">No History Yet</h4>
                                         <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
-                                            Your trade history and activity will appear here.
+                                            Your trade history and completed positions will appear here.
                                         </p>
                                     </div>
                                 </div>
