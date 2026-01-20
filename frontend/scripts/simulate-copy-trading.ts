@@ -229,6 +229,9 @@ async function fetchMarketFromClob(conditionId: string): Promise<{ slug: string;
         fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - ${e.message}\n`);
     }
 
+    // 3. Cache Failure (Negative Cache for 5 mins) to prevent spamming
+    marketCache.set(conditionId, { slug: '', tokens: [], _isFailure: true, timestamp: Date.now() });
+
     return null;
 }
 

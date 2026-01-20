@@ -93,7 +93,17 @@ async function getPrice(tokenId: string): Promise<number> {
     }
 }
 
+// Cache to prevent API spam and rate limits
+const metadataCache = new Map<string, { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; timestamp: number }>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache (metadata rarely changes)
+
 async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string; conditionId: string; outcome: string; marketQuestion: string }> {
+    // 1. Check Cache
+    const cached = metadataCache.get(tokenId);
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+        return cached;
+    }
+
     try {
         // 1. Get Condition ID from Orderbook (CLOB)
         const orderbook = await tradingService.getOrderBook(tokenId) as any;
@@ -113,20 +123,31 @@ async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string;
             return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
         }
 
-        const market = await client.getMarket(conditionId) as any;
+        if (market) {
+            // 3. Determine Outcome
+            // ClobMarket tokens: [{token_id, outcome}, ...]
+            const tokenData = market.tokens?.find((t: any) => t.token_id === tokenId);
+            const outcome = tokenData?.outcome || 'Yes';
+            const slug = market.market_slug || '';
+            const question = market.question || '';
 
-        // 3. Determine Outcome
-        // ClobMarket tokens: [{token_id, outcome}, ...]
-        const tokenData = market.tokens?.find((t: any) => t.token_id === tokenId);
-        const outcome = tokenData?.outcome || 'Yes';
-        const slug = market.market_slug || '';
-        const question = market.question || '';
+            const data = {
+                marketSlug: slug,
+                conditionId: conditionId,
+                outcome: outcome,
+                marketQuestion: question
+            };
+            // Cache valid CLOB result
+            if (slug) metadataCache.set(tokenId, { ...data, timestamp: Date.now() });
+
+            return data;
+        }
 
         return {
-            marketSlug: slug,
+            marketSlug: '',
             conditionId: conditionId,
-            outcome: outcome,
-            marketQuestion: question
+            outcome: 'Yes',
+            marketQuestion: ''
         };
     } catch (e) {
         console.warn(`[Worker] ⚠️ CLOB Metadata fetch failed for ${tokenId}, trying Gamma...`);
