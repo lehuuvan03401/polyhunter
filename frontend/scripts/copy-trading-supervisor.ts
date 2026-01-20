@@ -691,6 +691,9 @@ async function executeJobInternal(
 
             recordExecution(true, latencyMs);
 
+            // Async Metadata Backfill for Dry Run
+            const meta = await getMarketMetadata(tokenId);
+
             // Log to DB as SKIPPED
             await prisma.copyTrade.create({
                 data: {
@@ -704,7 +707,10 @@ async function executeJobInternal(
                     copyPrice: approxPrice,
                     status: 'SKIPPED',
                     errorMessage: 'DRY_RUN mode - execution skipped',
-                    executedAt: new Date()
+                    executedAt: new Date(),
+                    marketSlug: meta.marketSlug,
+                    conditionId: meta.conditionId,
+                    outcome: meta.outcome
                 }
             });
             return;
@@ -733,6 +739,9 @@ async function executeJobInternal(
         recordExecution(result.success, latencyMs);
 
         // 4. Log Result (Async DB write)
+        // Fetch Metadata BEFORE Create
+        const metadata = await getMarketMetadata(tokenId);
+
         await prisma.copyTrade.create({
             data: {
                 configId: config.id,
@@ -746,7 +755,10 @@ async function executeJobInternal(
                 status: result.success ? 'EXECUTED' : 'FAILED',
                 txHash: result.orderId,
                 errorMessage: result.error,
-                executedAt: new Date()
+                executedAt: new Date(),
+                marketSlug: metadata.marketSlug,
+                conditionId: metadata.conditionId,
+                outcome: metadata.outcome
             }
         });
 

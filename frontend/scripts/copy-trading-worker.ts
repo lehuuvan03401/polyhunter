@@ -16,6 +16,7 @@ import { CopyTradingExecutionService } from '../../src/services/copy-trading-exe
 import { TradingService } from '../../src/services/trading-service';
 import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache } from '../../src/core/unified-cache';
+import { PositionService } from '../lib/services/position-service';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -42,6 +43,7 @@ const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
 // Services
 const rateLimiter = new RateLimiter();
 const cache = createUnifiedCache();
+const positionService = new PositionService(prisma);
 const tradingService = new TradingService(rateLimiter, cache, {
     privateKey: TRADING_PRIVATE_KEY,
     chainId: CHAIN_ID,
@@ -87,6 +89,47 @@ async function getPrice(tokenId: string): Promise<number> {
     } catch (e) {
         console.warn(`[Worker] Failed to fetch price for ${tokenId}, defaulting to 0.5`);
         return 0.5;
+    }
+}
+
+async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string; conditionId: string; outcome: string; marketQuestion: string }> {
+    try {
+        // 1. Get Condition ID from Orderbook (CLOB)
+        const orderbook = await tradingService.getOrderBook(tokenId) as any;
+        const conditionId = orderbook.market;
+
+        if (!conditionId) {
+            console.warn(`[Worker] ⚠️ No conditionId found in orderbook for ${tokenId}`);
+            return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
+        }
+
+        // 2. Get Market Details from CLOB Client
+        // Ensure initialized (usually is by startListener)
+        if (!tradingService.isInitialized()) await tradingService.initialize();
+        const client = tradingService.getClobClient();
+        if (!client) {
+            console.warn(`[Worker] ⚠️ CLOB client not available`);
+            return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
+        }
+
+        const market = await client.getMarket(conditionId) as any;
+
+        // 3. Determine Outcome
+        // ClobMarket tokens: [{token_id, outcome}, ...]
+        const tokenData = market.tokens?.find((t: any) => t.token_id === tokenId);
+        const outcome = tokenData?.outcome || 'Yes';
+        const slug = market.market_slug || '';
+        const question = market.question || '';
+
+        return {
+            marketSlug: slug,
+            conditionId: conditionId,
+            outcome: outcome,
+            marketQuestion: question
+        };
+    } catch (e) {
+        console.warn(`[Worker] ⚠️ Metadata fetch failed for ${tokenId}:`, e);
+        return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
     }
 }
 
@@ -218,6 +261,10 @@ async function handleTransfer(
             // It does NOT update DB. The Route updates DB.
             // So we can just call execute, then create DB record with result.
 
+            // 1.5 Fetch Metadata (NEW)
+            const metadata = await getMarketMetadata(tokenId);
+            console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
+
             // 1. Execute
             const result = await executionService.executeOrderWithProxy({
                 tradeId: 'auto-' + Date.now(), // Temporary ID for logs
@@ -247,8 +294,42 @@ async function handleTransfer(
                     txHash: result.transactionHashes?.[0] || txHash,
                     errorMessage: result.error,
                     detectedAt: new Date(),
+                    // Metadata
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome,
                 }
             });
+
+            if (result.success) {
+                // 3. Update Position (NEW)
+                try {
+                    const sharesBought = copySizeUsdc / price;
+                    if (copySide === 'BUY') {
+                        await positionService.recordBuy({
+                            walletAddress: config.walletAddress,
+                            tokenId: tokenId,
+                            side: 'BUY',
+                            amount: sharesBought,
+                            price: price,
+                            totalValue: copySizeUsdc
+                        });
+                        console.log(`[Worker] 📊 Position updated +${sharesBought.toFixed(2)}`);
+                    } else {
+                        await positionService.recordSell({
+                            walletAddress: config.walletAddress,
+                            tokenId: tokenId,
+                            side: 'SELL',
+                            amount: sharesBought, // Approx
+                            price: price,
+                            totalValue: copySizeUsdc
+                        });
+                        console.log(`[Worker] 📊 Position updated -${sharesBought.toFixed(2)}`);
+                    }
+                } catch (posErr) {
+                    console.error(`[Worker] ⚠️ Failed to update position:`, posErr);
+                }
+            }
 
             console.log(`[Worker] ✅ Execution Result: ${result.success ? 'Success' : 'Failed'}`);
 
