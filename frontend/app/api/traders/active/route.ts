@@ -16,8 +16,13 @@ import { polyClient } from '@/lib/polymarket';
 import {
     calculateScientificScore,
     Trade,
-    TraderMetrics,
 } from '@/lib/services/trader-scoring-service';
+import {
+    getLeaderboardFromCache,
+    getCacheMetadata,
+    isCacheFresh,
+    Period as CachePeriod
+} from '@/lib/services/leaderboard-cache-service';
 
 // ===== Types =====
 
@@ -54,10 +59,12 @@ interface CachedData {
     fetchedAt: number;
 }
 
-// ===== Cache =====
-// Cache by period
-const cache: Record<string, CachedData> = {};
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// ===== Cache Settings =====
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in-memory
+const DB_CACHE_TTL_MINUTES = 10; // 10 minutes DB cache
+
+// In-memory cache by period
+const memoryCache: Record<string, CachedData> = {};
 
 // ===== Score Calculation =====
 // Now uses trader-scoring-service for scientific scoring
@@ -220,34 +227,65 @@ export async function GET(request: NextRequest) {
     try {
         const now = Date.now();
         const cacheKey = `${period}-${limit}`;
-        const cached = cache[cacheKey];
 
-        // Check cache validity
-        if (!forceRefresh && cached && (now - cached.fetchedAt) < CACHE_TTL) {
+        // Layer 1: In-memory cache check
+        const inMemory = memoryCache[cacheKey];
+        if (!forceRefresh && inMemory && (now - inMemory.fetchedAt) < CACHE_TTL) {
             return NextResponse.json({
-                traders: cached.traders,
+                traders: inMemory.traders,
                 cached: true,
-                cachedAt: new Date(cached.fetchedAt).toISOString(),
-                ttlRemaining: Math.round((CACHE_TTL - (now - cached.fetchedAt)) / 1000),
+                source: 'memory',
+                cachedAt: new Date(inMemory.fetchedAt).toISOString(),
+                ttlRemaining: Math.round((CACHE_TTL - (now - inMemory.fetchedAt)) / 1000),
                 algorithm: 'active-traders-v2-period',
             });
         }
 
-        // Fetch fresh data
-        console.log(`[ActiveTraders] Fetching fresh data for period: ${period}...`);
+        // Layer 2: Database cache check
+        if (!forceRefresh) {
+            const dbTraders = await getLeaderboardFromCache(period as CachePeriod, limit);
+            const dbMeta = await getCacheMetadata(period as CachePeriod);
+
+            if (dbTraders && dbMeta) {
+                const fresh = isCacheFresh(dbMeta.lastUpdateAt, DB_CACHE_TTL_MINUTES);
+
+                // Return DB cache even if slightly stale, as per design
+                // If it's very stale (e.g., failed updates for hours), we might want to fetch fresh
+                // But for now, returning DB cache is sub-second which is the goal.
+
+                // Update memory cache
+                memoryCache[cacheKey] = {
+                    traders: dbTraders as any[],
+                    fetchedAt: dbMeta.lastUpdateAt.getTime(),
+                };
+
+                return NextResponse.json({
+                    traders: dbTraders,
+                    cached: true,
+                    source: 'database',
+                    fresh,
+                    cachedAt: dbMeta.lastUpdateAt.toISOString(),
+                    algorithm: 'active-traders-v2-period',
+                });
+            }
+        }
+
+        // Layer 3: Fetch fresh data from Polymarket (Fallback)
+        console.log(`[ActiveTraders] No valid cache found. Fetching fresh data for period: ${period}...`);
         const traders = await fetchActiveTraders(Math.max(limit, 20), period);
 
-        // Update cache
-        cache[cacheKey] = {
+        // Update memory cache
+        memoryCache[cacheKey] = {
             traders,
             fetchedAt: now,
         };
 
-        console.log(`[ActiveTraders] Found ${traders.length} active traders for ${period}`);
+        console.log(`[ActiveTraders] Found ${traders.length} active traders for ${period} (Live Fetch)`);
 
         return NextResponse.json({
             traders: traders.slice(0, limit),
             cached: false,
+            source: 'live',
             cachedAt: new Date(now).toISOString(),
             algorithm: 'active-traders-v2-period',
         });
@@ -259,4 +297,5 @@ export async function GET(request: NextRequest) {
         );
     }
 }
+
 

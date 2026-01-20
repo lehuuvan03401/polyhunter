@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cache:update": "tsx scripts/update-leaderboard-cache.ts"
   },
   "dependencies": {
     "@catalyst-team/poly-sdk": "file:..",

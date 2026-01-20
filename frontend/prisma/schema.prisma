@@ -378,3 +378,31 @@ model VolumeTier {
   feeRateOnProfit Float // Fee rate as a decimal (0.20 = 20%)
   name            String // "Standard", "Pro", "Whale"
 }
+
+// ========================================
+// Trader Leaderboard Caching
+// ========================================
+
+// Cached trader leaderboard entries
+model CachedTraderLeaderboard {
+  id         String   @id @default(cuid())
+  period     String // "7d", "15d", "30d", "90d"
+  rank       Int
+  traderData Json // Full ActiveTrader object from /api/traders/active
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([period, rank])
+  @@index([period])
+}
+
+// Metadata tracking cache update status
+model LeaderboardCacheMeta {
+  id           String   @id @default(cuid())
+  period       String   @unique
+  lastUpdateAt DateTime
+  status       String // "SUCCESS", "FAILED", "IN_PROGRESS"
+  traderCount  Int?
+  errorMessage String?
+  updatedAt    DateTime @updatedAt
+}
