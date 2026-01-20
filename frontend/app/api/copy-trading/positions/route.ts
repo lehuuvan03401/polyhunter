@@ -47,35 +47,59 @@ export async function GET(request: Request) {
         // We do have `CopyTrade` history which has `tokenId` AND `marketSlug`/`outcome`.
         // We can join or double-lookup.
 
-        const enrichedPositions = await Promise.all(positions.map(async (pos) => {
-            // Find the latest CopyTrade for this tokenId to get metadata
-            // (Optimize this via join in future, currently 1 query per pos)
-            const tradeInfo = await prisma.copyTrade.findFirst({
-                where: { tokenId: pos.tokenId },
-                select: { marketSlug: true, outcome: true, conditionId: true, detectedAt: true },
-                orderBy: { detectedAt: 'desc' }
+        const tokenIds = positions.map(p => p.tokenId).filter((id): id is string => !!id);
+        const uniqueTokenIds = Array.from(new Set(tokenIds));
+
+        // 1. Batch Fetch Metadata (DB)
+        const tradeMetadata = await prisma.copyTrade.findMany({
+            where: { tokenId: { in: uniqueTokenIds } },
+            select: { tokenId: true, marketSlug: true, outcome: true, detectedAt: true },
+            orderBy: { detectedAt: 'desc' },
+            distinct: ['tokenId'] // Get latest per token if logic allows, or we filter manually. DISTINCT might not be supported on all DBs like this, safe to fetch all and map.
+            // SQLite/Postgres support distinct on specific columns? Prisma `distinct` is supported.
+            // But to be safe and simple: fetch all matches and we map by tokenId (taking the first/latest).
+        });
+
+        // Map metadata for O(1) lookup
+        const metadataMap = new Map<string, typeof tradeMetadata[0]>();
+        tradeMetadata.forEach(trade => {
+            // Since we ordered by detectedAt desc, the first one we see is likely the latest (or we just overwrite? No, findMany returns array)
+            // Actually findMany returns all. We want the latest.
+            // If we use the map set, we should do it such that the latest one sticks.
+            // If the query ordered by detectedAt DESC, the first one in the list is the latest.
+            // So we set if not exists.
+            if (!metadataMap.has(trade.tokenId)) {
+                metadataMap.set(trade.tokenId, trade);
+            }
+        });
+
+        // 2. Batch Fetch Prices (SDK)
+        let priceMap = new Map<string, number>();
+        try {
+            // We request 'BUY' side (Bids) to get the price we can SELL at (Exit Price)
+            const orderbooks = await polyClient.markets.getTokenOrderbooks(
+                uniqueTokenIds.map(id => ({ tokenId: id, side: 'BUY' as const }))
+            );
+
+            orderbooks.forEach((book, tokenId) => {
+                // Use Best Bid as current price
+                if (book.bids.length > 0) {
+                    priceMap.set(tokenId, book.bids[0].price);
+                } else {
+                    priceMap.set(tokenId, 0);
+                }
             });
+        } catch (err) {
+            console.error("Failed to batch fetch prices", err);
+            // Fallback to empty map, prices will be null/0
+        }
 
-            if (!tradeInfo) {
-                console.warn(`Missing CopyTrade info for position Token ${pos.tokenId} (Wallet: ${pos.walletAddress})`);
-            }
+        const enrichedPositions = positions.map((pos) => {
+            const tradeInfo = metadataMap.get(pos.tokenId);
+            const curPrice = priceMap.get(pos.tokenId) ?? null; // null if not found/fetched
 
-            // Fetch live price for PnL calculation
-            let curPrice = null;
             let percentPnl = 0;
-            try {
-                // Use getLastTradePrice from SDK
-                curPrice = await polyClient.markets.getLastTradePrice(pos.tokenId);
-            } catch (err) {
-                // Ignore price fetch errors, keep as null
-                console.warn(`Failed to fetch price for ${pos.tokenId}`, err);
-            }
-
             if (curPrice !== null && pos.avgEntryPrice > 0) {
-                // If holding Long/Yes, PnL = (Cur - Avg) / Avg
-                // If holding Short/No, this logic assumes we hold "Token Shares" at a price.
-                // In Polymarket, you hold outcome tokens (YES or NO). The price of that token moves.
-                // So (CurrentPrice - AvgEntry) / AvgEntry is correct for both.
                 percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
             }
 
@@ -88,10 +112,10 @@ export async function GET(request: Request) {
                 curPrice: curPrice,
                 percentPnl: percentPnl,
                 totalCost: pos.totalCost,
-                simulated: true, // Flag for UI
+                simulated: true,
                 timestamp: tradeInfo?.detectedAt ? new Date(tradeInfo.detectedAt).getTime() : Date.now()
             };
-        }));
+        });
 
         return NextResponse.json(enrichedPositions);
 
