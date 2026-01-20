@@ -14,7 +14,8 @@
 
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaLibSql } from '@prisma/adapter-libsql';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
 
 // --- CONFIG ---
@@ -37,9 +38,9 @@ console.log('══════════════════════�
 // --- PRISMA ---
 import path from 'path';
 
-// Use absolute path for database to avoid timeout issues
-const dbPath = path.join(process.cwd(), 'dev.db');
-const adapter = new PrismaLibSql({ url: `file:${dbPath}` });
+const connectionString = `${process.env.DATABASE_URL}`;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 // --- TRACKING STATE ---

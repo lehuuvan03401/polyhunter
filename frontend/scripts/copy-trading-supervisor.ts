@@ -14,7 +14,8 @@
 import 'dotenv/config';
 
 import { PrismaClient } from '@prisma/client';
-import { PrismaLibSql } from '@prisma/adapter-libsql';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 import path from 'path';
 import { ethers } from 'ethers';
 import { EncryptionService } from '../../src/core/encryption.js'; // Import EncryptionService
@@ -68,13 +69,10 @@ console.log(`[Supervisor] 🔌 RPC: ${RPC_URL}`);
 console.log(`[Supervisor] 🏭 ProxyFactory: ${CONTRACT_ADDRESSES.polygon.proxyFactory}`);
 console.log(`[Supervisor] 🏢 Executor: ${CONTRACT_ADDRESSES.polygon.executor}`);
 console.log(`[Supervisor] 🏛️  CTF: ${CONTRACT_ADDRESSES.ctf}`);
-const adapter = new PrismaLibSql({
-    url: process.env.DATABASE_URL
-});
-const prisma = new PrismaClient({
-    adapter,
-    log: ['error'], // Less logs for supervisor
-});
+const connectionString = `${process.env.DATABASE_URL}`;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 const debtRepository = new PrismaDebtRepository(prisma);
 const debtLogger = new PrismaDebtLogger(prisma);

@@ -13,7 +13,8 @@
 
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaLibSql } from '@prisma/adapter-libsql';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
 
 // --- CONFIG ---
@@ -36,7 +37,9 @@ console.log(`Network: Polygon Mainnet (WebSocket only, no RPC required)`);
 console.log('============================================\n');
 
 // --- PRISMA ---
-const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL });
+const connectionString = `${process.env.DATABASE_URL}`;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 // --- METRICS ---
