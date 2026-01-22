@@ -604,12 +604,44 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
 async function printSummary() {
     const duration = (Date.now() - startTime) / 1000 / 60;
 
-    // Calculate unrealized P&L (use last trade price as market price)
+    // Calculate unrealized PnL with LIVE prices
     let unrealizedPnL = 0;
+
+    // Batch fetch prices for summary
+    const activeTokenIds = Array.from(positions.keys());
+    const priceMap = new Map<string, number>();
+
+    if (activeTokenIds.length > 0) {
+        console.log(`\n🔎 Fetching live prices for ${activeTokenIds.length} active positions...`);
+        try {
+            for (const tokenId of activeTokenIds) {
+                const pos = positions.get(tokenId);
+                if (!pos) continue;
+                try {
+                    if (pos.marketSlug) {
+                        const resp = await fetch(`${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            const m = Array.isArray(data) ? data[0] : data;
+                            if (m) {
+                                const token = (m.tokens || []).find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
+                                if (token && token.price) {
+                                    priceMap.set(tokenId, Number(token.price));
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { }
+            }
+        } catch (e) {
+            console.warn('   ⚠️ Failed to fetch live prices for summary');
+        }
+    }
     for (const [tokenId, pos] of positions) {
         if (pos.balance > 0) {
-            // For simplicity, assume current price = last entry price (would need orderbook for real mark-to-market)
-            const marketValue = pos.balance * pos.avgEntryPrice;
+            // Use live price if available, else entry price
+            const livePrice = priceMap.get(tokenId) ?? pos.avgEntryPrice;
+            const marketValue = pos.balance * livePrice;
             unrealizedPnL += marketValue - pos.totalCost;
         }
     }

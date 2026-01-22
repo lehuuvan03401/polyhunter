@@ -87,6 +87,7 @@ export async function GET(request: Request) {
 
         // 3. Batch Fetch Resolution Status (Gamma Direct HTTP)
         const marketResolutionMap = new Map<string, { resolved: boolean, winner: boolean }>();
+        const gammaPriceMap = new Map<string, number>(); // Secondary price source
         try {
             const tasks: { type: 'condition' | 'slug', value: string }[] = [];
             const processedKeys = new Set<string>();
@@ -132,6 +133,40 @@ export async function GET(request: Request) {
                                 } catch {
                                     if (Array.isArray(market.outcomePrices)) outcomePrices = market.outcomePrices.map(Number);
                                 }
+                            }
+
+                            // Store Gamma Prices for Fallback
+                            if (Array.isArray(market.tokens)) {
+                                market.tokens.forEach((t: any) => {
+                                    if (t.token_id && t.price !== undefined) {
+                                        // If we have token specific price
+                                        gammaPriceMap.set(t.token_id, Number(t.price));
+                                    } else if (t.token_id && t.outcome) {
+                                        // Try to map via outcome index
+                                        // This is tricky without index but usually they are ordered.
+                                        // Let's rely on outcome name matching if possible or simple index if outcomes match
+                                    }
+                                });
+                            }
+
+                            // Map outcome prices to tokens via outcome name
+                            if (outcomePrices.length > 0 && Array.isArray(market.outcomes)) {
+                                let outcomes: string[] = [];
+                                try { outcomes = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes; } catch { if (Array.isArray(market.outcomes)) outcomes = market.outcomes; }
+
+                                outcomes.forEach((outcomeName, idx) => {
+                                    const price = outcomePrices[idx] || 0;
+
+                                    uniqueTokenIds.forEach(tid => {
+                                        const meta = metadataMap.get(tid);
+                                        // Match by Condition ID and Outcome Name
+                                        if (meta && meta.conditionId === market.conditionId && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
+                                            if (!gammaPriceMap.has(tid)) {
+                                                gammaPriceMap.set(tid, price);
+                                            }
+                                        }
+                                    });
+                                });
                             }
 
                             const isResolvedState = market.closed || (outcomePrices.some(p => p >= 0.95 || p <= 0.05));
@@ -210,7 +245,7 @@ export async function GET(request: Request) {
             if (pos.avgEntryPrice > 0 && curPrice !== null) {
                 percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
                 if (percentPnl < -1) percentPnl = -1;
-                if (percentPnl > 10) percentPnl = 10;
+                // if (percentPnl > 10) percentPnl = 10; // Cap visual PnL? Maybe not.
             }
 
             const estValue = pos.balance * (curPrice || 0);
@@ -223,6 +258,21 @@ export async function GET(request: Request) {
             }
             if (resolution && resolution.resolved) {
                 status = resolution.winner ? 'SETTLED_WIN' : 'SETTLED_LOSS';
+            }
+
+            // Fallback: If price is 0 but we have Gamma metadata, try to find current price from metadata map (outcomePrices)
+            // This fixes the issue where Simulation shows Entry Price == Current Price because CLOB failed
+            if ((curPrice === pos.avgEntryPrice || curPrice === 0) && !resolution?.resolved) {
+                const bestGammaPrice = gammaPriceMap.get(pos.tokenId);
+                if (bestGammaPrice !== undefined) {
+                    curPrice = bestGammaPrice;
+                }
+            }
+
+            // Re-calculate PnL with finalized curPrice
+            if (pos.avgEntryPrice > 0 && curPrice !== null) {
+                percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
+                if (percentPnl < -1) percentPnl = -1;
             }
 
             return {
