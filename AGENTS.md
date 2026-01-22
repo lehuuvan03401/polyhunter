@@ -42,26 +42,49 @@ poly-hunter/
 │   └── index.ts                # SDK 入口点
 ├── frontend/                   # Next.js 16 前端应用
 │   ├── app/                    # App Router 页面
+│   │   ├── [slug]/             # 动态路由（市场详情）
 │   │   ├── affiliate/          # 联盟推广页面
 │   │   ├── api/                # API 路由
+│   │   │   ├── affiliate/      # 联盟推广 API
+│   │   │   ├── copy-trading/   # 复制交易 API
+│   │   │   ├── markets/        # 市场数据 API
+│   │   │   ├── proxy/          # 代理 API
+│   │   │   ├── traders/        # 交易者 API
+│   │   │   └── admin/          # 管理员 API
 │   │   ├── dashboard/          # 仪表板
 │   │   ├── markets/            # 市场页面
 │   │   ├── portfolio/          # 投资组合
+│   │   ├── pricing/            # 定价页面
+│   │   ├── settings/           # 设置页面
 │   │   ├── smart-money/        # 智能资金页面
-│   │   ├── traders/            # 交易者页面
-│   │   └── settings/           # 设置页面
+│   │   ├── support/            # 支持页面
+│   │   └── traders/            # 交易者页面
 │   ├── components/             # React 组件
 │   ├── lib/                    # 工具库和服务
 │   ├── prisma/                 # Prisma 数据库模型
-│   └── scripts/                # 实用脚本
+│   ├── scripts/                # 实用脚本
+│   └── logs/                   # 日志文件
 ├── contracts/                  # Hardhat 智能合约
-│   ├── contracts/              # 合约源码（Proxy、Factory、Treasury）
+│   ├── contracts/              # 合约源码（Proxy、Factory、Treasury、Executor）
 │   ├── scripts/                # 部署脚本
 │   └── test/                   # 合约测试
 ├── backend/                    # 后端服务
 │   └── affiliate-service/      # Spring Boot 联盟推广服务
 ├── examples/                   # SDK 使用示例
 ├── scripts/                    # 实用脚本和工具
+│   ├── api-verification/       # API 验证
+│   ├── approvals/              # 授权操作
+│   ├── arb/                    # 套利相关
+│   ├── arb-tests/              # 套利测试
+│   ├── deposit/                # 存款操作
+│   ├── research/               # 市场研究
+│   ├── smart-money/            # 智能资金测试
+│   ├── trading/                # 交易测试
+│   ├── verify/                 # 验证脚本
+│   ├── wallet/                 # 钱包操作
+│   ├── archive/                # 归档脚本
+│   ├── copy-trading-worker.ts  # 复制交易工作器
+│   └── test-copy-flow.ts       # 复制交易流程测试
 ├── docs/                       # 文档
 ├── openspec/                   # OpenSpec 规范管理
 │   ├── specs/                  # 当前规范
@@ -88,6 +111,8 @@ poly-hunter/
 - **数据库**: Prisma ORM ^7.2.0 (PostgreSQL)
 - **图表**: Recharts ^3.6.0
 - **动画**: Framer Motion ^12.23.26
+- **数据获取**: SWR ^2.3.8
+- **UI 组件**: Lucide React ^0.562.0, Sonner ^2.0.7
 
 ### 智能合约
 - **框架**: Hardhat ^2.22.0
@@ -112,6 +137,7 @@ poly-hunter/
 - **ArbitrageService** - 套利检测与执行
 - **AuthorizationService** - 代币授权管理
 - **SwapService** - DEX 交换服务
+- **CopyTradingExecutionService** - 复制交易执行服务
 
 ### Layer 2: 低级客户端（高级用户）
 - **DataApiClient** - 持仓、交易、排行榜
@@ -167,14 +193,16 @@ poly-hunter/
 - Next.js 16 + React 19
 - Privy 嵌入式钱包
 - 实时市场数据展示
-- 投资组合管理
+- 投资组合管理（包含 ROI、最大收益等）
 - 智能资金复制交易
 - 联盟推广系统（5级层级）
+- 支持页面
 
 ### 7. 智能合约
 - PolyHunterProxy - 用户交易代理
 - ProxyFactory - 代理工厂
 - Treasury - 费用管理
+- PolyHunterExecutor - 执行器
 - 自动费用收取（仅利润部分）
 
 ### 8. 后端服务
@@ -182,6 +210,19 @@ poly-hunter/
 - 联盟推广系统
 - PostgreSQL 数据库
 - OpenAPI 文档
+
+### 9. 模拟结算引擎
+- 市场结算事件监听
+- 自动结算模拟持仓
+- 胜利份额兑换为 $1.00
+- 失败份额过期为 $0.00
+- 历史记录更新
+
+### 10. 价格获取机制
+- CLOB 订单簿价格（主要来源）
+- Gamma API 价格（备用来源）
+- 实时价格更新
+- 准确的 PnL 计算
 
 ## 开发约定
 
@@ -208,6 +249,7 @@ poly-hunter/
 - TypeScript 5
 - Privy 嵌入式钱包
 - Prisma ORM
+- SWR 数据获取
 
 ### 智能合约约定
 - Solidity ^0.8.24
@@ -312,6 +354,9 @@ pnpm example:ctf                # CTF 操作
 pnpm example:live-arb           # 实时套利扫描
 pnpm example:trending-arb       # 趋势套利监控
 pnpm example:arb-service        # 套利服务
+
+# 复制交易工作器
+pnpm run copy-worker            # 启动复制交易工作器
 ```
 
 ## 重要提示
@@ -343,6 +388,16 @@ pnpm example:arb-service        # 套利服务
 - 无需助记词
 - 自动管理私钥
 
+### 模拟结算
+- 复制交易工作器监听市场结算事件
+- 自动结算模拟持仓为最终价值（$1 或 $0）
+- 确保投资组合显示准确的 PnL
+
+### 价格获取
+- 优先使用 CLOB 订单簿价格
+- 备用 Gamma API 价格用于流动性不足的市场
+- 确保实时价格准确性
+
 ## 数据库架构
 
 前端使用 Prisma ORM 管理 PostgreSQL 数据库，主要模型包括：
@@ -353,6 +408,7 @@ pnpm example:arb-service        # 套利服务
 - **TeamClosure** - 用于高效树遍历的闭包表
 - **Payout** - 提现记录
 - **CommissionLog** - 佣金详细账本
+- **ReferralVolume** - 每日交易量聚合
 
 ### 代理系统
 - **UserProxy** - 用户的交易代理钱包（3级订阅：STARTER、PRO、WHALE）
@@ -364,9 +420,9 @@ pnpm example:arb-service        # 套利服务
 - **CopyTrade** - 单个复制交易记录
 - **SyncLog** - 同步历史记录
 - **DebtRecord** - 失败报销的债务记录
+- **UserPosition** - 用户持仓（成本基础/利润计算）
 
 ### 利润费用系统
-- **UserPosition** - 用户持仓（成本基础/利润计算）
 - **VolumeTier** - 交易量费用层级配置
 
 ### 排行榜缓存
@@ -421,7 +477,10 @@ openspec show affiliate-system --type spec
 ### 当前活跃变更
 - **cache-trader-leaderboard** - 缓存交易者排行榜数据
 - **add-affiliate-rules-page** - 添加联盟推广规则页面
+- **enhance-portfolio-ui** - 增强投资组合 UI（ROI、最大收益、平均价格）
 - **enhance-positions-display** - 增强持仓显示
+- **fix-simulated-settlement** - 修复模拟结算逻辑
+- **fix-simulation-pricing** - 修复模拟价格获取
 - **implement-comprehensive-affiliate-system** - 实现综合联盟推广系统
 - **implement-execution-modes** - 实现执行模式
 - **improve-team-network-ui** - 改进团队网络 UI
@@ -459,6 +518,27 @@ function getTokenPrice(market: UnifiedMarket, outcome: 'Yes' | 'No'): number {
 ```
 
 **变更原因**：数组格式更好地支持多结果市场，并且与 Polymarket API 响应格式更一致。
+
+### 新增功能
+
+#### 模拟结算引擎
+- 监听市场结算事件
+- 自动结算模拟持仓
+- 胜利份额兑换为 $1.00
+- 失败份额过期为 $0.00
+
+#### 增强的价格获取
+- CLOB 订单簿价格（主要）
+- Gamma API 价格（备用）
+- 实时价格更新
+- 准确的 PnL 计算
+
+#### 投资组合 UI 增强
+- ROI 列显示
+- 最大收益列显示
+- 平均价格列显示
+- 总投资额列显示
+- 更清晰的术语（Side、Shares）
 
 ## 文档资源
 
