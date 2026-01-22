@@ -181,7 +181,7 @@ export class TradingService {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
       console.log(`[TradingService] ⚠️ Localhost detected. Mocking CLOB initialization.`);
       this.credentials = {
         key: 'mock-key',
@@ -245,7 +245,7 @@ export class TradingService {
       return this.tickSizeCache.get(tokenId)! as TickSize;
     }
 
-    if ((this.chainId as any) === LOCAL_CHAIN_ID) return { minimum_tick_size: 0.01 } as any;
+    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) return { minimum_tick_size: 0.01 } as any;
 
     const client = await this.ensureInitialized();
     const tickSize = await client.getTickSize(tokenId);
@@ -261,7 +261,7 @@ export class TradingService {
       return this.negRiskCache.get(tokenId)!;
     }
 
-    if ((this.chainId as any) === LOCAL_CHAIN_ID) return false;
+    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) return false;
 
     const client = await this.ensureInitialized();
     const negRisk = await client.getNegRisk(tokenId);
@@ -280,7 +280,7 @@ export class TradingService {
     const client = await this.ensureInitialized();
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
-      if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+      if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
         // Mock success for localhost
         console.log(`[TradingService] ⚠️ Localhost: Mocking Limit Order for ${params.tokenId}`);
         return {
@@ -337,7 +337,7 @@ export class TradingService {
   async createMarketOrder(params: MarketOrderParams): Promise<OrderResult> {
     const client = await this.ensureInitialized();
 
-    if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
       // Mock success for localhost
       console.log(`[TradingService] ⚠️ Localhost: Mocking Market Order for ${params.tokenId}`);
       return {
@@ -486,7 +486,7 @@ export class TradingService {
 
   async getOrderBook(tokenId: string): Promise<Orderbook> {
     const client = await this.ensureInitialized();
-    if ((this.chainId as any) === LOCAL_CHAIN_ID) {
+    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
       return {
         hash: "mock-hash",
         asks: [{ price: "0.55", size: "1000" }],

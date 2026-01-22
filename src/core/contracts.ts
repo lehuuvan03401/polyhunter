@@ -29,6 +29,7 @@ export const CTF_ABI = [
     'function setApprovalForAll(address operator, bool approved) external',
     'function isApprovedForAll(address account, address operator) external view returns (bool)',
     'function balanceOf(address account, uint256 id) external view returns (uint256)',
+    'function redeemPositions(address collateralToken, bytes32 parentCollectionId, bytes32 conditionId, uint256[] indexSets) external',
     'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
 ] as const;
 

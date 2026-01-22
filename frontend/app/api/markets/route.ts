@@ -69,7 +69,8 @@ export async function GET(request: NextRequest) {
 
         } catch (clobError) {
             console.error("CLOB fallback failed:", clobError);
-            return NextResponse.json({ error: "Failed to fetch markets" }, { status: 500 });
+            // Return empty list instead of 500 to prevent UI crash
+            return NextResponse.json([]);
         }
     }
 }

@@ -16,7 +16,7 @@ async function main() {
     // Send 1000 native tokens (ETH/MATIC)
     const tx = await deployer.sendTransaction({
         to: targetAddress,
-        value: ethers.utils.parseEther("1000.0"),
+        value: ethers.parseEther("1000.0"),
     });
 
     await tx.wait();

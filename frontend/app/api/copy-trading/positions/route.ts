@@ -2,13 +2,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
-import { GammaMarket } from '@catalyst-team/poly-sdk';
 import { parseMarketSlug, parseOutcome } from '@/lib/utils';
+
+const GAMMA_API_BASE = process.env.GAMMA_API_URL || 'https://gamma-api.polymarket.com';
+// Force recompile
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-// parsers moved to @/lib/utils
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -18,7 +18,6 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Wallet address required' }, { status: 400 });
     }
 
-    // Standardize to lowercase
     const normalizedWallet = walletAddress.toLowerCase();
 
     try {
@@ -34,18 +33,16 @@ export async function GET(request: Request) {
         const tokenIds = positions.map(p => p.tokenId).filter((id): id is string => !!id);
         const uniqueTokenIds = Array.from(new Set(tokenIds));
 
-        // 1. Batch Fetch Metadata (DB)
+        // 1. Batch Fetch Metadata
         const tradeMetadata = await prisma.copyTrade.findMany({
             where: { tokenId: { in: uniqueTokenIds } },
-            select: { tokenId: true, marketSlug: true, outcome: true, detectedAt: true },
+            select: { tokenId: true, marketSlug: true, outcome: true, detectedAt: true, conditionId: true },
             orderBy: { detectedAt: 'desc' }
         });
 
         // Map metadata for O(1) lookup
-        // We iterate through all trades and pick the BEST metadata (prioritizing non-null slug)
         const metadataMap = new Map<string, typeof tradeMetadata[0]>();
 
-        // Group by Token ID
         const tradesByToken: Record<string, typeof tradeMetadata> = {};
         tradeMetadata.forEach(t => {
             if (t.tokenId) {
@@ -54,27 +51,23 @@ export async function GET(request: Request) {
             }
         });
 
-        // For each token, find the best metadata
         uniqueTokenIds.forEach(tokenId => {
             const trades = tradesByToken[tokenId];
             if (trades && trades.length > 0) {
-                // Find ANY trade with a marketSlug
                 const withSlug = trades.find(t => t.marketSlug !== null && t.marketSlug !== '');
-                // Find ANY trade with an outcome
                 const withOutcome = trades.find(t => t.outcome !== null && t.outcome !== '');
-
-                // Use the latest trade for timestamp/base, but overwrite slug/outcome if better ones exist
                 const latest = trades[0];
 
                 metadataMap.set(tokenId, {
                     ...latest,
                     marketSlug: withSlug?.marketSlug || latest.marketSlug,
-                    outcome: withOutcome?.outcome || latest.outcome
+                    outcome: withOutcome?.outcome || latest.outcome,
+                    conditionId: latest.conditionId
                 });
             }
         });
 
-        // 2. Batch Fetch Prices (SDK)
+        // 2. Batch Fetch Prices (Orderbook)
         let priceMap = new Map<string, number>();
         try {
             const orderbooks = await polyClient.markets.getTokenOrderbooks(
@@ -92,50 +85,149 @@ export async function GET(request: Request) {
             console.error("Failed to batch fetch prices", err);
         }
 
-        console.log(`Debug: Fetched ${priceMap.size} prices for ${uniqueTokenIds.length} tokens.`);
+        // 3. Batch Fetch Resolution Status (Gamma Direct HTTP)
+        const marketResolutionMap = new Map<string, { resolved: boolean, winner: boolean }>();
+        try {
+            const tasks: { type: 'condition' | 'slug', value: string }[] = [];
+            const processedKeys = new Set<string>();
+
+            uniqueTokenIds.forEach(id => {
+                const info = metadataMap.get(id);
+                if (info) {
+                    if (info.conditionId && !processedKeys.has(info.conditionId)) {
+                        tasks.push({ type: 'condition', value: info.conditionId });
+                        processedKeys.add(info.conditionId);
+                    } else if (info.marketSlug && !processedKeys.has(info.marketSlug) && !info.conditionId) {
+                        tasks.push({ type: 'slug', value: info.marketSlug });
+                        processedKeys.add(info.marketSlug);
+                    }
+                }
+            });
+
+            // Concurrency Control
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+                const batch = tasks.slice(i, i + BATCH_SIZE);
+                await Promise.all(batch.map(async (task) => {
+                    try {
+                        let url = `${GAMMA_API_BASE}/markets?limit=1`;
+                        if (task.type === 'condition') {
+                            url += `&condition_id=${task.value}`;
+                        } else {
+                            url += `&slug=${task.value}`;
+                        }
+
+                        const response = await fetch(url);
+                        if (!response.ok) return;
+
+                        const data = await response.json();
+                        if (Array.isArray(data) && data.length > 0) {
+                            const market = data[0];
+
+                            // Parse Outcome Prices
+                            let outcomePrices: number[] = [];
+                            if (market.outcomePrices) {
+                                try {
+                                    outcomePrices = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices).map(Number) : market.outcomePrices.map(Number);
+                                } catch {
+                                    if (Array.isArray(market.outcomePrices)) outcomePrices = market.outcomePrices.map(Number);
+                                }
+                            }
+
+                            const isResolvedState = market.closed || (outcomePrices.some(p => p >= 0.95 || p <= 0.05));
+
+                            if (isResolvedState) {
+                                const tokens = market.tokens;
+                                if (Array.isArray(tokens)) {
+                                    tokens.forEach((t: any) => {
+                                        if (t.token_id && (t.winner || t.price !== undefined)) {
+                                            const tid = t.token_id;
+                                            const price = Number(t.price || 0); // or look at outcomePrices
+                                            // Fallback winner check
+                                            let isWinner = t.winner;
+                                            if (isWinner === undefined) {
+                                                isWinner = price >= 0.95;
+                                            }
+
+                                            // Check if price indicates resolution
+                                            if (price >= 0.95 || price <= 0.05 || t.winner !== undefined) {
+                                                marketResolutionMap.set(tid, {
+                                                    resolved: true,
+                                                    winner: !!isWinner
+                                                });
+                                            }
+                                        }
+                                    });
+                                }
+
+                                // Fallback: Match by outcome string if we have outcomePrices but no tokens details
+                                if (outcomePrices.length > 0 && Array.isArray(market.outcomes)) {
+                                    let outcomes: string[] = [];
+                                    try { outcomes = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes; } catch { if (Array.isArray(market.outcomes)) outcomes = market.outcomes; }
+
+                                    outcomes.forEach((outcomeName, idx) => {
+                                        const price = outcomePrices[idx] || 0;
+                                        if (price >= 0.95 || price <= 0.05) {
+                                            const isWin = price >= 0.95;
+                                            uniqueTokenIds.forEach(tid => {
+                                                const meta = metadataMap.get(tid);
+                                                if (meta && meta.conditionId === market.conditionId && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
+                                                    marketResolutionMap.set(tid, { resolved: true, winner: isWin });
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`Failed to fetch/parse market ${task.value}`, e);
+                    }
+                }));
+            }
+
+        } catch (err) {
+            console.error("Failed to fetch resolution status", err);
+        }
+
+        console.log(`Debug: Fetched ${priceMap.size} prices. Resolution Update Count: ${marketResolutionMap.size}`);
 
         const enrichedPositions = positions.map((pos) => {
             const tradeInfo = metadataMap.get(pos.tokenId);
             const rawPrice = priceMap.get(pos.tokenId);
 
-            // If rawPrice is explicitly defined (even 0), use it. Only fallback if undefined.
-            const curPrice = rawPrice !== undefined ? rawPrice : pos.avgEntryPrice;
+            // Default to avgEntryPrice if no live data
+            let curPrice = rawPrice !== undefined ? rawPrice : pos.avgEntryPrice;
 
-            // Debug log
-            if (pos.tokenId.includes('60506338') || pos.tokenId.includes('48162')) { // Log for specific tokens seen in screenshot
-                console.log(`[PosAPI] Token: ${pos.tokenId.slice(0, 10)}... | Raw: ${rawPrice}, Status: ${rawPrice !== undefined && rawPrice <= 0.05 ? 'LOST' : 'OPEN'}, Cur: ${curPrice}, Entry: ${pos.avgEntryPrice}`);
+            // OVERRIDE: Check resolution status
+            const resolution = marketResolutionMap.get(pos.tokenId);
+            if (resolution && resolution.resolved) {
+                curPrice = resolution.winner ? 1.0 : 0.0;
             }
 
-            // Safe PnL calculation with edge case handling
+            // Safe PnL calculation
             let percentPnl = 0;
             if (pos.avgEntryPrice > 0 && curPrice !== null) {
                 percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
-                // Clamp extreme values (shouldn't exceed +/- 100% in normal cases)
                 if (percentPnl < -1) percentPnl = -1;
-                if (percentPnl > 10) percentPnl = 10; // Cap at 1000%
+                if (percentPnl > 10) percentPnl = 10;
             }
 
-            // Calculate estimated current value
             const estValue = pos.balance * (curPrice || 0);
 
-            // Determine market status based on current price
-            // If price is 0 (dropped to nothing) -> the outcome LOST
-            // If price is 1 (or very close) -> the outcome WON
-            // If price is between 0 and 1 -> still OPEN
+            // Determine status
             let status: 'OPEN' | 'SETTLED_WIN' | 'SETTLED_LOSS' = 'OPEN';
             if (rawPrice !== undefined) {
-                if (rawPrice >= 0.95) {
-                    // Price went to ~1, this outcome WON
-                    status = 'SETTLED_WIN';
-                } else if (rawPrice <= 0.05) {
-                    // Price dropped to ~0, this outcome LOST
-                    status = 'SETTLED_LOSS';
-                }
+                if (rawPrice >= 0.95) status = 'SETTLED_WIN';
+                else if (rawPrice <= 0.05) status = 'SETTLED_LOSS';
+            }
+            if (resolution && resolution.resolved) {
+                status = resolution.winner ? 'SETTLED_WIN' : 'SETTLED_LOSS';
             }
 
             return {
                 tokenId: pos.tokenId,
-                slug: tradeInfo?.marketSlug || null, // Raw slug for building Polymarket URL
+                slug: tradeInfo?.marketSlug || null,
                 title: parseMarketSlug(tradeInfo?.marketSlug, pos.tokenId),
                 outcome: parseOutcome(tradeInfo?.outcome),
                 size: pos.balance,
@@ -157,4 +249,3 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }
-

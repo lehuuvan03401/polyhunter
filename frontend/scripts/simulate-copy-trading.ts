@@ -16,7 +16,11 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
+import { RealtimeServiceV2 } from '../../src/services/realtime-service-v2.ts';
+import type { ActivityTrade, MarketEvent } from '../../src/services/realtime-service-v2.ts';
+import { GammaApiClient } from '../../src/index';
+import { RateLimiter } from '../../src/core/rate-limiter';
+import { createUnifiedCache } from '../../src/core/unified-cache';
 
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
@@ -46,6 +50,11 @@ const connectionString = `${process.env.DATABASE_URL}`;
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error'] });
+
+// --- SERVICES ---
+const rateLimiter = new RateLimiter();
+const cache = createUnifiedCache();
+const gammaClient = new GammaApiClient(rateLimiter, cache);
 
 // --- TRACKING STATE ---
 interface Position {
@@ -106,7 +115,7 @@ async function seedConfig() {
             traderName: '0x8dxd (Simulation)',
             maxSlippage: 2.0,
             slippageType: 'AUTO',
-            autoExecute: true,
+            autoExecute: false, // Don't let worker pick this up
             channel: 'EVENT_LISTENER',
             mode: 'FIXED_AMOUNT',
             fixedAmount: FIXED_COPY_AMOUNT,
@@ -468,6 +477,129 @@ async function handleTrade(trade: ActivityTrade) {
     await recordCopyTrade(trade, copyShares, trade.side === 'SELL' ? realizedPnL : undefined);
 }
 
+// --- SETTLEMENT HANDLER ---
+
+const SETTLEMENT_CACHE = new Set<string>();
+
+async function handleMarketResolution(event: MarketEvent): Promise<void> {
+    if (event.type !== 'resolved') return;
+
+    const conditionId = event.conditionId;
+    if (SETTLEMENT_CACHE.has(conditionId)) return;
+    SETTLEMENT_CACHE.add(conditionId);
+
+    console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}`);
+
+    try {
+        await resolveSimulatedPositions(conditionId);
+    } catch (error) {
+        console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
+    }
+}
+
+async function resolveSimulatedPositions(conditionId: string): Promise<void> {
+    console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
+
+    try {
+        // Wait a bit for Gamma API to update
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const market = await gammaClient.getMarketByConditionId(conditionId);
+
+        if (!market) {
+            console.warn(`   ⚠️ Market not found in Gamma API: ${conditionId}`);
+            return;
+        }
+
+        console.log(`   Market: ${market.question}`);
+        console.log(`   Outcomes: ${market.outcomes.join(', ')}`);
+        console.log(`   Prices: ${market.outcomePrices.join(', ')}`);
+
+        // Map Outcomes to Token IDs from our local cache or DB
+        // The simulation script records trades, so we can query DB for tokenIds associated with this condition
+        const relevantTrades = await prisma.copyTrade.findMany({
+            where: { conditionId: conditionId, configId: configId },
+            select: { tokenId: true, outcome: true },
+            distinct: ['tokenId']
+        });
+
+        const outcomeToTokenMap = new Map<string, string>();
+        relevantTrades.forEach((t) => {
+            if (t.outcome && t.tokenId) {
+                outcomeToTokenMap.set(t.outcome, t.tokenId);
+            }
+        });
+
+        // Determine winners and settle
+        for (let i = 0; i < market.outcomes.length; i++) {
+            const outcomeName = market.outcomes[i];
+            const price = market.outcomePrices[i];
+            const tokenId = outcomeToTokenMap.get(outcomeName);
+
+            // Also check current active positions if we missed the trade record mapping (fallback)
+            // But usually simulation implies we traded it.
+
+            if (!tokenId) continue;
+
+            let settlementValue = 0;
+            if (price >= 0.95) settlementValue = 1.0;
+            else if (price <= 0.05) settlementValue = 0.0;
+            else continue; // Not fully resolved yet?
+
+            // Check if we hold this token
+            const pos = positions.get(tokenId);
+            if (!pos || pos.balance <= 0) continue;
+
+            console.log(`   Processing Position: ${pos.balance.toFixed(2)} shares of '${outcomeName}'. Value: $${settlementValue}`);
+
+            // Settle it
+            const proceeds = pos.balance * settlementValue;
+            const costBasis = pos.balance * pos.avgEntryPrice;
+            const pnl = proceeds - costBasis;
+
+            // Update Metrics
+            realizedPnL += pnl;
+            totalSellVolume += (pos.balance * settlementValue); // Volume @ exit price?
+
+            console.log(`     ✅ Settled! PnL: $${pnl.toFixed(4)} (Proceeds: $${proceeds.toFixed(2)} - Cost: $${costBasis.toFixed(2)})`);
+
+            // Log Settlement Trade
+            await prisma.copyTrade.create({
+                data: {
+                    configId: configId,
+                    originalTrader: 'POLYMARKET_SETTLEMENT',
+                    originalSide: 'SELL',
+                    originalSize: pos.balance,
+                    originalPrice: settlementValue,
+                    marketSlug: market.slug,
+                    conditionId: conditionId,
+                    tokenId: tokenId,
+                    outcome: outcomeName,
+                    copySize: pos.balance,
+                    copyPrice: settlementValue,
+                    status: 'EXECUTED',
+                    executedAt: new Date(),
+                    txHash: 'sim-settlement',
+                    errorMessage: `Computed PnL: $${pnl.toFixed(4)}`
+                }
+            });
+
+            // Remove from DB Position
+            await prisma.userPosition.deleteMany({
+                where: {
+                    walletAddress: FOLLOWER_WALLET.toLowerCase(),
+                    tokenId: tokenId
+                }
+            });
+
+            // Remove from Local Map
+            positions.delete(tokenId);
+        }
+
+    } catch (error) {
+        console.error(`   ❌ Error in resolveSimulatedPositions:`, error);
+    }
+}
+
 // --- PRINT SUMMARY ---
 async function printSummary() {
     const duration = (Date.now() - startTime) / 1000 / 60;
@@ -553,6 +685,18 @@ async function main() {
         onTrade: handleTrade,
         onError: (err) => {
             console.error('❌ WebSocket error:', err.message);
+        }
+    });
+
+    // 4. Subscribe to Market Events (Settlement)
+    console.log('🔌 Subscribing to Market Events (Resolutions)...');
+    realtimeService.subscribeMarketEvents({
+        onMarketEvent: async (event) => {
+            try {
+                await handleMarketResolution(event);
+            } catch (err) {
+                console.error('[Sim] Error handling market event:', err);
+            }
         }
     });
 

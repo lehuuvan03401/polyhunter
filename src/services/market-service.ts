@@ -210,6 +210,10 @@ export class MarketService {
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       const book = await client.getOrderBook(tokenId) as OrderBookSummary;
 
+      if (!book) {
+        throw new Error(`[MarketService] getOrderBook returned null for ${tokenId}`);
+      }
+
       const bids = (book.bids || [])
         .map((l: { price: string; size: string }) => ({
           price: parseFloat(l.price),
@@ -250,6 +254,11 @@ export class MarketService {
       }));
       const books = await client.getOrderBooks(bookParams);
       const result = new Map<string, Orderbook>();
+
+      if (!books || !Array.isArray(books)) {
+        console.warn(`[MarketService] getOrderBooks returned invalid data: ${typeof books}`);
+        return result;
+      }
 
       for (const book of books) {
         const bids = (book.bids || [])

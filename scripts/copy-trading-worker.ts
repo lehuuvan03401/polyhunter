@@ -23,8 +23,8 @@
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
-import type { ActivityTrade } from '../src/services/realtime-service-v2.js';
-import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService } from '../src/index.js';
+import type { ActivityTrade, MarketEvent } from '../src/services/realtime-service-v2.js';
+import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService, GammaApiClient } from '../src/index.js';
 import { ethers } from 'ethers';
 
 // Dynamic import for Prisma to handle different runtime contexts
@@ -49,6 +49,9 @@ const realtimeService = new RealtimeServiceV2({ debug: false });
 // Trading service for direct execution (if private key is available)
 let tradingService: TradingService | null = null;
 let executionService: CopyTradingExecutionService | null = null;
+const rateLimiter = new RateLimiter();
+const cache = createUnifiedCache();
+const gammaClient = new GammaApiClient(rateLimiter, cache);
 
 // ============================================================================
 // State
@@ -447,6 +450,169 @@ async function recoverPendingTrades(): Promise<void> {
 }
 
 // ============================================================================
+// Settlement Handler
+// ============================================================================
+
+const SETTLEMENT_CACHE = new Set<string>(); // Prevent double processing
+
+async function handleMarketResolution(event: MarketEvent): Promise<void> {
+    // Only care about resolution
+    if (event.type !== 'resolved') return;
+
+    const conditionId = event.conditionId;
+    if (SETTLEMENT_CACHE.has(conditionId)) return;
+    SETTLEMENT_CACHE.add(conditionId);
+
+    console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}`);
+
+    // Data usually contains the winning outcome index or ID.
+    // For YES/NO markets, we usually get an index or a price vector.
+    // Let's inspect the data slightly or generalize.
+    // If we assume binary markets for now (Polymarket standard).
+    console.log('   Resolution Data:', JSON.stringify(event.data));
+
+    try {
+        await resolveSimulatedPositions(conditionId, event.data);
+    } catch (error) {
+        console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
+    }
+}
+
+async function resolveSimulatedPositions(conditionId: string, resolutionData: any): Promise<void> {
+    console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
+
+    try {
+        // 1. Fetch Market Details from Gamma (source of truth for results)
+        // We wait a few seconds to ensure Gamma API has updated (if the event came from Clob)
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        const market = await gammaClient.getMarketByConditionId(conditionId);
+
+        if (!market) {
+            console.warn(`   ⚠️ Market not found in Gamma API: ${conditionId}`);
+            return;
+        }
+
+        if (!market.closed) {
+            console.log(`   ℹ️ Market is not marked as CLOSED yet in Gamma. Waiting...`);
+            // It might be resolved but not 'closed' in Gamma struct?
+            // Let's trust outcomePrices if one is 1.0 (or close to it)
+        }
+
+        console.log(`   Market: ${market.question}`);
+        console.log(`   Outcomes: ${market.outcomes.join(', ')}`);
+        console.log(`   Prices: ${market.outcomePrices.join(', ')}`);
+
+        // 2. Map Outcomes to Token IDs using our Db history
+        const relevantTrades = await prisma.copyTrade.findMany({
+            where: { conditionId: conditionId },
+            select: { tokenId: true, outcome: true },
+            distinct: ['tokenId']
+        });
+
+        // Map: Outcome Name -> Token ID
+        const outcomeToTokenMap = new Map<string, string>();
+        relevantTrades.forEach((t: any) => {
+            if (t.outcome && t.tokenId) {
+                outcomeToTokenMap.set(t.outcome, t.tokenId);
+            }
+        });
+
+        // 3. Process each outcome
+        let settledCount = 0;
+
+        for (let i = 0; i < market.outcomes.length; i++) {
+            const outcomeName = market.outcomes[i];
+            const price = market.outcomePrices[i];
+            const tokenId = outcomeToTokenMap.get(outcomeName);
+
+            if (!tokenId) {
+                // We might not have traded this specific outcome side
+                continue;
+            }
+
+            // Determine settlement value ($1 or $0)
+            // We use a threshold because prices might be 0.999 or 0.001
+            let settlementValue = 0;
+            if (price >= 0.95) settlementValue = 1.0;
+            else if (price <= 0.05) settlementValue = 0.0;
+            else {
+                console.warn(`   ⚠️ Check Outcome '${outcomeName}' price ${price} is ambiguous. Skipping settlement.`);
+                continue;
+            }
+
+            // Find all positions for this token
+            const positions = await prisma.userPosition.findMany({
+                where: { tokenId: tokenId, balance: { gt: 0 } }
+            });
+
+            if (positions.length === 0) continue;
+
+            console.log(`   Processing ${positions.length} positions for '${outcomeName}' (Token: ${tokenId.slice(0, 10)}...). Value: $${settlementValue}`);
+
+            for (const pos of positions) {
+                const pnl = (settlementValue - pos.avgEntryPrice) * pos.balance;
+                const value = pos.balance * settlementValue;
+
+                // Create a "History" record (conceptually).
+                // Since we don't have a separate TradeHistory table visible here, 
+                // we will create a CopyTrade record with status 'EXECUTED' and side 'SELL' to represent the close.
+                // This will show up in stats but might look like a real trade.
+                // Alternatively, we just update the UserPosition to be closed (balance = 0).
+                // Or delete it.
+
+                // DECISION: Delete UserPosition and log.
+                // This removes it from "Open Positions".
+                // TODO: In future, add 'SettledPosition' table.
+
+                // Create a "closing" CopyTrade record for record-keeping?
+                // The dashboard reads 'CopyTrade' for history?
+                // NO, dashboard reads `UserPosition` for open, but `CopyTrade` for activity log.
+                // So adding a SELL CopyTrade is good.
+
+                await prisma.copyTrade.create({
+                    data: {
+                        configId: 'settlement-auto', // Placeholder, implies system action
+                        originalTrader: 'POLYMARKET_SETTLEMENT',
+                        originalSide: 'SELL',
+                        originalSize: pos.balance,
+                        originalPrice: settlementValue,
+                        marketSlug: market.slug,
+                        conditionId: conditionId,
+                        tokenId: tokenId,
+                        outcome: outcomeName,
+                        copySize: pos.balance,
+                        copyPrice: settlementValue,
+                        status: 'EXECUTED',
+                        executedAt: new Date(),
+                        txHash: 'simulated_settlement',
+                        errorMessage: `Auto-settled at $${settlementValue.toFixed(2)}`
+                    }
+                });
+
+                // Clear Position
+                await prisma.userPosition.delete({
+                    where: { id: pos.id }
+                });
+
+                console.log(`     ✅ Settled position for ${pos.walletAddress.slice(0, 8)}: ${pos.balance} shares @ $${settlementValue}`);
+                settledCount++;
+            }
+        }
+
+        if (settledCount > 0) {
+            console.log(`   ✅ Successfully settled ${settledCount} positions.`);
+        } else {
+            console.log(`   ℹ️ No active positions found to settle.`);
+        }
+
+    } catch (error) {
+        console.error(`   ❌ Error in resolveSimulatedPositions:`, error);
+    }
+}
+
+
+// ============================================================================
 // Stats Display
 // ============================================================================
 
@@ -574,6 +740,18 @@ async function start(): Promise<void> {
             console.log('⚠️ WebSocket connection timeout, continuing anyway...');
             resolve();
         }, 10000);
+    });
+
+    // Subscribe to Market Events (Resolution)
+    console.log('📡 Subscribing to market lifecycle events...');
+    realtimeService.subscribeMarketEvents({
+        onMarketEvent: async (event: MarketEvent) => {
+            try {
+                await handleMarketResolution(event);
+            } catch (error) {
+                console.error('Error in market event handler:', error);
+            }
+        }
     });
 
     // Subscribe to ALL trading activity

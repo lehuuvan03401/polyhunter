@@ -603,6 +603,56 @@ export class CopyTradingExecutionService {
         }
     }
 
+    /**
+     * Redeem Winning Positions (Settlement)
+     * Calls CTF.redeemPositions via Proxy
+     */
+    async redeemPositions(
+        proxyAddress: string,
+        conditionId: string,
+        indexSets: number[],
+        signer?: ethers.Signer,
+        overrides?: ethers.Overrides
+    ): Promise<{ success: boolean; txHash?: string; error?: string }> {
+        try {
+            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const executionSigner = this.getSigner(signer); // Worker Signer
+
+            if (!addresses.executor) throw new Error("Executor address not configured");
+            const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, executionSigner);
+            const ctfInterface = new ethers.utils.Interface(CTF_ABI);
+
+            console.log(`[CopyExec] 🏛️ Redeeming positions via Proxy ${proxyAddress}...`);
+            console.log(`           Condition: ${conditionId}`);
+            console.log(`           IndexSets: ${indexSets.join(', ')}`);
+
+            // Encode: ctf.redeemPositions(collateral, parentCollectionId, conditionId, indexSets)
+            // Collateral is USDC. ParentCollectionId is bytes32(0) for atomic conditions.
+            const cancelData = ctfInterface.encodeFunctionData('redeemPositions', [
+                addresses.usdc,
+                ethers.constants.HashZero, // parentCollectionId
+                conditionId,
+                indexSets
+            ]);
+
+            // Execute on Proxy
+            const tx = await executor.executeOnProxy(
+                proxyAddress,
+                CONTRACT_ADDRESSES.ctf,
+                cancelData,
+                overrides || {}
+            );
+            const receipt = await tx.wait();
+
+            console.log(`[CopyExec] ✅ Redemption Complete: ${receipt.transactionHash}`);
+            return { success: true, txHash: receipt.transactionHash };
+
+        } catch (error: any) {
+            console.error('[CopyExec] ❌ Redemption Failed:', error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
 
     /**
      * Calculate dynamic slippage based on Orderbook depth
