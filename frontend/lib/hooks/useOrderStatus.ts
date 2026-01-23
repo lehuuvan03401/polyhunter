@@ -28,6 +28,9 @@ export interface Order {
     errorMessage: string | null;
     filledSize: number;
     filledPercent: number;
+    leaderSize: number;
+    leaderPrice: number;
+    leaderTxHash: string | null;
 }
 
 // ... (keep interface UseOrderStatusReturn)

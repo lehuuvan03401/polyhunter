@@ -65,9 +65,11 @@ export async function GET(request: NextRequest) {
                 id: true,
                 status: true,
                 txHash: true,
+                originalTxHash: true,
                 originalSide: true,
                 copySize: true,
                 copyPrice: true,
+                originalSize: true,
                 originalPrice: true,
                 marketSlug: true,
                 tokenId: true,
@@ -102,6 +104,9 @@ export async function GET(request: NextRequest) {
             errorMessage: string | null;
             filledSize: number;
             filledPercent: number;
+            leaderSize: number;
+            leaderPrice: number;
+            leaderTxHash: string | null;
         };
 
         // Transform trades to orders
@@ -122,6 +127,9 @@ export async function GET(request: NextRequest) {
             // Filled info - would come from CLOB API in production
             filledSize: trade.status === 'EXECUTED' ? trade.copySize : 0,
             filledPercent: trade.status === 'EXECUTED' ? 100 : 0,
+            leaderSize: trade.originalSize,
+            leaderPrice: trade.originalPrice,
+            leaderTxHash: trade.originalTxHash,
         }));
 
         // Sort by newest first (no need to combine with strategies anymore)

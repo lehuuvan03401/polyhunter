@@ -296,6 +296,7 @@ model CopyTrade {
   originalSize   Float
   originalPrice  Float
   marketSlug     String?
+  originalTxHash String? // Leader's transaction hash
   conditionId    String?
   tokenId        String?
   outcome        String? // 'Yes' | 'No'

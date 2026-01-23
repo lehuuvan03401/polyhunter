@@ -353,7 +353,18 @@ function OrderRow({
                         </span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                        <span>${order.size.toFixed(2)}</span>
+                        <span title="Leader Size vs My Size" className="font-mono">L: ${order.leaderSize?.toFixed(2) ?? '-'} • My: ${order.size.toFixed(2)}</span>
+                        {order.leaderTxHash && (
+                            <a
+                                href={`https://polygonscan.com/tx/${order.leaderTxHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300"
+                                title="View Leader Transaction"
+                            >
+                                <ExternalLink className="h-3 w-3" />
+                            </a>
+                        )}
                         <span>•</span>
                         <span>{order.traderName || order.traderAddress.slice(0, 8)}</span>
                     </div>
@@ -387,7 +398,8 @@ function OrderRow({
                     <div className={cn('text-xs font-medium', statusColor)}>
                         {order.status}
                     </div>
-                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                    <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1 mb-0.5">Leader Time</div>
+                    <div className="text-xs text-foreground/80 whitespace-nowrap font-mono">
                         {new Date(order.detectedAt).toLocaleString([], {
                             month: 'short',
                             day: 'numeric',
@@ -423,7 +435,17 @@ function OrderRow({
                                 className="col-span-2 sm:col-span-1"
                             />
                             <DetailItem label="Order ID" value={order.orderId || 'N/A'} copyable={!!order.orderId} />
-                            <DetailItem label="Price" value={`$${order.price.toFixed(2)}`} />
+                            <DetailItem
+                                label="Price (Ex.)"
+                                value={`$${order.price.toFixed(2)}`}
+                                subValue={order.leaderPrice ? `Leader: $${order.leaderPrice.toFixed(2)}` : undefined}
+                            />
+                            <DetailItem
+                                label="Slippage"
+                                value={order.leaderPrice ? `${((order.price - order.leaderPrice) / order.leaderPrice * 100).toFixed(2)}%` : '-'}
+                                color={order.leaderPrice ? (order.price > order.leaderPrice ? 'text-red-400' : 'text-green-400') : undefined}
+                            />
+                            <DetailItem label="Leader Size" value={`$${order.leaderSize?.toFixed(2) ?? 'N/A'}`} />
                             <DetailItem
                                 label="Filled"
                                 value={`${order.filledPercent}%`}
@@ -468,12 +490,14 @@ function OrderRow({
 function DetailItem({
     label,
     value,
+    subValue,
     color,
     copyable,
     className
 }: {
     label: string;
     value: string;
+    subValue?: string;
     color?: string;
     copyable?: boolean;
     className?: string;
@@ -487,28 +511,33 @@ function DetailItem({
     return (
         <div className={className}>
             <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">{label}</span>
-            <div className="flex items-center gap-2">
-                <span className={cn('font-medium font-mono text-xs break-all', color)}>{value}</span>
-                {copyable && (
-                    <button
-                        onClick={handleCopy}
-                        className="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground hover:text-white shrink-0"
-                        title="Copy"
-                    >
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+            <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                    <span className={cn('font-medium font-mono text-xs break-all', color)}>{value}</span>
+                    {copyable && (
+                        <button
+                            onClick={handleCopy}
+                            className="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground hover:text-white shrink-0"
+                            title="Copy"
                         >
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                        </svg>
-                    </button>
+                            <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
+                {subValue && (
+                    <span className="text-[10px] text-muted-foreground font-mono">{subValue}</span>
                 )}
             </div>
         </div>

@@ -342,6 +342,7 @@ async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: n
                 copyPrice: trade.price,
                 status: 'EXECUTED',
                 txHash: `SIM-${trade.transactionHash}`,
+                originalTxHash: trade.transactionHash,
                 executedAt: new Date(),
             }
         });

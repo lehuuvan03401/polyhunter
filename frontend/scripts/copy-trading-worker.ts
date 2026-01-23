@@ -450,6 +450,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     executedAt: result.success ? new Date() : null,
                     txHash: result.transactionHashes?.[0] || txHash || 'ws-event',
                     errorMessage: result.error,
+                    originalTxHash: txHash || null,
                     detectedAt: new Date(),
                     marketSlug: metadata.marketSlug,
                     conditionId: metadata.conditionId,
