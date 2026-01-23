@@ -379,12 +379,12 @@ export default function PortfolioPage() {
                 {/* PnL Card - Now with Real + Simulated PnL */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px]">
                     <div>
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 text-sm font-medium text-green-500">
                                 <TrendingUp className="h-4 w-4" />
-                                <span>Profit/Loss</span>
+                                <span>Settlement P&L</span>
                             </div>
-                            <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">All Time</div>
+                            <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">Unrealized</div>
                         </div>
                         {(() => {
                             const effectivePnL = totalPnL + (ctMetrics?.totalPnL || 0);
@@ -394,10 +394,20 @@ export default function PortfolioPage() {
                                 </div>
                             );
                         })()}
+
+                        {/* Trading PnL (execution slippage) */}
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">Trading P&L (Realized)</span>
+                                <span className={cn("text-xs font-medium", (ctMetrics?.tradingPnL || 0) >= 0 ? "text-green-400" : "text-red-400")}>
+                                    {(ctMetrics?.tradingPnL || 0) >= 0 ? '+' : ''}${(ctMetrics?.tradingPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     {/* PnL Trend Visualization (stylized) */}
-                    <div className="mt-4 h-16 w-full flex items-end opacity-50">
+                    <div className="mt-2 h-12 w-full flex items-end opacity-50">
                         <svg viewBox="0 0 100 20" className={cn("w-full h-full stroke-current", (totalPnL + (ctMetrics?.totalPnL || 0)) >= 0 ? "text-green-500 fill-green-500/20" : "text-red-500 fill-red-500/20")} preserveAspectRatio="none">
                             <path d="M0 20 L0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2 L 100 20 Z" strokeWidth="0" />
                             <path d="M0 15 Q 10 18, 20 12 T 40 10 T 60 14 T 80 5 T 100 2" fill="none" strokeWidth="2" />

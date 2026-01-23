@@ -78,6 +78,7 @@ export async function GET(request: Request) {
 
                             // Map prices to tokens
                             tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
+                                if (!t.tokenId) return; // Skip if no tokenId
                                 const idx = outcomes.findIndex((o: string) =>
                                     o.toLowerCase() === t.outcome?.toLowerCase()
                                 );
@@ -116,18 +117,94 @@ export async function GET(request: Request) {
             }
         }
 
-        // 3. Get Realized PnL
-        // For now, consistent with simulation limitation, we leave Realized as 0 
-        // until we add a ledger or PnL field to CopyTrade.
-        // Most dashboard movement comes from Unrealized PnL anyway.
-        const realizedPnL = 0;
+        // 3. Calculate Realized/Trading PnL from completed trades
+        // This represents the execution slippage (buy price vs sell price for closed positions)
+        let realizedPnL = 0;
+        let tradingPnL = 0; // Separate metric for trading execution cost
+
+        try {
+            // First, get all config IDs for this wallet
+            const configs = await prisma.copyTradingConfig.findMany({
+                where: { walletAddress: normalizedWallet },
+                select: { id: true }
+            });
+            const configIds = configs.map(c => c.id);
+
+            if (configIds.length > 0) {
+                // Sum realizedPnL from all SELL trades (stored by supervisor)
+                const result = await prisma.copyTrade.aggregate({
+                    where: {
+                        configId: { in: configIds },
+                        originalSide: 'SELL',
+                        status: 'EXECUTED',
+                        realizedPnL: { not: null }
+                    },
+                    _sum: {
+                        realizedPnL: true
+                    }
+                });
+
+                tradingPnL = result._sum.realizedPnL || 0;
+
+                // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
+                const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
+                    where: {
+                        configId: { in: configIds },
+                        originalSide: 'SELL',
+                        status: 'EXECUTED',
+                        realizedPnL: null
+                    },
+                    select: { tokenId: true, copySize: true, copyPrice: true }
+                });
+
+                if (sellTradesWithoutPnL.length > 0) {
+                    // Get BUY trades for cost basis
+                    const buyTrades = await prisma.copyTrade.findMany({
+                        where: {
+                            configId: { in: configIds },
+                            originalSide: 'BUY',
+                            status: 'EXECUTED'
+                        },
+                        select: { tokenId: true, copySize: true, copyPrice: true }
+                    });
+
+                    // Build cost basis map
+                    const costBasisMap = new Map<string, { totalCost: number, totalShares: number }>();
+                    buyTrades.forEach(t => {
+                        if (!t.tokenId) return;
+                        const existing = costBasisMap.get(t.tokenId) || { totalCost: 0, totalShares: 0 };
+                        existing.totalCost += t.copySize;
+                        existing.totalShares += t.copySize / (t.copyPrice || 1);
+                        costBasisMap.set(t.tokenId, existing);
+                    });
+
+                    // Calculate PnL for sells without stored value
+                    sellTradesWithoutPnL.forEach(t => {
+                        if (!t.tokenId) return;
+                        const costInfo = costBasisMap.get(t.tokenId);
+                        if (costInfo && costInfo.totalShares > 0) {
+                            const avgBuyPrice = costInfo.totalCost / costInfo.totalShares;
+                            const sellPrice = t.copyPrice || 0;
+                            const shares = sellPrice > 0 ? t.copySize / sellPrice : 0;
+                            const profit = (sellPrice - avgBuyPrice) * shares;
+                            tradingPnL += profit;
+                        }
+                    });
+                }
+
+                realizedPnL = tradingPnL;
+            }
+        } catch (err) {
+            console.warn('Failed to calculate realized PnL:', err);
+        }
 
         return NextResponse.json({
             totalInvested,
             activePositions: positions.length,
-            realizedPnL,
-            unrealizedPnL,
-            totalPnl: realizedPnL + unrealizedPnL // Frontend likely uses this
+            realizedPnL,      // From closed trades (sell - buy)
+            unrealizedPnL,    // From current market prices (settlement value)
+            tradingPnL,       // Same as realized, explicitly named
+            totalPnL: unrealizedPnL // Use unrealized as the "main" PnL (settlement outcome)
         });
 
     } catch (error) {

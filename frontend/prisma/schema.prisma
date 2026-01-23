@@ -309,6 +309,7 @@ model CopyTrade {
   status       CopyTradeStatus @default(PENDING)
   txHash       String?
   errorMessage String?
+  realizedPnL  Float? // Profit/Loss for SELL trades (calculated by PositionService)
 
   // Timestamps
   detectedAt DateTime  @default(now())

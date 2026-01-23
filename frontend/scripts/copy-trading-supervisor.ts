@@ -844,6 +844,24 @@ async function executeJobInternal(
 
                     console.log(`[Supervisor] 💰 Sell Result: Profit=$${profitResult.profit.toFixed(4)} (${(profitResult.profitPercent * 100).toFixed(2)}%)`);
 
+                    // Store realizedPnL in the CopyTrade record
+                    // Find the trade we just created and update it
+                    try {
+                        await prisma.copyTrade.updateMany({
+                            where: {
+                                configId: config.id,
+                                tokenId: tokenId,
+                                originalSide: 'SELL',
+                                txHash: result.orderId
+                            },
+                            data: {
+                                realizedPnL: profitResult.profit
+                            }
+                        });
+                    } catch (updateErr) {
+                        console.error('[Supervisor] Failed to update realizedPnL:', updateErr);
+                    }
+
                     // Update position cache (negative for sell)
                     updatePositionCache(config.walletAddress, tokenId, -shares);
 
