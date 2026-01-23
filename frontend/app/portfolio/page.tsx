@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
+import { Button } from '@/components/ui/button';
 import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 import { ActiveStrategiesPanel } from '@/components/copy-trading/active-strategies-panel';
@@ -49,6 +50,8 @@ export default function PortfolioPage() {
     const [activeTab, setActiveTab] = useState<'positions' | 'strategies' | 'orders' | 'history' | 'transfers'>('positions');
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const [historyPage, setHistoryPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
     const [isSellingAll, setIsSellingAll] = useState(false);
 
     // Track active strategies count
@@ -805,55 +808,104 @@ export default function PortfolioPage() {
                                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                                 </div>
                             ) : combinedHistory.length > 0 ? (
-                                <table className="w-full caption-bottom text-sm">
-                                    <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
-                                        <tr className="border-b transition-colors bg-card">
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Date</th>
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Action</th>
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
-                                            <th className="h-10 px-4 text-left align-middle font-medium text-right text-muted-foreground text-xs bg-card">Outcome</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
-                                            <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Price</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {combinedHistory.map((item, i) => (
-                                            <tr
-                                                key={`${item.transactionHash}-${i}`}
-                                                className={cn(
-                                                    "border-b transition-colors hover:bg-muted/50",
-                                                    item.simulated && "bg-blue-500/5"
-                                                )}
-                                            >
-                                                <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
-                                                    {new Date(item.timestamp * 1000).toLocaleString()}
-                                                </td>
-                                                <td className="p-4 align-middle">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={cn("font-medium text-xs uppercase", item.side === 'BUY' ? "text-green-500" : "text-red-500")}>
-                                                            {item.side}
-                                                        </span>
-                                                        {item.simulated && (
-                                                            <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold">SIM</span>
+                                <div className="flex flex-col h-full">
+                                    <div className="flex-1 overflow-auto">
+                                        <table className="w-full caption-bottom text-sm">
+                                            <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
+                                                <tr className="border-b transition-colors bg-card">
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Date</th>
+                                                    <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground text-xs bg-card">Action</th>
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Outcome</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Price</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {combinedHistory.slice((historyPage - 1) * ITEMS_PER_PAGE, historyPage * ITEMS_PER_PAGE).map((item, i) => (
+                                                    <tr
+                                                        key={`${item.transactionHash}-${i}`}
+                                                        className={cn(
+                                                            "border-b transition-colors hover:bg-muted/50",
+                                                            item.simulated && "bg-blue-500/5"
                                                         )}
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 align-middle text-xs max-w-[200px] truncate" title={item.title}>
-                                                    {item.title || item.conditionId?.slice(0, 10) + '...'}
-                                                </td>
-                                                <td className="p-4 align-middle text-right text-muted-foreground text-xs">
-                                                    {item.outcome || 'SHARES'}
-                                                </td>
-                                                <td className="p-4 align-middle text-right font-mono text-xs">
-                                                    {(item.size || item.usdcSize || 0).toFixed(2)}
-                                                </td>
-                                                <td className="p-4 align-middle text-right font-mono text-xs">
-                                                    ${(item.price || 0).toFixed(2)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                                    >
+                                                        <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
+                                                            {new Date(item.timestamp * 1000).toLocaleString()}
+                                                        </td>
+                                                        <td className="p-4 align-middle">
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <span className={cn("font-medium text-xs uppercase", item.side === 'BUY' ? "text-green-500" : "text-red-500")}>
+                                                                    {item.side}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4 align-middle font-medium max-w-[250px]" title={item.title}>
+                                                            <div className="flex items-center gap-1.5">
+                                                                {item.simulated && (
+                                                                    <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold shrink-0">SIM</span>
+                                                                )}
+                                                                {item.marketSlug ? (
+                                                                    <a
+                                                                        href={`https://polymarket.com/event/${item.marketSlug}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-blue-400 hover:text-blue-300 hover:underline truncate transition-colors"
+                                                                    >
+                                                                        {item.title || item.marketSlug}
+                                                                        <ArrowUpRight className="inline-block w-3 h-3 ml-0.5 opacity-50" />
+                                                                    </a>
+                                                                ) : (
+                                                                    <span className="truncate text-muted-foreground">
+                                                                        {item.title || item.conditionId?.slice(0, 10) + '...'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4 align-middle text-right text-muted-foreground text-xs">
+                                                            {item.outcome || 'SHARES'}
+                                                        </td>
+                                                        <td className="p-4 align-middle text-right font-mono text-xs">
+                                                            {(item.size || item.usdcSize || 0).toFixed(2)}
+                                                        </td>
+                                                        <td className="p-4 align-middle text-right font-mono text-xs">
+                                                            ${(item.price || 0).toFixed(2)}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    {combinedHistory.length > ITEMS_PER_PAGE && (
+                                        <div className="flex items-center justify-between px-4 py-4 border-t bg-card">
+                                            <div className="text-xs text-muted-foreground">
+                                                Page {historyPage} of {Math.ceil(combinedHistory.length / ITEMS_PER_PAGE)} ({combinedHistory.length} items)
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                                                    disabled={historyPage === 1}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <ChevronRight className="h-4 w-4 rotate-180" />
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setHistoryPage(p => Math.min(Math.ceil(combinedHistory.length / ITEMS_PER_PAGE), p + 1))}
+                                                    disabled={historyPage >= Math.ceil(combinedHistory.length / ITEMS_PER_PAGE)}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <ChevronRight className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
                                 <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
                                     <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">

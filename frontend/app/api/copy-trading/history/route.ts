@@ -2,6 +2,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+import { parseMarketSlug } from '@/lib/utils';
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -33,7 +35,8 @@ export async function GET(request: Request) {
             timestamp: Math.floor(new Date(trade.detectedAt).getTime() / 1000),
             side: trade.originalSide, // 'BUY' or 'SELL'
             outcome: trade.outcome,
-            title: trade.marketSlug,
+            title: parseMarketSlug(trade.marketSlug, trade.tokenId),
+            marketSlug: trade.marketSlug, // Pass slug for linking
             size: trade.copySize,
             price: trade.copyPrice || trade.originalPrice,
             simulated: true

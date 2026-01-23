@@ -164,10 +164,15 @@ export async function GET(request: Request) {
 
                                     uniqueTokenIds.forEach(tid => {
                                         const meta = metadataMap.get(tid);
-                                        // Match by Condition ID and Outcome Name
-                                        if (meta && meta.conditionId === market.conditionId && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
-                                            if (!gammaPriceMap.has(tid)) {
-                                                gammaPriceMap.set(tid, price);
+                                        // Match by Condition ID or Slug, and Outcome Name
+                                        if (meta) {
+                                            const conditionMatch = meta.conditionId === market.conditionId;
+                                            const slugMatch = meta.marketSlug === market.slug;
+                                            // Relaxed check: Allow match if either conditionId OR slug matches (fixes simulated trades)
+                                            if ((conditionMatch || slugMatch) && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
+                                                if (!gammaPriceMap.has(tid)) {
+                                                    gammaPriceMap.set(tid, price);
+                                                }
                                             }
                                         }
                                     });
