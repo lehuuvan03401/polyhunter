@@ -77,9 +77,8 @@ export async function GET(request: Request) {
             orderbooks.forEach((book, tokenId) => {
                 if (book.bids.length > 0) {
                     priceMap.set(tokenId, book.bids[0].price);
-                } else {
-                    priceMap.set(tokenId, 0);
                 }
+                // Note: If no bids, we DON'T set to 0. This allows fallback to entry price later.
             });
         } catch (err) {
             console.error("Failed to batch fetch prices", err);
@@ -95,10 +94,16 @@ export async function GET(request: Request) {
             uniqueTokenIds.forEach(id => {
                 const info = metadataMap.get(id);
                 if (info) {
-                    if (info.conditionId && !processedKeys.has(info.conditionId)) {
-                        tasks.push({ type: 'condition', value: info.conditionId });
-                        processedKeys.add(info.conditionId);
-                    } else if (info.marketSlug && !processedKeys.has(info.marketSlug) && !info.conditionId) {
+                    // Check if conditionId is valid (not '0x0' or empty)
+                    const hasValidConditionId = info.conditionId &&
+                        info.conditionId !== '0x0' &&
+                        info.conditionId.length > 10;
+
+                    if (hasValidConditionId && !processedKeys.has(info.conditionId!)) {
+                        tasks.push({ type: 'condition', value: info.conditionId! });
+                        processedKeys.add(info.conditionId!);
+                    } else if (info.marketSlug && !processedKeys.has(info.marketSlug)) {
+                        // Fallback to slug if conditionId is invalid or missing
                         tasks.push({ type: 'slug', value: info.marketSlug });
                         processedKeys.add(info.marketSlug);
                     }

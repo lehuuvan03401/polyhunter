@@ -37,25 +37,73 @@ export async function GET(request: Request) {
                 // Get unique token IDs
                 const tokenIds = positions.map(p => p.tokenId);
 
-                // Fetch orderbooks to get current mid/best price
-                // Using same logic as positions route
+                // Fetch orderbooks to get current mid/best price (CLOB)
                 const orderbooks = await polyClient.markets.getTokenOrderbooks(
                     tokenIds.map(id => ({ tokenId: id, side: 'BUY' }))
                 );
 
-                // Calculate PnL per position
-                positions.forEach(pos => {
-                    const book = orderbooks.get(pos.tokenId);
-                    // Use best bid as liquidation value (conservative)
-                    // Or mid price if preferred. Let's use best bid to match 'Sell All' value.
-                    let currentPrice = 0;
-                    if (book && book.bids.length > 0) {
-                        currentPrice = Number(book.bids[0].price);
-                    } else {
-                        // If no liquidity, use 0 or last known? 
-                        // fallback to 0 for conservative PnL
-                        currentPrice = 0;
+                // Build CLOB price map
+                const clobPriceMap = new Map<string, number>();
+                orderbooks.forEach((book, tid) => {
+                    if (book.bids.length > 0) {
+                        clobPriceMap.set(tid, Number(book.bids[0].price));
                     }
+                });
+
+                // Fallback: Fetch Gamma prices using marketSlug from CopyTrade metadata
+                const tradeMetadata = await prisma.copyTrade.findMany({
+                    where: { tokenId: { in: tokenIds } },
+                    select: { tokenId: true, marketSlug: true, outcome: true },
+                    orderBy: { detectedAt: 'desc' },
+                    distinct: ['tokenId']
+                });
+
+                const gammaPriceMap = new Map<string, number>();
+
+                // Query Gamma by slug for each unique market
+                const slugsToQuery = [...new Set(tradeMetadata.filter(t => t.marketSlug && !t.marketSlug.includes('unknown')).map(t => t.marketSlug!))];
+
+                for (const slug of slugsToQuery) {
+                    try {
+                        const res = await fetch(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`);
+                        const data = await res.json();
+                        const market = data?.[0];
+                        if (market?.outcomePrices && market?.outcomes) {
+                            const outcomePrices = typeof market.outcomePrices === 'string'
+                                ? JSON.parse(market.outcomePrices).map(Number)
+                                : market.outcomePrices.map(Number);
+                            const outcomes = typeof market.outcomes === 'string'
+                                ? JSON.parse(market.outcomes)
+                                : market.outcomes;
+
+                            // Map prices to tokens
+                            tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
+                                const idx = outcomes.findIndex((o: string) =>
+                                    o.toLowerCase() === t.outcome?.toLowerCase()
+                                );
+                                if (idx >= 0 && outcomePrices[idx] !== undefined) {
+                                    gammaPriceMap.set(t.tokenId, outcomePrices[idx]);
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        console.warn(`Gamma fetch failed for ${slug}:`, e);
+                    }
+                }
+
+                // Calculate PnL per position, prioritizing CLOB, then Gamma, then entry price
+                positions.forEach(pos => {
+                    let currentPrice = pos.avgEntryPrice; // Default to entry price (neutral PnL)
+
+                    // Priority 1: CLOB price (most accurate for liquid markets)
+                    if (clobPriceMap.has(pos.tokenId)) {
+                        currentPrice = clobPriceMap.get(pos.tokenId)!;
+                    }
+                    // Priority 2: Gamma price (works for simulation/illiquid markets)
+                    else if (gammaPriceMap.has(pos.tokenId)) {
+                        currentPrice = gammaPriceMap.get(pos.tokenId)!;
+                    }
+                    // Priority 3: Entry price (no market data available)
 
                     // Value diff = (Current price * Balance) - Total Cost
                     const positionValue = currentPrice * pos.balance;
