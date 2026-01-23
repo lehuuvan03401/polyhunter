@@ -150,7 +150,7 @@ export async function GET(request: Request) {
                             }
 
                             // Map outcome prices to tokens via outcome name
-                            if (outcomePrices.length > 0 && Array.isArray(market.outcomes)) {
+                            if (outcomePrices.length > 0 && market.outcomes) {
                                 let outcomes: string[] = [];
                                 try { outcomes = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes; } catch { if (Array.isArray(market.outcomes)) outcomes = market.outcomes; }
 
@@ -196,7 +196,7 @@ export async function GET(request: Request) {
                                 }
 
                                 // Fallback: Match by outcome string if we have outcomePrices but no tokens details
-                                if (outcomePrices.length > 0 && Array.isArray(market.outcomes)) {
+                                if (outcomePrices.length > 0 && market.outcomes) {
                                     let outcomes: string[] = [];
                                     try { outcomes = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes; } catch { if (Array.isArray(market.outcomes)) outcomes = market.outcomes; }
 
@@ -206,8 +206,14 @@ export async function GET(request: Request) {
                                             const isWin = price >= 0.95;
                                             uniqueTokenIds.forEach(tid => {
                                                 const meta = metadataMap.get(tid);
-                                                if (meta && meta.conditionId === market.conditionId && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
-                                                    marketResolutionMap.set(tid, { resolved: true, winner: isWin });
+                                                if (meta) {
+                                                    const outcomeMatch = parseOutcome(meta.outcome) === parseOutcome(outcomeName);
+                                                    const conditionMatch = meta.conditionId === market.conditionId;
+                                                    const slugMatch = meta.marketSlug === market.slug;
+
+                                                    if (outcomeMatch && (conditionMatch || slugMatch)) {
+                                                        marketResolutionMap.set(tid, { resolved: true, winner: isWin });
+                                                    }
                                                 }
                                             });
                                         }

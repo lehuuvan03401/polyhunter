@@ -716,7 +716,7 @@ export default function PortfolioPage() {
                                                                         {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
                                                                     </td>
                                                                     <td className={cn("p-4 align-middle text-right font-mono text-xs font-medium", pnl >= 0 ? "text-green-500" : "text-red-500")}>
-                                                                        {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)}
+                                                                        {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)}
                                                                     </td>
                                                                 </tr>
                                                             );

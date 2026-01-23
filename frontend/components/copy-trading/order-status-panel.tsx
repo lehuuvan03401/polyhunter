@@ -7,11 +7,12 @@
 'use client';
 
 import { useState } from 'react';
-import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink, StopCircle } from 'lucide-react';
+import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink, StopCircle, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useOrderStatus, getOrderStatusColor, getOrderStatusIcon, type Order, type OrderStatus } from '@/lib/hooks/useOrderStatus';
 import { AnimatePresence, motion } from 'framer-motion';
+import { LeaderHistoryModal } from './leader-history-modal';
 
 interface OrderStatusPanelProps {
     walletAddress: string;
@@ -25,6 +26,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [orderToStop, setOrderToStop] = useState<string | null>(null);
+    const [historyLeader, setHistoryLeader] = useState<{ address: string, name?: string } | null>(null);
     const [filter, setFilter] = useState<'all' | 'open' | 'history'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
@@ -170,6 +172,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                                 expandedOrder === order.tradeId ? null : order.tradeId
                             )}
                             onStop={(e) => handleStopCopying(order.tradeId, e)}
+                            onOpenHistory={(addr, name) => setHistoryLeader({ address: addr, name })}
                         />
                     );
                 })}
@@ -205,6 +208,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
             {/* Custom Stop Confirmation Modal */}
             <AnimatePresence>
+                {/* ... existing stop modal ... */}
                 {orderToStop && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
                         {/* Backdrop - High Blur for "Premium" feel */}
@@ -257,6 +261,14 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Leader History Modal */}
+            <LeaderHistoryModal
+                isOpen={!!historyLeader}
+                onClose={() => setHistoryLeader(null)}
+                leaderAddress={historyLeader?.address || ''}
+                leaderName={historyLeader?.name}
+            />
         </div>
     );
 }
@@ -302,13 +314,15 @@ function OrderRow({
     index,
     expanded,
     onToggle,
-    onStop
+    onStop,
+    onOpenHistory
 }: {
     order: Order;
     index: number;
     expanded: boolean;
     onToggle: () => void;
     onStop?: (e: React.MouseEvent) => void;
+    onOpenHistory: (address: string, name?: string) => void;
 }) {
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
@@ -379,6 +393,17 @@ function OrderRow({
                             <span className="font-mono">{order.traderAddress.slice(0, 6)}...{order.traderAddress.slice(-4)}</span>
                             <ExternalLink className="h-3 w-3" />
                         </a>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenHistory(order.traderAddress, order.traderName || undefined);
+                            }}
+                            className="text-xs bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors z-20 relative pointer-events-auto ml-2 px-2 py-0.5 rounded-md"
+                            title="View Leader History"
+                        >
+                            <History className="h-3 w-3" />
+                            <span>History</span>
+                        </button>
                     </div>
                 </div>
 
@@ -445,7 +470,24 @@ function OrderRow({
                                 value={order.leaderPrice ? `${((order.price - order.leaderPrice) / order.leaderPrice * 100).toFixed(2)}%` : '-'}
                                 color={order.leaderPrice ? (order.price > order.leaderPrice ? 'text-red-400' : 'text-green-400') : undefined}
                             />
-                            <DetailItem label="Leader Size" value={`$${order.leaderSize?.toFixed(2) ?? 'N/A'}`} />
+                            <DetailItem
+                                label="Leader Size"
+                                value={`$${order.leaderSize?.toFixed(2) ?? 'N/A'}`}
+                            />
+                            {order.leaderTxHash && (
+                                <div className="col-span-2 sm:col-span-1">
+                                    <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">Leader Tx</span>
+                                    <a
+                                        href={`https://polygonscan.com/tx/${order.leaderTxHash}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-mono break-all"
+                                    >
+                                        {order.leaderTxHash.slice(0, 10)}...{order.leaderTxHash.slice(-8)}
+                                        <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                </div>
+                            )}
                             <DetailItem
                                 label="Filled"
                                 value={`${order.filledPercent}%`}
