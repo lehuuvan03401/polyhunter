@@ -88,24 +88,27 @@ export async function GET(request: Request) {
         const marketResolutionMap = new Map<string, { resolved: boolean, winner: boolean }>();
         const gammaPriceMap = new Map<string, number>(); // Secondary price source
         try {
-            // Collect unique slugs and conditionIds to query
-            const jobs = new Map<string, { type: 'slug' | 'condition', value: string }>();
+            const tasks: { type: 'condition' | 'slug', value: string }[] = [];
+            const processedKeys = new Set<string>();
 
             uniqueTokenIds.forEach(id => {
                 const info = metadataMap.get(id);
                 if (info) {
-                    // Start with slug (preferred for resolution logic alignment with metrics)
-                    if (info.marketSlug && !info.marketSlug.includes('unknown')) {
-                        jobs.set(info.marketSlug, { type: 'slug', value: info.marketSlug });
-                    }
-                    // Fallback to ConditionID if slug is missing/unknown and ConditionID is valid
-                    else if (info.conditionId && info.conditionId !== '0x0' && info.conditionId.length > 10) {
-                        jobs.set(info.conditionId, { type: 'condition', value: info.conditionId });
+                    // Check if conditionId is valid (not '0x0' or empty)
+                    const hasValidConditionId = info.conditionId &&
+                        info.conditionId !== '0x0' &&
+                        info.conditionId.length > 10;
+
+                    if (hasValidConditionId && !processedKeys.has(info.conditionId!)) {
+                        tasks.push({ type: 'condition', value: info.conditionId! });
+                        processedKeys.add(info.conditionId!);
+                    } else if (info.marketSlug && !processedKeys.has(info.marketSlug)) {
+                        // Fallback to slug if conditionId is invalid or missing
+                        tasks.push({ type: 'slug', value: info.marketSlug });
+                        processedKeys.add(info.marketSlug);
                     }
                 }
             });
-
-            const tasks = Array.from(jobs.values());
 
             // Concurrency Control
             const BATCH_SIZE = 5;
@@ -161,15 +164,10 @@ export async function GET(request: Request) {
 
                                     uniqueTokenIds.forEach(tid => {
                                         const meta = metadataMap.get(tid);
-                                        // Match by Condition ID or Slug, and Outcome Name
-                                        if (meta) {
-                                            const conditionMatch = meta.conditionId === market.conditionId;
-                                            const slugMatch = meta.marketSlug === market.slug;
-                                            // Relaxed check: Allow match if either conditionId OR slug matches (fixes simulated trades)
-                                            if ((conditionMatch || slugMatch) && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
-                                                if (!gammaPriceMap.has(tid)) {
-                                                    gammaPriceMap.set(tid, price);
-                                                }
+                                        // Match by Condition ID and Outcome Name
+                                        if (meta && meta.conditionId === market.conditionId && parseOutcome(meta.outcome) === parseOutcome(outcomeName)) {
+                                            if (!gammaPriceMap.has(tid)) {
+                                                gammaPriceMap.set(tid, price);
                                             }
                                         }
                                     });

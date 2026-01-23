@@ -14,13 +14,16 @@ async function main() {
 
     const trades = await prisma.copyTrade.findMany({
         take: 10,
-        orderBy: { executedAt: 'desc' },
+        orderBy: { detectedAt: 'desc' },
         select: {
             id: true,
             marketSlug: true,
-            tokenId: true,
-            originalPrice: true,
-            executedAt: true
+            conditionId: true,
+            outcome: true,
+            originalSide: true,
+            status: true,
+            detectedAt: true,
+            tokenId: true
         }
     });
 

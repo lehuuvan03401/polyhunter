@@ -63,6 +63,7 @@ interface Position {
     avgEntryPrice: number;  // cost basis
     totalCost: number;      // total USDC spent
     marketSlug: string;
+    outcome: string;
 }
 
 const positions = new Map<string, Position>();
@@ -129,7 +130,8 @@ async function seedConfig() {
 }
 
 // --- POSITION MANAGEMENT ---
-function updatePositionOnBuy(tokenId: string, shares: number, price: number, marketSlug: string) {
+// --- POSITION MANAGEMENT ---
+function updatePositionOnBuy(tokenId: string, shares: number, price: number, marketSlug: string, outcome: string) {
     const existing = positions.get(tokenId);
 
     if (existing) {
@@ -139,6 +141,7 @@ function updatePositionOnBuy(tokenId: string, shares: number, price: number, mar
         existing.avgEntryPrice = newTotalCost / newBalance;
         existing.balance = newBalance;
         existing.totalCost = newTotalCost;
+        // outcome stays same
     } else {
         positions.set(tokenId, {
             tokenId,
@@ -146,6 +149,7 @@ function updatePositionOnBuy(tokenId: string, shares: number, price: number, mar
             avgEntryPrice: price,
             totalCost: shares * price,
             marketSlug,
+            outcome
         });
     }
 }
@@ -447,7 +451,7 @@ async function handleTrade(trade: ActivityTrade) {
 
     // Process trade
     if (trade.side === 'BUY') {
-        updatePositionOnBuy(trade.asset, copyShares, execPrice, trade.marketSlug || '');
+        updatePositionOnBuy(trade.asset, copyShares, execPrice, trade.marketSlug || '', trade.outcome || 'N/A');
         totalBuyVolume += FIXED_COPY_AMOUNT;
 
         const pos = positions.get(trade.asset)!;
@@ -601,6 +605,14 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
     }
 }
 
+function parseOutcome(outcome: string | null | undefined): string {
+    if (!outcome) return 'N/A';
+    const lower = outcome.trim().toLowerCase();
+    if (lower === 'yes') return 'Up';
+    if (lower === 'no') return 'Down';
+    return outcome.charAt(0).toUpperCase() + outcome.slice(1);
+}
+
 // --- PRINT SUMMARY ---
 async function printSummary() {
     const duration = (Date.now() - startTime) / 1000 / 60;
@@ -608,7 +620,7 @@ async function printSummary() {
     // Calculate unrealized PnL with LIVE prices
     let unrealizedPnL = 0;
 
-    // Batch fetch prices for summary
+    // Batch fetch prices for summary using ROBUST matching logic (Slug + Outcome)
     const activeTokenIds = Array.from(positions.keys());
     const priceMap = new Map<string, number>();
 
@@ -625,9 +637,26 @@ async function printSummary() {
                             const data = await resp.json();
                             const m = Array.isArray(data) ? data[0] : data;
                             if (m) {
+                                // 1. Try Token ID Match (Real)
+                                let price = undefined;
                                 const token = (m.tokens || []).find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
                                 if (token && token.price) {
-                                    priceMap.set(tokenId, Number(token.price));
+                                    price = Number(token.price);
+                                }
+                                // 2. Fallback: Outcome Match (Simulated)
+                                else if (m.outcomes && m.outcomePrices && pos.outcome) {
+                                    const outcomes: string[] = typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes;
+                                    const prices: number[] = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices).map(Number) : m.outcomePrices.map(Number);
+
+                                    const myOutcome = parseOutcome(pos.outcome);
+                                    const idx = outcomes.findIndex((o: string) => parseOutcome(o) === myOutcome);
+                                    if (idx !== -1 && prices[idx] !== undefined) {
+                                        price = prices[idx];
+                                    }
+                                }
+
+                                if (price !== undefined) {
+                                    priceMap.set(tokenId, price);
                                 }
                             }
                         }
@@ -666,10 +695,13 @@ async function printSummary() {
     console.log(`Total Sell Volume: $${totalSellVolume.toFixed(2)}`);
     const totalFees = tradesRecorded * ESTIMATED_GAS_FEE_USD;
     const netPnL = realizedPnL - totalFees;
+    const totalPnL = netPnL + unrealizedPnL;
 
     console.log(`Realized P&L (Gross): $${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(4)}`);
-    console.log(`Est. Fees (Gas): -$${totalFees.toFixed(2)}`);
-    console.log(`Net P&L (Simulated): $${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(4)}`);
+    console.log(`Unrealized P&L:      $${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(4)}`);
+    console.log(`Est. Fees (Gas):      -$${totalFees.toFixed(2)}`);
+    console.log(`Net P&L (Realized):   $${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(4)}`);
+    console.log(`TOTAL P&L (Simulated):$${totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(4)}`);
     console.log('═══════════════════════════════════════════════════════════════');
 
     console.log('\n📁 DATABASE RECORDS');

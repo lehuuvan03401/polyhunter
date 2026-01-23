@@ -69,8 +69,8 @@ export function parseMarketSlug(slug: string | null | undefined, tokenId?: strin
 export function parseOutcome(outcome: string | null | undefined): string {
     if (!outcome) return 'N/A';
 
-    // Normalize case
-    const lower = outcome.toLowerCase();
+    // Normalize case and trim whitespace
+    const lower = outcome.trim().toLowerCase();
 
     if (lower === 'yes') return 'Up'; // For up/down markets, Yes usually means Up
     if (lower === 'no') return 'Down';
