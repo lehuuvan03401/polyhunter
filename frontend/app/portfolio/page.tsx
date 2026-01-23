@@ -611,7 +611,7 @@ export default function PortfolioPage() {
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Current</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Total Invested</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Est. Value</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Max Payout</th>
+
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">ROI</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
                                                     </tr>
@@ -635,7 +635,7 @@ export default function PortfolioPage() {
                                                             const displayCurPrice = (curPrice === 0) ? 0 : curPrice || 0;
 
                                                             const estValue = pos.estValue || (shares * displayCurPrice);
-                                                            const maxPayout = shares * 1.0;
+
                                                             const pnl = estValue - totalInvested;
                                                             const roi = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
 
@@ -711,9 +711,7 @@ export default function PortfolioPage() {
                                                                         ${totalInvested.toFixed(2)}
                                                                     </td>
                                                                     <td className="p-4 align-middle text-right font-mono text-xs font-medium text-blue-400">${estValue.toFixed(2)}</td>
-                                                                    <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">
-                                                                        ${maxPayout.toFixed(2)}
-                                                                    </td>
+
                                                                     <td className={cn("p-4 align-middle text-right font-mono text-xs", roi >= 0 ? "text-green-500" : "text-red-500")}>
                                                                         {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
                                                                     </td>
