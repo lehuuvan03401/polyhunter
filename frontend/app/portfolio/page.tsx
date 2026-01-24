@@ -32,6 +32,7 @@ import { TransactionHistoryTable } from '@/components/proxy/transaction-history-
 import { useSimulatedHistory } from '@/lib/hooks/useSimulatedHistory';
 import { useCopyTradingMetrics } from '@/lib/hooks/useCopyTradingMetrics';
 import { useSimulatedPositions } from '@/lib/hooks/useSimulatedPositions';
+import { useRedeem } from '@/lib/hooks/useRedeem';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -65,6 +66,7 @@ export default function PortfolioPage() {
     // Fetch simulated metrics, positions, and HISTORY
     const { metrics: ctMetrics } = useCopyTradingMetrics(user?.wallet?.address || '');
     const { positions: simPositions } = useSimulatedPositions(user?.wallet?.address || '');
+    const { redeem, redeemSim, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
 
     // Load all wallet data
@@ -627,6 +629,7 @@ export default function PortfolioPage() {
 
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">ROI</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
+                                                        <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">Action</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -730,6 +733,44 @@ export default function PortfolioPage() {
                                                                     </td>
                                                                     <td className={cn("p-4 align-middle text-right font-mono text-xs font-medium", pnl >= 0 ? "text-green-500" : "text-red-500")}>
                                                                         {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)}
+                                                                    </td>
+                                                                    <td className="p-4 align-middle text-center">
+                                                                        {pos._type === 'real' && pos.status === 'SETTLED_WIN' && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    redeem(pos.conditionId, pos.outcome, pos.title);
+                                                                                }}
+                                                                                disabled={isRedeeming}
+                                                                                className="text-[10px] bg-green-500 text-white px-2 py-1 rounded shadow-sm hover:bg-green-600 active:bg-green-700 disabled:opacity-50 transition-colors"
+                                                                            >
+                                                                                Redeem
+                                                                            </button>
+                                                                        )}
+                                                                        {/* Mock Redeem (Sim) */}
+                                                                        {pos._type === 'sim' && pos.status === 'SETTLED_WIN' && (
+                                                                            <button
+                                                                                onClick={async (e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (user?.wallet?.address) {
+                                                                                        await redeemSim(
+                                                                                            user.wallet.address,
+                                                                                            pos.tokenId,
+                                                                                            pos.conditionId,
+                                                                                            pos.outcome,
+                                                                                            pos.slug
+                                                                                        );
+                                                                                        // Refresh positions after mock redeem
+                                                                                        // We can force reload or rely on revalidation
+                                                                                        // For now, let's just wait a bit or use router refresh if available
+                                                                                    }
+                                                                                }}
+                                                                                disabled={isRedeeming}
+                                                                                className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded shadow-sm hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50 transition-colors"
+                                                                            >
+                                                                                Mock Redeem
+                                                                            </button>
+                                                                        )}
                                                                     </td>
                                                                 </tr>
                                                             );

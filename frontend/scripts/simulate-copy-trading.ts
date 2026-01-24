@@ -605,6 +605,90 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
     }
 }
 
+// --- REDEMPTION LOGIC ---
+async function processRedemptions() {
+    console.log('\n🔄 Processing Redemptions...');
+    const activeTokenIds = Array.from(positions.keys());
+    if (activeTokenIds.length === 0) return;
+
+    for (const tokenId of activeTokenIds) {
+        const pos = positions.get(tokenId);
+        if (!pos) continue;
+
+        try {
+            // Check if market is resolved and we WON
+            if (pos.marketSlug) {
+                const resp = await fetch(`${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const m = Array.isArray(data) ? data[0] : data;
+                    if (m && (m.closed || m.outcomePrices)) {
+                        let price = undefined;
+
+                        // Re-use matching logic (Token ID or Outcome match)
+                        const token = (m.tokens || []).find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
+                        if (token && token.price) {
+                            price = Number(token.price);
+                        }
+                        else if (m.outcomes && m.outcomePrices && pos.outcome) {
+                            const outcomes: string[] = typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes;
+                            const prices: number[] = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices).map(Number) : m.outcomePrices.map(Number);
+                            const myOutcome = parseOutcome(pos.outcome);
+                            const idx = outcomes.findIndex((o: string) => parseOutcome(o) === myOutcome);
+                            if (idx !== -1 && prices[idx] !== undefined) {
+                                price = prices[idx];
+                            }
+                        }
+
+                        // Check for Win (Price >= 0.95 or 1.0)
+                        if (price !== undefined && price >= 0.95) {
+                            console.log(`   🎉 Redeeming WIN for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
+
+                            // 1. Credit Realized PnL (Value - Cost)
+                            // Actually, Redemption gives $1.00 per share.
+                            // Total Value = Balance * 1.00
+                            const redemptionValue = pos.balance;
+                            const profit = redemptionValue - pos.totalCost;
+                            realizedPnL += profit;
+
+                            // 2. Record Trade
+                            const execPrice = 1.0;
+                            await prisma.copyTrade.create({
+                                data: {
+                                    configId: configId,
+                                    marketSlug: pos.marketSlug,
+                                    tokenId: tokenId,
+                                    outcome: pos.outcome,
+                                    originalSide: 'REDEEM',
+                                    copySize: redemptionValue, // Total Value Out
+                                    copyPrice: execPrice,
+                                    originalTrader: 'PROTOCOL',
+                                    originalSize: 0,
+                                    originalPrice: 1.0,
+                                    status: 'EXECUTED',
+                                    executedAt: new Date(),
+                                    txHash: 'sim-redeem',
+                                    errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`
+                                }
+                            });
+
+                            // 3. Remove Position
+                            await prisma.userPosition.deleteMany({
+                                where: { walletAddress: FOLLOWER_WALLET.toLowerCase(), tokenId: tokenId }
+                            });
+                            positions.delete(tokenId);
+
+                            console.log(`      💰 Credited $${redemptionValue.toFixed(2)} (Profit: $${profit.toFixed(2)})`);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(`   ❌ Redemption check failed for ${tokenId}:`, e);
+        }
+    }
+}
+
 function parseOutcome(outcome: string | null | undefined): string {
     if (!outcome) return 'N/A';
     const lower = outcome.trim().toLowerCase();
@@ -769,10 +853,13 @@ async function main() {
     console.log(`   (Will run for ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes)\n`);
 
     // 4. Progress updates
-    const progressInterval = setInterval(() => {
+    const progressInterval = setInterval(async () => {
         const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
         const remaining = ((SIMULATION_DURATION_MS - (Date.now() - startTime)) / 1000 / 60).toFixed(1);
         console.log(`⏱️  Progress: ${elapsed}min elapsed, ${remaining}min remaining | Trades: ${tradesRecorded}`);
+
+        // Process Redemptions periodically
+        await processRedemptions();
     }, 60000); // Every minute
 
     // 5. Run for configured duration
