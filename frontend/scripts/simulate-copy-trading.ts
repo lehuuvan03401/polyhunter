@@ -25,9 +25,9 @@ import { createUnifiedCache } from '../../src/core/unified-cache';
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-const SIMULATION_DURATION_MS = parseInt(process.env.SIMULATION_DURATION_MS || '2100000'); // 35 minutes
-const BUY_WINDOW_MS = 15 * 60 * 1000; // Stop buying after 15 minutes
-const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '10'); // $10 per trade
+const SIMULATION_DURATION_MS = 2 * 60 * 60 * 1000; // 2 hours
+const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
+const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '1'); // Ignored (using Leader Size)
 const SLIPPAGE_BPS = 50; // 0.5% slippage (50 basis points)
 const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + overhead)
 
@@ -342,7 +342,7 @@ async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: n
                 conditionId: enriched.conditionId,
                 marketSlug: enriched.marketSlug,
                 outcome: enriched.outcome,
-                copySize: FIXED_COPY_AMOUNT,
+                copySize: copyShares, // Store SHARES to match originalSize (consistent units)
                 copyPrice: trade.price,
                 status: 'EXECUTED',
                 txHash: `SIM-${trade.transactionHash}`,
@@ -391,18 +391,18 @@ async function handleTrade(trade: ActivityTrade) {
 
     if (traderAddress !== targetLower) return;
 
-    // Filter for 15m Options only (as requested by User)
-    if (!trade.marketSlug?.includes('-15m-')) {
-        // console.log(`[DEBUG] ⏭️  Skipped (Not 15m): ${trade.marketSlug}`);
-        return;
-    }
+    // // Filter for 15m Options only (as requested by User)
+    // if (!trade.marketSlug?.includes('-15m-')) {
+    //     // console.log(`[DEBUG] ⏭️  Skipped (Not 15m): ${trade.marketSlug}`);
+    //     return;
+    // }
 
     // Safety Filter: Exclude outdated/political keywords to ensure realism
     const lowerSlug = trade.marketSlug.toLowerCase();
-    if (lowerSlug.includes('biden') || lowerSlug.includes('trump') || lowerSlug.includes('election') || lowerSlug.includes('coronavirus')) {
-        console.log(`[DEBUG] ⏭️  Skipped Outdated/Political: ${trade.marketSlug}`);
-        return;
-    }
+    // if (lowerSlug.includes('biden') || lowerSlug.includes('trump') || lowerSlug.includes('election') || lowerSlug.includes('coronavirus')) {
+    //     console.log(`[DEBUG] ⏭️  Skipped Outdated/Political: ${trade.marketSlug}`);
+    //     return;
+    // }
 
     // Check for weird slugs (Optional debugging)
     // console.log(`[DEBUG] 🔎 Detected trade for target: ${trade.marketSlug} | Side: ${trade.side}`);
@@ -423,11 +423,21 @@ async function handleTrade(trade: ActivityTrade) {
         return;
     }
 
-    // Calculate copy shares based on fixed amount
+    // Calculate copy shares SAME AS LEADER
+    // Leader Size is trade.size (shares) or trade.amount (USDC)?
+    // ActivityTrade usually has 'size' which is Shares or Amount based on type.
+    // Assuming trade.size is the number of shares.
+
     // APPLY SLIPPAGE MODEL
     const slipFactor = trade.side === 'BUY' ? (1 + SLIPPAGE_BPS / 10000) : (1 - SLIPPAGE_BPS / 10000);
     const execPrice = trade.price * slipFactor;
-    const copyShares = FIXED_COPY_AMOUNT / execPrice;
+
+    // Copy EXACT LEADER SIZE
+    const copyShares = trade.size;
+
+    // Calculate required USDC amount
+    // Value = Size * Price
+    const copyAmount = copyShares * execPrice;
 
     // 🔥 CRITICAL: Skip SELL trades if we don't have a position
     // In real copy trading, we only sell what we've bought
@@ -443,7 +453,7 @@ async function handleTrade(trade: ActivityTrade) {
     console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded + 1})`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
-    console.log(`   📊 ${trade.side} $${FIXED_COPY_AMOUNT.toFixed(2)} → ${copyShares.toFixed(2)} shares`);
+    console.log(`   📊 ${trade.side} ${copyShares.toFixed(2)} shares (Leader Size)`);
     console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
     console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
     console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
@@ -607,7 +617,7 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
 
 // --- REDEMPTION LOGIC ---
 async function processRedemptions() {
-    console.log('\n🔄 Processing Redemptions...');
+    console.log('\n🔄 Processing Settlements (Wins & Losses)...');
     const activeTokenIds = Array.from(positions.keys());
     if (activeTokenIds.length === 0) return;
 
@@ -618,11 +628,13 @@ async function processRedemptions() {
         try {
             // Check if market is resolved and we WON
             if (pos.marketSlug) {
+                // console.log(`   [Debug] Checking settlement for ${pos.marketSlug} ...`);
                 const resp = await fetch(`${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`);
                 if (resp.ok) {
                     const data = await resp.json();
                     const m = Array.isArray(data) ? data[0] : data;
-                    if (m && (m.closed || m.outcomePrices)) {
+                    if (m) {
+                        // console.log(`   [Debug] Market Found: ${m.slug}. Closed: ${m.closed}`);
                         let price = undefined;
 
                         // Re-use matching logic (Token ID or Outcome match)
@@ -639,6 +651,8 @@ async function processRedemptions() {
                                 price = prices[idx];
                             }
                         }
+
+                        // console.log(`   [Debug] Token: ${tokenId} Price: ${price}`);
 
                         // Check for Win (Price >= 0.95 or 1.0)
                         if (price !== undefined && price >= 0.95) {
@@ -679,6 +693,44 @@ async function processRedemptions() {
                             positions.delete(tokenId);
 
                             console.log(`      💰 Credited $${redemptionValue.toFixed(2)} (Profit: $${profit.toFixed(2)})`);
+                        }
+                        // Check for Loss (Price <= 0.05)
+                        else if (price !== undefined && price <= 0.05) {
+                            console.log(`   💀 Settle LOSS for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
+
+                            const settlementValue = 0;
+                            const profit = -pos.totalCost; // 100% Loss
+                            realizedPnL += profit;
+
+                            // Record Trade
+                            const execPrice = 0.0;
+                            await prisma.copyTrade.create({
+                                data: {
+                                    configId: configId,
+                                    marketSlug: pos.marketSlug,
+                                    tokenId: tokenId,
+                                    outcome: pos.outcome,
+                                    originalSide: 'SELL', // Close position
+                                    copySize: pos.balance, // Shares
+                                    copyPrice: execPrice,
+                                    originalTrader: 'PROTOCOL',
+                                    originalSize: 0,
+                                    originalPrice: 0.0,
+                                    status: 'EXECUTED',
+                                    executedAt: new Date(),
+                                    txHash: 'sim-settle-loss',
+                                    realizedPnL: profit,
+                                    errorMessage: `Realized Loss: $${Math.abs(profit).toFixed(4)}`
+                                }
+                            });
+
+                            // Remove Position
+                            await prisma.userPosition.deleteMany({
+                                where: { walletAddress: FOLLOWER_WALLET.toLowerCase(), tokenId: tokenId }
+                            });
+                            positions.delete(tokenId);
+
+                            console.log(`      📉 Realized Loss: $${Math.abs(profit).toFixed(2)}`);
                         }
                     }
                 }
