@@ -682,7 +682,8 @@ async function processRedemptions() {
                                     status: 'EXECUTED',
                                     executedAt: new Date(),
                                     txHash: 'sim-redeem',
-                                    errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`
+                                    errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`,
+                                    realizedPnL: profit
                                 }
                             });
 

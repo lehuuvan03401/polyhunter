@@ -121,6 +121,8 @@ export async function GET(request: Request) {
         // This represents the execution slippage (buy price vs sell price for closed positions)
         let realizedPnL = 0;
         let tradingPnL = 0; // Separate metric for trading execution cost
+        let realizedWins = 0;
+        let realizedLosses = 0;
 
         try {
             // First, get all config IDs for this wallet
@@ -131,20 +133,28 @@ export async function GET(request: Request) {
             const configIds = configs.map(c => c.id);
 
             if (configIds.length > 0) {
-                // Sum realizedPnL from all SELL trades (stored by supervisor)
-                const result = await prisma.copyTrade.aggregate({
+                // Sum realizedPnL from ALL trades (Wins and Losses)
+                const winsSum = await prisma.copyTrade.aggregate({
                     where: {
                         configId: { in: configIds },
-                        originalSide: 'SELL',
                         status: 'EXECUTED',
-                        realizedPnL: { not: null }
+                        realizedPnL: { gt: 0 }
                     },
-                    _sum: {
-                        realizedPnL: true
-                    }
+                    _sum: { realizedPnL: true }
                 });
 
-                tradingPnL = result._sum.realizedPnL || 0;
+                const lossesSum = await prisma.copyTrade.aggregate({
+                    where: {
+                        configId: { in: configIds },
+                        status: 'EXECUTED',
+                        realizedPnL: { lt: 0 }
+                    },
+                    _sum: { realizedPnL: true }
+                });
+
+                tradingPnL = (winsSum._sum.realizedPnL || 0) + (lossesSum._sum.realizedPnL || 0);
+                realizedWins = winsSum._sum.realizedPnL || 0;
+                realizedLosses = lossesSum._sum.realizedPnL || 0;
 
                 // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
                 const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
@@ -201,7 +211,9 @@ export async function GET(request: Request) {
         return NextResponse.json({
             totalInvested,
             activePositions: positions.length,
-            realizedPnL,      // From closed trades (sell - buy)
+            realizedPnL,      // Net realized
+            realizedWins,     // Total Wins PnL
+            realizedLosses,   // Total Losses PnL
             unrealizedPnL,    // From current market prices (settlement value)
             tradingPnL,       // Same as realized, explicitly named
             totalPnL: unrealizedPnL // Use unrealized as the "main" PnL (settlement outcome)

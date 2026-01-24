@@ -45,7 +45,10 @@ export default function PortfolioPage() {
     const [positions, setPositions] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [positionsPage, setPositionsPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'WON' | 'LOST'>('ALL');
+    const [statusFilter, setStatusFilter] = useState<'OPEN' | 'WON' | 'LOST'>('OPEN');
+    const [settledHistory, setSettledHistory] = useState<any[]>([]);
+    const [isSettledLoading, setIsSettledLoading] = useState(false);
+    const [historyCounts, setHistoryCounts] = useState<{ REDEEMED: number, SETTLED_LOSS: number }>({ REDEEMED: 0, SETTLED_LOSS: 0 });
 
     // New state for History and Sell All
     const [activeTab, setActiveTab] = useState<'positions' | 'strategies' | 'orders' | 'history' | 'transfers'>('positions');
@@ -68,6 +71,65 @@ export default function PortfolioPage() {
     const { positions: simPositions } = useSimulatedPositions(user?.wallet?.address || '');
     const { redeem, redeemSim, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
+
+    // Fetch settled history when filter is WON or LOST (to merge)
+    useEffect(() => {
+        const fetchSettledHistory = async () => {
+            if (!user?.wallet?.address) return;
+            // Always fetch history for counts, but for list merging we technically need it if WON/LOST are selected.
+            // Simplified: Fetch ALL history on load so we can merge easily client-side or use separate lists.
+            // For now, let's just fetch "ALL" history when component loads or tab changes.
+            // Actually, we can just use the counts logic for valid numbers, but we need the DATA to display rows.
+
+            // If filter is WON, we need REDEEMED history.
+            // If filter is LOST, we need SETTLED_LOSS history.
+
+            let type: 'REDEEMED' | 'SETTLED_LOSS' | null = null;
+            if (statusFilter === 'WON') type = 'REDEEMED';
+            if (statusFilter === 'LOST') type = 'SETTLED_LOSS';
+
+            if (!type) {
+                // If ALL/OPEN, we don't necessarily show history rows unless we want to?
+                // Actually user might want "Closed" history in ALL?
+                // Let's keep ALL as "Active Positions" to avoid clutter? 
+                // User asked to merge them. So WON = Active Won + History Won.
+                setSettledHistory([]); // Clear if not needed or handle differently
+                return;
+            }
+
+            setIsSettledLoading(true);
+            try {
+                const res = await fetch(`/api/copy-trading/positions/history?wallet=${user.wallet.address}&type=${type}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setSettledHistory(data);
+                }
+            } catch (error) {
+                console.error("Failed to fetch settled history", error);
+            } finally {
+                setIsSettledLoading(false);
+            }
+        };
+
+        fetchSettledHistory();
+    }, [statusFilter, user?.wallet?.address]);
+
+    // Fetch history counts on load
+    useEffect(() => {
+        const fetchHistoryCounts = async () => {
+            if (!user?.wallet?.address) return;
+            try {
+                const res = await fetch(`/api/copy-trading/positions/history?wallet=${user.wallet.address}&type=COUNTS`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setHistoryCounts(data);
+                }
+            } catch (error) {
+                console.error("Failed to fetch history counts", error);
+            }
+        };
+        fetchHistoryCounts();
+    }, [user?.wallet?.address, statusFilter]);
 
     // Load all wallet data
     useEffect(() => {
@@ -340,7 +402,7 @@ export default function PortfolioPage() {
     const userAddress = user?.wallet?.address || '0x...';
 
     return (
-        <div className="container max-w-7xl py-8">
+        <div className="container max-w-[1360px] py-8">
             {/* Header */}
             <div className="mb-8 space-y-1">
                 <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -404,9 +466,21 @@ export default function PortfolioPage() {
                         <div className="mt-3 pt-3 border-t border-border/50">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground">Trading P&L (Realized)</span>
-                                <span className={cn("text-xs font-medium", (ctMetrics?.tradingPnL || 0) >= 0 ? "text-green-400" : "text-red-400")}>
-                                    {(ctMetrics?.tradingPnL || 0) >= 0 ? '+' : ''}${(ctMetrics?.tradingPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
+                                <div className="flex flex-col items-end">
+                                    <span className={cn("text-xs font-medium", (ctMetrics?.tradingPnL || 0) >= 0 ? "text-green-400" : "text-red-400")}>
+                                        {(ctMetrics?.tradingPnL || 0) >= 0 ? '+' : ''}${(ctMetrics?.tradingPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                    {ctMetrics && (
+                                        <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
+                                            <span className="text-green-400">
+                                                W: +${(ctMetrics.realizedWins || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            </span>
+                                            <span className="text-red-400">
+                                                L: -${Math.abs(ctMetrics.realizedLosses || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -548,11 +622,18 @@ export default function PortfolioPage() {
                                 ];
 
                                 // Filter logic
-                                const filteredPositions = allPositions.filter(p => {
-                                    if (statusFilter === 'ALL') return true;
+                                // Merge history into active for display if filter matches
+                                let displayPositions = [...allPositions];
+                                if (statusFilter === 'WON') {
+                                    displayPositions = [...allPositions.filter(p => p.status === 'SETTLED_WIN'), ...settledHistory];
+                                } else if (statusFilter === 'LOST') {
+                                    displayPositions = [...allPositions.filter(p => p.status === 'SETTLED_LOSS'), ...settledHistory];
+                                }
+
+                                const filteredPositions = displayPositions.filter(p => {
                                     if (statusFilter === 'OPEN') return p.status === 'OPEN';
-                                    if (statusFilter === 'WON') return p.status === 'SETTLED_WIN';
-                                    if (statusFilter === 'LOST') return p.status === 'SETTLED_LOSS';
+                                    if (statusFilter === 'WON') return true; // Already processed above
+                                    if (statusFilter === 'LOST') return true; // Already processed above
                                     return true;
                                 });
 
@@ -562,6 +643,14 @@ export default function PortfolioPage() {
                                     (positionsPage - 1) * ITEMS_PER_PAGE,
                                     positionsPage * ITEMS_PER_PAGE
                                 );
+
+                                if (isSettledLoading) {
+                                    return (
+                                        <div className="flex h-full items-center justify-center">
+                                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                        </div>
+                                    );
+                                }
 
                                 if (allPositions.length === 0) {
                                     return (
@@ -583,7 +672,7 @@ export default function PortfolioPage() {
                                     <div className="flex flex-col h-full">
                                         {/* Status Filter Bar */}
                                         <div className="px-4 py-2 border-b flex items-center gap-2 overflow-x-auto">
-                                            {(['ALL', 'OPEN', 'WON', 'LOST'] as const).map((filter) => (
+                                            {(['OPEN', 'WON', 'LOST'] as const).map((filter) => (
                                                 <button
                                                     key={filter}
                                                     onClick={() => {
@@ -591,24 +680,15 @@ export default function PortfolioPage() {
                                                         setPositionsPage(1); // Reset page on filter change
                                                     }}
                                                     className={cn(
-                                                        "px-3 py-1 rounded-full text-xs font-medium transition-colors border",
+                                                        "px-3 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap",
                                                         statusFilter === filter
                                                             ? "bg-primary text-primary-foreground border-primary"
                                                             : "bg-background text-muted-foreground border-border hover:bg-muted"
                                                     )}
                                                 >
-                                                    {filter === 'ALL' ? 'All' :
-                                                        filter === 'OPEN' ? 'Open' :
-                                                            filter === 'WON' ? 'Won' : 'Lost'}
-                                                    <span className="ml-1.5 opacity-60">
-                                                        {allPositions.filter(p => {
-                                                            if (filter === 'ALL') return true;
-                                                            if (filter === 'OPEN') return p.status === 'OPEN';
-                                                            if (filter === 'WON') return p.status === 'SETTLED_WIN';
-                                                            if (filter === 'LOST') return p.status === 'SETTLED_LOSS';
-                                                            return true;
-                                                        }).length}
-                                                    </span>
+                                                    {filter === 'OPEN' ? `Open (${allPositions.filter(p => p.status === 'OPEN').length})` :
+                                                        filter === 'WON' ? `Won (${allPositions.filter(p => p.status === 'SETTLED_WIN').length + historyCounts.REDEEMED})` :
+                                                            `Lost (${allPositions.filter(p => p.status === 'SETTLED_LOSS').length + historyCounts.SETTLED_LOSS})`}
                                                 </button>
                                             ))}
                                         </div>
@@ -622,10 +702,10 @@ export default function PortfolioPage() {
                                                         <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">Side</th>
                                                         <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[70px]">Status</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Shares</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Avg. Price</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">Avg. Price</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Current</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Total Invested</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Est. Value</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">Total Invested</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">Est. Value</th>
 
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">ROI</th>
                                                         <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
@@ -661,7 +741,7 @@ export default function PortfolioPage() {
 
                                                             return (
                                                                 <tr
-                                                                    key={`${pos._type}-${pos.tokenId || i}`}
+                                                                    key={pos.id || `${pos._type}-${pos.tokenId || i}`}
                                                                     className={cn(
                                                                         "border-b transition-colors hover:bg-muted/50",
                                                                         pos._type === 'sim' && "bg-blue-500/5"
@@ -781,30 +861,32 @@ export default function PortfolioPage() {
                                         </div>
 
                                         {/* Pagination Controls */}
-                                        {totalPages > 1 && (
-                                            <div className="flex items-center justify-between px-4 py-3 border-t bg-card">
-                                                <div className="text-xs text-muted-foreground">
-                                                    Showing {(positionsPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(positionsPage * ITEMS_PER_PAGE, filteredPositions.length)} of {filteredPositions.length} positions
+                                        {
+                                            filteredPositions.length > 0 && (
+                                                <div className="flex items-center justify-between px-4 py-3 border-t bg-card">
+                                                    <div className="text-xs text-muted-foreground">
+                                                        Showing {(positionsPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(positionsPage * ITEMS_PER_PAGE, filteredPositions.length)} of {filteredPositions.length} positions
+                                                    </div>
+                                                    <div className="flex items-center space-x-2">
+                                                        <button
+                                                            onClick={() => setPositionsPage(p => Math.max(1, p - 1))}
+                                                            disabled={positionsPage === 1}
+                                                            className="px-2 py-1 border rounded text-xs font-medium disabled:opacity-50 hover:bg-muted"
+                                                        >
+                                                            Previous
+                                                        </button>
+                                                        <span className="text-xs font-medium">Page {positionsPage} of {totalPages}</span>
+                                                        <button
+                                                            onClick={() => setPositionsPage(p => Math.min(totalPages, p + 1))}
+                                                            disabled={positionsPage === totalPages}
+                                                            className="px-2 py-1 border rounded text-xs font-medium disabled:opacity-50 hover:bg-muted"
+                                                        >
+                                                            Next
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center space-x-2">
-                                                    <button
-                                                        onClick={() => setPositionsPage(p => Math.max(1, p - 1))}
-                                                        disabled={positionsPage === 1}
-                                                        className="px-2 py-1 border rounded text-xs font-medium disabled:opacity-50 hover:bg-muted"
-                                                    >
-                                                        Previous
-                                                    </button>
-                                                    <span className="text-xs font-medium">Page {positionsPage} of {totalPages}</span>
-                                                    <button
-                                                        onClick={() => setPositionsPage(p => Math.min(totalPages, p + 1))}
-                                                        disabled={positionsPage === totalPages}
-                                                        className="px-2 py-1 border rounded text-xs font-medium disabled:opacity-50 hover:bg-muted"
-                                                    >
-                                                        Next
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
+                                            )
+                                        }
                                     </div>
                                 );
                             })()
@@ -969,7 +1051,7 @@ export default function PortfolioPage() {
                         )}
                     </div>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
