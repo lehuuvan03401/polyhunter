@@ -12,6 +12,7 @@ export interface CopyTradingMetrics {
     tradingPnL: number; // Execution slippage (realized from completed trades)
     realizedWins?: number;
     realizedLosses?: number;
+    cumulativeInvestment?: number;
 }
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -49,7 +50,8 @@ export function useCopyTradingMetrics(walletAddress: string) {
         totalPnL: 0,
         tradingPnL: 0,
         realizedWins: 0,
-        realizedLosses: 0
+        realizedLosses: 0,
+        cumulativeInvestment: 0
     };
 
     return {

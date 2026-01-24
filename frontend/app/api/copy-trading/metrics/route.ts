@@ -123,6 +123,7 @@ export async function GET(request: Request) {
         let tradingPnL = 0; // Separate metric for trading execution cost
         let realizedWins = 0;
         let realizedLosses = 0;
+        let cumulativeInvestment = 0;
 
         try {
             // First, get all config IDs for this wallet
@@ -155,6 +156,18 @@ export async function GET(request: Request) {
                 tradingPnL = (winsSum._sum.realizedPnL || 0) + (lossesSum._sum.realizedPnL || 0);
                 realizedWins = winsSum._sum.realizedPnL || 0;
                 realizedLosses = lossesSum._sum.realizedPnL || 0;
+
+                // Calculate Cumulative Investment (Total Buy Volume)
+                const allBuys = await prisma.copyTrade.findMany({
+                    where: {
+                        configId: { in: configIds },
+                        originalSide: 'BUY',
+                        status: 'EXECUTED'
+                    },
+                    select: { copySize: true, copyPrice: true }
+                });
+
+                cumulativeInvestment = allBuys.reduce((sum, t) => sum + (t.copySize * (t.copyPrice || 0)), 0);
 
                 // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
                 const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
@@ -216,7 +229,8 @@ export async function GET(request: Request) {
             realizedLosses,   // Total Losses PnL
             unrealizedPnL,    // From current market prices (settlement value)
             tradingPnL,       // Same as realized, explicitly named
-            totalPnL: unrealizedPnL // Use unrealized as the "main" PnL (settlement outcome)
+            totalPnL: unrealizedPnL, // Use unrealized as the "main" PnL
+            cumulativeInvestment // Total Volume since start
         });
 
     } catch (error) {

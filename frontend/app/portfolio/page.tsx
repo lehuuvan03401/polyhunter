@@ -415,7 +415,7 @@ export default function PortfolioPage() {
             <div className="grid gap-6 md:grid-cols-3 mb-8">
 
                 {/* Wallet Card - Now with real USDC balance */}
-                <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px]">
+                <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full min-h-[220px]">
                     <div>
                         <div className="flex items-center gap-2 text-sm font-medium text-blue-400 mb-4">
                             <Wallet className="h-4 w-4" />
@@ -444,7 +444,7 @@ export default function PortfolioPage() {
                 </div>
 
                 {/* PnL Card - Now with Real + Simulated PnL */}
-                <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px]">
+                <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full min-h-[220px]">
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 text-sm font-medium text-green-500">
@@ -495,7 +495,7 @@ export default function PortfolioPage() {
                 </div>
 
                 {/* Invested Funds Card (NEW) */}
-                <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-[220px] relative overflow-hidden">
+                <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full min-h-[220px] relative overflow-hidden">
                     {/* Background Gradient Effect */}
                     <div className="absolute top-0 right-0 -mr-16 -mt-16 h-48 w-48 rounded-full bg-yellow-500/10 blur-3xl pointer-events-none" />
 
@@ -510,8 +510,15 @@ export default function PortfolioPage() {
                         <div className="text-3xl font-bold tracking-tight mb-1">
                             ${(ctMetrics?.totalInvested || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                            Across {ctMetrics?.activePositions || 0} active positions
+                        <div className="flex flex-col gap-1">
+                            <div className="text-sm text-muted-foreground">
+                                Across {ctMetrics?.activePositions || 0} active positions
+                            </div>
+                            {ctMetrics?.cumulativeInvestment !== undefined && (
+                                <div className="text-xs text-muted-foreground opacity-80 mt-1 text-yellow-500/80">
+                                    Total Volume: ${(ctMetrics.cumulativeInvestment).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                            )}
                         </div>
                     </div>
 
