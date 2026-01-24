@@ -38,7 +38,8 @@ export function Navbar() {
             try {
                 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
                 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
-                const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+                const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
+                const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
                 const usdcContract = new ethers.Contract(USDC_CONTRACT, USDC_ABI, provider);
                 const rawBalance = await usdcContract.balanceOf(user.wallet.address);
                 // USDC has 6 decimals
