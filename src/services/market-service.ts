@@ -181,10 +181,26 @@ export class MarketService {
     const cacheKey = `clob:market:${conditionId}`;
     return this.cache.getOrSet(cacheKey, CACHE_TTL.MARKET_INFO, async () => {
       const client = await this.ensureInitialized();
-      return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
-        const market = await client.getMarket(conditionId);
-        return this.normalizeClobMarket(market as ClobMarket);
-      });
+
+      let attempt = 0;
+      while (true) {
+        try {
+          return await this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+            const market = await client.getMarket(conditionId);
+            return this.normalizeClobMarket(market as ClobMarket);
+          });
+        } catch (err: any) {
+          // Retry on Network Error (up to 3 times)
+          const isNetworkError = err?.message?.includes('Network Error') || err?.message?.includes('ECONNRESET') || err?.code === 'ECONNRESET';
+          if (attempt < 3 && isNetworkError) {
+            attempt++;
+            console.warn(`[CLOB] Network Error fetching market ${conditionId}. Retrying (${attempt}/3)...`);
+            await new Promise(r => setTimeout(r, 500 * attempt));
+            continue;
+          }
+          throw err;
+        }
+      }
     });
   }
 
@@ -837,7 +853,7 @@ export class MarketService {
       marketSlug: m.market_slug,
       question: m.question,
       description: m.description,
-      tokens: m.tokens.map(t => ({
+      tokens: (m.tokens || []).map(t => ({
         tokenId: t.token_id,
         outcome: t.outcome,
         price: t.price,
