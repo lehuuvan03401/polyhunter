@@ -224,13 +224,13 @@ async function handleMarketResolution(event: MarketEvent): Promise<void> {
     console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}`);
 
     try {
-        await resolveSimulatedPositions(conditionId);
+        await resolvePositions(conditionId);
     } catch (error) {
         console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
     }
 }
 
-async function resolveSimulatedPositions(conditionId: string): Promise<void> {
+async function resolvePositions(conditionId: string): Promise<void> {
     console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
 
     try {
@@ -245,6 +245,7 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
         console.log(`   Market: ${market.question}`);
         console.log(`   Outcomes: ${market.outcomes.join(', ')}`);
         console.log(`   Prices: ${market.outcomePrices.join(', ')}`);
+        console.log(`   Closed: ${market.closed}`);
 
         // Map Outcomes to Token IDs
         const relevantTrades = await prisma.copyTrade.findMany({
@@ -263,15 +264,28 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
         // Determine winners
         for (let i = 0; i < market.outcomes.length; i++) {
             const outcomeName = market.outcomes[i];
-            const price = market.outcomePrices[i];
+            const price = Number(market.outcomePrices[i]);
             const tokenId = outcomeToTokenMap.get(outcomeName);
+
+            // Check for explicit winner flag if available in tokens
+            const tokenData = (market as any).tokens?.find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
+            const isWinnerInfo = tokenData?.winner;
 
             if (!tokenId) continue;
 
-            let settlementValue = 0;
-            if (price >= 0.95) settlementValue = 1.0;
-            else if (price <= 0.05) settlementValue = 0.0;
-            else continue;
+            let settlementType: 'WIN' | 'LOSS' | 'NONE' = 'NONE';
+            let settlementValue = 0.0;
+
+            // Robust Winner Logic matches Simulation
+            if (price >= 0.95 || isWinnerInfo === true) {
+                settlementType = 'WIN';
+                settlementValue = 1.0;
+            } else if (price <= 0.05 || (isWinnerInfo === false && market.closed)) {
+                settlementType = 'LOSS';
+                settlementValue = 0.0;
+            } else {
+                continue; // Uncertain
+            }
 
             // Find positions
             const positions = await prisma.userPosition.findMany({
@@ -280,15 +294,58 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
 
             if (positions.length === 0) continue;
 
-            console.log(`   Processing ${positions.length} positions for '${outcomeName}' (Token: ${tokenId.slice(0, 10)}...). Value: $${settlementValue}`);
+            console.log(`   Processing ${positions.length} positions for '${outcomeName}' (Token: ${tokenId.slice(0, 10)}...). Type: ${settlementType}`);
 
             for (const pos of positions) {
-                // Log settlement
+                let txHash = 'auto-settled-loss';
+                let errorMsg: string | undefined = undefined;
+
+                // Calculate PnL: (Value - Cost)
+                // Proceed Value = Balance * SettlementValue
+                const proceeds = pos.balance * settlementValue;
+                const cost = pos.totalCost;
+                const pnl = proceeds - cost;
+
+                // 1. ON-CHAIN EXECUTION (Only for Wins)
+                if (settlementType === 'WIN') {
+                    console.log(`     🎉 Executing On-Chain Redemption for ${pos.walletAddress}...`);
+
+                    // Resolve Proxy
+                    const proxyAddress = await executionService.resolveProxyAddress(pos.walletAddress);
+                    if (proxyAddress) {
+                        const indexSet = [1 << i]; // Bitmask for index i
+                        const result = await executionService.redeemPositions(
+                            proxyAddress,
+                            conditionId,
+                            indexSet
+                        );
+
+                        if (result.success) {
+                            txHash = result.txHash || 'redeem-tx';
+                            console.log(`       ✅ Tx: ${txHash}`);
+                        } else {
+                            console.error(`       ❌ Redemption Failed: ${result.error}`);
+                            errorMsg = result.error;
+                            // Ensure we don't delete position if on-chain fail? 
+                            // Actually if on-chain fails, we should probably NOT delete the position DB record 
+                            // so we can retry? 
+                            // But for now, let's log error and maybe NOT delete if critical?
+                            // Currently simulation DELETES anyway. logic below deletes.
+                            // Let's keep deleting to avoid double-processing loop for now, 
+                            // but in prod we'd want a retry queue.
+                        }
+                    } else {
+                        console.error(`       ❌ No Proxy found for ${pos.walletAddress}`);
+                        errorMsg = "No Proxy Found";
+                    }
+                }
+
+                // 2. Log Settlement Trade
                 await prisma.copyTrade.create({
                     data: {
                         configId: 'settlement-auto',
                         originalTrader: 'POLYMARKET_SETTLEMENT',
-                        originalSide: 'SELL',
+                        originalSide: 'SELL', // Settlement is effectively a sell
                         originalSize: pos.balance,
                         originalPrice: settlementValue,
                         marketSlug: market.slug,
@@ -297,23 +354,34 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
                         outcome: outcomeName,
                         copySize: pos.balance,
                         copyPrice: settlementValue,
-                        status: 'EXECUTED',
+                        status: (errorMsg ? 'FAILED' : 'EXECUTED'),
                         executedAt: new Date(),
-                        txHash: 'simulated_settlement',
-                        errorMessage: `Auto-settled at $${settlementValue.toFixed(2)}`
+                        txHash: txHash,
+                        errorMessage: errorMsg || (settlementType === 'WIN' ? `Redeemed (Profit $${pnl.toFixed(2)})` : `Settled Loss ($${pnl.toFixed(2)})`),
+                        realizedPnL: pnl
                     }
                 });
 
-                // Clear Position (Simulate Redemption)
+                // 3. Clear Position (If success or Loss)
+                // If it was a WIN but failed on-chain, maybe we shouldn't delete?
+                // But if we don't delete, we might infinite loop if we re-run.
+                // For this upgrades, let's assume if it failed, we still mark as "Processed" 
+                // but maybe with a flag? 
+                // Safest for User Funds: If WIN and Failed, DO NOT delete.
+                if (settlementType === 'WIN' && errorMsg) {
+                    console.warn(`       ⚠️ Skipping DB deletion due to on-chain failure.`);
+                    continue;
+                }
+
                 await prisma.userPosition.delete({
                     where: { id: pos.id }
                 });
 
-                console.log(`     ✅ Settled position for ${pos.walletAddress.slice(0, 8)}: ${pos.balance} shares @ $${settlementValue}`);
+                console.log(`     ✅ DB Updated: PnL $${pnl.toFixed(2)}`);
             }
         }
     } catch (error) {
-        console.error(`   ❌ Error in resolveSimulatedPositions:`, error);
+        console.error(`   ❌ Error in resolvePositions:`, error);
     }
 }
 

@@ -1,0 +1,5 @@
+- [x] Update `copy-trading-worker.ts`
+  - [x] Rename `resolveSimulatedPositions` to `resolvePositions`
+  - [x] Implement `winner` / `closed` status check (Robust Logic)
+  - [x] Call `executionService.redeemPositions` for winning positions
+  - [x] Calculate and record `realizedPnL`
