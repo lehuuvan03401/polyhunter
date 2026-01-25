@@ -1,0 +1,6 @@
+- [x] Update `processRedemptions` in `simulate-copy-trading.ts`
+  - [x] Add check for `winner` boolean
+  - [x] Add check for `closed` status
+  - [x] Refactor condition logic to match UI `positions/route.ts`
+- [x] Verify functionality
+  - [ ] Run simulation and observed auto-redemption behavior

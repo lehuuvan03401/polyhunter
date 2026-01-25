@@ -196,8 +196,9 @@ export async function GET(request: Request) {
                     buyTrades.forEach(t => {
                         if (!t.tokenId) return;
                         const existing = costBasisMap.get(t.tokenId) || { totalCost: 0, totalShares: 0 };
-                        existing.totalCost += t.copySize;
-                        existing.totalShares += t.copySize / (t.copyPrice || 1);
+                        // copySize is SHARES. Cost = Shares * Price
+                        existing.totalCost += t.copySize * (t.copyPrice || 0);
+                        existing.totalShares += t.copySize;
                         costBasisMap.set(t.tokenId, existing);
                     });
 
@@ -208,7 +209,7 @@ export async function GET(request: Request) {
                         if (costInfo && costInfo.totalShares > 0) {
                             const avgBuyPrice = costInfo.totalCost / costInfo.totalShares;
                             const sellPrice = t.copyPrice || 0;
-                            const shares = sellPrice > 0 ? t.copySize / sellPrice : 0;
+                            const shares = t.copySize; // copySize is SHARES
                             const profit = (sellPrice - avgBuyPrice) * shares;
                             tradingPnL += profit;
                         }

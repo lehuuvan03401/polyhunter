@@ -348,6 +348,7 @@ async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: n
                 txHash: `SIM-${trade.transactionHash}`,
                 originalTxHash: trade.transactionHash,
                 executedAt: new Date(),
+                realizedPnL: pnl,
             }
         });
 
@@ -460,6 +461,8 @@ async function handleTrade(trade: ActivityTrade) {
     console.log(`   🔗 TX: ${trade.transactionHash?.substring(0, 30)}...`);
 
     // Process trade
+    let tradePnL: number | undefined = undefined;
+
     if (trade.side === 'BUY') {
         updatePositionOnBuy(trade.asset, copyShares, execPrice, trade.marketSlug || '', trade.outcome || 'N/A');
         totalBuyVolume += FIXED_COPY_AMOUNT;
@@ -468,6 +471,7 @@ async function handleTrade(trade: ActivityTrade) {
         console.log(`   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`);
     } else {
         const pnl = updatePositionOnSell(trade.asset, copyShares, execPrice);
+        tradePnL = pnl;
         realizedPnL += pnl;
         totalSellVolume += FIXED_COPY_AMOUNT;
 
@@ -489,7 +493,8 @@ async function handleTrade(trade: ActivityTrade) {
 
     // Record to database
     // We record the EXECUTION price (simulated)
-    await recordCopyTrade(trade, copyShares, trade.side === 'SELL' ? realizedPnL : undefined);
+    // Pass the trade-specific PnL (calculated above for sells)
+    await recordCopyTrade(trade, copyShares, tradePnL);
 }
 
 // --- SETTLEMENT HANDLER ---
@@ -647,15 +652,22 @@ async function processRedemptions() {
                             const prices: number[] = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices).map(Number) : m.outcomePrices.map(Number);
                             const myOutcome = parseOutcome(pos.outcome);
                             const idx = outcomes.findIndex((o: string) => parseOutcome(o) === myOutcome);
+
                             if (idx !== -1 && prices[idx] !== undefined) {
                                 price = prices[idx];
                             }
                         }
 
-                        // console.log(`   [Debug] Token: ${tokenId} Price: ${price}`);
+                        // Check for 'winner' flag in token data
+                        let isWinner: boolean | undefined = undefined;
+                        if (token && token.winner !== undefined) {
+                            isWinner = token.winner;
+                        }
 
-                        // Check for Win (Price >= 0.95 or 1.0)
-                        if (price !== undefined && price >= 0.95) {
+                        // console.log(`   [Debug] Token: ${tokenId} Price: ${price} Winner: ${isWinner} Closed: ${m.closed}`);
+
+                        // Check for Win (Price >= 0.95 OR Explicit Winner)
+                        if ((price !== undefined && price >= 0.95) || isWinner === true) {
                             console.log(`   🎉 Redeeming WIN for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
 
                             // 1. Credit Realized PnL (Value - Cost)
@@ -695,8 +707,8 @@ async function processRedemptions() {
 
                             console.log(`      💰 Credited $${redemptionValue.toFixed(2)} (Profit: $${profit.toFixed(2)})`);
                         }
-                        // Check for Loss (Price <= 0.05)
-                        else if (price !== undefined && price <= 0.05) {
+                        // Check for Loss (Price <= 0.05 OR (Explicit Loser AND Market Closed))
+                        else if ((price !== undefined && price <= 0.05) || (isWinner === false && m.closed)) {
                             console.log(`   💀 Settle LOSS for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
 
                             const settlementValue = 0;

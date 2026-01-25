@@ -1,0 +1,8 @@
+- [x] Update `recordCopyTrade` in `simulate-copy-trading.ts`
+  - [x] Pass `pnl` argument to `prisma.copyTrade.create` data
+- [x] Update `metrics/route.ts` fallback logic
+  - [x] Treat `copySize` as Shares in Cost Basis calculation
+  - [x] Treat `copySize` as Shares in Profit calculation
+- [x] Verify PnL accuracy
+  - [ ] Run simulation and check DB records
+  - [ ] Check Portfolio PnL display
