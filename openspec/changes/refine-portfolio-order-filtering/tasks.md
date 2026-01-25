@@ -1,0 +1,8 @@
+- [x] Update `OrderStatusPanel` component
+  - [x] Rename filter state types and values
+  - [x] Update filter logic to check `order.side`
+  - [x] update UI tab labels
+- [x] Verify filtering behavior
+  - [x] Check "Buy" tab shows only BUY orders
+  - [x] Check "Sell" tab shows only SELL orders
+  - [x] Check "All" tab shows all orders

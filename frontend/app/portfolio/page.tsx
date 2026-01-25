@@ -473,10 +473,10 @@ export default function PortfolioPage() {
                                     {ctMetrics && (
                                         <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
                                             <span className="text-green-400">
-                                                W: +${(ctMetrics.realizedWins || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                W: +${(ctMetrics.realizedWins || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                             <span className="text-red-400">
-                                                L: -${Math.abs(ctMetrics.realizedLosses || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                L: -${Math.abs(ctMetrics.realizedLosses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     )}

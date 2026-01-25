@@ -27,17 +27,18 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [orderToStop, setOrderToStop] = useState<string | null>(null);
     const [historyLeader, setHistoryLeader] = useState<{ address: string, name?: string } | null>(null);
-    const [filter, setFilter] = useState<'all' | 'open' | 'history'>('all');
+    const [filter, setFilter] = useState<'all' | 'buy' | 'sell'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
     // Filter orders
+    // Filter orders
     const filteredOrders = orders.filter(order => {
-        if (filter === 'open') {
-            return ['PENDING', 'OPEN', 'PARTIALLY_FILLED', 'SETTLEMENT_PENDING'].includes(order.status);
+        if (filter === 'buy') {
+            return order.side === 'BUY';
         }
-        if (filter === 'history') {
-            return ['FILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'].includes(order.status);
+        if (filter === 'sell') {
+            return order.side === 'SELL';
         }
         return true;
     });
@@ -51,7 +52,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
 
     // Reset to page 1 when filter changes
-    const handleFilterChange = (newFilter: 'all' | 'open' | 'history') => {
+    const handleFilterChange = (newFilter: 'all' | 'buy' | 'sell') => {
         setFilter(newFilter);
         setCurrentPage(1);
     };
@@ -139,8 +140,8 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
             {/* Filters */}
             <div className="flex border-b border-border/50 flex-shrink-0">
                 <FilterTab active={filter === 'all'} onClick={() => handleFilterChange('all')}>All</FilterTab>
-                <FilterTab active={filter === 'open'} onClick={() => handleFilterChange('open')}>Open</FilterTab>
-                <FilterTab active={filter === 'history'} onClick={() => handleFilterChange('history')}>History</FilterTab>
+                <FilterTab active={filter === 'buy'} onClick={() => handleFilterChange('buy')}>Buy</FilterTab>
+                <FilterTab active={filter === 'sell'} onClick={() => handleFilterChange('sell')}>Sell</FilterTab>
             </div>
 
             {/* Orders List */}
