@@ -1,0 +1,2 @@
+- [x] Update `frontend/app/api/copy-trading/redeem-sim/route.ts`
+  - [x] Lowercase `walletAddress` before query

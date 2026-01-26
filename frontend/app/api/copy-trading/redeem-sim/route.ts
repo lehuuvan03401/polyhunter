@@ -4,11 +4,15 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { walletAddress, tokenId, conditionId, outcome, marketSlug } = body;
+        const { walletAddress: rawWallet, tokenId: rawToken, conditionId, outcome, marketSlug } = body;
 
-        if (!walletAddress || !tokenId) {
+        if (!rawWallet || !rawToken) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
+
+        // Normalize keys for DB (DB stores lowercase)
+        const walletAddress = rawWallet.toLowerCase();
+        const tokenId = rawToken.toLowerCase();
 
         console.log(`[MockRedeem] Request for ${walletAddress} on token ${tokenId}`);
 
