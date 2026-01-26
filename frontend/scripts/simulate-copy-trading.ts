@@ -799,13 +799,28 @@ async function printSummary() {
                             const data = await resp.json();
                             const m = Array.isArray(data) ? data[0] : data;
                             if (m) {
-                                // 1. Try Token ID Match (Real)
-                                let price = undefined;
+                                // 1. Check for Explicit Resolution FIRST
+                                let isWinner: boolean | undefined = undefined;
                                 const token = (m.tokens || []).find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
+
+                                if (token && token.winner !== undefined) {
+                                    isWinner = token.winner;
+                                }
+
+                                if (isWinner === true) {
+                                    priceMap.set(tokenId, 1.0);
+                                    continue;
+                                } else if (isWinner === false && m.closed) {
+                                    priceMap.set(tokenId, 0.0);
+                                    continue;
+                                }
+
+                                // 2. Try Token ID Match (Real Price)
+                                let price = undefined;
                                 if (token && token.price) {
                                     price = Number(token.price);
                                 }
-                                // 2. Fallback: Outcome Match (Simulated)
+                                // 3. Fallback: Outcome Match
                                 else if (m.outcomes && m.outcomePrices && pos.outcome) {
                                     const outcomes: string[] = typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes;
                                     const prices: number[] = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices).map(Number) : m.outcomePrices.map(Number);
@@ -817,7 +832,10 @@ async function printSummary() {
                                     }
                                 }
 
+                                // Robust Settlement Check
                                 if (price !== undefined) {
+                                    if (price >= 0.95) price = 1.0;
+                                    if (price <= 0.05 && m.closed) price = 0.0;
                                     priceMap.set(tokenId, price);
                                 }
                             }
@@ -945,6 +963,8 @@ async function main() {
 
     // 6. Cleanup and report
     clearInterval(progressInterval);
+    console.log('🔄 Running final settlement check...');
+    await processRedemptions();
     await printSummary();
 
     realtimeService.disconnect();
