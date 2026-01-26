@@ -1,0 +1,4 @@
+- [ ] Update `frontend/scripts/simulate-copy-trading.ts`
+  - [ ] Fix `totalBuyVolume` to add `copyAmount`
+  - [ ] Fix `totalSellVolume` to add `proceeds` (calculated from price * shares)
+  - [ ] Update `printSummary` to fetch CLOB prices first

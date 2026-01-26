@@ -226,6 +226,11 @@ export async function GET(request: Request) {
             console.warn('Failed to calculate realized PnL:', err);
         }
 
+        // Enforce Consistency (Fix Rounding Errors)
+        // realizedWins + realizedLosses MUST equal realizedPnL/tradingPnL
+        realizedPnL = realizedWins + realizedLosses;
+        tradingPnL = realizedWins + realizedLosses;
+
         return NextResponse.json({
             totalInvested,
             activePositions: positions.length,

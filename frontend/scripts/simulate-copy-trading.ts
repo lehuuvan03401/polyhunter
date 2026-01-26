@@ -465,7 +465,7 @@ async function handleTrade(trade: ActivityTrade) {
 
     if (trade.side === 'BUY') {
         updatePositionOnBuy(trade.asset, copyShares, execPrice, trade.marketSlug || '', trade.outcome || 'N/A');
-        totalBuyVolume += FIXED_COPY_AMOUNT;
+        totalBuyVolume += copyAmount;
 
         const pos = positions.get(trade.asset)!;
         console.log(`   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`);
@@ -473,7 +473,7 @@ async function handleTrade(trade: ActivityTrade) {
         const pnl = updatePositionOnSell(trade.asset, copyShares, execPrice);
         tradePnL = pnl;
         realizedPnL += pnl;
-        totalSellVolume += FIXED_COPY_AMOUNT;
+        totalSellVolume += copyAmount;
 
         const pos = positions.get(trade.asset);
         const remaining = pos ? pos.balance.toFixed(2) : '0';
@@ -780,6 +780,19 @@ async function printSummary() {
                 const pos = positions.get(tokenId);
                 if (!pos) continue;
                 try {
+                    // 0. Try CLOB Price first (Alignment with Frontend)
+                    try {
+                        const clobResp = await fetch(`${CLOB_API_URL}/book?token_id=${tokenId}`);
+                        if (clobResp.ok) {
+                            const book = await clobResp.json();
+                            if (book.bids && book.bids.length > 0) {
+                                const bestBid = Number(book.bids[0].price);
+                                priceMap.set(tokenId, bestBid);
+                                continue; // Found price, skip Gamma
+                            }
+                        }
+                    } catch (e) { } // Ignore CLOB errors, fallthrough to Gamma
+
                     if (pos.marketSlug) {
                         const resp = await fetch(`${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`);
                         if (resp.ok) {
@@ -839,7 +852,7 @@ async function printSummary() {
     console.log('📊 SIMULATION SUMMARY');
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(`Duration: ${duration.toFixed(1)} minutes`);
-    console.log(`Trades Recorded: ${tradesRecorded}`);
+    console.log(`Total Orders Recorded: ${dbTrades.length}`);
     console.log(`Total Buy Volume: $${totalBuyVolume.toFixed(2)}`);
     console.log(`Total Sell Volume: $${totalSellVolume.toFixed(2)}`);
     const totalFees = tradesRecorded * ESTIMATED_GAS_FEE_USD;

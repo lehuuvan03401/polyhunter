@@ -1,0 +1,3 @@
+- [x] Update `frontend/app/api/copy-trading/metrics/route.ts`
+  - [x] Enforce `tradingPnL = realizedWins + realizedLosses`
+  - [x] Enforce `realizedPnL = realizedWins + realizedLosses`

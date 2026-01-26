@@ -1,0 +1,2 @@
+- [x] Update `frontend/scripts/simulate-copy-trading.ts`
+  - [x] Modify `printSummary` to display `dbTrades.length` as "Total Orders Recorded"
