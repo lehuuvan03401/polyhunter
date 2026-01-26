@@ -50,9 +50,9 @@ export function MarketsPage() {
     if (!authenticated) {
         return (
             <div className="container py-10">
-                <div className="mb-8 space-y-4">
-                    <h1 className="text-3xl font-bold tracking-tight">Participate in Markets</h1>
-                    <p className="text-muted-foreground">
+                <div className="mb-8 space-y-4 text-center">
+                    <h1 className="text-4xl font-bold tracking-tight">Participate in Markets</h1>
+                    <p className="text-muted-foreground text-lg">
                         Explore the top prediction markets by volume.
                     </p>
                 </div>
@@ -106,9 +106,9 @@ export function MarketsPage() {
 
     return (
         <div className="container py-10">
-            <div className="mb-8 space-y-4">
-                <h1 className="text-3xl font-bold tracking-tight">Participate in Markets</h1>
-                <p className="text-muted-foreground">
+            <div className="mb-8 space-y-4 text-center">
+                <h1 className="text-4xl font-bold tracking-tight">Participate in Markets</h1>
+                <p className="text-muted-foreground text-lg">
                     Explore the top prediction markets by volume.
                 </p>
             </div>

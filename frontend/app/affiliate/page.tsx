@@ -492,8 +492,11 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     return (
         <div className="min-h-screen bg-background pt-24 pb-20">
             <div className="container max-w-6xl mx-auto px-4">
-                <div className="text-center mb-10">
-                    <h1 className="text-3xl font-bold text-white">Affiliate Dashboard</h1>
+                <div className="mb-8 space-y-4 text-center">
+                    <h1 className="text-4xl font-bold tracking-tight text-white">Affiliate Dashboard</h1>
+                    <p className="text-muted-foreground text-lg">
+                        Track earnings and manage your team
+                    </p>
                 </div>
 
                 {/* 1. Tier Status Card */}

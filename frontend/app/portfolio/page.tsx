@@ -404,9 +404,9 @@ export default function PortfolioPage() {
     return (
         <div className="container max-w-[1360px] py-8">
             {/* Header */}
-            <div className="mb-8 space-y-1">
-                <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-                <p className="text-muted-foreground">
+            <div className="mb-8 space-y-4 text-center">
+                <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
+                <p className="text-muted-foreground text-lg">
                     Monitor your portfolio and copy trading activity
                 </p>
             </div>
