@@ -327,16 +327,16 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         />
                                     </div>
                                 </div>
-                                <div className="text-xs text-muted-foreground">
+                                <div className="text-xs text-muted-foreground min-h-[32px] flex items-center">
                                     You will buy exactly ${fixedAmount} worth of shares every time this trader buys.
                                 </div>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {['10', '25', '50', '100'].map((amount) => (
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['1', '5', '10', '25', '50', '100'].map((amount) => (
                                         <button
                                             key={amount}
                                             onClick={() => setFixedAmount(amount)}
                                             className={cn(
-                                                "py-2 rounded-lg text-sm font-medium transition-colors",
+                                                "h-9 w-full rounded-lg text-sm font-medium transition-colors flex items-center justify-center",
                                                 fixedAmount === amount ? "bg-green-600 text-white" : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
                                         >
@@ -583,16 +583,16 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                         />
                                                     </div>
                                                 </div>
-                                                <div className="text-xs text-muted-foreground">
+                                                <div className="text-xs text-muted-foreground min-h-[32px] flex items-center">
                                                     Every trade uses exactly ${fixedAmount}, regardless of trader&apos;s bet size
                                                 </div>
-                                                <div className="grid grid-cols-4 gap-2">
-                                                    {['10', '25', '50', '100'].map((amount) => (
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {['1', '5', '10', '25', '50', '100'].map((amount) => (
                                                         <button
                                                             key={amount}
                                                             onClick={() => setFixedAmount(amount)}
                                                             className={cn(
-                                                                "py-2 rounded-lg text-sm font-medium transition-colors",
+                                                                "h-9 w-full rounded-lg text-sm font-medium transition-colors flex items-center justify-center",
                                                                 fixedAmount === amount ? "bg-green-600 text-white" : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                                             )}
                                                         >
