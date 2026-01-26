@@ -282,7 +282,7 @@ export async function GET(
                     action: t.side === 'BUY' ? 'Bought' : 'Sold',
                     market: t.title,
                     date: tradeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                    time: tradeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                    time: tradeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
                     amount: `$${usdcAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
                     shares: `${t.size.toLocaleString(undefined, { maximumFractionDigits: 2 })} shares`,
                     price: `$${t.price.toFixed(4)}`,

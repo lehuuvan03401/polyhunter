@@ -31,7 +31,10 @@ interface Trade {
     action: string;
     market?: string;
     date: string;
+    time?: string;
     amount: string;
+    shares?: string;
+    price?: string;
     type: string;
 }
 
@@ -324,26 +327,46 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     ) : (
                         <div className="space-y-3">
                             {trades.map((trade, i) => (
-                                <div key={i} className="group bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-4 flex items-center justify-between hover:border-white/10 transition-colors">
-                                    <div className="flex items-center gap-4">
-                                        <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0", trade.type === 'buy' ? 'bg-green-500/10' : 'bg-red-500/10')}>
-                                            {trade.type === 'buy' ? (
-                                                <ArrowUpRight className="h-4 w-4 text-green-500" />
-                                            ) : (
-                                                <ArrowDownRight className="h-4 w-4 text-red-500" />
-                                            )}
-                                        </div>
-                                        <div>
-                                            <div className="text-sm font-medium text-white">
-                                                <span className={cn("font-bold", trade.type === 'buy' ? 'text-green-500' : 'text-red-500')}>{trade.action}</span> {trade.market}
+                                <div key={i} className="group bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-4 hover:border-white/10 transition-colors">
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0", trade.type === 'buy' ? 'bg-green-500/10' : 'bg-red-500/10')}>
+                                                {trade.type === 'buy' ? (
+                                                    <ArrowUpRight className="h-4 w-4 text-green-500" />
+                                                ) : (
+                                                    <ArrowDownRight className="h-4 w-4 text-red-500" />
+                                                )}
                                             </div>
-                                            <div className="text-xs text-muted-foreground mt-0.5">
-                                                {trade.date}
+                                            <div>
+                                                <div className="text-sm font-medium text-white line-clamp-1 max-w-[300px] sm:max-w-md" title={trade.market}>
+                                                    <span className={cn("font-bold mr-1.5", trade.type === 'buy' ? 'text-green-500' : 'text-red-500')}>
+                                                        {trade.action}
+                                                    </span>
+                                                    {trade.market}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-sm font-bold text-white font-mono">
+                                                {trade.amount}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="text-sm font-bold text-white font-mono">
-                                        {trade.amount}
+
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground pl-11">
+                                        <div className="flex items-center gap-2">
+                                            {/* Date / Time */}
+                                            <span>{trade.date}, {trade.time}</span>
+                                        </div>
+
+                                        {/* Price / Shares Details - Only show if data exists */}
+                                        {(trade.price || trade.shares) && (
+                                            <div className="flex items-center gap-1.5">
+                                                {trade.shares && <span>{trade.shares}</span>}
+                                                {trade.price && trade.shares && <span>@</span>}
+                                                {trade.price && <span className="text-white font-medium">{trade.price}</span>}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
