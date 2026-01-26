@@ -212,6 +212,10 @@ export async function GET(request: Request) {
                             const shares = t.copySize; // copySize is SHARES
                             const profit = (sellPrice - avgBuyPrice) * shares;
                             tradingPnL += profit;
+
+                            // Update Breakdown (W/L)
+                            if (profit > 0) realizedWins += profit;
+                            else if (profit < 0) realizedLosses += profit;
                         }
                     });
                 }
