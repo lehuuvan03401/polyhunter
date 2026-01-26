@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Target, StopCircle, RefreshCw, AlertCircle, ExternalLink } from 'lucide-react';
+import { Target, StopCircle, RefreshCw, AlertCircle, ExternalLink, Settings2, DollarSign, Zap, ArrowRightLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,10 +16,19 @@ interface Strategy {
     id: string;
     traderName: string | null;
     traderAddress: string;
-    mode: 'FIXED_AMOUNT' | 'SIZE_SCALE';
+    mode: 'FIXED_AMOUNT' | 'SIZE_SCALE' | 'PERCENTAGE';
     fixedAmount: number | null;
     sizeScale: number | null;
     createdAt: string;
+    // New fields
+    executionMode: 'PROXY' | 'EOA';
+    autoExecute: boolean;
+    slippageType: 'FIXED' | 'AUTO';
+    maxSlippage: number;
+    infiniteMode: boolean;
+    direction: 'COPY' | 'COUNTER';
+    maxSizePerTrade: number;
+    updatedAt: string;
 }
 
 interface ActiveStrategiesPanelProps {
@@ -100,6 +109,21 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
         });
     };
 
+    // Duration Helper
+    const formatDuration = (start: string, end: string) => {
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const diffMs = endDate.getTime() - startDate.getTime();
+
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+    };
+
     return (
         <div className={cn('bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl flex flex-col overflow-hidden', className)}>
             {/* Header */}
@@ -153,6 +177,7 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
                         strategy={strategy}
                         onStop={() => setStrategyToStop(strategy.id)}
                         formatTime={formatTime}
+                        formatDuration={formatDuration}
                         showStopButton={filter === 'active'}
                     />
                 ))}
@@ -271,75 +296,167 @@ function StrategyCard({
     strategy,
     onStop,
     formatTime,
+    formatDuration,
     showStopButton = true
 }: {
     strategy: Strategy;
     onStop: () => void;
     formatTime: (date: string) => string;
+    formatDuration?: (start: string, end: string) => string; // Optional for active prop safety
     showStopButton?: boolean;
 }) {
+    // Mode Display Logic
+    const isFixed = strategy.mode === 'FIXED_AMOUNT' || strategy.fixedAmount !== null;
+    const modeLabel = isFixed
+        ? `Fixed $${strategy.fixedAmount?.toFixed(2) || '0.00'}`
+        : `${(Number(strategy.sizeScale || 0) * 100).toFixed(0)}% Shares`;
+
     return (
-        <div className="p-4 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/30 transition-colors">
-            <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                    {/* Trader Info */}
-                    <div className="flex items-center gap-2 mb-2">
-                        <div className="p-1.5 rounded bg-primary/10">
-                            <Target className="h-3.5 w-3.5 text-primary" />
-                        </div>
-                        <span className="text-sm font-medium truncate">
-                            {strategy.traderName || strategy.traderAddress.slice(0, 10) + '...'}
-                        </span>
-                        {showStopButton && (
-                            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/10 text-green-500 border border-green-500/20">
-                                Active
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Strategy Details */}
-                    <div className="space-y-1 text-xs text-muted-foreground">
+        <div className="p-4 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/30 transition-colors relative group">
+            <div className="flex flex-col gap-3">
+                {/* Header Row: Trader + Badges + Stop */}
+                <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
                         <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground/70">Mode:</span>
-                            <span className="font-medium">
-                                {strategy.mode === 'FIXED_AMOUNT'
-                                    ? `Fixed Amount ($${strategy.fixedAmount?.toFixed(2) || '0.00'})`
-                                    : `Size Scale (${strategy.sizeScale || 0}x)`
-                                }
+                            <div className="p-1.5 rounded bg-primary/10">
+                                <Target className="h-3.5 w-3.5 text-primary" />
+                            </div>
+                            <span className="text-sm font-bold truncate">
+                                {strategy.traderName || strategy.traderAddress.slice(0, 8) + '...'}
                             </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground/70">Started:</span>
-                            <span>{formatTime(strategy.createdAt)}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground/70">Markets:</span>
-                            <span>All</span>
+
+                        {/* Status Badges */}
+                        <div className="flex items-center gap-1.5">
+                            {showStopButton ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/10 text-green-500 border border-green-500/20 uppercase tracking-wide">
+                                    Active
+                                </span>
+                            ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/10 text-gray-500 border border-gray-500/20 uppercase tracking-wide">
+                                    Stopped
+                                </span>
+                            )}
+
+                            {/* Execution Mode Badge */}
+                            {strategy.executionMode === 'EOA' ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 uppercase tracking-wide flex items-center gap-1">
+                                    ⚡ Speed
+                                </span>
+                            ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20 uppercase tracking-wide flex items-center gap-1">
+                                    🛡️ Proxy
+                                </span>
+                            )}
+                            {/* Auto Badge */}
+                            {strategy.autoExecute && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-500 border border-purple-500/20 uppercase tracking-wide flex items-center gap-1">
+                                    🤖 Auto
+                                </span>
+                            )}
                         </div>
                     </div>
 
-                    {/* Trader Address Link */}
+                    {showStopButton && (
+                        <button
+                            onClick={onStop}
+                            className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors border border-red-500/20"
+                            title="Stop Strategy"
+                        >
+                            <StopCircle className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+
+                {/* Risk Settings (Status Bar Style) */}
+                <div className="grid grid-cols-4 gap-2 text-xs bg-black/40 rounded-lg p-2 border border-white/5">
+                    {/* Mode */}
+                    <div className="flex flex-col items-center justify-center text-center gap-1 p-1">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Mode</span>
+                        <div className="flex items-center gap-1.5">
+                            <Settings2 className="h-3 w-3 text-primary opacity-70" />
+                            <span className="font-medium text-white">{modeLabel}</span>
+                        </div>
+                    </div>
+                    {/* Max per Trade */}
+                    <div className="flex flex-col items-center justify-center text-center gap-1 p-1 border-l border-white/5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Max Limit</span>
+                        <div className="flex items-center gap-1.5">
+                            <DollarSign className="h-3 w-3 text-green-400 opacity-70" />
+                            <span className="font-medium text-white">${strategy.maxSizePerTrade}</span>
+                        </div>
+                    </div>
+                    {/* Slippage */}
+                    <div className="flex flex-col items-center justify-center text-center gap-1 p-1 border-l border-white/5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Slippage</span>
+                        <div className="flex items-center gap-1.5">
+                            <Zap className="h-3 w-3 text-yellow-500 opacity-70" />
+                            <span className="font-medium text-white">
+                                {strategy.slippageType === 'AUTO' ? 'Auto' : `${strategy.maxSlippage}%`}
+                            </span>
+                        </div>
+                    </div>
+                    {/* Direction */}
+                    <div className="flex flex-col items-center justify-center text-center gap-1 p-1 border-l border-white/5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Direction</span>
+                        <div className="flex items-center gap-1.5">
+                            {strategy.direction === 'COUNTER' ? (
+                                <ArrowRightLeft className="h-3 w-3 text-red-400" />
+                            ) : (
+                                <ArrowRightLeft className="h-3 w-3 text-green-400" />
+                            )}
+                            <span className={cn(
+                                "font-medium",
+                                strategy.direction === 'COUNTER' ? "text-red-400" : "text-green-400"
+                            )}>
+                                {strategy.direction === 'COUNTER' ? 'Counter' : 'Copy'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer: Date + Infinite Mode + Link */}
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                            <span>Started {formatTime(strategy.createdAt)}</span>
+                            {/* Duration for Active/Stopped strategies */}
+                            {formatDuration && (
+                                <span className="text-muted-foreground/50">
+                                    • Active for <span className="text-foreground">
+                                        {formatDuration(
+                                            strategy.createdAt,
+                                            showStopButton ? new Date().toISOString() : strategy.updatedAt
+                                        )}
+                                    </span>
+                                </span>
+                            )}
+                            {!showStopButton && (
+                                <span className="text-muted-foreground/50">
+                                    • Stopped {formatTime(strategy.updatedAt)}
+                                </span>
+                            )}
+
+                            {/* Infinite Mode Badge (if enabled) */}
+                            {strategy.infiniteMode && showStopButton && (
+                                <div className="flex items-center gap-1 text-green-400">
+                                    <RefreshCw className="h-3 w-3" />
+                                    <span>Infinite Mode</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     <a
                         href={`https://polymarket.com/profile/${strategy.traderAddress}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 mt-2 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors group/link"
                     >
-                        <span className="font-mono">{strategy.traderAddress.slice(0, 6)}...{strategy.traderAddress.slice(-4)}</span>
+                        <span className="font-mono group-hover/link:underline">{strategy.traderAddress.slice(0, 6)}...{strategy.traderAddress.slice(-4)}</span>
                         <ExternalLink className="h-3 w-3" />
                     </a>
                 </div>
-
-                {/* Stop Button - only show for active strategies */}
-                {showStopButton && (
-                    <button
-                        onClick={onStop}
-                        className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors shrink-0"
-                        title="Stop Strategy"
-                    >
-                        <StopCircle className="h-4 w-4" />
-                    </button>
-                )}
             </div>
         </div>
     );

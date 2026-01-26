@@ -1,0 +1,6 @@
+- [x] Update `frontend/app/api/copy-trading/strategies/route.ts`
+  - [x] Select `updatedAt`.
+- [x] Update `frontend/components/copy-trading/active-strategies-panel.tsx`
+  - [x] Update `Strategy` interface.
+  - [x] Add duration calculation logic.
+  - [x] Update footer to show "Stopped [Date]" and "Active for [Duration]" when viewing stopped strategies.
