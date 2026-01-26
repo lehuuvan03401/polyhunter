@@ -802,16 +802,15 @@ export default function PortfolioPage() {
                                                                         </span>
                                                                     </td>
                                                                     <td className="p-4 align-middle text-right font-mono text-xs">{shares.toFixed(2)}</td>
-                                                                    <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${avgPrice.toFixed(2)}</td>
+                                                                    <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">${avgPrice.toFixed(4)}</td>
                                                                     <td className="p-4 align-middle text-right font-mono text-xs font-medium">
                                                                         {(() => {
-                                                                            if (displayCurPrice === 0) return '$0.00';
-                                                                            if (displayCurPrice < 0.01) return '$' + displayCurPrice.toFixed(4);
-                                                                            return '$' + displayCurPrice.toFixed(2);
+                                                                            if (displayCurPrice === 0) return '$0.0000';
+                                                                            return '$' + displayCurPrice.toFixed(4);
                                                                         })()}
                                                                     </td>
                                                                     <td className="p-4 align-middle text-right font-mono text-xs text-muted-foreground">
-                                                                        ${totalInvested.toFixed(2)}
+                                                                        ${totalInvested.toFixed(4)}
                                                                     </td>
                                                                     <td className="p-4 align-middle text-right font-mono text-xs font-medium text-blue-400">${estValue.toFixed(2)}</td>
 
@@ -819,7 +818,7 @@ export default function PortfolioPage() {
                                                                         {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
                                                                     </td>
                                                                     <td className={cn("p-4 align-middle text-right font-mono text-xs font-medium", pnl >= 0 ? "text-green-500" : "text-red-500")}>
-                                                                        {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)}
+                                                                        {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(4)}
                                                                     </td>
                                                                     <td className="p-4 align-middle text-center">
                                                                         {pos._type === 'real' && pos.status === 'SETTLED_WIN' && (
