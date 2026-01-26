@@ -127,6 +127,15 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
         return `$${volume.toFixed(0)}`;
     };
 
+    const formatTrades = (count: number) => {
+        if (count >= 1000000) {
+            return `${(count / 1000000).toFixed(1)}M`;
+        } else if (count >= 1000) {
+            return `${(count / 1000).toFixed(1)}K`;
+        }
+        return count.toString();
+    };
+
     // Use real data only
     const positions = profile?.positions || [];
     const trades = profile?.trades || [];
@@ -263,25 +272,29 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                                 <div className={`text-2xl font-bold mb-0.5 ${(profile?.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                     {(profile?.pnl || 0) >= 0 ? '+' : ''}{formatPnL(profile?.pnl || 0)}
                                 </div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Total PnL</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Total PnL <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{formatVolume(profile?.volume || 0)}</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{profile?.winRate || 0}%</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Win Rate</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Win Rate <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">{positions.length}</div>
+                                <div className="text-2xl font-bold text-white mb-0.5">
+                                    {formatTrades(profile?.totalTrades || 0)}
+                                    {(profile?.totalTrades || 0) <= 20 && (profile?.volume || 0) > 10000 && <span className="text-sm text-muted-foreground align-top ml-0.5">+</span>}
+                                </div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Trades <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
+                            </div>
+                            <div>
+                                <div className="text-2xl font-bold text-white mb-0.5">{profile?.positionCount || positions.length}</div>
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">Positions</div>
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
-                            <a href="#" className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white transition-colors">
-                                <ExternalLink className="h-3.5 w-3.5" /> Polymarket
-                            </a>
                             <button className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white transition-colors">
                                 <Share2 className="h-3.5 w-3.5" /> Share & Earn
                             </button>

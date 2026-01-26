@@ -1,0 +1,5 @@
+- [x] Update `frontend/app/traders/[address]/page.tsx`
+  - [x] Replace `profile.winRate` with `profile.totalTrades`.
+  - [x] Update label to "Trades (All Time)".
+  - [x] Helper: Reuse `formatVolume` logic or create `formatNumber` for trades count.
+  - [x] Restore "Win Rate" as an additional column.

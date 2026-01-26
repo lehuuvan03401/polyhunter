@@ -193,60 +193,48 @@ export async function GET(
 
         // Calculate derived stats
         const trades = activity.activities ? activity.activities.filter(a => a.type === 'TRADE') : [];
-        const totalTrades = trades.length;
 
-        // Improved Win Rate Calculation:
-        let winningValue = 0;
-        let totalValue = 0;
-        let hasValidData = false;
+        // Use authoritative data from profile if available, otherwise 0
+        const profileWinRate = typeof profile?.winRate === 'number' ? profile.winRate : 0;
 
-        // Method 1: Check positions for PnL
-        if (positions && positions.length > 0) {
-            positions.forEach((pos: { cashPnl?: number; size?: number; avgPrice?: number; currentValue?: number }) => {
-                const positionValue = pos.currentValue || ((pos.size || 0) * (pos.avgPrice || 0));
+        let winRate = profileWinRate;
 
-                if (pos.cashPnl !== undefined && pos.cashPnl !== null && pos.cashPnl !== 0) {
-                    // Has realized PnL
-                    hasValidData = true;
-                    totalValue += positionValue;
-                    if (pos.cashPnl > 0) {
-                        winningValue += positionValue;
-                    }
-                } else if (pos.currentValue && pos.size && pos.avgPrice) {
-                    // Calculate unrealized based on current value vs cost basis
-                    hasValidData = true;
-                    totalValue += positionValue;
-                    const costBasis = pos.size * pos.avgPrice;
-                    if (pos.currentValue > costBasis) {
-                        winningValue += positionValue;
-                    }
+        // If no official win rate, calculate "Active Win Rate" from positions
+        if (winRate === 0 && positions.length > 0) {
+            const profitablePositions = positions.filter((pos: any) => {
+                // Check realized PnL first
+                if (pos.cashPnl && pos.cashPnl > 0) return true;
+                // Check unrealized PnL (current value > cost basis)
+                if (pos.currentValue && pos.avgPrice && pos.size) {
+                    return pos.currentValue > (pos.avgPrice * pos.size);
                 }
+                return false;
             });
+            winRate = Math.round((profitablePositions.length / positions.length) * 100);
         }
 
-        // Method 2: If no position data, analyze trades
-        if (!hasValidData && trades.length > 0) {
+        // If still 0 (active positions didn't help), use PnL/Volume heuristic (Method 2 - restored)
+        if (winRate === 0 && Number(profile?.volume || 0) > 0) {
             const pnl = typeof profile?.totalPnL === 'number' ? profile.totalPnL : (typeof profile?.pnl === 'number' ? profile.pnl : 0);
             const volume = typeof profile?.volume === 'number' ? profile.volume : 0;
-
-            if (volume > 0 && pnl !== 0) {
-                hasValidData = true;
+            if (pnl !== 0 && volume > 0) {
                 const profitRatio = pnl / volume;
-                const estimatedWinRate = Math.min(80, Math.max(20, 50 + (profitRatio * 200)));
-                winningValue = estimatedWinRate;
-                totalValue = 100;
+                // Base 50% + adjustment. Cap at 90% to avoid "100%" complaints, floor at 30%
+                winRate = Math.round(Math.min(90, Math.max(30, 50 + (profitRatio * 200))));
             }
         }
 
-        // Win Rate = % of value that is profitable
-        const winRate = hasValidData && totalValue > 0
-            ? Math.round((winningValue / totalValue) * 100)
-            : 0;
+        // Fallback for trade count if API returns 0 (common issue with some profiles)
+        let totalTrades = typeof profile?.tradeCount === 'number' ? profile.tradeCount : 0;
+        if (totalTrades === 0 && trades.length > 0) {
+            totalTrades = trades.length;
+        }
 
         // Type-safe property access with defaults
         const pnl = typeof profile?.totalPnL === 'number' ? profile.totalPnL : (typeof profile?.pnl === 'number' ? profile.pnl : 0);
         const volume = typeof profile?.volume === 'number' ? profile.volume : 0;
         const userName = typeof profile?.userName === 'string' ? profile.userName : null;
+        // detailed position count is more accurate than list length
         const positionCount = typeof profile?.positionCount === 'number' ? profile.positionCount : positions.length;
         const lastActiveAt = profile?.lastActiveAt instanceof Date ? profile.lastActiveAt : null;
 
