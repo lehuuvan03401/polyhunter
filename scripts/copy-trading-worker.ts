@@ -345,6 +345,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 where: {
                     configId: config.id,
                     originalTrader: traderAddr,
+                    tokenId: trade.asset,
                     detectedAt: {
                         gte: new Date(tradeTimeMs - 5000),
                         lte: new Date(tradeTimeMs + 5000),
@@ -461,7 +462,8 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                                 errorMessage: isSettled ? null : "Settlement Pending: Funds/Tokens not returned",
                                 realizedPnL: realizedPnL ?? undefined,
                                 copySize: adjustedCopySize,
-                                copyPrice: execPrice
+                                copyPrice: execPrice,
+                                usedBotFloat: result.usedBotFloat ?? false
                             },
                         });
                         stats.tradesExecuted++;
@@ -550,13 +552,21 @@ async function recoverPendingTrades(): Promise<void> {
             // Is `originalSide` in DB actually the executed side?
             // Line 255: `originalSide: copySide`. Yes, it stores the side WE EXECUTED.
 
+            const proxyAddress = await executionService.resolveProxyAddress(trade.config.walletAddress);
+            const priceForRecovery = trade.copyPrice || trade.originalPrice;
+
+            if (!proxyAddress || !trade.tokenId || !priceForRecovery || priceForRecovery <= 0) {
+                console.warn(`   ⚠️ Recovery skipped due to missing data (proxy/token/price).`);
+                continue;
+            }
+
             const result = await executionService.recoverSettlement(
-                await executionService.resolveProxyAddress(trade.config.walletAddress) || "",
+                proxyAddress,
                 trade.originalSide as 'BUY' | 'SELL',
-                trade.tokenId!,
+                trade.tokenId,
                 trade.copySize,
-                trade.originalPrice, // approximate for share calc
-                false // Assuming standard flow to be safe (no double charge). Bot eats float risk for now.
+                priceForRecovery, // use executed price when available
+                trade.usedBotFloat === true
             );
 
             if (result.success) {
@@ -584,15 +594,16 @@ async function recoverPendingTrades(): Promise<void> {
 // Settlement Handler
 // ============================================================================
 
-const SETTLEMENT_CACHE = new Set<string>(); // Prevent double processing
+const SETTLEMENT_CACHE = new Set<string>(); // Prevent repeated WS processing
+const SETTLEMENT_IN_FLIGHT = new Set<string>();
 
 async function handleMarketResolution(event: MarketEvent): Promise<void> {
     // Only care about resolution
     if (event.type !== 'resolved') return;
 
     const conditionId = event.conditionId;
-    if (SETTLEMENT_CACHE.has(conditionId)) return;
-    SETTLEMENT_CACHE.add(conditionId);
+    if (SETTLEMENT_CACHE.has(conditionId) || SETTLEMENT_IN_FLIGHT.has(conditionId)) return;
+    SETTLEMENT_IN_FLIGHT.add(conditionId);
 
     console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}`);
 
@@ -603,13 +614,18 @@ async function handleMarketResolution(event: MarketEvent): Promise<void> {
     console.log('   Resolution Data:', JSON.stringify(event.data));
 
     try {
-        await resolvePositions(conditionId);
+        const success = await resolvePositions(conditionId);
+        if (success) {
+            SETTLEMENT_CACHE.add(conditionId);
+        }
     } catch (error) {
         console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
+    } finally {
+        SETTLEMENT_IN_FLIGHT.delete(conditionId);
     }
 }
 
-async function resolvePositions(conditionId: string): Promise<void> {
+async function resolvePositions(conditionId: string): Promise<boolean> {
     console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
 
     try {
@@ -621,7 +637,7 @@ async function resolvePositions(conditionId: string): Promise<void> {
 
         if (!market) {
             console.warn(`   ⚠️ Market not found in Gamma API: ${conditionId}`);
-            return;
+            return false;
         }
 
         if (!market.closed) {
@@ -665,6 +681,7 @@ async function resolvePositions(conditionId: string): Promise<void> {
 
         // 3. Process each outcome
         let settledCount = 0;
+        let hadFailure = false;
 
         for (let i = 0; i < market.outcomes.length; i++) {
             const outcomeName = market.outcomes[i];
@@ -738,32 +755,51 @@ async function resolvePositions(conditionId: string): Promise<void> {
                     }
                 }
 
-                await prisma.copyTrade.create({
-                    data: {
+                const settlementData = {
+                    configId: configId,
+                    originalTrader: 'POLYMARKET_SETTLEMENT',
+                    originalSide: 'SELL',
+                    originalSize: pos.balance,
+                    originalPrice: settlementValue,
+                    marketSlug: market.slug,
+                    conditionId: conditionId,
+                    tokenId: tokenId,
+                    outcome: outcomeName,
+                    copySize: proceeds,
+                    copyPrice: settlementValue,
+                    status: status,
+                    executedAt: new Date(),
+                    txHash: txHash,
+                    realizedPnL: status === 'EXECUTED' ? pnl : undefined,
+                    errorMessage: errorMsg || (settlementType === 'WIN' ? `Redeemed (PnL $${pnl.toFixed(2)})` : `Settled Loss ($${pnl.toFixed(2)})`)
+                };
+
+                const existingSettlement = await prisma.copyTrade.findFirst({
+                    where: {
                         configId: configId,
-                        originalTrader: 'POLYMARKET_SETTLEMENT',
-                        originalSide: 'SELL',
-                        originalSize: pos.balance,
-                        originalPrice: settlementValue,
-                        marketSlug: market.slug,
-                        conditionId: conditionId,
                         tokenId: tokenId,
-                        outcome: outcomeName,
-                        copySize: proceeds,
-                        copyPrice: settlementValue,
-                        status: status,
-                        executedAt: new Date(),
-                        txHash: txHash,
-                        realizedPnL: status === 'EXECUTED' ? pnl : undefined,
-                        errorMessage: errorMsg || (settlementType === 'WIN' ? `Redeemed (PnL $${pnl.toFixed(2)})` : `Settled Loss ($${pnl.toFixed(2)})`)
-                    }
+                        conditionId: conditionId,
+                        originalTrader: 'POLYMARKET_SETTLEMENT',
+                        originalSide: 'SELL'
+                    },
+                    orderBy: { executedAt: 'desc' }
                 });
+
+                if (existingSettlement?.status === 'FAILED') {
+                    await prisma.copyTrade.update({
+                        where: { id: existingSettlement.id },
+                        data: settlementData
+                    });
+                } else if (!existingSettlement) {
+                    await prisma.copyTrade.create({ data: settlementData });
+                }
 
                 if (status === 'EXECUTED' || settlementType === 'LOSS') {
                     await prisma.userPosition.delete({
                         where: { id: pos.id }
                     });
                 } else {
+                    hadFailure = true;
                     console.warn(`     ⚠️ Redemption failed, keeping position for retry.`);
                 }
 
@@ -778,8 +814,59 @@ async function resolvePositions(conditionId: string): Promise<void> {
             console.log(`   ℹ️ No active positions found to settle.`);
         }
 
+        return !hadFailure;
     } catch (error) {
         console.error(`   ❌ Error in resolvePositions:`, error);
+        return false;
+    }
+}
+
+async function reconcileResolvedPositions(): Promise<void> {
+    if (!prisma) return;
+
+    try {
+        const positions = await prisma.userPosition.findMany({
+            where: { balance: { gt: 0 } },
+            select: { tokenId: true }
+        });
+
+        if (positions.length === 0) return;
+
+        const tokenIds = Array.from(new Set(positions.map(p => p.tokenId).filter(Boolean)));
+        if (tokenIds.length === 0) return;
+
+        const trades = await prisma.copyTrade.findMany({
+            where: {
+                tokenId: { in: tokenIds },
+                conditionId: { not: null }
+            },
+            select: { tokenId: true, conditionId: true, detectedAt: true },
+            orderBy: { detectedAt: 'desc' }
+        });
+
+        const tokenToCondition = new Map<string, string>();
+        for (const trade of trades) {
+            if (trade.tokenId && trade.conditionId && !tokenToCondition.has(trade.tokenId)) {
+                tokenToCondition.set(trade.tokenId, trade.conditionId);
+            }
+        }
+
+        const conditionIds = Array.from(new Set(tokenToCondition.values()));
+        if (conditionIds.length === 0) return;
+
+        console.log(`\n🔁 [Reconcile] Checking ${conditionIds.length} conditions for settlement...`);
+
+        for (const conditionId of conditionIds) {
+            if (SETTLEMENT_IN_FLIGHT.has(conditionId)) continue;
+            SETTLEMENT_IN_FLIGHT.add(conditionId);
+            try {
+                await resolvePositions(conditionId);
+            } finally {
+                SETTLEMENT_IN_FLIGHT.delete(conditionId);
+            }
+        }
+    } catch (error) {
+        console.error('[Reconcile] Failed to reconcile settled positions:', error);
     }
 }
 
@@ -895,6 +982,13 @@ async function start(): Promise<void> {
             await recoverPendingTrades();
         }
     }, 2 * 60 * 1000); // Every 2 minutes
+
+    // Periodic settlement reconciliation (in case WS missed or redemption failed)
+    setInterval(async () => {
+        if (isRunning) {
+            await reconcileResolvedPositions();
+        }
+    }, 5 * 60 * 1000); // Every 5 minutes
 
     // Connect to WebSocket and subscribe to ALL activity
     console.log('\n📡 Connecting to Polymarket WebSocket...');

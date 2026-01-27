@@ -310,6 +310,7 @@ model CopyTrade {
   txHash       String?
   errorMessage String?
   realizedPnL  Float? // Profit/Loss for SELL trades (calculated by PositionService)
+  usedBotFloat Boolean         @default(false)
 
   // Timestamps
   detectedAt DateTime  @default(now())

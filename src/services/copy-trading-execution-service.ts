@@ -39,6 +39,7 @@ export interface ExecutionResult {
     tokenPushTxHash?: string;
     error?: string;
     useProxyFunds?: boolean;
+    usedBotFloat?: boolean;
     proxyAddress?: string;
 }
 
@@ -310,7 +311,7 @@ export class CopyTradingExecutionService {
             console.log(`[CopyExec] ⚡️ Fetches complete in ${Date.now() - fetchStart}ms`);
 
             if (!proxyAddress) {
-                return { success: false, error: "No Proxy wallet found for user", useProxyFunds: false };
+                return { success: false, error: "No Proxy wallet found for user", useProxyFunds: false, usedBotFloat: false };
             }
 
             // --- MOCK TOKEN BYPASS (Localhost) ---
@@ -327,6 +328,7 @@ export class CopyTradingExecutionService {
                     transactionHashes: ["0xmocktxhash"],
                     fundTransferTxHash: "0xmocktransfer",
                     useProxyFunds: false,
+                    usedBotFloat: false,
                     proxyAddress
                 };
             }
@@ -355,13 +357,13 @@ export class CopyTradingExecutionService {
                         console.log(`[CopyExec] 🐢 Standard BUY: Bot low funds ($${botBalance}), checking Proxy...`);
                         const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, params.signer);
                         if (proxyBalance < amount) {
-                            return { success: false, error: `Insufficient Proxy funds: $${proxyBalance} < $${amount}`, proxyAddress };
+                            return { success: false, error: `Insufficient Proxy funds: $${proxyBalance} < $${amount}`, proxyAddress, usedBotFloat };
                         }
 
                         // Transfer USDC from Proxy
                         const transferResult = await this.transferFromProxy(proxyAddress, amount, params.signer, params.overrides);
                         if (!transferResult.success) {
-                            return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}` };
+                            return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}`, usedBotFloat };
                         }
                         useProxyFunds = true;
                         fundTransferTxHash = transferResult.txHash;
@@ -381,7 +383,7 @@ export class CopyTradingExecutionService {
 
                     if (sharesToSell <= 0) {
                         console.log(`[CopyExec] ⚠️ No tokens to sell in Proxy for Token ${tokenId}`);
-                        return { success: false, error: 'No tokens available to sell in Proxy', proxyAddress };
+                        return { success: false, error: 'No tokens available to sell in Proxy', proxyAddress, usedBotFloat };
                     }
 
                     if (sharesToSell < requestedSharesToSell) {
@@ -390,26 +392,28 @@ export class CopyTradingExecutionService {
 
                     const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell, params.signer, params.overrides);
                     if (!pullResult.success) {
-                        return { success: false, error: `Proxy token pull failed: ${pullResult.error}` };
+                        return { success: false, error: `Proxy token pull failed: ${pullResult.error}`, usedBotFloat };
                     }
                     useProxyFunds = true;
                     tokenPullTxHash = pullResult.txHash;
                 }
 
             } catch (e: any) {
-                return { success: false, error: `Proxy prep failed: ${e.message}` };
+                return { success: false, error: `Proxy prep failed: ${e.message}`, usedBotFloat };
             }
 
             // 3. Execute Order
             let orderResult;
             try {
-                const effectiveSize = amount / price;
+                const amountUSDC = amount;
+                const orderAmount = side === 'BUY' ? amountUSDC : amountUSDC / price;
+                const sharesForLog = side === 'BUY' ? (amountUSDC / price) : orderAmount;
 
                 // Calculate Dynamic Slippage if AUTO
                 let finalSlippage = slippage || 0.02;
                 if (params.slippageMode === 'AUTO') {
                     // Pass orderbook if we fetched it
-                    const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, effectiveSize, price, orderbook);
+                    const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, amountUSDC, price, orderbook);
                     // Assuming maxSlippage passed as percentage (e.g. 2.0 for 2%) -> convert to decimal
                     // Default to 5% max if not specified
                     const maxAllowed = params.maxSlippage ? (params.maxSlippage / 100) : 0.05;
@@ -420,13 +424,13 @@ export class CopyTradingExecutionService {
                 // FORCE Market Order (FOK)
                 const executionPrice = side === 'BUY' ? price * (1 + finalSlippage) : price * (1 - finalSlippage);
 
-                console.log(`[CopyExec] Placing MARKET FOK order. Size: ${effectiveSize.toFixed(2)} shares, WorstPrice: ${executionPrice}`);
+                console.log(`[CopyExec] Placing MARKET FOK order. Size: ${sharesForLog.toFixed(2)} shares, WorstPrice: ${executionPrice}`);
 
                 const execService = params.tradingService || this.tradingService;
                 orderResult = await execService.createMarketOrder({
                     tokenId,
                     side,
-                    amount: effectiveSize,
+                    amount: orderAmount,
                     price: executionPrice,
                     orderType: 'FOK',
                 });
@@ -453,7 +457,7 @@ export class CopyTradingExecutionService {
                     }
                 }
                 // NOTE: If usedBotFloat, we just spent nothing (failed before trade), so nothing to refund.
-                return { success: false, error: err.message || 'Execution error', useProxyFunds };
+                return { success: false, error: err.message || 'Execution error', useProxyFunds, usedBotFloat };
             }
 
             if (!orderResult.success) {
@@ -466,7 +470,7 @@ export class CopyTradingExecutionService {
                         await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer);
                     }
                 }
-                return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat };
+                return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat, usedBotFloat };
             }
 
             // 4. Return Assets (Settlement)
@@ -556,6 +560,7 @@ export class CopyTradingExecutionService {
                 tokenPullTxHash,
                 tokenPushTxHash,
                 useProxyFunds: useProxyFunds || usedBotFloat,
+                usedBotFloat,
                 proxyAddress
             };
         }); // End Mutex

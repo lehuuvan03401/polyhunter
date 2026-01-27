@@ -229,6 +229,7 @@ export async function POST(request: NextRequest) {
                             status: 'EXECUTED',
                             executedAt: new Date(),
                             txHash: result.transactionHashes?.[0] || result.orderId,
+                            usedBotFloat: result.usedBotFloat ?? false,
                         },
                     });
 

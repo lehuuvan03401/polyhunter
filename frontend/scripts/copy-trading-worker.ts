@@ -541,6 +541,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     copySize: copySizeUsdc,
                     copyPrice: price,
+                    usedBotFloat: result.usedBotFloat ?? false,
                     status: result.success ? 'EXECUTED' : 'FAILED',
                     executedAt: result.success ? new Date() : null,
                     txHash: result.transactionHashes?.[0] || txHash || 'ws-event',
