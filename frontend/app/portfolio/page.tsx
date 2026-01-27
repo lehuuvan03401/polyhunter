@@ -72,6 +72,32 @@ export default function PortfolioPage() {
     const { redeem, redeemSim, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
 
+    const calcPositionPnL = (pos: any): number => {
+        const shares = pos.size || 0;
+        const avgPrice = pos.avgPrice || 0;
+        const totalInvested = shares * avgPrice;
+        const curPrice = (pos.curPrice !== undefined && pos.curPrice !== null) ? pos.curPrice : pos.avgPrice;
+        const displayCurPrice = (curPrice === 0) ? 0 : (curPrice || 0);
+        const estValue = pos.estValue || (shares * displayCurPrice);
+        return estValue - totalInvested;
+    };
+
+    const settledOpenStats = (() => {
+        const allPositions = [
+            ...positions.map(p => ({ ...p, _type: 'real' })),
+            ...simPositions.map(p => ({ ...p, _type: 'sim' }))
+        ];
+        let wins = 0;
+        let losses = 0;
+        allPositions.forEach((pos) => {
+            if (pos.status !== 'SETTLED_WIN' && pos.status !== 'SETTLED_LOSS') return;
+            const pnl = calcPositionPnL(pos);
+            if (pnl > 0) wins += pnl;
+            else if (pnl < 0) losses += pnl;
+        });
+        return { wins, losses, pnl: wins + losses };
+    })();
+
     // Fetch settled history when filter is WON or LOST (to merge)
     useEffect(() => {
         const fetchSettledHistory = async () => {
@@ -462,21 +488,35 @@ export default function PortfolioPage() {
                             );
                         })()}
 
-                        {/* Trading PnL (execution slippage) */}
+                        {/* Settlement PnL (Resolved + Redeemed) */}
                         <div className="mt-3 pt-3 border-t border-border/50">
                             <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">Trading P&L (Realized)</span>
+                                <span className="text-xs text-muted-foreground">Settlement P&L (Resolved)</span>
                                 <div className="flex flex-col items-end">
-                                    <span className={cn("text-xs font-medium", (ctMetrics?.tradingPnL || 0) >= 0 ? "text-green-400" : "text-red-400")}>
-                                        {(ctMetrics?.tradingPnL || 0) >= 0 ? '+' : ''}${(ctMetrics?.tradingPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
+                                    {(() => {
+                                        const basePnL = ctMetrics?.settlementPnL || 0;
+                                        const combinedPnL = basePnL + settledOpenStats.pnl;
+                                        return (
+                                            <span className={cn("text-xs font-medium", combinedPnL >= 0 ? "text-green-400" : "text-red-400")}>
+                                                {combinedPnL >= 0 ? '+' : ''}${combinedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                        );
+                                    })()}
                                     {ctMetrics && (
                                         <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
                                             <span className="text-green-400">
-                                                W: +${(ctMetrics.realizedWins || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {(() => {
+                                                    const baseWins = ctMetrics.settlementWins || 0;
+                                                    const combinedWins = baseWins + settledOpenStats.wins;
+                                                    return `W: +$${combinedWins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                })()}
                                             </span>
                                             <span className="text-red-400">
-                                                L: -${Math.abs(ctMetrics.realizedLosses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {(() => {
+                                                    const baseLosses = ctMetrics.settlementLosses || 0;
+                                                    const combinedLosses = baseLosses + settledOpenStats.losses;
+                                                    return `L: -$${Math.abs(combinedLosses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                })()}
                                             </span>
                                         </div>
                                     )}

@@ -123,6 +123,8 @@ export async function GET(request: Request) {
         let tradingPnL = 0; // Separate metric for trading execution cost
         let realizedWins = 0;
         let realizedLosses = 0;
+        let settlementWins = 0;
+        let settlementLosses = 0;
         let cumulativeInvestment = 0;
 
         try {
@@ -157,6 +159,25 @@ export async function GET(request: Request) {
                 realizedWins = winsSum._sum.realizedPnL || 0;
                 realizedLosses = lossesSum._sum.realizedPnL || 0;
 
+                // Settlement-only realized PnL (aligns with WON/LOST views)
+                const settlementTrades = await prisma.copyTrade.findMany({
+                    where: {
+                        configId: { in: configIds },
+                        status: 'EXECUTED',
+                        OR: [
+                            { originalSide: 'REDEEM' },
+                            { originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }
+                        ]
+                    },
+                    select: { realizedPnL: true }
+                });
+
+                settlementTrades.forEach(t => {
+                    const pnl = t.realizedPnL || 0;
+                    if (pnl > 0) settlementWins += pnl;
+                    else if (pnl < 0) settlementLosses += pnl;
+                });
+
                 // Calculate Cumulative Investment (Total Buy Volume)
                 const allBuys = await prisma.copyTrade.findMany({
                     where: {
@@ -164,10 +185,10 @@ export async function GET(request: Request) {
                         originalSide: 'BUY',
                         status: 'EXECUTED'
                     },
-                    select: { copySize: true, copyPrice: true }
+                    select: { copySize: true }
                 });
 
-                cumulativeInvestment = allBuys.reduce((sum, t) => sum + (t.copySize * (t.copyPrice || 0)), 0);
+                cumulativeInvestment = allBuys.reduce((sum, t) => sum + (t.copySize || 0), 0);
 
                 // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
                 const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
@@ -177,7 +198,7 @@ export async function GET(request: Request) {
                         status: 'EXECUTED',
                         realizedPnL: null
                     },
-                    select: { tokenId: true, copySize: true, copyPrice: true }
+                    select: { tokenId: true, copySize: true, copyPrice: true, originalPrice: true }
                 });
 
                 if (sellTradesWithoutPnL.length > 0) {
@@ -188,7 +209,7 @@ export async function GET(request: Request) {
                             originalSide: 'BUY',
                             status: 'EXECUTED'
                         },
-                        select: { tokenId: true, copySize: true, copyPrice: true }
+                        select: { tokenId: true, copySize: true, copyPrice: true, originalPrice: true }
                     });
 
                     // Build cost basis map
@@ -196,9 +217,11 @@ export async function GET(request: Request) {
                     buyTrades.forEach(t => {
                         if (!t.tokenId) return;
                         const existing = costBasisMap.get(t.tokenId) || { totalCost: 0, totalShares: 0 };
-                        // copySize is SHARES. Cost = Shares * Price
-                        existing.totalCost += t.copySize * (t.copyPrice || 0);
-                        existing.totalShares += t.copySize;
+                        // copySize is USDC amount. Shares = USDC / Price
+                        const unitPrice = t.copyPrice ?? t.originalPrice ?? 0;
+                        if (unitPrice <= 0) return;
+                        existing.totalCost += t.copySize;
+                        existing.totalShares += t.copySize / unitPrice;
                         costBasisMap.set(t.tokenId, existing);
                     });
 
@@ -208,8 +231,9 @@ export async function GET(request: Request) {
                         const costInfo = costBasisMap.get(t.tokenId);
                         if (costInfo && costInfo.totalShares > 0) {
                             const avgBuyPrice = costInfo.totalCost / costInfo.totalShares;
-                            const sellPrice = t.copyPrice || 0;
-                            const shares = t.copySize; // copySize is SHARES
+                            const sellPrice = t.copyPrice ?? t.originalPrice ?? 0;
+                            if (sellPrice <= 0) return;
+                            const shares = t.copySize / sellPrice; // copySize is USDC
                             const profit = (sellPrice - avgBuyPrice) * shares;
                             tradingPnL += profit;
 
@@ -230,6 +254,7 @@ export async function GET(request: Request) {
         // realizedWins + realizedLosses MUST equal realizedPnL/tradingPnL
         realizedPnL = realizedWins + realizedLosses;
         tradingPnL = realizedWins + realizedLosses;
+        const settlementPnL = settlementWins + settlementLosses;
 
         return NextResponse.json({
             totalInvested,
@@ -237,6 +262,9 @@ export async function GET(request: Request) {
             realizedPnL,      // Net realized
             realizedWins,     // Total Wins PnL
             realizedLosses,   // Total Losses PnL
+            settlementPnL,
+            settlementWins,
+            settlementLosses,
             unrealizedPnL,    // From current market prices (settlement value)
             tradingPnL,       // Same as realized, explicitly named
             totalPnL: unrealizedPnL, // Use unrealized as the "main" PnL

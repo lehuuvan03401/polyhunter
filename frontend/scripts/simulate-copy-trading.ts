@@ -329,7 +329,7 @@ async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
 }
 
 // --- DATABASE RECORDING ---
-async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: number) {
+async function recordCopyTrade(trade: ActivityTrade, copyAmount: number, execPrice: number, pnl?: number) {
     try {
         // Enrich trade metadata if missing
         const enriched = await enrichTradeMetadata(trade);
@@ -345,8 +345,8 @@ async function recordCopyTrade(trade: ActivityTrade, copyShares: number, pnl?: n
                 conditionId: enriched.conditionId,
                 marketSlug: enriched.marketSlug,
                 outcome: enriched.outcome,
-                copySize: copyShares, // Store SHARES to match originalSize (consistent units)
-                copyPrice: trade.price,
+                copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
+                copyPrice: execPrice,
                 status: 'EXECUTED',
                 txHash: `SIM-${trade.transactionHash}`,
                 originalTxHash: trade.transactionHash,
@@ -502,12 +502,27 @@ async function handleTrade(trade: ActivityTrade) {
     // Record to database
     // We record the EXECUTION price (simulated)
     // Pass the trade-specific PnL (calculated above for sells)
-    await recordCopyTrade(trade, copyShares, tradePnL);
+    await recordCopyTrade(trade, copyAmount, execPrice, tradePnL);
 }
 
 // --- SETTLEMENT HANDLER ---
 
 const SETTLEMENT_CACHE = new Set<string>();
+const SETTLED_TOKENS = new Set<string>();
+const SETTLEMENT_IN_FLIGHT = new Set<string>();
+
+function startSettlement(tokenId: string): boolean {
+    if (SETTLED_TOKENS.has(tokenId) || SETTLEMENT_IN_FLIGHT.has(tokenId)) return false;
+    SETTLEMENT_IN_FLIGHT.add(tokenId);
+    return true;
+}
+
+function finishSettlement(tokenId: string, success: boolean): void {
+    SETTLEMENT_IN_FLIGHT.delete(tokenId);
+    if (success) {
+        SETTLED_TOKENS.add(tokenId);
+    }
+}
 
 async function handleMarketResolution(event: MarketEvent): Promise<void> {
     if (event.type !== 'resolved') return;
@@ -563,64 +578,79 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
             const price = market.outcomePrices[i];
             const tokenId = outcomeToTokenMap.get(outcomeName);
 
-            // Also check current active positions if we missed the trade record mapping (fallback)
-            // But usually simulation implies we traded it.
-
             if (!tokenId) continue;
-
-            let settlementValue = 0;
-            if (price >= 0.95) settlementValue = 1.0;
-            else if (price <= 0.05) settlementValue = 0.0;
-            else continue; // Not fully resolved yet?
 
             // Check if we hold this token
             const pos = positions.get(tokenId);
             if (!pos || pos.balance <= 0) continue;
 
+            if (!startSettlement(tokenId)) continue;
+
+            let settlementValue: number | null = null;
+            const tokenInfo = (market as any).tokens?.find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
+            const isWinner = tokenInfo?.winner;
+
+            if (isWinner === true) settlementValue = 1.0;
+            else if (isWinner === false && market.closed) settlementValue = 0.0;
+            else if (price >= 0.95) settlementValue = 1.0;
+            else if (price <= 0.05 && market.closed) settlementValue = 0.0;
+
+            if (settlementValue === null) {
+                finishSettlement(tokenId, false);
+                continue;
+            }
+
             console.log(`   Processing Position: ${pos.balance.toFixed(2)} shares of '${outcomeName}'. Value: $${settlementValue}`);
 
-            // Settle it
-            const proceeds = pos.balance * settlementValue;
-            const costBasis = pos.balance * pos.avgEntryPrice;
-            const pnl = proceeds - costBasis;
+            try {
+                // Settle it
+                const proceeds = pos.balance * settlementValue;
+                const costBasis = pos.totalCost;
+                const pnl = proceeds - costBasis;
 
-            // Update Metrics
-            realizedPnL += pnl;
-            totalSellVolume += (pos.balance * settlementValue); // Volume @ exit price?
+                // Update Metrics
+                realizedPnL += pnl;
+                totalSellVolume += proceeds;
 
-            console.log(`     ✅ Settled! PnL: $${pnl.toFixed(4)} (Proceeds: $${proceeds.toFixed(2)} - Cost: $${costBasis.toFixed(2)})`);
+                console.log(`     ✅ Settled! PnL: $${pnl.toFixed(4)} (Proceeds: $${proceeds.toFixed(2)} - Cost: $${costBasis.toFixed(2)})`);
 
-            // Log Settlement Trade
-            await prisma.copyTrade.create({
-                data: {
-                    configId: configId,
-                    originalTrader: 'POLYMARKET_SETTLEMENT',
-                    originalSide: 'SELL',
-                    originalSize: pos.balance,
-                    originalPrice: settlementValue,
-                    marketSlug: market.slug,
-                    conditionId: conditionId,
-                    tokenId: tokenId,
-                    outcome: outcomeName,
-                    copySize: pos.balance,
-                    copyPrice: settlementValue,
-                    status: 'EXECUTED',
-                    executedAt: new Date(),
-                    txHash: 'sim-settlement',
-                    errorMessage: `Computed PnL: $${pnl.toFixed(4)}`
-                }
-            });
+                // Log Settlement Trade
+                await prisma.copyTrade.create({
+                    data: {
+                        configId: configId,
+                        originalTrader: 'POLYMARKET_SETTLEMENT',
+                        originalSide: 'SELL',
+                        originalSize: pos.balance,
+                        originalPrice: settlementValue,
+                        marketSlug: market.slug,
+                        conditionId: conditionId,
+                        tokenId: tokenId,
+                        outcome: outcomeName,
+                        copySize: proceeds,
+                        copyPrice: settlementValue,
+                        status: 'EXECUTED',
+                        executedAt: new Date(),
+                        txHash: 'sim-settlement',
+                        realizedPnL: pnl,
+                        errorMessage: `Computed PnL: $${pnl.toFixed(4)}`
+                    }
+                });
 
-            // Remove from DB Position
-            await prisma.userPosition.deleteMany({
-                where: {
-                    walletAddress: FOLLOWER_WALLET.toLowerCase(),
-                    tokenId: tokenId
-                }
-            });
+                // Remove from DB Position
+                await prisma.userPosition.deleteMany({
+                    where: {
+                        walletAddress: FOLLOWER_WALLET.toLowerCase(),
+                        tokenId: tokenId
+                    }
+                });
 
-            // Remove from Local Map
-            positions.delete(tokenId);
+                // Remove from Local Map
+                positions.delete(tokenId);
+                finishSettlement(tokenId, true);
+            } catch (err) {
+                finishSettlement(tokenId, false);
+                throw err;
+            }
         }
 
     } catch (error) {
@@ -697,6 +727,7 @@ async function processRedemptions() {
 
                         // Check for Win (Explicit Winner or Price is effectively 1)
                         if (isWinner === true || (price !== undefined && price >= 0.95)) {
+                            if (!startSettlement(tokenId)) continue;
                             console.log(`   🎉 Redeeming WIN for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
 
                             // 1. Credit Realized PnL (Value - Cost)
@@ -704,6 +735,7 @@ async function processRedemptions() {
                             const redemptionValue = pos.balance;
                             const profit = redemptionValue - pos.totalCost;
                             realizedPnL += profit;
+                            totalSellVolume += redemptionValue;
 
                             // 2. Record Trade
                             const execPrice = 1.0;
@@ -733,16 +765,19 @@ async function processRedemptions() {
                                 where: { walletAddress: FOLLOWER_WALLET.toLowerCase(), tokenId: tokenId }
                             });
                             positions.delete(tokenId);
+                            finishSettlement(tokenId, true);
 
                             console.log(`      💰 Credited $${redemptionValue.toFixed(2)} (Profit: $${profit.toFixed(2)})`);
                         }
                         // Check for Loss (Explicit Loser or Price is effectively 0)
                         else if (isWinner === false || (price !== undefined && price <= 0.05)) {
+                            if (!startSettlement(tokenId)) continue;
                             console.log(`   💀 Settle LOSS for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
 
                             const settlementValue = 0;
                             const profit = -pos.totalCost; // 100% Loss
                             realizedPnL += profit;
+                            totalSellVolume += 0;
 
                             // Record Trade
                             const execPrice = 0.0;
@@ -753,7 +788,7 @@ async function processRedemptions() {
                                     tokenId: tokenId,
                                     outcome: pos.outcome,
                                     originalSide: 'SELL', // Close position
-                                    copySize: pos.balance, // Shares
+                                    copySize: 0, // Proceeds at $0
                                     copyPrice: execPrice,
                                     originalTrader: 'PROTOCOL',
                                     originalSize: 0,
@@ -771,6 +806,7 @@ async function processRedemptions() {
                                 where: { walletAddress: FOLLOWER_WALLET.toLowerCase(), tokenId: tokenId }
                             });
                             positions.delete(tokenId);
+                            finishSettlement(tokenId, true);
 
                             console.log(`      📉 Realized Loss: $${Math.abs(profit).toFixed(2)}`);
                         }
@@ -779,6 +815,7 @@ async function processRedemptions() {
             }
         } catch (e) {
             console.error(`   ❌ Redemption check failed for ${tokenId}:`, e);
+            finishSettlement(tokenId, false);
         }
     }
 }

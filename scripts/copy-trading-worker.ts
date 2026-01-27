@@ -163,6 +163,103 @@ function calculateCopySize(
     return clampedValue;
 }
 
+// ========================================================================
+// Position Tracking Helpers
+// ========================================================================
+
+async function recordBuyPosition(
+    walletAddress: string,
+    tokenId: string,
+    shares: number,
+    price: number,
+    totalCost: number
+): Promise<void> {
+    if (shares <= 0) return;
+    const normalizedWallet = walletAddress.toLowerCase();
+
+    await prisma.$executeRaw`
+        INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "avgEntryPrice", "totalCost", "createdAt", "updatedAt")
+        VALUES (
+            gen_random_uuid(),
+            ${normalizedWallet},
+            ${tokenId},
+            ${shares},
+            ${price},
+            ${totalCost},
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT ("walletAddress", "tokenId")
+        DO UPDATE SET
+            "balance" = "UserPosition"."balance" + ${shares},
+            "totalCost" = "UserPosition"."totalCost" + ${totalCost},
+            "avgEntryPrice" = ("UserPosition"."totalCost" + ${totalCost}) / ("UserPosition"."balance" + ${shares}),
+            "updatedAt" = NOW();
+    `;
+}
+
+async function recordSellPosition(
+    walletAddress: string,
+    tokenId: string,
+    requestedShares: number,
+    price: number
+): Promise<{ realizedPnL: number; sharesSold: number; proceeds: number }> {
+    if (requestedShares <= 0) {
+        return { realizedPnL: 0, sharesSold: 0, proceeds: 0 };
+    }
+
+    const normalizedWallet = walletAddress.toLowerCase();
+
+    return prisma.$transaction(async (tx: any) => {
+        const position = await tx.userPosition.findUnique({
+            where: { walletAddress_tokenId: { walletAddress: normalizedWallet, tokenId } }
+        });
+
+        if (!position || position.balance <= 0) {
+            return { realizedPnL: 0, sharesSold: 0, proceeds: 0 };
+        }
+
+        const sharesSold = Math.min(requestedShares, position.balance);
+        const proceeds = sharesSold * price;
+        const costBasis = sharesSold * position.avgEntryPrice;
+        const realizedPnL = proceeds - costBasis;
+
+        await tx.$executeRaw`
+            UPDATE "UserPosition"
+            SET 
+                "balance" = GREATEST(0, "balance" - ${sharesSold}),
+                "totalCost" = GREATEST(0, "balance" - ${sharesSold}) * "avgEntryPrice",
+                "updatedAt" = NOW()
+            WHERE "walletAddress" = ${normalizedWallet} AND "tokenId" = ${tokenId}
+        `;
+
+        return { realizedPnL, sharesSold, proceeds };
+    });
+}
+
+async function resolveConfigIdForPosition(walletAddress: string, tokenId: string): Promise<string | null> {
+    const normalizedWallet = walletAddress.toLowerCase();
+
+    const recentTrade = await prisma.copyTrade.findFirst({
+        where: {
+            tokenId,
+            config: { walletAddress: normalizedWallet }
+        },
+        orderBy: { detectedAt: 'desc' },
+        select: { configId: true }
+    });
+
+    if (recentTrade?.configId) return recentTrade.configId;
+
+    const config = await prisma.copyTradingConfig.findFirst({
+        where: { walletAddress: normalizedWallet },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true }
+    });
+
+    return config?.id || null;
+}
+
 // ============================================================================
 // Trade Handler
 // ============================================================================
@@ -218,7 +315,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
             }
 
             // Calculate copy size
-            const copySize = calculateCopySize(config, trade.size, trade.price);
+            const copySize = calculateCopySize(config, trade.size, trade.price); // USDC amount
 
             if (copySize <= 0) {
                 stats.tradesSkipped++;
@@ -227,6 +324,17 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 
             // Polymarket minimum is $1
             if (copySize < 1) {
+                stats.tradesSkipped++;
+                continue;
+            }
+
+            const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
+            const execPrice = copySide === 'BUY'
+                ? trade.price * (1 + fixedSlippage)
+                : trade.price * (1 - fixedSlippage);
+            const copyShares = execPrice > 0 ? (copySize / execPrice) : 0;
+
+            if (copyShares <= 0 || !Number.isFinite(copyShares)) {
                 stats.tradesSkipped++;
                 continue;
             }
@@ -266,7 +374,9 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     conditionId: trade.conditionId || null,
                     tokenId: trade.asset || null,
                     outcome: trade.outcome || null,
+                    originalTxHash: trade.transactionHash || null,
                     copySize,
+                    copyPrice: execPrice,
                     status: 'PENDING',
                     expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
                 },
@@ -274,7 +384,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 
             stats.tradesCreated++;
             console.log(`   [Config ${config.id.slice(0, 8)}] Created PENDING trade: ${copyTrade.id.slice(0, 8)}`);
-            console.log(`   Copy: ${copySide} $${copySize.toFixed(2)} @ ${trade.price}`);
+            console.log(`   Copy: ${copySide} $${copySize.toFixed(2)} @ ${execPrice.toFixed(4)}`);
 
             // ========================================
             // Execute Immediately (if configured)
@@ -324,13 +434,34 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 
                         const newStatus = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
 
+                        // Update positions + realized PnL
+                        let realizedPnL: number | null = null;
+                        let adjustedCopySize = copySize;
+
+                        try {
+                            if (copySide === 'BUY') {
+                                await recordBuyPosition(config.walletAddress, trade.asset, copyShares, execPrice, copySize);
+                            } else {
+                                const sellResult = await recordSellPosition(config.walletAddress, trade.asset, copyShares, execPrice);
+                                realizedPnL = sellResult.realizedPnL;
+                                if (sellResult.proceeds > 0 && sellResult.proceeds < adjustedCopySize) {
+                                    adjustedCopySize = sellResult.proceeds;
+                                }
+                            }
+                        } catch (positionErr) {
+                            console.warn(`   ⚠️ Failed to update position for ${config.walletAddress}:`, positionErr);
+                        }
+
                         await prisma.copyTrade.update({
                             where: { id: copyTrade.id },
                             data: {
                                 status: newStatus,
                                 executedAt: new Date(),
                                 txHash: result.transactionHashes?.[0] || result.orderId,
-                                errorMessage: isSettled ? null : "Settlement Pending: Funds/Tokens not returned"
+                                errorMessage: isSettled ? null : "Settlement Pending: Funds/Tokens not returned",
+                                realizedPnL: realizedPnL ?? undefined,
+                                copySize: adjustedCopySize,
+                                copyPrice: execPrice
                             },
                         });
                         stats.tradesExecuted++;
@@ -472,13 +603,13 @@ async function handleMarketResolution(event: MarketEvent): Promise<void> {
     console.log('   Resolution Data:', JSON.stringify(event.data));
 
     try {
-        await resolveSimulatedPositions(conditionId, event.data);
+        await resolvePositions(conditionId);
     } catch (error) {
         console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
     }
 }
 
-async function resolveSimulatedPositions(conditionId: string, resolutionData: any): Promise<void> {
+async function resolvePositions(conditionId: string): Promise<void> {
     console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
 
     try {
@@ -503,20 +634,34 @@ async function resolveSimulatedPositions(conditionId: string, resolutionData: an
         console.log(`   Outcomes: ${market.outcomes.join(', ')}`);
         console.log(`   Prices: ${market.outcomePrices.join(', ')}`);
 
-        // 2. Map Outcomes to Token IDs using our Db history
-        const relevantTrades = await prisma.copyTrade.findMany({
-            where: { conditionId: conditionId },
-            select: { tokenId: true, outcome: true },
-            distinct: ['tokenId']
-        });
-
-        // Map: Outcome Name -> Token ID
+        // 2. Map Outcomes to Token IDs (prefer Gamma tokens, fallback to DB)
         const outcomeToTokenMap = new Map<string, string>();
-        relevantTrades.forEach((t: any) => {
-            if (t.outcome && t.tokenId) {
-                outcomeToTokenMap.set(t.outcome, t.tokenId);
-            }
-        });
+        const tokenInfoById = new Map<string, any>();
+
+        if (Array.isArray((market as any).tokens)) {
+            (market as any).tokens.forEach((t: any) => {
+                const tokenId = t.tokenId || t.token_id;
+                if (!tokenId) return;
+                tokenInfoById.set(tokenId, t);
+                if (t.outcome) {
+                    outcomeToTokenMap.set(t.outcome, tokenId);
+                }
+            });
+        }
+
+        if (outcomeToTokenMap.size === 0) {
+            const relevantTrades = await prisma.copyTrade.findMany({
+                where: { conditionId: conditionId },
+                select: { tokenId: true, outcome: true },
+                distinct: ['tokenId']
+            });
+
+            relevantTrades.forEach((t: any) => {
+                if (t.outcome && t.tokenId) {
+                    outcomeToTokenMap.set(t.outcome, t.tokenId);
+                }
+            });
+        }
 
         // 3. Process each outcome
         let settledCount = 0;
@@ -526,53 +671,76 @@ async function resolveSimulatedPositions(conditionId: string, resolutionData: an
             const price = market.outcomePrices[i];
             const tokenId = outcomeToTokenMap.get(outcomeName);
 
-            if (!tokenId) {
-                // We might not have traded this specific outcome side
+            if (!tokenId) continue;
+
+            const tokenInfo = tokenInfoById.get(tokenId);
+            const isWinner = tokenInfo?.winner;
+
+            let settlementType: 'WIN' | 'LOSS' | 'NONE' = 'NONE';
+            let settlementValue = 0.0;
+
+            if (isWinner === true || price >= 0.95) {
+                settlementType = 'WIN';
+                settlementValue = 1.0;
+            } else if ((isWinner === false && market.closed) || (price <= 0.05 && market.closed)) {
+                settlementType = 'LOSS';
+                settlementValue = 0.0;
+            } else {
                 continue;
             }
 
-            // Determine settlement value ($1 or $0)
-            // We use a threshold because prices might be 0.999 or 0.001
-            let settlementValue = 0;
-            if (price >= 0.95) settlementValue = 1.0;
-            else if (price <= 0.05) settlementValue = 0.0;
-            else {
-                console.warn(`   ⚠️ Check Outcome '${outcomeName}' price ${price} is ambiguous. Skipping settlement.`);
-                continue;
-            }
-
-            // Find all positions for this token
             const positions = await prisma.userPosition.findMany({
                 where: { tokenId: tokenId, balance: { gt: 0 } }
             });
 
             if (positions.length === 0) continue;
 
-            console.log(`   Processing ${positions.length} positions for '${outcomeName}' (Token: ${tokenId.slice(0, 10)}...). Value: $${settlementValue}`);
+            console.log(`   Processing ${positions.length} positions for '${outcomeName}' (Token: ${tokenId.slice(0, 10)}...). Type: ${settlementType}`);
 
             for (const pos of positions) {
-                const pnl = (settlementValue - pos.avgEntryPrice) * pos.balance;
-                const value = pos.balance * settlementValue;
+                const proceeds = pos.balance * settlementValue;
+                const pnl = proceeds - pos.totalCost;
 
-                // Create a "History" record (conceptually).
-                // Since we don't have a separate TradeHistory table visible here, 
-                // we will create a CopyTrade record with status 'EXECUTED' and side 'SELL' to represent the close.
-                // This will show up in stats but might look like a real trade.
-                // Alternatively, we just update the UserPosition to be closed (balance = 0).
-                // Or delete it.
+                const configId = await resolveConfigIdForPosition(pos.walletAddress, tokenId);
+                if (!configId) {
+                    console.warn(`     ⚠️ No config found for ${pos.walletAddress}. Skipping settlement record.`);
+                    continue;
+                }
 
-                // DECISION: Delete UserPosition and log.
-                // This removes it from "Open Positions".
-                // TODO: In future, add 'SettledPosition' table.
+                let status: 'EXECUTED' | 'FAILED' = 'EXECUTED';
+                let txHash = settlementType === 'WIN' ? 'redeem-pending' : 'settled-loss';
+                let errorMsg: string | null = null;
 
-                // Create a "closing" CopyTrade record for record-keeping?
-                // The dashboard reads 'CopyTrade' for history?
-                // NO, dashboard reads `UserPosition` for open, but `CopyTrade` for activity log.
-                // So adding a SELL CopyTrade is good.
+                if (settlementType === 'WIN') {
+                    if (!executionService) {
+                        status = 'FAILED';
+                        errorMsg = 'No execution service available for redemption';
+                    } else {
+                        const proxyAddress = await executionService.resolveProxyAddress(pos.walletAddress);
+                        if (!proxyAddress) {
+                            status = 'FAILED';
+                            errorMsg = 'No proxy found for wallet';
+                        } else {
+                            const indexSet = [1 << i];
+                            const result = await executionService.redeemPositions(
+                                proxyAddress,
+                                conditionId,
+                                indexSet
+                            );
+
+                            if (result.success) {
+                                txHash = result.txHash || 'redeem-tx';
+                            } else {
+                                status = 'FAILED';
+                                errorMsg = result.error || 'Redemption failed';
+                            }
+                        }
+                    }
+                }
 
                 await prisma.copyTrade.create({
                     data: {
-                        configId: 'settlement-auto', // Placeholder, implies system action
+                        configId: configId,
                         originalTrader: 'POLYMARKET_SETTLEMENT',
                         originalSide: 'SELL',
                         originalSize: pos.balance,
@@ -581,19 +749,23 @@ async function resolveSimulatedPositions(conditionId: string, resolutionData: an
                         conditionId: conditionId,
                         tokenId: tokenId,
                         outcome: outcomeName,
-                        copySize: pos.balance,
+                        copySize: proceeds,
                         copyPrice: settlementValue,
-                        status: 'EXECUTED',
+                        status: status,
                         executedAt: new Date(),
-                        txHash: 'simulated_settlement',
-                        errorMessage: `Auto-settled at $${settlementValue.toFixed(2)}`
+                        txHash: txHash,
+                        realizedPnL: status === 'EXECUTED' ? pnl : undefined,
+                        errorMessage: errorMsg || (settlementType === 'WIN' ? `Redeemed (PnL $${pnl.toFixed(2)})` : `Settled Loss ($${pnl.toFixed(2)})`)
                     }
                 });
 
-                // Clear Position
-                await prisma.userPosition.delete({
-                    where: { id: pos.id }
-                });
+                if (status === 'EXECUTED' || settlementType === 'LOSS') {
+                    await prisma.userPosition.delete({
+                        where: { id: pos.id }
+                    });
+                } else {
+                    console.warn(`     ⚠️ Redemption failed, keeping position for retry.`);
+                }
 
                 console.log(`     ✅ Settled position for ${pos.walletAddress.slice(0, 8)}: ${pos.balance} shares @ $${settlementValue}`);
                 settledCount++;
@@ -607,7 +779,7 @@ async function resolveSimulatedPositions(conditionId: string, resolutionData: an
         }
 
     } catch (error) {
-        console.error(`   ❌ Error in resolveSimulatedPositions:`, error);
+        console.error(`   ❌ Error in resolvePositions:`, error);
     }
 }
 

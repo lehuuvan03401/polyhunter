@@ -98,43 +98,52 @@ export async function GET(request: Request) {
         });
 
         // Map to Position interface structure for UI compatibility
-        const positions = trades.map(t => ({
+        const positions = trades.map(t => {
+            const unitPrice = t.copyPrice ?? t.originalPrice ?? 0;
+            const proceeds = t.copySize || 0;
+            const pnlAbs = t.realizedPnL || 0;
+            const usdcSize = (unitPrice === 0 && proceeds === 0 && pnlAbs < 0) ? Math.abs(pnlAbs) : proceeds;
+            let sizeShares = unitPrice > 0 ? (proceeds / unitPrice) : 0;
+            if (sizeShares <= 0 && (t.originalSize || 0) > 0) {
+                sizeShares = t.originalSize;
+            }
+
+            return ({
             id: t.id, // Unique Trade ID
             tokenId: t.tokenId || t.id, // Fallback ID
             slug: t.marketSlug,
             title: parseMarketSlug(t.marketSlug, t.tokenId || ''),
             outcome: parseOutcome(t.outcome),
-            size: t.copySize, // This is now SHARES
-            avgPrice: t.originalPrice === 1.0 ? 0.0 : t.originalPrice, // For redeemed, price was 1.0. For loss, 0.0. 
-            // Wait, avgPrice should be Entry Price? We don't have Entry Price in CopyTrade record easily unless we query the BUY trade.
-            // But we have realizedPnL.
-            // If PnL = Proceeds - Cost.
-            // Cost = Proceeds - PnL.
-            // Proceeds = Size * Price (1.0 or 0.0).
-            // Cost = (Size * 1.0) - PnL.
-            // AvgEntry = Cost / Size.
-            curPrice: t.copyPrice, // Settlement Price (1.0 or 0.0)
-            percentPnl: t.realizedPnL && t.copySize ? (t.realizedPnL / (t.copySize * (t.copyPrice === 1 ? 0.05 : 0.95))) : 0, // Rough estimate
-            // Better PnL %: PnL / Cost.
+            size: sizeShares, // Shares (fallback to originalSize if price==0)
+            usdcSize: usdcSize,
+            avgPrice: 0, // Computed below
+            curPrice: unitPrice, // Settlement Price (1.0 or 0.0)
+            percentPnl: 0, // Computed below
             pnlAbs: t.realizedPnL,
-            estValue: t.copySize * (t.copyPrice || 0),
+            estValue: proceeds,
             totalCost: 0, // Calculated below
             simulated: true,
             status: (t.originalSide === 'REDEEM' || ((t.originalTrader === 'POLYMARKET_SETTLEMENT' || t.originalTrader === 'PROTOCOL') && t.originalPrice === 1.0)) ? 'SETTLED_WIN' : 'SETTLED_LOSS',
             timestamp: t.executedAt ? new Date(t.executedAt).getTime() : Date.now()
-        }));
+        });
+        });
 
         // Refine PnL % calculation
         positions.forEach(p => {
-            const proceeds = p.estValue;
-            const cost = proceeds - (p.pnlAbs || 0);
+            const proceeds = p.estValue || 0;
+            const pnl = p.pnlAbs || 0;
+            let cost = proceeds - pnl;
+            if (cost === 0 && p.curPrice === 0 && pnl < 0) {
+                cost = Math.abs(pnl);
+            }
             p.totalCost = cost;
-            if (cost > 0) {
+
+            if (p.size > 0) {
                 p.avgPrice = cost / p.size;
-                p.percentPnl = (p.pnlAbs || 0) / cost;
-            } else {
-                p.avgPrice = 0; // fallback
-                p.percentPnl = 0;
+            }
+
+            if (cost > 0) {
+                p.percentPnl = pnl / cost;
             }
         });
 

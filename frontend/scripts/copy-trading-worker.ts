@@ -208,6 +208,29 @@ function calculateCopySize(config: any, originalSize: number, originalPrice: num
     return Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 }
 
+async function resolveConfigIdForPosition(walletAddress: string, tokenId: string): Promise<string | null> {
+    const normalizedWallet = walletAddress.toLowerCase();
+
+    const recentTrade = await prisma.copyTrade.findFirst({
+        where: {
+            tokenId,
+            config: { walletAddress: normalizedWallet }
+        },
+        orderBy: { detectedAt: 'desc' },
+        select: { configId: true }
+    });
+
+    if (recentTrade?.configId) return recentTrade.configId;
+
+    const config = await prisma.copyTradingConfig.findFirst({
+        where: { walletAddress: normalizedWallet },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true }
+    });
+
+    return config?.id || null;
+}
+
 // ============================================================================
 // Settlement Handler
 // ============================================================================
@@ -297,14 +320,17 @@ async function resolvePositions(conditionId: string): Promise<void> {
             console.log(`   Processing ${positions.length} positions for '${outcomeName}' (Token: ${tokenId.slice(0, 10)}...). Type: ${settlementType}`);
 
             for (const pos of positions) {
-                let txHash = 'auto-settled-loss';
+                let txHash = settlementType === 'LOSS' ? 'settled-loss' : 'redeem-pending';
                 let errorMsg: string | undefined = undefined;
 
-                // Calculate PnL: (Value - Cost)
-                // Proceed Value = Balance * SettlementValue
                 const proceeds = pos.balance * settlementValue;
-                const cost = pos.totalCost;
-                const pnl = proceeds - cost;
+                const pnl = proceeds - pos.totalCost;
+
+                const configId = await resolveConfigIdForPosition(pos.walletAddress, tokenId);
+                if (!configId) {
+                    console.warn(`     ⚠️ No config found for ${pos.walletAddress}. Skipping settlement record.`);
+                    continue;
+                }
 
                 // 1. ON-CHAIN EXECUTION (Only for Wins)
                 if (settlementType === 'WIN') {
@@ -343,7 +369,7 @@ async function resolvePositions(conditionId: string): Promise<void> {
                 // 2. Log Settlement Trade
                 await prisma.copyTrade.create({
                     data: {
-                        configId: 'settlement-auto',
+                        configId: configId,
                         originalTrader: 'POLYMARKET_SETTLEMENT',
                         originalSide: 'SELL', // Settlement is effectively a sell
                         originalSize: pos.balance,
@@ -352,13 +378,13 @@ async function resolvePositions(conditionId: string): Promise<void> {
                         conditionId: conditionId,
                         tokenId: tokenId,
                         outcome: outcomeName,
-                        copySize: pos.balance,
+                        copySize: proceeds,
                         copyPrice: settlementValue,
                         status: (errorMsg ? 'FAILED' : 'EXECUTED'),
                         executedAt: new Date(),
                         txHash: txHash,
                         errorMessage: errorMsg || (settlementType === 'WIN' ? `Redeemed (Profit $${pnl.toFixed(2)})` : `Settled Loss ($${pnl.toFixed(2)})`),
-                        realizedPnL: pnl
+                        realizedPnL: errorMsg ? undefined : pnl
                     }
                 });
 
@@ -509,11 +535,12 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 data: {
                     configId: config.id,
                     originalTrader: traderAddress,
-                    originalSide: side,
+                    originalSide: copySide,
                     originalSize: sizeShares,
                     originalPrice: price,
                     tokenId: tokenId,
                     copySize: copySizeUsdc,
+                    copyPrice: price,
                     status: result.success ? 'EXECUTED' : 'FAILED',
                     executedAt: result.success ? new Date() : null,
                     txHash: result.transactionHashes?.[0] || txHash || 'ws-event',

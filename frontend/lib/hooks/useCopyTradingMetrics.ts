@@ -12,6 +12,9 @@ export interface CopyTradingMetrics {
     tradingPnL: number; // Execution slippage (realized from completed trades)
     realizedWins?: number;
     realizedLosses?: number;
+    settlementPnL?: number;
+    settlementWins?: number;
+    settlementLosses?: number;
     cumulativeInvestment?: number;
 }
 
@@ -32,7 +35,10 @@ export function useCopyTradingMetrics(walletAddress: string) {
                 realizedPnL: 0,
                 unrealizedPnL: 0,
                 totalPnL: 0,
-                tradingPnL: 0
+                tradingPnL: 0,
+                settlementPnL: 0,
+                settlementWins: 0,
+                settlementLosses: 0
             }
         }
     );
@@ -51,6 +57,9 @@ export function useCopyTradingMetrics(walletAddress: string) {
         tradingPnL: 0,
         realizedWins: 0,
         realizedLosses: 0,
+        settlementPnL: 0,
+        settlementWins: 0,
+        settlementLosses: 0,
         cumulativeInvestment: 0
     };
 
