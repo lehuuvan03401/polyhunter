@@ -18,33 +18,43 @@ export async function GET(request: Request) {
     const normalizedWallet = walletAddress.toLowerCase();
 
     // 1. Find Config ID for user
-    const config = await prisma.copyTradingConfig.findFirst({
-        where: { walletAddress: normalizedWallet }
+    // 1. Find ALL Config IDs for user (to support multiple simulations/traders)
+    const configs = await prisma.copyTradingConfig.findMany({
+        where: { walletAddress: normalizedWallet },
+        select: { id: true }
     });
 
-    if (!config) {
+    if (configs.length === 0) {
         return NextResponse.json([]);
     }
+
+    const configIds = configs.map(c => c.id);
 
     try {
         // Query filters
         let whereClause: Prisma.CopyTradeWhereInput = {
-            configId: config.id,
+            configId: { in: configIds },
             status: 'EXECUTED'
         };
 
         if (type === 'COUNTS') {
             const redeemedCount = await prisma.copyTrade.count({
                 where: {
-                    configId: config.id,
-                    originalSide: 'REDEEM'
+                    configId: { in: configIds },
+                    OR: [
+                        { originalSide: 'REDEEM' }, // Actual Redeems
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] } // Simulated Wins
+                    ]
                 }
             });
+            // Loss = Sell by Settlement with 0 price OR Sell with 'loss' hash
             const lostCount = await prisma.copyTrade.count({
                 where: {
-                    configId: config.id,
-                    originalSide: 'SELL',
-                    txHash: { contains: 'loss' }
+                    configId: { in: configIds },
+                    OR: [
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] }, // Settlement Loss
+                        { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] } // Explicit Loss
+                    ]
                 }
             });
             return NextResponse.json({
@@ -56,14 +66,18 @@ export async function GET(request: Request) {
         if (type === 'REDEEMED') {
             whereClause = {
                 ...whereClause,
-                originalSide: 'REDEEM',
-                // Or txHash contains sim-redeem
+                OR: [
+                    { originalSide: 'REDEEM' },
+                    { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] }
+                ]
             };
         } else if (type === 'SETTLED_LOSS') {
             whereClause = {
                 ...whereClause,
-                originalSide: 'SELL',
-                txHash: { contains: 'loss' } // sim-settle-loss
+                OR: [
+                    { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] },
+                    { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] }
+                ]
             };
         } else {
             // ALL history (both types)
@@ -71,6 +85,7 @@ export async function GET(request: Request) {
                 ...whereClause,
                 OR: [
                     { originalSide: 'REDEEM' },
+                    { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] },
                     { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] }
                 ]
             };
@@ -105,7 +120,7 @@ export async function GET(request: Request) {
             estValue: t.copySize * (t.copyPrice || 0),
             totalCost: 0, // Calculated below
             simulated: true,
-            status: t.originalSide === 'REDEEM' ? 'SETTLED_WIN' : 'SETTLED_LOSS',
+            status: (t.originalSide === 'REDEEM' || ((t.originalTrader === 'POLYMARKET_SETTLEMENT' || t.originalTrader === 'PROTOCOL') && t.originalPrice === 1.0)) ? 'SETTLED_WIN' : 'SETTLED_LOSS',
             timestamp: t.executedAt ? new Date(t.executedAt).getTime() : Date.now()
         }));
 

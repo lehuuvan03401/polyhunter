@@ -25,7 +25,7 @@ import { createUnifiedCache } from '../../src/core/unified-cache';
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-const SIMULATION_DURATION_MS = 45 * 60 * 1000; // 45 minutes
+const SIMULATION_DURATION_MS = 120 * 60 * 1000; // 2 hours
 const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '1'); // Ignored (using Leader Size)
 const SLIPPAGE_BPS = 50; // 0.5% slippage (50 basis points)
@@ -64,6 +64,7 @@ interface Position {
     totalCost: number;      // total USDC spent
     marketSlug: string;
     outcome: string;
+    conditionId?: string;
 }
 
 const positions = new Map<string, Position>();
@@ -131,7 +132,7 @@ async function seedConfig() {
 
 // --- POSITION MANAGEMENT ---
 // --- POSITION MANAGEMENT ---
-function updatePositionOnBuy(tokenId: string, shares: number, price: number, marketSlug: string, outcome: string) {
+function updatePositionOnBuy(tokenId: string, shares: number, price: number, marketSlug: string, outcome: string, conditionId?: string) {
     const existing = positions.get(tokenId);
 
     if (existing) {
@@ -148,8 +149,10 @@ function updatePositionOnBuy(tokenId: string, shares: number, price: number, mar
             balance: shares,
             avgEntryPrice: price,
             totalCost: shares * price,
+
             marketSlug,
-            outcome
+            outcome,
+            conditionId
         });
     }
 }
@@ -464,7 +467,12 @@ async function handleTrade(trade: ActivityTrade) {
     let tradePnL: number | undefined = undefined;
 
     if (trade.side === 'BUY') {
-        updatePositionOnBuy(trade.asset, copyShares, execPrice, trade.marketSlug || '', trade.outcome || 'N/A');
+        const enriched = await enrichTradeMetadata(trade);
+        const conditionId = enriched.conditionId || trade.conditionId;
+        const marketSlug = enriched.marketSlug || trade.marketSlug || '';
+        const outcome = enriched.outcome || trade.outcome || 'N/A';
+
+        updatePositionOnBuy(trade.asset, copyShares, execPrice, marketSlug, outcome, conditionId || undefined);
         totalBuyVolume += copyAmount;
 
         const pos = positions.get(trade.asset)!;
@@ -632,12 +640,30 @@ async function processRedemptions() {
 
         try {
             // Check if market is resolved and we WON
+            // Check if market is resolved and we WON
+            // Check if market is resolved and we WON
             if (pos.marketSlug) {
+                // Use /events endpoint which is more reliable than /markets
+                const url = `${GAMMA_API_URL}/events?slug=${pos.marketSlug}`;
+
                 // console.log(`   [Debug] Checking settlement for ${pos.marketSlug} ...`);
-                const resp = await fetch(`${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`);
+                const resp = await fetch(url);
                 if (resp.ok) {
                     const data = await resp.json();
-                    const m = Array.isArray(data) ? data[0] : data;
+                    // Gamma returns Event or Event[]
+                    const event = Array.isArray(data) ? data[0] : data;
+
+                    // Find the specific market within the event
+                    let m: any = null;
+                    if (event && event.markets) {
+                        if (pos.conditionId) {
+                            m = event.markets.find((mk: any) => mk.conditionId === pos.conditionId || mk.condition_id === pos.conditionId);
+                        }
+                        if (!m) {
+                            m = event.markets[0]; // Fallback to first market
+                        }
+                    }
+
                     if (m) {
                         // console.log(`   [Debug] Market Found: ${m.slug}. Closed: ${m.closed}`);
                         let price = undefined;
@@ -666,13 +692,15 @@ async function processRedemptions() {
 
                         // console.log(`   [Debug] Token: ${tokenId} Price: ${price} Winner: ${isWinner} Closed: ${m.closed}`);
 
-                        // Check for Win (Price >= 0.95 OR Explicit Winner)
-                        if ((price !== undefined && price >= 0.95) || isWinner === true) {
+                        // STRICT SETTLEMENT LOGIC: Only settle if market is CLOSED
+                        if (!m.closed) continue;
+
+                        // Check for Win (Explicit Winner or Price is effectively 1)
+                        if (isWinner === true || (price !== undefined && price >= 0.95)) {
                             console.log(`   🎉 Redeeming WIN for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
 
                             // 1. Credit Realized PnL (Value - Cost)
-                            // Actually, Redemption gives $1.00 per share.
-                            // Total Value = Balance * 1.00
+                            // Redemption gives $1.00 per share.
                             const redemptionValue = pos.balance;
                             const profit = redemptionValue - pos.totalCost;
                             realizedPnL += profit;
@@ -695,7 +723,8 @@ async function processRedemptions() {
                                     executedAt: new Date(),
                                     txHash: 'sim-redeem',
                                     errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`,
-                                    realizedPnL: profit
+                                    realizedPnL: profit,
+                                    conditionId: pos.conditionId // Important: persist conditionId
                                 }
                             });
 
@@ -707,8 +736,8 @@ async function processRedemptions() {
 
                             console.log(`      💰 Credited $${redemptionValue.toFixed(2)} (Profit: $${profit.toFixed(2)})`);
                         }
-                        // Check for Loss (Price <= 0.05 OR (Explicit Loser AND Market Closed))
-                        else if ((price !== undefined && price <= 0.05) || (isWinner === false && m.closed)) {
+                        // Check for Loss (Explicit Loser or Price is effectively 0)
+                        else if (isWinner === false || (price !== undefined && price <= 0.05)) {
                             console.log(`   💀 Settle LOSS for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
 
                             const settlementValue = 0;
@@ -793,8 +822,12 @@ async function printSummary() {
                         }
                     } catch (e) { } // Ignore CLOB errors, fallthrough to Gamma
 
-                    if (pos.marketSlug) {
-                        const resp = await fetch(`${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`);
+                    if (pos.marketSlug || pos.conditionId) {
+                        let url = `${GAMMA_API_URL}/markets?slug=${pos.marketSlug}`;
+                        if (pos.conditionId) {
+                            url = `${GAMMA_API_URL}/markets?condition_id=${pos.conditionId}`;
+                        }
+                        const resp = await fetch(url);
                         if (resp.ok) {
                             const data = await resp.json();
                             const m = Array.isArray(data) ? data[0] : data;

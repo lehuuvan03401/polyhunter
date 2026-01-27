@@ -614,4 +614,52 @@ export class TradingService {
     return this.clobClient;
   }
 
+  // ============================================================================
+  // Approvals (Hardening)
+  // ============================================================================
+
+  /**
+   * Verify and Approve Allowance for CLOB Exchange
+   * Calculates 'max' allowance and approves if current < required.
+   */
+  async verifyAndApproveAllowance(
+    assetType: 'COLLATERAL' | 'CONDITIONAL',
+    tokenId?: string,
+    minAmount: number = 1000000000 // Default check amount
+  ): Promise<boolean> {
+    const client = await this.ensureInitialized();
+    return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+      try {
+        console.log(`[TradingService] 🛡️ Checking allowance for ${assetType} ${tokenId || ''}...`);
+
+        const { allowance } = await client.getBalanceAllowance({
+          asset_type: assetType as any,
+          token_id: tokenId
+        });
+
+        const currentAllowance = Number(allowance);
+
+        // If allowance is sufficient, return true
+        if (currentAllowance >= minAmount) {
+          // console.log(`[TradingService] ✅ Allowance OK: ${currentAllowance}`);
+          return true;
+        }
+
+        console.log(`[TradingService] ⚠️ Allowance Low (${currentAllowance} < ${minAmount}). Approving...`);
+
+        const result = await client.updateBalanceAllowance({
+          asset_type: assetType as any,
+          token_id: tokenId
+        });
+
+        console.log(`[TradingService] ✅ Approved! Tx: ${result}`);
+        // Wait a bit for propagation? usually client waits for tx hash.
+        return true;
+      } catch (e) {
+        console.error(`[TradingService] ❌ Failed to approve allowance:`, e);
+        return false;
+      }
+    });
+  }
+
 }
