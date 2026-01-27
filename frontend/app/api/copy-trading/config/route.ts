@@ -86,7 +86,10 @@ export async function POST(request: NextRequest) {
             executionMode,
             privateKey,
             channel,
-            autoExecute
+            autoExecute,
+
+            // Strategy
+            strategyProfile
         } = body;
 
         // Validation
@@ -292,6 +295,7 @@ export async function PATCH(request: NextRequest) {
         if (updates.sideFilter !== undefined) updateData.sideFilter = updates.sideFilter;
         if (updates.minTriggerSize !== undefined) updateData.minTriggerSize = updates.minTriggerSize;
         if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
+        if (updates.strategyProfile !== undefined) updateData.strategyProfile = updates.strategyProfile;
 
         const updated = await prisma.copyTradingConfig.update({
             where: { id },

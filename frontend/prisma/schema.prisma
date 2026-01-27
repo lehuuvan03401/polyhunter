@@ -206,6 +206,13 @@ enum CopyTradingMode {
   FIXED_AMOUNT // Fixed dollar amount per trade
 }
 
+// Strategy Profile - Controls slippage, size, and risk parameters
+enum StrategyProfile {
+  CONSERVATIVE // Low slippage (0.5%), tight stop loss
+  MODERATE // Standard slippage (1%), medium risk
+  AGGRESSIVE // High slippage (5%), high risk
+}
+
 // Execution mode
 enum ExecutionMode {
   PROXY // Default: Use Smart Contract Proxy (Non-Custodial)
@@ -228,6 +235,9 @@ model CopyTradingConfig {
   walletAddress String // User's wallet address
   traderAddress String // Trader being copied
   traderName    String? // Display name of trader
+
+  // Strategy Profile
+  strategyProfile StrategyProfile @default(MODERATE)
 
   // Slippage settings
   slippageType String @default("FIXED") // 'FIXED' | 'AUTO'

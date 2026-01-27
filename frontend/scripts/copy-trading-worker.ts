@@ -8,6 +8,7 @@
  */
 
 import './env-setup'; // Load Env FIRST
+import { getStrategyConfig } from '../../src/config/strategy-profiles.js';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -497,7 +498,18 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             const copySizeUsdc = calculateCopySize(config, sizeShares, price);
             if (copySizeUsdc <= 0) continue;
 
-            console.log(`[Worker] 🚀 Auto-Executing for ${config.walletAddress}: ${copySide} $${copySizeUsdc.toFixed(2)}`);
+            // Get Strategy Parameters
+            const strategy = getStrategyConfig(config.strategyProfile);
+
+            // Map Gas Priority to Overrides
+            let overrides = {};
+            if (strategy.gasPriority === 'fast') {
+                overrides = { maxPriorityFeePerGas: 40000000000 }; // 40 Gwei
+            } else if (strategy.gasPriority === 'instant') {
+                overrides = { maxPriorityFeePerGas: 100000000000 }; // 100 Gwei
+            }
+
+            console.log(`[Worker] 🚀 Auto-Executing for ${config.walletAddress}: ${copySide} $${copySizeUsdc.toFixed(2)} [${strategy.description.split('.')[0]}]`);
 
             // 1.5 Fetch Metadata (Or use trade data if available)
             // ActivityTrade has marketSlug and outcome!

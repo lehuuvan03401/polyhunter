@@ -23,6 +23,7 @@ export interface CopyTradingConfig {
     dryRun: boolean;
     startedAt: number;
     isActive: boolean;
+    strategyProfile?: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
 }
 
 // Trade log entry

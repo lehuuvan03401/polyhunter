@@ -21,6 +21,7 @@ import type { ActivityTrade, MarketEvent } from '../../src/services/realtime-ser
 import { GammaApiClient } from '../../src/index';
 import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache } from '../../src/core/unified-cache';
+import { getStrategyConfig, StrategyProfile } from '../../src/config/strategy-profiles';
 
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
@@ -28,7 +29,12 @@ const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6a
 const SIMULATION_DURATION_MS = 120 * 60 * 1000; // 2 hours
 const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '1'); // Ignored (using Leader Size)
-const SLIPPAGE_BPS = 50; // 0.5% slippage (50 basis points)
+const SIMULATED_PROFILE = StrategyProfile.CONSERVATIVE; // Test CONSERVATIVE profile
+const strategy = getStrategyConfig(SIMULATED_PROFILE);
+// strategy.maxSlippage is decimal (e.g. 0.005 for 0.5%).
+// Script used BPS (50 for 0.5%).
+// 0.005 * 10000 = 50 BPS.
+const SLIPPAGE_BPS = strategy.maxSlippage * 10000;
 const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + overhead)
 
 // No validation needed - using local dev.db
@@ -40,6 +46,7 @@ console.log(`Target Trader: ${TARGET_TRADER}`);
 console.log(`Follower Wallet: ${FOLLOWER_WALLET}`);
 console.log(`Duration: ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes`);
 console.log(`Fixed Copy Amount: $${FIXED_COPY_AMOUNT}`);
+console.log(`Stategy Profile: ${SIMULATED_PROFILE} (Slippage: ${strategy.maxSlippage * 100}%)`);
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 // --- PRISMA ---
