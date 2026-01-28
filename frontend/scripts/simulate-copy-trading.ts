@@ -22,6 +22,7 @@ import { GammaApiClient } from '../../src/index';
 import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache } from '../../src/core/unified-cache';
 import { getStrategyConfig, StrategyProfile } from '../../src/config/strategy-profiles';
+import { normalizeTradeSizing } from '../../src/utils/trade-sizing.js';
 
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
@@ -76,6 +77,7 @@ interface Position {
 
 const positions = new Map<string, Position>();
 let configId: string;
+let activeConfig: Awaited<ReturnType<typeof seedConfig>> | null = null;
 
 // --- METRICS ---
 let tradesRecorded = 0;
@@ -133,6 +135,7 @@ async function seedConfig() {
     });
 
     configId = config.id;
+    activeConfig = config;
     console.log(`✅ Created config: ${configId}\n`);
     return config;
 }
@@ -181,6 +184,28 @@ function updatePositionOnSell(tokenId: string, shares: number, price: number): n
     existing.totalCost -= costBasis;
 
     return pnl;
+}
+
+function calculateCopySize(
+    config: {
+        mode: string;
+        sizeScale: number | null;
+        fixedAmount: number | null;
+        maxSizePerTrade: number;
+        minSizePerTrade?: number | null;
+    },
+    originalShares: number,
+    originalPrice: number
+): number {
+    const originalValue = originalShares * originalPrice;
+
+    if (config.mode === 'FIXED_AMOUNT' && config.fixedAmount) {
+        return Math.min(config.fixedAmount, config.maxSizePerTrade);
+    }
+
+    const scaledValue = originalValue * (config.sizeScale || 1);
+    const minSize = config.minSizePerTrade ?? 0;
+    return Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 }
 
 // Cache for market metadata to avoid repeated API calls
@@ -336,7 +361,13 @@ async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
 }
 
 // --- DATABASE RECORDING ---
-async function recordCopyTrade(trade: ActivityTrade, copyAmount: number, execPrice: number, pnl?: number) {
+async function recordCopyTrade(
+    trade: ActivityTrade,
+    copyAmount: number,
+    execPrice: number,
+    originalShares: number,
+    pnl?: number
+) {
     try {
         // Enrich trade metadata if missing
         const enriched = await enrichTradeMetadata(trade);
@@ -346,7 +377,7 @@ async function recordCopyTrade(trade: ActivityTrade, copyAmount: number, execPri
                 configId: configId,
                 originalTrader: trade.trader?.address || '',
                 originalSide: trade.side,
-                originalSize: trade.size,
+                originalSize: originalShares,
                 originalPrice: trade.price,
                 tokenId: trade.asset,
                 conditionId: enriched.conditionId,
@@ -434,21 +465,24 @@ async function handleTrade(trade: ActivityTrade) {
         return;
     }
 
-    // Calculate copy shares SAME AS LEADER
-    // Leader Size is trade.size (shares) or trade.amount (USDC)?
-    // ActivityTrade usually has 'size' which is Shares or Amount based on type.
-    // Assuming trade.size is the number of shares.
+    if (!activeConfig) {
+        console.warn('⚠️  Active config missing, skipping trade.');
+        return;
+    }
+
+    const { tradeShares, tradeNotional } = normalizeTradeSizing(activeConfig, trade.size, trade.price);
+
+    let copyAmount = calculateCopySize(activeConfig, tradeShares, trade.price);
+    if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
+        console.log(`\n⏭️  SKIPPED (invalid copy size): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+        return;
+    }
 
     // APPLY SLIPPAGE MODEL
     const slipFactor = trade.side === 'BUY' ? (1 + SLIPPAGE_BPS / 10000) : (1 - SLIPPAGE_BPS / 10000);
     const execPrice = trade.price * slipFactor;
 
-    // Copy EXACT LEADER SIZE
-    const copyShares = trade.size;
-
-    // Calculate required USDC amount
-    // Value = Size * Price
-    const copyAmount = copyShares * execPrice;
+    let copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
 
     // 🔥 CRITICAL: Skip SELL trades if we don't have a position
     // In real copy trading, we only sell what we've bought
@@ -458,13 +492,19 @@ async function handleTrade(trade: ActivityTrade) {
             console.log(`\n⏭️  SKIPPED SELL (no position): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
             return;
         }
+
+        if (copyShares > existing.balance) {
+            copyShares = existing.balance;
+            copyAmount = copyShares * execPrice;
+        }
     }
 
     console.log('\n🎯 ═══════════════════════════════════════════════════════════');
     console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded + 1})`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
-    console.log(`   📊 ${trade.side} ${copyShares.toFixed(2)} shares (Leader Size)`);
+    console.log(`   📊 Leader: ${tradeShares.toFixed(2)} shares ($${tradeNotional.toFixed(2)})`);
+    console.log(`   📊 Copy:   ${trade.side} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
     console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
     console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
     console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
@@ -509,7 +549,7 @@ async function handleTrade(trade: ActivityTrade) {
     // Record to database
     // We record the EXECUTION price (simulated)
     // Pass the trade-specific PnL (calculated above for sells)
-    await recordCopyTrade(trade, copyAmount, execPrice, tradePnL);
+    await recordCopyTrade(trade, copyAmount, execPrice, tradeShares, tradePnL);
 }
 
 // --- SETTLEMENT HANDLER ---

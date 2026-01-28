@@ -25,6 +25,7 @@ import { PositionService } from '../lib/services/position-service';
 import { GuardrailService } from '../lib/services/guardrail-service';
 import { RealtimeServiceV2, ActivityTrade, MarketEvent } from '../../src/services/realtime-service-v2';
 import { GammaApiClient } from '../../src/index';
+import { normalizeTradeSizing } from '../../src/utils/trade-sizing.js';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -471,23 +472,25 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
     const tokenId = trade.asset;
     const price = trade.price;
-    const sizeShares = trade.size;
+    const rawSize = trade.size;
     const side = trade.side; // BUY or SELL
     const txHash = trade.transactionHash;
 
     console.log(`[Worker] 🔔 Detected Trade! Tx: ${txHash?.slice(0, 8)}...`);
-    console.log(`[Worker] 🎯 Target: ${traderAddress} | Side: ${side} | Token: ${tokenId} | Size: ${sizeShares.toFixed(2)} | Price: $${price.toFixed(4)}`);
 
     // Find configs for this trader
     const configs = activeConfigs.filter(c => c.traderAddress.toLowerCase() === traderAddress);
 
     for (const config of configs) {
         try {
+            const { tradeShares, tradeNotional } = normalizeTradeSizing(config, rawSize, price);
+
+            console.log(`[Worker] 🎯 Target: ${traderAddress} | Side: ${side} | Token: ${tokenId} | Size: ${tradeShares.toFixed(2)} | Price: $${price.toFixed(4)}`);
+
             // Apply Basic Filters
             if (config.sideFilter && config.sideFilter !== side) continue;
 
-            const tradeValue = sizeShares * price;
-            if (config.minTriggerSize && tradeValue < config.minTriggerSize) continue;
+            if (config.minTriggerSize && tradeNotional < config.minTriggerSize) continue;
 
             // Logic for COUNTER trade
             let copySide = side;
@@ -496,7 +499,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             }
 
             // Calc Size
-            const copySizeUsdc = calculateCopySize(config, sizeShares, price);
+            const copySizeUsdc = calculateCopySize(config, tradeShares, price);
             if (copySizeUsdc <= 0) continue;
 
             // Get Strategy Parameters
@@ -540,7 +543,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                             configId: config.id,
                             originalTrader: traderAddress,
                             originalSide: copySide,
-                            originalSize: sizeShares,
+                            originalSize: tradeShares,
                             originalPrice: price,
                             tokenId: tokenId,
                             copySize: copySizeUsdc,
@@ -568,7 +571,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         configId: config.id,
                         originalTrader: traderAddress,
                         originalSide: copySide,
-                        originalSize: sizeShares,
+                        originalSize: tradeShares,
                         originalPrice: price,
                         tokenId: tokenId,
                         copySize: copySizeUsdc,

@@ -37,6 +37,7 @@ import { AffiliateEngine } from '../lib/services/affiliate-engine';
 import { PositionService } from '../lib/services/position-service';
 import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
 import { TxMonitor, TrackedTx } from '../../src/core/tx-monitor';
+import { normalizeTradeSizingFromShares } from '../../src/utils/trade-sizing.js';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -156,8 +157,12 @@ interface ActiveConfig {
     id: string;
     walletAddress: string; // User
     traderAddress: string; // Trader
+    tradeSizeMode?: 'SHARES' | 'NOTIONAL' | null;
+    mode: string;
     fixedAmount?: number;
     sizeScale?: number;
+    maxSizePerTrade: number;
+    minSizePerTrade?: number;
     maxSlippage: number;
     slippageType: 'FIXED' | 'AUTO';
     autoExecute: boolean;
@@ -174,6 +179,28 @@ interface ActiveConfig {
 let activeConfigs: ActiveConfig[] = [];
 let monitoredTraders: Set<string> = new Set();
 let isProcessing = false;
+
+function calculateCopySize(
+    config: {
+        mode: string;
+        sizeScale?: number;
+        fixedAmount?: number;
+        maxSizePerTrade: number;
+        minSizePerTrade?: number;
+    },
+    originalShares: number,
+    originalPrice: number
+): number {
+    const originalValue = originalShares * originalPrice;
+
+    if (config.mode === 'FIXED_AMOUNT' && config.fixedAmount) {
+        return Math.min(config.fixedAmount, config.maxSizePerTrade);
+    }
+
+    const scaledValue = originalValue * (config.sizeScale || 1);
+    const minSize = config.minSizePerTrade ?? 0;
+    return Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
+}
 
 // --- QUEUE ---
 interface JobQueueItem {
@@ -419,8 +446,12 @@ async function refreshConfigs() {
             id: c.id,
             walletAddress: c.walletAddress,
             traderAddress: c.traderAddress,
+            tradeSizeMode: c.tradeSizeMode,
+            mode: c.mode,
             fixedAmount: c.fixedAmount || undefined,
             sizeScale: c.sizeScale || undefined,
+            maxSizePerTrade: c.maxSizePerTrade,
+            minSizePerTrade: c.minSizePerTrade || undefined,
             maxSlippage: c.maxSlippage,
             slippageType: c.slippageType as 'FIXED' | 'AUTO',
             autoExecute: c.autoExecute,
@@ -490,7 +521,7 @@ async function handleTransfer(
     try {
         const tokenId = id.toString();
         const amountValues = value.toString();
-        const originalSize = parseFloat(amountValues) / 1e6;
+        const rawShares = parseFloat(amountValues) / 1e6;
 
         // 1. Identify Trader
         let trader: string | null = null;
@@ -517,10 +548,10 @@ async function handleTransfer(
         // 3. Fetch real market price (cached)
         const price = await getCachedPrice(tokenId, side);
 
-        // 4. PARALLEL EXECUTION LOOP
-        subscribers.forEach(async (sub) => {
-            await processJob(sub, side!, tokenId, price, trader!, originalSize);
-        });
+        for (const sub of subscribers) {
+            const { tradeShares } = normalizeTradeSizingFromShares(sub, rawShares, price);
+            await processJob(sub, side!, tokenId, price, trader!, tradeShares);
+        }
 
     } catch (error) {
         console.error(`[Supervisor] Event processing error:`, error);
@@ -558,7 +589,7 @@ const handleSniffedTx = async (
     try {
         const tokenId = id.toString();
         const amountValues = value.toString();
-        const originalSize = parseFloat(amountValues) / 1e6;
+        const rawShares = parseFloat(amountValues) / 1e6;
 
         let trader: string | null = null;
         let side: 'BUY' | 'SELL' | null = null;
@@ -585,8 +616,8 @@ const handleSniffedTx = async (
         const PRICE_PLACEHOLDER = 0.5;
 
         for (const config of subscribers) {
-            // Process Job (Pass 1000 shares example size if needed, mostly fixedAmount uses config)
-            processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, originalSize, true, overrides);
+            const { tradeShares } = normalizeTradeSizingFromShares(config, rawShares, PRICE_PLACEHOLDER);
+            processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, tradeShares, true, overrides);
         }
 
     } catch (e) {
@@ -709,9 +740,11 @@ async function executeJobInternal(
     console.log(`[Supervisor] 🏃 [${typeLabel}] Assigning User ${config.walletAddress} -> Worker ${workerAddress}`);
 
     try {
-        // 2. Calculate Size
-        let copyAmount = 10; // Default $10
-        if (config.fixedAmount) copyAmount = config.fixedAmount;
+        const copyAmount = calculateCopySize(config, originalSize, approxPrice);
+        if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
+            console.warn(`[Supervisor] ⚠️ Invalid copy size for ${config.walletAddress}. Skipping.`);
+            return;
+        }
 
         // DRY_RUN Mode: Log execution decision without placing order
         if (DRY_RUN) {

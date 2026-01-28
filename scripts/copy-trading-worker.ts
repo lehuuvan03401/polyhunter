@@ -48,6 +48,7 @@ import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionSe
 import { ethers } from 'ethers';
 import { createHash } from 'crypto';
 import { CTF_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '../src/core/contracts.js';
+import { normalizeTradeSizing } from '../src/utils/trade-sizing.js';
 
 // Dynamic import for Prisma to handle different runtime contexts
 let prisma: any = null;
@@ -305,23 +306,6 @@ function subscribeToActivityIfNeeded(): void {
 
     lastSubscriptionKey = nextKey;
     lastSubscriptionMode = nextMode;
-}
-
-function normalizeTradeSizing(
-    config: WatchedConfig,
-    rawSize: number,
-    price: number
-): { tradeShares: number; tradeNotional: number } {
-    const mode = config.tradeSizeMode || 'SHARES';
-    if (mode === 'NOTIONAL') {
-        const tradeNotional = rawSize;
-        const tradeShares = price > 0 ? tradeNotional / price : 0;
-        return { tradeShares, tradeNotional };
-    }
-
-    const tradeShares = rawSize;
-    const tradeNotional = tradeShares * price;
-    return { tradeShares, tradeNotional };
 }
 
 // ========================================================================
