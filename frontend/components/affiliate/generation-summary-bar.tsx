@@ -15,11 +15,11 @@ interface GenerationSummaryBarProps {
 }
 
 const GENERATION_COLORS = [
-    'bg-blue-500',      // Gen 1
-    'bg-purple-500',    // Gen 2
-    'bg-pink-500',      // Gen 3
-    'bg-orange-500',    // Gen 4
-    'bg-yellow-500',    // Gen 5+
+    'bg-green-500',      // Gen 1 (Direct - Money)
+    'bg-yellow-400',     // Gen 2
+    'bg-yellow-500',     // Gen 3
+    'bg-yellow-600',     // Gen 4
+    'bg-yellow-700',     // Gen 5+
 ];
 
 export function GenerationSummaryBar({ data, total, className }: GenerationSummaryBarProps) {

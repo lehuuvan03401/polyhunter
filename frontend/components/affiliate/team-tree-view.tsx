@@ -22,11 +22,11 @@ interface TeamTreeViewProps {
 }
 
 const TIER_STYLES: Record<string, string> = {
-    'ORDINARY': 'text-gray-400 border-gray-400/30',
-    'VIP': 'text-blue-400 bg-blue-400/10 border-blue-400/30',
-    'ELITE': 'text-purple-400 bg-purple-400/10 border-purple-400/30',
-    'PARTNER': 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
-    'SUPER_PARTNER': 'text-orange-400 bg-orange-400/10 border-orange-400/30',
+    'ORDINARY': 'text-muted-foreground border-white/10',
+    'VIP': 'text-white bg-white/5 border-white/20',
+    'ELITE': 'text-yellow-200 bg-yellow-500/5 border-yellow-500/10',
+    'PARTNER': 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
+    'SUPER_PARTNER': 'text-yellow-500 bg-yellow-500/20 border-yellow-500/30',
 };
 
 function TreeNode({ member, depth = 0 }: { member: TreeMember; depth?: number }) {

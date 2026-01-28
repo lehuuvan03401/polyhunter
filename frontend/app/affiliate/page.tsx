@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle, Coins, CreditCard, LayoutDashboard, Quote } from 'lucide-react';
+import { Link as LinkIcon, Users, Wallet, BarChart3, Copy, Info, Clock, Loader2, Calendar, Repeat, CheckCircle, Trophy, List, GitBranch, HelpCircle, Coins, CreditCard, LayoutDashboard, Quote, Crown, Shield, Zap, Star, UserCircle, ArrowRight, Sparkles, Rocket } from 'lucide-react';
 // ... existing imports ...
 
 // ... inside GuestView ...
@@ -294,10 +294,10 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     if (!isRegistered) {
         // Landing page data
         const BENEFITS = [
-            { icon: '💵', title: '25% Commission', desc: 'Earn from every trade your referrals make' },
-            { icon: '🌳', title: '5 Generations Deep', desc: 'Build a team and earn from your entire network' },
-            { icon: '⚡', title: 'Instant Payouts', desc: 'Withdraw your earnings anytime, no minimums' },
-            { icon: '🚀', title: 'Tier Progression', desc: 'Level up to unlock higher commission rates' },
+            { icon: <Coins className="h-8 w-8 text-yellow-500" />, title: '25% Commission', desc: 'Earn from every trade your referrals make' },
+            { icon: <Users className="h-8 w-8 text-yellow-500" />, title: '5 Generations Deep', desc: 'Build a team and earn from your entire network' },
+            { icon: <Zap className="h-8 w-8 text-yellow-500" />, title: 'Instant Payouts', desc: 'Withdraw your earnings anytime, no minimums' },
+            { icon: <Trophy className="h-8 w-8 text-yellow-500" />, title: 'Tier Progression', desc: 'Level up to unlock higher commission rates' },
         ];
 
         const STEPS = [
@@ -307,11 +307,11 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
         ];
 
         const TIERS = [
-            { name: 'ORDINARY', color: 'text-gray-400', directs: 0, team: 0, zero: 1, diff: 1 },
-            { name: 'VIP', color: 'text-blue-400', directs: 3, team: 10, zero: 2, diff: 2 },
-            { name: 'ELITE', color: 'text-purple-400', directs: 10, team: 100, zero: 3, diff: 3 },
-            { name: 'PARTNER', color: 'text-yellow-400', directs: 30, team: 500, zero: 5, diff: 5 },
-            { name: 'SUPER', color: 'text-orange-400', directs: 50, team: 1000, zero: 8, diff: 8 },
+            { name: 'ORDINARY', color: 'text-muted-foreground', directs: 0, team: 0, zero: 1, diff: 1, icon: <UserCircle className="h-4 w-4" /> },
+            { name: 'VIP', color: 'text-white', directs: 3, team: 10, zero: 2, diff: 2, icon: <Star className="h-4 w-4 text-white" /> },
+            { name: 'ELITE', color: 'text-yellow-500/70', directs: 10, team: 100, zero: 3, diff: 3, icon: <Zap className="h-4 w-4 text-yellow-500/70" /> },
+            { name: 'PARTNER', color: 'text-yellow-500', directs: 30, team: 500, zero: 5, diff: 5, icon: <Shield className="h-4 w-4 text-yellow-500" /> },
+            { name: 'SUPER', color: 'text-yellow-400 font-bold', directs: 50, team: 1000, zero: 8, diff: 8, icon: <Crown className="h-4 w-4 text-yellow-500" /> },
         ];
 
         const ZERO_LINE_RATES = [
@@ -326,30 +326,30 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
             <div className="min-h-screen bg-[#0d0e10] text-white">
                 {/* Hero Section */}
                 <section className="pt-24 pb-16 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-purple-600/5 to-transparent pointer-events-none" />
-                    <div className="absolute top-20 right-20 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px]" />
-                    <div className="absolute bottom-0 left-20 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px]" />
+                    <div className="absolute inset-0 bg-yellow-500/5 pointer-events-none" />
+                    <div className="absolute top-20 right-20 w-96 h-96 bg-yellow-500/5 rounded-full blur-[100px]" />
+                    <div className="absolute bottom-0 left-20 w-64 h-64 bg-yellow-500/5 rounded-full blur-[80px]" />
 
                     <div className="container max-w-4xl mx-auto px-4 text-center relative z-10">
-                        <div className="inline-flex items-center gap-2 bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full text-sm font-medium mb-6 border border-blue-500/20">
-                            <span className="animate-pulse">✨</span>
+                        <div className="inline-flex items-center gap-2 bg-yellow-500/10 text-yellow-500 px-4 py-2 rounded-full text-sm font-medium mb-6 border border-yellow-500/20">
+                            <Sparkles className="h-4 w-4" />
                             Passive Income Opportunity
                         </div>
 
-                        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                            Earn While <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">You Sleep</span>
+                        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-white">
+                            Earn While <span className="text-yellow-500">You Sleep</span>
                         </h1>
 
                         <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-                            Turn your network into income. Earn up to <strong className="text-green-400">25% commission</strong> on every trade your referrals make — plus bonuses from <strong className="text-blue-400">5 generations</strong> of your team.
+                            Turn your network into income. Earn up to <strong className="text-green-500">25% commission</strong> on every trade your referrals make — plus bonuses from <strong className="text-yellow-500">5 generations</strong> of your team.
                         </p>
 
                         <button
                             onClick={handleRegister}
                             disabled={isRegistering}
-                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40"
+                            className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-yellow-500/20"
                         >
-                            {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>🚀</span>}
+                            {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
                             {isRegistering ? 'Registering...' : 'Start Earning Now'}
                         </button>
 
@@ -363,9 +363,9 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                         <h2 className="text-2xl font-bold text-center mb-10">Why Join Our Affiliate Program?</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {BENEFITS.map((b, i) => (
-                                <div key={i} className="bg-[#1a1b1e] border border-white/10 rounded-xl p-6 text-center hover:border-blue-500/30 transition-colors">
-                                    <div className="text-4xl mb-4">{b.icon}</div>
-                                    <h3 className="font-bold text-lg mb-2">{b.title}</h3>
+                                <div key={i} className="bg-[#1a1b1e] border border-white/10 rounded-xl p-6 text-center hover:border-yellow-500/30 transition-colors group">
+                                    <div className="mb-4 flex justify-center">{b.icon}</div>
+                                    <h3 className="font-bold text-lg mb-2 text-white group-hover:text-yellow-500 transition-colors">{b.title}</h3>
                                     <p className="text-sm text-muted-foreground">{b.desc}</p>
                                 </div>
                             ))}
@@ -380,13 +380,13 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                         <div className="flex flex-col md:flex-row items-center justify-between gap-8">
                             {STEPS.map((s, i) => (
                                 <div key={i} className="flex flex-col items-center text-center flex-1">
-                                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold mb-4 shadow-lg">
+                                    <div className="w-16 h-16 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 flex items-center justify-center text-2xl font-bold mb-4 shadow-lg">
                                         {s.num}
                                     </div>
                                     <h3 className="font-bold text-lg mb-2">{s.title}</h3>
                                     <p className="text-sm text-muted-foreground">{s.desc}</p>
                                     {i < STEPS.length - 1 && (
-                                        <div className="hidden md:block absolute translate-x-20 w-20 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500" />
+                                        <div className="hidden md:block absolute translate-x-20 w-20 h-0.5 bg-yellow-500/20" />
                                     )}
                                 </div>
                             ))}
@@ -414,7 +414,9 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                                 <tbody>
                                     {TIERS.map((t, i) => (
                                         <tr key={i} className="border-b border-white/5 hover:bg-white/5">
-                                            <td className={`py-4 px-6 font-bold ${t.color}`}>{t.name}</td>
+                                            <td className={`py-4 px-6 font-bold ${t.color} flex items-center gap-2`}>
+                                                {t.icon} {t.name}
+                                            </td>
                                             <td className="text-center py-4 px-4 font-mono">{t.directs}</td>
                                             <td className="text-center py-4 px-4 font-mono">{t.team}</td>
                                             <td className="text-center py-4 px-4 font-mono text-green-400">{t.zero}%</td>
@@ -465,10 +467,9 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
 
                         <button
                             onClick={handleRegister}
-                            disabled={isRegistering}
-                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-blue-500/25"
+                            className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-yellow-500/20"
                         >
-                            {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>🚀</span>}
+                            {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
                             {isRegistering ? 'Registering...' : 'Become an Affiliate'}
                         </button>
 
@@ -478,8 +479,8 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                             <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> Instant setup</span>
                         </div>
                     </div>
-                </section>
-            </div>
+                </section >
+            </div >
         );
     }
 
@@ -505,8 +506,11 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
 
                     <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
                         <div className="flex items-center gap-4">
-                            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg border-2 border-white/10">
-                                {stats?.tier === 'SUPER_PARTNER' ? '👑' : stats?.tier === 'PARTNER' ? '🤝' : stats?.tier === 'ELITE' ? '⚔️' : stats?.tier === 'VIP' ? '💎' : '👤'}
+                            <div className="h-16 w-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center text-yellow-500 shadow-lg border border-yellow-500/20">
+                                {stats?.tier === 'SUPER_PARTNER' ? <Crown className="h-8 w-8" /> :
+                                    stats?.tier === 'PARTNER' ? <Shield className="h-8 w-8" /> :
+                                        stats?.tier === 'ELITE' ? <Zap className="h-8 w-8" /> :
+                                            stats?.tier === 'VIP' ? <Star className="h-8 w-8" /> : <UserCircle className="h-8 w-8" />}
                             </div>
                             <div>
                                 <div className="text-sm text-yellow-500 font-medium mb-1">Current Rank</div>
@@ -540,7 +544,7 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                                         </span>
                                     </div>
                                     <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mb-1">
-                                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, (stats.totalReferrals / (tierInfo.minTeam || 1)) * 100)}%` }} />
+                                        <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (stats.totalReferrals / (tierInfo.minTeam || 1)) * 100)}%` }} />
                                     </div>
                                     <div className="text-[10px] text-muted-foreground text-right">
                                         Goal: {(tierInfo.minTeam)} Active Members
@@ -558,8 +562,8 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                 {/* 2. Stats Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     {[
-                        { label: "Direct Referrals", value: `${stats?.totalReferrals || 0}`, sub: "Zero Line (Gen 1)", icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
-                        { label: "Team Size", value: `${stats?.teamSize || 0}`, sub: "Total Network (Downline)", icon: Wallet, color: "text-purple-500", bg: "bg-purple-500/10" },
+                        { label: "Direct Referrals", value: `${stats?.totalReferrals || 0}`, sub: "Zero Line (Gen 1)", icon: Users, color: "text-green-500", bg: "bg-green-500/10" },
+                        { label: "Team Size", value: `${stats?.teamSize || 0}`, sub: "Total Network (Downline)", icon: Wallet, color: "text-yellow-500", bg: "bg-yellow-500/10" },
                         { label: "Sun Lines", value: `${stats?.sunLineCount || 0}`, sub: "Strong Legs", icon: Trophy, color: "text-yellow-500", bg: "bg-yellow-500/10" },
                         {
                             label: "Total Earnings",
@@ -771,7 +775,7 @@ function GuestView() {
             earnings: "$12,450",
             period: "last month",
             quote: "I started sharing my link in a few discord groups. Now I'm earning more from commissions than my actual trading.",
-            avatar: "👨‍💻"
+            avatar: <Crown className="h-6 w-6 text-yellow-500" />
         },
         {
             name: "Sarah K.",
@@ -779,7 +783,7 @@ function GuestView() {
             earnings: "$4,200",
             period: "this week",
             quote: "The 5-generation system is a game changer. My network keeps growing automatically as my referrals invite their friends.",
-            avatar: "👩‍💼"
+            avatar: <Zap className="h-6 w-6 text-blue-500" />
         },
         {
             name: "CryptoDave",
@@ -787,7 +791,7 @@ function GuestView() {
             earnings: "$850",
             period: "passive income",
             quote: "I just posted my link on Twitter and forgot about it. Woke up to free USDC in my wallet. Easiest money ever.",
-            avatar: "🚀"
+            avatar: <Star className="h-6 w-6 text-green-500" />
         }
     ];
 
