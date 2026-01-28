@@ -245,6 +245,37 @@ export async function POST(request: NextRequest) {
                 const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
                 const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
 
+                const proxyAddress = await executionService.resolveProxyAddress(walletAddress);
+                if (!proxyAddress) {
+                    return NextResponse.json({
+                        success: false,
+                        error: 'No proxy wallet found for user',
+                    }, { status: 400 });
+                }
+
+                const allowanceCheck = await executionService.checkProxyAllowance({
+                    proxyAddress,
+                    side: trade.originalSide as 'BUY' | 'SELL',
+                    tokenId: trade.tokenId,
+                    amount: trade.copySize,
+                    signer,
+                });
+                if (!allowanceCheck.allowed) {
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: allowanceCheck.reason || 'ALLOWANCE_MISSING',
+                        },
+                    });
+
+                    return NextResponse.json({
+                        success: false,
+                        error: allowanceCheck.reason || 'Allowance missing',
+                        status: 'SKIPPED',
+                    }, { status: 403 });
+                }
+
                 // Execute
                 const result = await executionService.executeOrderWithProxy({
                     tradeId: trade.id,

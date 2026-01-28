@@ -43,6 +43,12 @@ export interface ExecutionResult {
     proxyAddress?: string;
 }
 
+export interface AllowanceCheckResult {
+    allowed: boolean;
+    reason?: string;
+    allowance?: number;
+}
+
 export interface DebtLogger {
     logDebt(debt: {
         proxyAddress: string;
@@ -75,11 +81,24 @@ export class CopyTradingExecutionService {
         return overrideSigner || this.defaultSigner;
     }
 
+    private getChainAddresses() {
+        return (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337)
+            ? CONTRACT_ADDRESSES.polygon
+            : CONTRACT_ADDRESSES.amoy;
+    }
+
+    private async getExecutorAddress(signer?: ethers.Signer): Promise<string> {
+        const addresses = this.getChainAddresses();
+        if (addresses.executor) return addresses.executor;
+        const executionSigner = this.getSigner(signer);
+        return executionSigner.getAddress();
+    }
+
     /**
      * Get USDC balance of a Proxy wallet
      */
     async getProxyUsdcBalance(proxyAddress: string, signer?: ethers.Signer): Promise<number> {
-        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const addresses = this.getChainAddresses();
         const executionSigner = this.getSigner(signer);
 
         // Check if addresses.usdc is set
@@ -94,7 +113,7 @@ export class CopyTradingExecutionService {
      * Get Bot (Operator) USDC balance for Float check
      */
     async getBotUsdcBalance(signer?: ethers.Signer): Promise<number> {
-        const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const addresses = this.getChainAddresses();
         const executionSigner = this.getSigner(signer);
         if (!addresses.usdc) throw new Error("USDC address not configured for this chain");
 
@@ -108,7 +127,7 @@ export class CopyTradingExecutionService {
      * Resolve User's Proxy Address using Factory
      */
     async resolveProxyAddress(userAddress: string, signer?: ethers.Signer): Promise<string | null> {
-        const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const addresses = this.getChainAddresses();
         const executionSigner = this.getSigner(signer);
 
         if (!addresses.proxyFactory || addresses.proxyFactory.includes('0xabc123')) {
@@ -131,7 +150,7 @@ export class CopyTradingExecutionService {
      */
     async transferFromProxy(proxyAddress: string, amount: number, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = this.getChainAddresses();
             const executionSigner = this.getSigner(signer);
             const botAddress = await executionSigner.getAddress();
 
@@ -194,7 +213,7 @@ export class CopyTradingExecutionService {
      */
     async transferTokensFromProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = this.getChainAddresses();
             const executionSigner = this.getSigner(signer);
             const botAddress = await executionSigner.getAddress();
 
@@ -238,7 +257,7 @@ export class CopyTradingExecutionService {
      */
     async transferTokensToProxy(proxyAddress: string, tokenId: string, amount: number, signer?: ethers.Signer, overrides?: ethers.Overrides): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = this.getChainAddresses();
             const executionSigner = this.getSigner(signer);
             const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
 
@@ -264,6 +283,44 @@ export class CopyTradingExecutionService {
             console.error('[CopyExec] Token Push failed:', error.message);
             return { success: false, error: error.message };
         }
+    }
+
+    /**
+     * Check Proxy allowances/approvals before executing trades.
+     */
+    async checkProxyAllowance(params: {
+        proxyAddress: string;
+        side: 'BUY' | 'SELL';
+        tokenId: string;
+        amount: number;
+        signer?: ethers.Signer;
+    }): Promise<AllowanceCheckResult> {
+        const { proxyAddress, side, amount, signer } = params;
+        const addresses = this.getChainAddresses();
+
+        if (!addresses.executor) {
+            return { allowed: false, reason: 'EXECUTOR_NOT_CONFIGURED' };
+        }
+
+        const executionSigner = this.getSigner(signer);
+
+        if (side === 'BUY') {
+            if (!addresses.usdc) return { allowed: false, reason: 'USDC_ADDRESS_NOT_CONFIGURED' };
+            const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, executionSigner);
+            const allowanceRaw = await usdc.allowance(proxyAddress, addresses.executor);
+            const allowance = Number(allowanceRaw) / (10 ** USDC_DECIMALS);
+            if (allowance <= 0 || allowance < amount) {
+                return { allowed: false, reason: 'ALLOWANCE_MISSING_USDC', allowance };
+            }
+            return { allowed: true, allowance };
+        }
+
+        const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
+        const approved = await ctf.isApprovedForAll(proxyAddress, addresses.executor);
+        if (!approved) {
+            return { allowed: false, reason: 'ALLOWANCE_MISSING_CTF' };
+        }
+        return { allowed: true };
     }
 
     /**
@@ -371,7 +428,7 @@ export class CopyTradingExecutionService {
 
                 } else { // SELL
                     // Query actual token balance before SELL to prevent failed transactions
-                    const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                    const addresses = this.getChainAddresses();
                     const executionSigner = this.getSigner(params.signer);
                     const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
 
@@ -608,7 +665,7 @@ export class CopyTradingExecutionService {
             } else { // SELL
                 // We sold. Need to Push USDC to Proxy.
                 console.log(`[CopyExec] 🚑 Retry Push USDC...`);
-                const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                const addresses = this.getChainAddresses();
                 const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount);
                 if (!returnResult.success) {
                     return { success: false, error: `Retry Push USDC Failed: ${returnResult.error}` };
@@ -632,7 +689,7 @@ export class CopyTradingExecutionService {
         overrides?: ethers.Overrides
     ): Promise<{ success: boolean; txHash?: string; error?: string }> {
         try {
-            const addresses = (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337) ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const addresses = this.getChainAddresses();
             const executionSigner = this.getSigner(signer); // Worker Signer
 
             if (!addresses.executor) throw new Error("Executor address not configured");

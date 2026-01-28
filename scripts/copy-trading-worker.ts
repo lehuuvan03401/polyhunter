@@ -317,6 +317,22 @@ async function preflightExecution(
         return { allowed: false, reason: 'INVALID_PRICE', adjustedCopySize: copySize, adjustedCopyShares: 0 };
     }
 
+    const allowanceCheck = await executionService.checkProxyAllowance({
+        proxyAddress,
+        side,
+        tokenId,
+        amount: copySize,
+        signer: executionSigner,
+    });
+    if (!allowanceCheck.allowed) {
+        return {
+            allowed: false,
+            reason: allowanceCheck.reason || 'ALLOWANCE_MISSING',
+            adjustedCopySize: copySize,
+            adjustedCopyShares: copySize / price,
+        };
+    }
+
     if (side === 'BUY') {
         const [proxyBalance, botBalance] = await Promise.all([
             executionService.getProxyUsdcBalance(proxyAddress, executionSigner).catch(() => 0),
