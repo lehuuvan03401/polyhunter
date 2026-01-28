@@ -72,32 +72,6 @@ export default function PortfolioPage() {
     const { redeem, redeemSim, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
 
-    const calcPositionPnL = (pos: any): number => {
-        const shares = pos.size || 0;
-        const avgPrice = pos.avgPrice || 0;
-        const totalInvested = shares * avgPrice;
-        const curPrice = (pos.curPrice !== undefined && pos.curPrice !== null) ? pos.curPrice : pos.avgPrice;
-        const displayCurPrice = (curPrice === 0) ? 0 : (curPrice || 0);
-        const estValue = pos.estValue || (shares * displayCurPrice);
-        return estValue - totalInvested;
-    };
-
-    const settledOpenStats = (() => {
-        const allPositions = [
-            ...positions.map(p => ({ ...p, _type: 'real' })),
-            ...simPositions.map(p => ({ ...p, _type: 'sim' }))
-        ];
-        let wins = 0;
-        let losses = 0;
-        allPositions.forEach((pos) => {
-            if (pos.status !== 'SETTLED_WIN' && pos.status !== 'SETTLED_LOSS') return;
-            const pnl = calcPositionPnL(pos);
-            if (pnl > 0) wins += pnl;
-            else if (pnl < 0) losses += pnl;
-        });
-        return { wins, losses, pnl: wins + losses };
-    })();
-
     // Fetch settled history when filter is WON or LOST (to merge)
     useEffect(() => {
         const fetchSettledHistory = async () => {
@@ -504,7 +478,7 @@ export default function PortfolioPage() {
                                 <div className="flex flex-col items-end">
                                     {(() => {
                                         const basePnL = ctMetrics?.settlementPnL || 0;
-                                        const combinedPnL = basePnL + settledOpenStats.pnl;
+                                        const combinedPnL = basePnL;
                                         return (
                                             <span className={cn("text-xs font-medium", combinedPnL >= 0 ? "text-green-400" : "text-red-400")}>
                                                 {combinedPnL >= 0 ? '+' : ''}${combinedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -516,15 +490,13 @@ export default function PortfolioPage() {
                                             <span className="text-green-400">
                                                 {(() => {
                                                     const baseWins = ctMetrics.settlementWins || 0;
-                                                    const combinedWins = baseWins + settledOpenStats.wins;
-                                                    return `W: +$${combinedWins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                    return `W: +$${baseWins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                                                 })()}
                                             </span>
                                             <span className="text-red-400">
                                                 {(() => {
                                                     const baseLosses = ctMetrics.settlementLosses || 0;
-                                                    const combinedLosses = baseLosses + settledOpenStats.losses;
-                                                    return `L: -$${Math.abs(combinedLosses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                    return `L: -$${Math.abs(baseLosses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                                                 })()}
                                             </span>
                                         </div>
