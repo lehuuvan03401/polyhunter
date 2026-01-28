@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
             leaderSize: number;
             leaderPrice: number;
             leaderTxHash: string | null;
+            isSim: boolean;
         };
 
         // Transform trades to orders
@@ -130,6 +131,7 @@ export async function GET(request: NextRequest) {
             leaderSize: trade.originalSize,
             leaderPrice: trade.originalPrice,
             leaderTxHash: trade.originalTxHash,
+            isSim: (trade.txHash || '').startsWith('SIM-'),
         }));
 
         // Sort by newest first (no need to combine with strategies anymore)

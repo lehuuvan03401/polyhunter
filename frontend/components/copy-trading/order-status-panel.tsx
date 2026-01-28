@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink, StopCircle, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -20,27 +20,60 @@ interface OrderStatusPanelProps {
 }
 
 export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelProps) {
-    const { orders, stats, isLoading, error, refresh, lastUpdated } = useOrderStatus(walletAddress, {
+    const { orders, isLoading, error, refresh, lastUpdated } = useOrderStatus(walletAddress, {
         pollInterval: 30000, // 30 seconds for real-time updates
     });
 
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [orderToStop, setOrderToStop] = useState<string | null>(null);
     const [historyLeader, setHistoryLeader] = useState<{ address: string, name?: string } | null>(null);
-    const [filter, setFilter] = useState<'all' | 'buy' | 'sell'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'open' | 'filled' | 'failed'>('all');
+    const [modeFilter, setModeFilter] = useState<'all' | 'sim' | 'live'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
+    const modeScopedOrders = useMemo(() => {
+        if (modeFilter === 'sim') return orders.filter(order => order.isSim);
+        if (modeFilter === 'live') return orders.filter(order => !order.isSim);
+        return orders;
+    }, [orders, modeFilter]);
+
+    const statusCounts = useMemo(() => {
+        return modeScopedOrders.reduce(
+            (acc, order) => {
+                if (order.status === 'PENDING' || order.status === 'SETTLEMENT_PENDING') {
+                    acc.pending += 1;
+                } else if (order.status === 'OPEN' || order.status === 'PARTIALLY_FILLED') {
+                    acc.open += 1;
+                } else if (order.status === 'FILLED') {
+                    acc.filled += 1;
+                } else if (order.status === 'REJECTED' || order.status === 'CANCELLED' || order.status === 'EXPIRED') {
+                    acc.failed += 1;
+                }
+                return acc;
+            },
+            { pending: 0, open: 0, filled: 0, failed: 0 }
+        );
+    }, [modeScopedOrders]);
+
     // Filter orders
-    // Filter orders
-    const filteredOrders = orders.filter(order => {
-        if (filter === 'buy') {
-            return order.side === 'BUY';
-        }
-        if (filter === 'sell') {
-            return order.side === 'SELL';
-        }
-        return true;
+    const filteredOrders = modeScopedOrders.filter(order => {
+        const statusMatches = (() => {
+            if (statusFilter === 'pending') {
+                return order.status === 'PENDING' || order.status === 'SETTLEMENT_PENDING';
+            }
+            if (statusFilter === 'open') {
+                return order.status === 'OPEN' || order.status === 'PARTIALLY_FILLED';
+            }
+            if (statusFilter === 'filled') {
+                return order.status === 'FILLED';
+            }
+            if (statusFilter === 'failed') {
+                return order.status === 'REJECTED' || order.status === 'CANCELLED' || order.status === 'EXPIRED';
+            }
+            return true;
+        })();
+        return statusMatches;
     });
 
     // Pagination
@@ -52,8 +85,13 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
 
     // Reset to page 1 when filter changes
-    const handleFilterChange = (newFilter: 'all' | 'buy' | 'sell') => {
-        setFilter(newFilter);
+    const handleStatusFilterChange = (newFilter: 'all' | 'pending' | 'open' | 'filled' | 'failed') => {
+        setStatusFilter(newFilter);
+        setCurrentPage(1);
+    };
+
+    const handleModeFilterChange = (newFilter: 'all' | 'sim' | 'live') => {
+        setModeFilter(newFilter);
         setCurrentPage(1);
     };
 
@@ -130,18 +168,68 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
             {/* Stats Bar */}
             <div className="flex items-center gap-3 p-3 bg-muted/20 text-xs">
-                <StatsItem label="Total" value={stats.total} />
-                <StatsItem label="Pending" value={stats.pending} color="text-yellow-400" />
-                <StatsItem label="Open" value={stats.open} color="text-blue-400" />
-                <StatsItem label="Filled" value={stats.filled} color="text-green-400" />
-                <StatsItem label="Failed" value={stats.failed} color="text-red-400" />
+                <StatsItem label="Total" value={modeScopedOrders.length} />
+                <StatsItem label="Pending" value={statusCounts.pending} color="text-yellow-400" />
+                <StatsItem label="Open" value={statusCounts.open} color="text-blue-400" />
+                <StatsItem label="Filled" value={statusCounts.filled} color="text-green-400" />
+                <StatsItem label="Failed" value={statusCounts.failed} color="text-red-400" />
             </div>
 
             {/* Filters */}
-            <div className="flex border-b border-border/50 flex-shrink-0">
-                <FilterTab active={filter === 'all'} onClick={() => handleFilterChange('all')}>All</FilterTab>
-                <FilterTab active={filter === 'buy'} onClick={() => handleFilterChange('buy')}>Buy</FilterTab>
-                <FilterTab active={filter === 'sell'} onClick={() => handleFilterChange('sell')}>Sell</FilterTab>
+            <div className="border-b border-border/50 flex-shrink-0">
+                <div className="flex">
+                    <FilterTab active={statusFilter === 'all'} onClick={() => handleStatusFilterChange('all')}>
+                        All ({modeScopedOrders.length})
+                    </FilterTab>
+                    <FilterTab active={statusFilter === 'pending'} onClick={() => handleStatusFilterChange('pending')}>
+                        Pending ({statusCounts.pending})
+                    </FilterTab>
+                    <FilterTab active={statusFilter === 'open'} onClick={() => handleStatusFilterChange('open')}>
+                        Open ({statusCounts.open})
+                    </FilterTab>
+                    <FilterTab active={statusFilter === 'filled'} onClick={() => handleStatusFilterChange('filled')}>
+                        Filled ({statusCounts.filled})
+                    </FilterTab>
+                    <FilterTab active={statusFilter === 'failed'} onClick={() => handleStatusFilterChange('failed')}>
+                        Failed ({statusCounts.failed})
+                    </FilterTab>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 border-t border-border/50 text-xs">
+                    <span className="text-muted-foreground">Mode:</span>
+                    <button
+                        onClick={() => handleModeFilterChange('all')}
+                        className={cn(
+                            "px-2 py-1 rounded-full border transition-colors",
+                            modeFilter === 'all'
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-background text-muted-foreground border-border hover:bg-muted"
+                        )}
+                    >
+                        All
+                    </button>
+                    <button
+                        onClick={() => handleModeFilterChange('sim')}
+                        className={cn(
+                            "px-2 py-1 rounded-full border transition-colors",
+                            modeFilter === 'sim'
+                                ? "bg-blue-500 text-white border-blue-500"
+                                : "bg-background text-muted-foreground border-border hover:bg-muted"
+                        )}
+                    >
+                        Sim
+                    </button>
+                    <button
+                        onClick={() => handleModeFilterChange('live')}
+                        className={cn(
+                            "px-2 py-1 rounded-full border transition-colors",
+                            modeFilter === 'live'
+                                ? "bg-amber-500 text-black border-amber-500"
+                                : "bg-background text-muted-foreground border-border hover:bg-muted"
+                        )}
+                    >
+                        Live
+                    </button>
+                </div>
             </div>
 
             {/* Orders List */}
@@ -156,7 +244,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                 {!error && filteredOrders.length === 0 && (
                     <div className="p-8 text-center text-muted-foreground">
                         <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No orders found</p>
+                        <p className="text-sm">No orders match the current filters</p>
                     </div>
                 )}
 
@@ -370,6 +458,11 @@ function OrderRow({
                         )}>
                             {order.side}
                         </span>
+                        {order.isSim && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">
+                                SIM
+                            </span>
+                        )}
                         <span className="text-sm font-medium truncate">
                             {order.market || 'Unknown Market'}
                         </span>
@@ -480,6 +573,10 @@ function OrderRow({
                                 label="Slippage"
                                 value={order.leaderPrice ? `${((order.price - order.leaderPrice) / order.leaderPrice * 100).toFixed(2)}%` : '-'}
                                 color={order.leaderPrice ? (order.price > order.leaderPrice ? 'text-red-400' : 'text-green-400') : undefined}
+                            />
+                            <DetailItem
+                                label="Mode"
+                                value={order.isSim ? 'Simulation' : 'Live'}
                             />
                             <DetailItem
                                 label="Leader Size"

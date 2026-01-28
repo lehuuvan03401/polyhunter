@@ -31,6 +31,7 @@ export interface Order {
     leaderSize: number;
     leaderPrice: number;
     leaderTxHash: string | null;
+    isSim: boolean;
 }
 
 // ... (keep interface UseOrderStatusReturn)
@@ -225,5 +226,4 @@ export function useOrderStatus(
         lastUpdated,
     };
 }
-
 
