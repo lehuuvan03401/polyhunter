@@ -45,7 +45,7 @@ export default function PortfolioPage() {
     const [positions, setPositions] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [positionsPage, setPositionsPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState<'OPEN' | 'WON' | 'LOST'>('OPEN');
+    const [statusFilter, setStatusFilter] = useState<'OPEN' | 'SETTLED' | 'REDEEMED_WIN' | 'REDEEMED_LOSS'>('OPEN');
     const [settledHistory, setSettledHistory] = useState<any[]>([]);
     const [isSettledLoading, setIsSettledLoading] = useState(false);
     const [historyCounts, setHistoryCounts] = useState<{ REDEEMED: number, SETTLED_LOSS: number }>({ REDEEMED: 0, SETTLED_LOSS: 0 });
@@ -57,6 +57,7 @@ export default function PortfolioPage() {
     const [historyPage, setHistoryPage] = useState(1);
     const ITEMS_PER_PAGE = 10;
     const [isSellingAll, setIsSellingAll] = useState(false);
+    const HISTORY_POLL_MS = 15000;
 
     // Track active strategies count
     const [activeStrategiesCount, setActiveStrategiesCount] = useState(0);
@@ -72,37 +73,61 @@ export default function PortfolioPage() {
     const { redeem, redeemSim, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
 
-    // Fetch settled history when filter is WON or LOST (to merge)
+    const calcPositionPnL = (pos: any): number => {
+        const shares = pos.size || 0;
+        const avgPrice = pos.avgPrice || 0;
+        const totalInvested = shares * avgPrice;
+        const curPrice = (pos.curPrice !== undefined && pos.curPrice !== null) ? pos.curPrice : pos.avgPrice;
+        const displayCurPrice = (curPrice === 0) ? 0 : (curPrice || 0);
+        const estValue = pos.estValue || (shares * displayCurPrice);
+        return estValue - totalInvested;
+    };
+
+    const settledOpenStats = (() => {
+        const allPositions = [
+            ...positions.map(p => ({ ...p, _type: 'real' })),
+            ...simPositions.map(p => ({ ...p, _type: 'sim' }))
+        ];
+        let wins = 0;
+        let losses = 0;
+        allPositions.forEach((pos) => {
+            if (pos.status !== 'SETTLED_WIN' && pos.status !== 'SETTLED_LOSS') return;
+            const pnl = calcPositionPnL(pos);
+            if (pnl > 0) wins += pnl;
+            else if (pnl < 0) losses += pnl;
+        });
+        return { wins, losses, pnl: wins + losses };
+    })();
+
+    // Fetch settled history when filter is redeemed (win/loss)
     useEffect(() => {
         const fetchSettledHistory = async () => {
             if (!user?.wallet?.address) return;
-            // Always fetch history for counts, but for list merging we technically need it if WON/LOST are selected.
+            // Always fetch history for counts, but for list display we only need it on redeemed filters.
             // Simplified: Fetch ALL history on load so we can merge easily client-side or use separate lists.
             // For now, let's just fetch "ALL" history when component loads or tab changes.
             // Actually, we can just use the counts logic for valid numbers, but we need the DATA to display rows.
 
-            // If filter is WON, we need REDEEMED history.
-            // If filter is LOST, we need SETTLED_LOSS history.
-
+            // If filter is REDEEMED_WIN, we need REDEEMED history.
+            // If filter is REDEEMED_LOSS, we need SETTLED_LOSS history.
             let type: 'REDEEMED' | 'SETTLED_LOSS' | null = null;
-            if (statusFilter === 'WON') type = 'REDEEMED';
-            if (statusFilter === 'LOST') type = 'SETTLED_LOSS';
+            if (statusFilter === 'REDEEMED_WIN') type = 'REDEEMED';
+            if (statusFilter === 'REDEEMED_LOSS') type = 'SETTLED_LOSS';
 
             if (!type) {
-                // If ALL/OPEN, we don't necessarily show history rows unless we want to?
-                // Actually user might want "Closed" history in ALL?
-                // Let's keep ALL as "Active Positions" to avoid clutter? 
-                // User asked to merge them. So WON = Active Won + History Won.
-                setSettledHistory([]); // Clear if not needed or handle differently
+                setSettledHistory([]); // Clear if not needed
+                setIsSettledLoading(false);
                 return;
             }
 
             setIsSettledLoading(true);
             try {
-                const res = await fetch(`/api/copy-trading/positions/history?wallet=${user.wallet.address}&type=${type}`);
+                const res = await fetch(`/api/copy-trading/positions/history?wallet=${user.wallet.address}&type=${type}`, {
+                    cache: 'no-store'
+                });
                 if (res.ok) {
                     const data = await res.json();
-                    setSettledHistory(data);
+                    setSettledHistory(data.map((item: any) => ({ ...item, _type: 'history' })));
                 }
             } catch (error) {
                 console.error("Failed to fetch settled history", error);
@@ -112,14 +137,27 @@ export default function PortfolioPage() {
         };
 
         fetchSettledHistory();
+
+        let interval: ReturnType<typeof setInterval> | null = null;
+        if (user?.wallet?.address && (statusFilter === 'REDEEMED_WIN' || statusFilter === 'REDEEMED_LOSS')) {
+            interval = setInterval(() => {
+                fetchSettledHistory();
+            }, HISTORY_POLL_MS);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
     }, [statusFilter, user?.wallet?.address]);
 
-    // Fetch history counts on load
+    // Fetch history counts on load (and poll for updates)
     useEffect(() => {
         const fetchHistoryCounts = async () => {
             if (!user?.wallet?.address) return;
             try {
-                const res = await fetch(`/api/copy-trading/positions/history?wallet=${user.wallet.address}&type=COUNTS`);
+                const res = await fetch(`/api/copy-trading/positions/history?wallet=${user.wallet.address}&type=COUNTS`, {
+                    cache: 'no-store'
+                });
                 if (res.ok) {
                     const data = await res.json();
                     setHistoryCounts(data);
@@ -129,7 +167,9 @@ export default function PortfolioPage() {
             }
         };
         fetchHistoryCounts();
-    }, [user?.wallet?.address, statusFilter]);
+        const interval = setInterval(fetchHistoryCounts, HISTORY_POLL_MS);
+        return () => clearInterval(interval);
+    }, [user?.wallet?.address]);
 
     // Load all wallet data
     useEffect(() => {
@@ -504,6 +544,30 @@ export default function PortfolioPage() {
                                 </div>
                             </div>
                         </div>
+                        {/* Settled but not redeemed */}
+                        <div className="mt-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">Settled (Not Redeemed)</span>
+                                <div className="flex flex-col items-end">
+                                    {(() => {
+                                        const pnl = settledOpenStats.pnl;
+                                        return (
+                                            <span className={cn("text-xs font-medium", pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                                                {pnl >= 0 ? '+' : ''}${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                        );
+                                    })()}
+                                    <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
+                                        <span className="text-green-400">
+                                            {`W: +$${settledOpenStats.wins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        </span>
+                                        <span className="text-red-400">
+                                            {`L: -$${Math.abs(settledOpenStats.losses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     {/* PnL Trend Visualization (stylized) */}
@@ -649,21 +713,17 @@ export default function PortfolioPage() {
                                     ...simPositions.map(p => ({ ...p, _type: 'sim' }))
                                 ];
 
-                                // Filter logic
-                                // Merge history into active for display if filter matches
-                                let displayPositions = [...allPositions];
-                                if (statusFilter === 'WON') {
-                                    displayPositions = [...allPositions.filter(p => p.status === 'SETTLED_WIN'), ...settledHistory];
-                                } else if (statusFilter === 'LOST') {
-                                    displayPositions = [...allPositions.filter(p => p.status === 'SETTLED_LOSS'), ...settledHistory];
-                                }
+                                const isHistoryView = statusFilter === 'REDEEMED_WIN' || statusFilter === 'REDEEMED_LOSS';
+                                const openPositions = allPositions.filter(p => p.status === 'OPEN');
+                                const settledPositions = allPositions.filter(p => p.status === 'SETTLED_WIN' || p.status === 'SETTLED_LOSS');
+                                const displayPositions = (() => {
+                                    if (statusFilter === 'OPEN') return openPositions;
+                                    if (statusFilter === 'SETTLED') return settledPositions;
+                                    if (isHistoryView) return settledHistory;
+                                    return allPositions;
+                                })();
 
-                                const filteredPositions = displayPositions.filter(p => {
-                                    if (statusFilter === 'OPEN') return p.status === 'OPEN';
-                                    if (statusFilter === 'WON') return true; // Already processed above
-                                    if (statusFilter === 'LOST') return true; // Already processed above
-                                    return true;
-                                });
+                                const filteredPositions = displayPositions;
 
                                 const ITEMS_PER_PAGE = 10;
                                 const totalPages = Math.ceil(filteredPositions.length / ITEMS_PER_PAGE);
@@ -680,14 +740,14 @@ export default function PortfolioPage() {
                                     );
                                 }
 
-                                if (allPositions.length === 0) {
+                                if (!isHistoryView && allPositions.length === 0) {
                                     return (
                                         <div className="flex h-full flex-col items-center justify-center text-center space-y-3">
                                             <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground">
                                                 <Layers className="h-6 w-6" />
                                             </div>
                                             <div>
-                                                <h4 className="font-medium text-sm">No Open Positions</h4>
+                                                <h4 className="font-medium text-sm">No Positions Yet</h4>
                                                 <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
                                                     Real and simulated positions will appear here.
                                                 </p>
@@ -700,7 +760,7 @@ export default function PortfolioPage() {
                                     <div className="flex flex-col h-full">
                                         {/* Status Filter Bar */}
                                         <div className="px-4 py-2 border-b flex items-center gap-2 overflow-x-auto">
-                                            {(['OPEN', 'WON', 'LOST'] as const).map((filter) => (
+                                            {(['OPEN', 'SETTLED', 'REDEEMED_WIN', 'REDEEMED_LOSS'] as const).map((filter) => (
                                                 <button
                                                     key={filter}
                                                     onClick={() => {
@@ -714,9 +774,10 @@ export default function PortfolioPage() {
                                                             : "bg-background text-muted-foreground border-border hover:bg-muted"
                                                     )}
                                                 >
-                                                    {filter === 'OPEN' ? `Open (${allPositions.filter(p => p.status === 'OPEN').length})` :
-                                                        filter === 'WON' ? `Won (${allPositions.filter(p => p.status === 'SETTLED_WIN').length + historyCounts.REDEEMED})` :
-                                                            `Lost (${allPositions.filter(p => p.status === 'SETTLED_LOSS').length + historyCounts.SETTLED_LOSS})`}
+                                                    {filter === 'OPEN' ? `Open (${openPositions.length})` :
+                                                        filter === 'SETTLED' ? `Settled (${settledPositions.length})` :
+                                                            filter === 'REDEEMED_WIN' ? `Redeemed Win (${historyCounts.REDEEMED})` :
+                                                                `Redeemed Loss (${historyCounts.SETTLED_LOSS})`}
                                                 </button>
                                             ))}
                                         </div>
@@ -744,7 +805,13 @@ export default function PortfolioPage() {
                                                     {currentPositions.length === 0 ? (
                                                         <tr>
                                                             <td colSpan={12} className="h-24 text-center align-middle text-muted-foreground text-xs">
-                                                                No {statusFilter.toLowerCase()} positions found
+                                                                {(() => {
+                                                                    if (statusFilter === 'OPEN') return 'No open positions found';
+                                                                    if (statusFilter === 'SETTLED') return 'No settled positions found';
+                                                                    if (statusFilter === 'REDEEMED_WIN') return 'No redeemed wins found';
+                                                                    if (statusFilter === 'REDEEMED_LOSS') return 'No redeemed losses found';
+                                                                    return 'No positions found';
+                                                                })()}
                                                             </td>
                                                         </tr>
                                                     ) : (
