@@ -85,6 +85,7 @@ interface WatchedConfig {
     direction: string;
     slippageType: string;
     maxSlippage: number;
+    tradeSizeMode?: 'SHARES' | 'NOTIONAL' | null;
 }
 
 let activeConfigs: Map<string, WatchedConfig[]> = new Map(); // traderAddress -> configs[]
@@ -126,6 +127,7 @@ async function refreshConfigs(): Promise<void> {
                 direction: true,
                 slippageType: true,
                 maxSlippage: true,
+                tradeSizeMode: true,
             }
         });
 
@@ -174,6 +176,23 @@ function calculateCopySize(
     const clampedValue = Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 
     return clampedValue;
+}
+
+function normalizeTradeSizing(
+    config: WatchedConfig,
+    rawSize: number,
+    price: number
+): { tradeShares: number; tradeNotional: number } {
+    const mode = config.tradeSizeMode || 'SHARES';
+    if (mode === 'NOTIONAL') {
+        const tradeNotional = rawSize;
+        const tradeShares = price > 0 ? tradeNotional / price : 0;
+        return { tradeShares, tradeNotional };
+    }
+
+    const tradeShares = rawSize;
+    const tradeNotional = tradeShares * price;
+    return { tradeShares, tradeNotional };
 }
 
 // ========================================================================
@@ -474,9 +493,10 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 continue;
             }
 
+            const { tradeShares, tradeNotional } = normalizeTradeSizing(config, trade.size, trade.price);
+
             // Filter 2: Minimum trigger size ($)
-            const tradeValue = trade.size * trade.price;
-            if (config.minTriggerSize && tradeValue < config.minTriggerSize) {
+            if (config.minTriggerSize && tradeNotional < config.minTriggerSize) {
                 stats.tradesSkipped++;
                 continue;
             }
@@ -494,7 +514,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
             }
 
             // Calculate copy size
-            const copySize = calculateCopySize(config, trade.size, trade.price); // USDC amount
+            const copySize = calculateCopySize(config, tradeShares, trade.price); // USDC amount
 
             if (copySize <= 0) {
                 stats.tradesSkipped++;
@@ -580,7 +600,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         idempotencyKey,
                         originalTrader: traderAddr,
                         originalSide: copySide,
-                        originalSize: trade.size,
+                        originalSize: tradeShares,
                         originalPrice: trade.price,
                         marketSlug: trade.marketSlug || null,
                         conditionId: trade.conditionId || null,

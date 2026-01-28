@@ -213,6 +213,12 @@ enum StrategyProfile {
   AGGRESSIVE // High slippage (5%), high risk
 }
 
+// Trade size interpretation
+enum TradeSizeMode {
+  SHARES // Trade size represents shares
+  NOTIONAL // Trade size represents USDC notional
+}
+
 // Execution mode
 enum ExecutionMode {
   PROXY // Default: Use Smart Contract Proxy (Non-Custodial)
@@ -238,6 +244,7 @@ model CopyTradingConfig {
 
   // Strategy Profile
   strategyProfile StrategyProfile @default(MODERATE)
+  tradeSizeMode TradeSizeMode @default(SHARES)
 
   // Slippage settings
   slippageType String @default("FIXED") // 'FIXED' | 'AUTO'

@@ -49,6 +49,23 @@ function calculateCopySize(
     return clampedValue;
 }
 
+function normalizeTradeSizing(
+    config: { tradeSizeMode?: string | null },
+    rawSize: number,
+    price: number
+): { tradeShares: number; tradeNotional: number } {
+    const mode = config.tradeSizeMode || 'SHARES';
+    if (mode === 'NOTIONAL') {
+        const tradeNotional = rawSize;
+        const tradeShares = price > 0 ? tradeNotional / price : 0;
+        return { tradeShares, tradeNotional };
+    }
+
+    const tradeShares = rawSize;
+    const tradeNotional = tradeShares * price;
+    return { tradeShares, tradeNotional };
+}
+
 // Secret for cron job authentication
 const CRON_SECRET = process.env.CRON_SECRET || 'dev-cron-secret';
 
@@ -131,6 +148,8 @@ export async function POST(request: NextRequest) {
                     }
 
                     for (const config of configsForTrader) {
+                        const { tradeShares, tradeNotional } = normalizeTradeSizing(config, trade.size, trade.price);
+
                         // Check if we already have a copy trade for this exact trade
                         const existing = await prisma.copyTrade.findFirst({
                             where: {
@@ -141,7 +160,7 @@ export async function POST(request: NextRequest) {
                                     lte: new Date(tradeTimeMs + 5000),
                                 },
                                 originalSide: trade.side,
-                                originalSize: trade.size,
+                                originalSize: tradeShares,
                             },
                         });
 
@@ -157,8 +176,7 @@ export async function POST(request: NextRequest) {
                         }
 
                         // Filter 2: Minimum trigger size ($)
-                        const tradeValue = trade.size * trade.price;
-                        if (config.minTriggerSize && tradeValue < config.minTriggerSize) {
+                        if (config.minTriggerSize && tradeNotional < config.minTriggerSize) {
                             continue; // Below minimum trigger size
                         }
 
@@ -176,7 +194,7 @@ export async function POST(request: NextRequest) {
                         }
 
                         // Calculate copy size
-                        const copySize = calculateCopySize(config, trade.size, trade.price);
+                        const copySize = calculateCopySize(config, tradeShares, trade.price);
 
                         if (copySize <= 0) continue;
 
@@ -186,7 +204,7 @@ export async function POST(request: NextRequest) {
                                 configId: config.id,
                                 originalTrader: traderAddress,
                                 originalSide: copySide, // Use potentially flipped side for COUNTER
-                                originalSize: trade.size,
+                                originalSize: tradeShares,
                                 originalPrice: trade.price,
                                 marketSlug: trade.slug || null,
                                 conditionId: trade.conditionId || null,
