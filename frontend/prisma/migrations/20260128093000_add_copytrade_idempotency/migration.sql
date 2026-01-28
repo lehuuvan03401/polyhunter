@@ -1,5 +1,6 @@
 -- Add idempotency key for CopyTrade and enforce unique constraints
 ALTER TABLE "CopyTrade" ADD COLUMN "idempotencyKey" TEXT;
+ALTER TABLE "CopyTrade" ADD COLUMN IF NOT EXISTS "originalTxHash" TEXT;
 
 UPDATE "CopyTrade"
 SET "idempotencyKey" = 'legacy-' || "id"

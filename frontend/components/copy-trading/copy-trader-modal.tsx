@@ -135,10 +135,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     direction: (!isAdvancedMode ? 'COPY' : (copyDirection === 'Counter' ? 'COUNTER' : 'COPY')),
                     // Filters
                     maxDaysOut: maxDaysOut ? Number(maxDaysOut) : undefined,
-                    maxPerMarket: maxPerMarket ? Number(maxPerMarket) : undefined,
+                    maxPerMarket: !isAdvancedMode ? undefined : (maxPerMarket ? Number(maxPerMarket) : undefined), // Unlimited in Simple Mode
                     minLiquidity: !isAdvancedMode ? 1000 : (minLiquidity ? Number(minLiquidity) : undefined),
                     minVolume: !isAdvancedMode ? 1000 : (minVolume ? Number(minVolume) : undefined),
-                    maxOdds: !isAdvancedMode ? 0.98 : (maxOdds ? Number(maxOdds) / 100 : undefined),
+                    maxOdds: !isAdvancedMode ? 0.95 : (maxOdds ? Number(maxOdds) / 100 : undefined), // Safer default (95%)
                     minTriggerSize: minTrigger ? Number(minTrigger) : undefined,
                     // Sell strategy
                     sellMode: !isAdvancedMode ? 'SAME_PERCENT' : apiSellMode,
