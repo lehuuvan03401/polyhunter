@@ -30,6 +30,16 @@
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  * - COPY_TRADING_RPC_URLS: Comma-separated RPC list for failover (optional)
+ * - COPY_TRADING_WORKER_KEYS: Comma-separated private keys for worker pool (optional)
+ * - COPY_TRADING_WORKER_INDEX: Index into worker pool for this process (optional)
+ * - COPY_TRADING_METRICS_INTERVAL_MS: Metrics/alerts interval in ms (default: 300000)
+ * - COPY_TRADING_BOT_USDC_WARN: Warn if bot USDC below this threshold
+ * - COPY_TRADING_BOT_MATIC_WARN: Warn if bot MATIC below this threshold
+ * - COPY_TRADING_PROXY_USDC_WARN: Warn if proxy USDC below this threshold
+ * - COPY_TRADING_PROXY_CHECK_LIMIT: Max proxies to check per interval (default: 5)
+ * - COPY_TRADING_MAX_RETRY_ATTEMPTS: Max retry attempts for transient failures (default: 2)
+ * - COPY_TRADING_RETRY_BACKOFF_MS: Base backoff for retries (default: 60000)
+ * - COPY_TRADING_RETRY_INTERVAL_MS: Retry scan interval (default: 60000)
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
@@ -49,6 +59,11 @@ let prisma: any = null;
 const REFRESH_INTERVAL_MS = 60_000; // Refresh active configs every minute
 const API_BASE_URL = process.env.COPY_TRADING_API_URL || 'http://localhost:3000';
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
+const WORKER_KEYS = (process.env.COPY_TRADING_WORKER_KEYS || '')
+    .split(',')
+    .map((key) => key.trim())
+    .filter(Boolean);
+const WORKER_INDEX = parseInt(process.env.COPY_TRADING_WORKER_INDEX || '0', 10);
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
 const EXECUTION_RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
@@ -62,6 +77,14 @@ const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
     .map((addr) => addr.trim().toLowerCase())
     .filter(Boolean);
 const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
+const METRICS_INTERVAL_MS = parseInt(process.env.COPY_TRADING_METRICS_INTERVAL_MS || '300000', 10);
+const BOT_USDC_WARN = Number(process.env.COPY_TRADING_BOT_USDC_WARN || '0');
+const BOT_MATIC_WARN = Number(process.env.COPY_TRADING_BOT_MATIC_WARN || '0');
+const PROXY_USDC_WARN = Number(process.env.COPY_TRADING_PROXY_USDC_WARN || '0');
+const PROXY_CHECK_LIMIT = parseInt(process.env.COPY_TRADING_PROXY_CHECK_LIMIT || '5', 10);
+const MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_MAX_RETRY_ATTEMPTS || '2', 10);
+const RETRY_BACKOFF_MS = parseInt(process.env.COPY_TRADING_RETRY_BACKOFF_MS || '60000', 10);
+const RETRY_INTERVAL_MS = parseInt(process.env.COPY_TRADING_RETRY_INTERVAL_MS || '60000', 10);
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
@@ -78,6 +101,8 @@ const realtimeService = new RealtimeServiceV2({ debug: false });
 let tradingService: TradingService | null = null;
 let executionService: CopyTradingExecutionService | null = null;
 let executionSigner: ethers.Wallet | null = null;
+let activeWorkerKey: string | null = null;
+let activeWorkerAddress: string | null = null;
 const rateLimiter = new RateLimiter();
 const cache = createUnifiedCache();
 const gammaClient = new GammaApiClient(rateLimiter, cache);
@@ -121,6 +146,14 @@ const stats = {
     tradesExecuted: 0,
     tradesFailed: 0,
     tradesSkipped: 0,
+};
+
+const metrics = {
+    executions: 0,
+    successes: 0,
+    failures: 0,
+    totalLatencyMs: 0,
+    failureReasons: new Map<string, number>(),
 };
 
 // ============================================================================
@@ -206,6 +239,21 @@ function getAddressKey(addresses: Set<string>): string {
         .map((addr) => addr.toLowerCase())
         .sort()
         .join(',');
+}
+
+function selectWorkerKey(): { privateKey: string; index: number; total: number } | null {
+    if (WORKER_KEYS.length > 0) {
+        if (Number.isNaN(WORKER_INDEX) || WORKER_INDEX < 0 || WORKER_INDEX >= WORKER_KEYS.length) {
+            throw new Error(`COPY_TRADING_WORKER_INDEX out of range (0-${WORKER_KEYS.length - 1})`);
+        }
+        return { privateKey: WORKER_KEYS[WORKER_INDEX], index: WORKER_INDEX, total: WORKER_KEYS.length };
+    }
+
+    if (TRADING_PRIVATE_KEY) {
+        return { privateKey: TRADING_PRIVATE_KEY, index: 0, total: 1 };
+    }
+
+    return null;
 }
 
 async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
@@ -657,7 +705,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 }
             }
 
-            const canAttemptExecution = Boolean(TRADING_PRIVATE_KEY && executionService && executionSigner && trade.asset);
+            const canAttemptExecution = Boolean(activeWorkerKey && executionService && executionSigner && trade.asset);
             let basePrice = trade.price;
             let priceSource = 'trade';
             let priceGuardError: string | null = null;
@@ -831,6 +879,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     continue;
                 }
 
+                const execStart = Date.now();
                 try {
                     // Execute via CopyTradingExecutionService (handles Proxy & Order)
                     console.log(`   🚀 Executing via Service for ${config.walletAddress}...`);
@@ -850,6 +899,9 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     });
 
                     if (result.success) {
+                        metrics.executions += 1;
+                        metrics.successes += 1;
+                        metrics.totalLatencyMs += Date.now() - execStart;
                         // Check for Settlement Success
                         // BUY: needs tokenPushTxHash. SELL: needs returnTransferTxHash.
                         let isSettled = false;
@@ -903,7 +955,8 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                                 realizedPnL: realizedPnL ?? undefined,
                                 copySize: finalCopySize,
                                 copyPrice: execPrice,
-                                usedBotFloat: result.usedBotFloat ?? false
+                                usedBotFloat: result.usedBotFloat ?? false,
+                                executedBy: activeWorkerAddress ?? undefined
                             },
                         });
                         stats.tradesExecuted++;
@@ -915,11 +968,21 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             console.log(`   ⚠️ SETTLEMENT PENDING! Queued for recovery.`);
                         }
                     } else {
+                        metrics.executions += 1;
+                        metrics.failures += 1;
+                        metrics.totalLatencyMs += Date.now() - execStart;
+                        recordFailureReason(result.error || 'EXECUTION_FAILED');
+                        const failureMessage = result.error || 'EXECUTION_FAILED';
+                        const shouldRetry = isTransientError(failureMessage) && MAX_RETRY_ATTEMPTS > 0;
+                        const nextRetryCount = shouldRetry ? (copyTrade.retryCount || 0) + 1 : copyTrade.retryCount || 0;
+                        const retryAllowed = shouldRetry && nextRetryCount <= MAX_RETRY_ATTEMPTS;
                         await prisma.copyTrade.update({
                             where: { id: copyTrade.id },
                             data: {
                                 status: 'FAILED',
-                                errorMessage: result.error,
+                                errorMessage: failureMessage,
+                                retryCount: nextRetryCount,
+                                nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
                             },
                         });
                         stats.tradesFailed++;
@@ -927,11 +990,20 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     }
                 } catch (execError) {
                     const errorMsg = execError instanceof Error ? execError.message : String(execError);
+                    metrics.executions += 1;
+                    metrics.failures += 1;
+                    metrics.totalLatencyMs += Date.now() - execStart;
+                    recordFailureReason(errorMsg);
+                    const shouldRetry = isTransientError(errorMsg) && MAX_RETRY_ATTEMPTS > 0;
+                    const nextRetryCount = shouldRetry ? (copyTrade.retryCount || 0) + 1 : copyTrade.retryCount || 0;
+                    const retryAllowed = shouldRetry && nextRetryCount <= MAX_RETRY_ATTEMPTS;
                     await prisma.copyTrade.update({
                         where: { id: copyTrade.id },
                         data: {
                             status: 'FAILED',
                             errorMessage: errorMsg,
+                            retryCount: nextRetryCount,
+                            nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
                         },
                     });
                     stats.tradesFailed++;
@@ -1027,6 +1099,202 @@ async function recoverPendingTrades(): Promise<void> {
 
     } catch (e) {
         console.error('[Recovery] Error scanning pending trades:', e);
+    }
+}
+
+// ============================================================================
+// Retry Handler
+// ============================================================================
+
+async function retryFailedTrades(): Promise<void> {
+    if (!executionService || !executionSigner || !activeWorkerKey) return;
+
+    try {
+        const now = new Date();
+        const failedTrades = await prisma.copyTrade.findMany({
+            where: {
+                status: 'FAILED',
+                retryCount: { lt: MAX_RETRY_ATTEMPTS },
+                OR: [
+                    { nextRetryAt: null },
+                    { nextRetryAt: { lte: now } },
+                ],
+            },
+            include: { config: true },
+            orderBy: { nextRetryAt: 'asc' },
+            take: 5,
+        });
+
+        if (failedTrades.length === 0) return;
+
+        console.log(`\n🔁 [Retry] Attempting ${failedTrades.length} failed trades...`);
+
+        for (const trade of failedTrades) {
+            if (!trade.tokenId) continue;
+            const basePrice = trade.copyPrice ?? trade.originalPrice;
+
+            if (!basePrice || basePrice <= 0) {
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        retryCount: trade.retryCount + 1,
+                        nextRetryAt: new Date(Date.now() + RETRY_BACKOFF_MS),
+                        errorMessage: 'RETRY_INVALID_PRICE',
+                    },
+                });
+                continue;
+            }
+
+            const guardrail = await checkExecutionGuardrails(trade.config.walletAddress, trade.copySize);
+            if (!guardrail.allowed) {
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        retryCount: MAX_RETRY_ATTEMPTS,
+                        nextRetryAt: null,
+                        errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                    },
+                });
+                continue;
+            }
+
+            const proxyAddress = await executionService.resolveProxyAddress(trade.config.walletAddress, executionSigner);
+            const preflight = await preflightExecution(
+                trade.config.walletAddress,
+                proxyAddress,
+                trade.originalSide as 'BUY' | 'SELL',
+                trade.tokenId,
+                trade.copySize,
+                basePrice
+            );
+
+            if (!preflight.allowed) {
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        retryCount: trade.retryCount + 1,
+                        nextRetryAt: new Date(Date.now() + RETRY_BACKOFF_MS),
+                        errorMessage: `RETRY_PREFLIGHT_${preflight.reason || 'FAILED'}`,
+                    },
+                });
+                continue;
+            }
+
+            const execStart = Date.now();
+            try {
+                const result = await executionService.executeOrderWithProxy({
+                    tradeId: trade.id,
+                    walletAddress: trade.config.walletAddress,
+                    tokenId: trade.tokenId,
+                    side: trade.originalSide as 'BUY' | 'SELL',
+                    amount: trade.copySize,
+                    price: basePrice,
+                    proxyAddress: proxyAddress || undefined,
+                    slippage: trade.config.slippageType === 'FIXED' ? (trade.config.maxSlippage / 100) : undefined,
+                    maxSlippage: trade.config.maxSlippage,
+                    slippageMode: trade.config.slippageType as 'FIXED' | 'AUTO',
+                    orderType: 'limit',
+                });
+
+                if (result.success) {
+                    metrics.executions += 1;
+                    metrics.successes += 1;
+                    metrics.totalLatencyMs += Date.now() - execStart;
+
+                    let isSettled = false;
+                    if (trade.originalSide === 'BUY') {
+                        isSettled = Boolean(result.tokenPushTxHash);
+                    } else {
+                        isSettled = Boolean(result.returnTransferTxHash);
+                    }
+
+                    const newStatus = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
+
+                    let realizedPnL: number | null = null;
+                    let finalCopySize = trade.copySize;
+
+                    try {
+                        if (trade.originalSide === 'BUY') {
+                            const shares = trade.copySize / basePrice;
+                            await recordBuyPosition(trade.config.walletAddress, trade.tokenId, shares, basePrice, trade.copySize);
+                        } else {
+                            const shares = trade.copySize / basePrice;
+                            const sellResult = await recordSellPosition(trade.config.walletAddress, trade.tokenId, shares, basePrice);
+                            realizedPnL = sellResult.realizedPnL;
+                            if (sellResult.proceeds > 0 && sellResult.proceeds < finalCopySize) {
+                                finalCopySize = sellResult.proceeds;
+                            }
+                        }
+                    } catch (positionErr) {
+                        console.warn(`   ⚠️ Retry position update failed for ${trade.config.walletAddress}:`, positionErr);
+                    }
+
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: newStatus,
+                            executedAt: new Date(),
+                            txHash: result.transactionHashes?.[0] || result.orderId,
+                            errorMessage: isSettled ? null : "Settlement Pending: Funds/Tokens not returned",
+                            realizedPnL: realizedPnL ?? undefined,
+                            copySize: finalCopySize,
+                            copyPrice: basePrice,
+                            usedBotFloat: result.usedBotFloat ?? false,
+                            executedBy: activeWorkerAddress ?? undefined,
+                            nextRetryAt: null,
+                        },
+                    });
+                    stats.tradesExecuted++;
+                    console.log(`   ✅ Retry executed ${trade.id}`);
+                } else {
+                    metrics.executions += 1;
+                    metrics.failures += 1;
+                    metrics.totalLatencyMs += Date.now() - execStart;
+                    recordFailureReason(result.error || 'RETRY_FAILED');
+
+                    const failureMessage = result.error || 'RETRY_FAILED';
+                    const shouldRetry = isTransientError(failureMessage) && MAX_RETRY_ATTEMPTS > 0;
+                    const nextRetryCount = shouldRetry ? trade.retryCount + 1 : trade.retryCount;
+                    const retryAllowed = shouldRetry && nextRetryCount <= MAX_RETRY_ATTEMPTS;
+
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'FAILED',
+                            errorMessage: failureMessage,
+                            retryCount: nextRetryCount,
+                            nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
+                        },
+                    });
+                    stats.tradesFailed++;
+                    console.log(`   ❌ Retry failed: ${failureMessage}`);
+                }
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                metrics.executions += 1;
+                metrics.failures += 1;
+                metrics.totalLatencyMs += Date.now() - execStart;
+                recordFailureReason(errorMsg);
+
+                const shouldRetry = isTransientError(errorMsg) && MAX_RETRY_ATTEMPTS > 0;
+                const nextRetryCount = shouldRetry ? trade.retryCount + 1 : trade.retryCount;
+                const retryAllowed = shouldRetry && nextRetryCount <= MAX_RETRY_ATTEMPTS;
+
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        status: 'FAILED',
+                        errorMessage: errorMsg,
+                        retryCount: nextRetryCount,
+                        nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
+                    },
+                });
+                stats.tradesFailed++;
+                console.log(`   ❌ Retry error: ${errorMsg}`);
+            }
+        }
+    } catch (error) {
+        console.error('[Retry] Failed to process retry queue:', error);
     }
 }
 
@@ -1332,6 +1600,98 @@ function displayStats(): void {
     console.log(`   Trades Skipped: ${stats.tradesSkipped}`);
 }
 
+function recordFailureReason(reason: string | null | undefined): void {
+    if (!reason) return;
+    const key = reason.slice(0, 120);
+    metrics.failureReasons.set(key, (metrics.failureReasons.get(key) || 0) + 1);
+}
+
+function isTransientError(message: string): boolean {
+    const lowered = message.toLowerCase();
+    return (
+        lowered.includes('timeout') ||
+        lowered.includes('timed out') ||
+        lowered.includes('rate limit') ||
+        lowered.includes('429') ||
+        lowered.includes('rpc') ||
+        lowered.includes('network') ||
+        lowered.includes('nonce too low') ||
+        lowered.includes('replacement fee too low') ||
+        lowered.includes('econnreset') ||
+        lowered.includes('etimedout')
+    );
+}
+
+function logMetricsSummary(): void {
+    if (metrics.executions === 0) {
+        console.log('\n📈 Metrics: No executions in the last interval.');
+        return;
+    }
+
+    const successRate = metrics.executions > 0 ? (metrics.successes / metrics.executions) * 100 : 0;
+    const avgLatency = metrics.executions > 0 ? metrics.totalLatencyMs / metrics.executions : 0;
+
+    console.log('\n📈 Metrics Summary:');
+    console.log(`   Executions: ${metrics.executions}`);
+    console.log(`   Success Rate: ${successRate.toFixed(2)}%`);
+    console.log(`   Avg Latency: ${avgLatency.toFixed(0)}ms`);
+
+    if (metrics.failureReasons.size > 0) {
+        const topReasons = Array.from(metrics.failureReasons.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+        console.log('   Top Failures:');
+        for (const [reason, count] of topReasons) {
+            console.log(`     - ${reason}: ${count}`);
+        }
+    }
+
+    metrics.executions = 0;
+    metrics.successes = 0;
+    metrics.failures = 0;
+    metrics.totalLatencyMs = 0;
+    metrics.failureReasons.clear();
+}
+
+async function checkBalanceAlerts(): Promise<void> {
+    if (!executionService || !executionSigner) return;
+
+    try {
+        if (BOT_USDC_WARN > 0) {
+            const botUsdc = await executionService.getBotUsdcBalance(executionSigner);
+            if (botUsdc < BOT_USDC_WARN) {
+                console.warn(`[Alerts] ⚠️ Bot USDC low: $${botUsdc.toFixed(2)} < ${BOT_USDC_WARN}`);
+            }
+        }
+
+        if (BOT_MATIC_WARN > 0 && executionSigner.provider) {
+            const balance = await executionSigner.provider.getBalance(await executionSigner.getAddress());
+            const matic = Number(ethers.utils.formatEther(balance));
+            if (matic < BOT_MATIC_WARN) {
+                console.warn(`[Alerts] ⚠️ Bot MATIC low: ${matic.toFixed(4)} < ${BOT_MATIC_WARN}`);
+            }
+        }
+
+        if (PROXY_USDC_WARN > 0 && activeConfigs.size > 0) {
+            const wallets = Array.from(activeConfigs.values())
+                .flat()
+                .map((config) => config.walletAddress.toLowerCase());
+            const uniqueWallets = Array.from(new Set(wallets)).slice(0, PROXY_CHECK_LIMIT);
+
+            for (const wallet of uniqueWallets) {
+                const proxy = await executionService.resolveProxyAddress(wallet, executionSigner);
+                if (!proxy) continue;
+                const proxyUsdc = await executionService.getProxyUsdcBalance(proxy, executionSigner);
+                if (proxyUsdc < PROXY_USDC_WARN) {
+                    console.warn(`[Alerts] ⚠️ Proxy USDC low for ${wallet.slice(0, 8)}: $${proxyUsdc.toFixed(2)} < ${PROXY_USDC_WARN}`);
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('[Alerts] Balance check failed:', error);
+    }
+}
+
 // ============================================================================
 // Graceful Shutdown
 // ============================================================================
@@ -1360,7 +1720,11 @@ process.on('SIGTERM', shutdown);
 async function start(): Promise<void> {
     console.log('🚀 Starting Copy Trading Worker...');
     console.log(`   API Base URL: ${API_BASE_URL}`);
-    console.log(`   Trading Key: ${TRADING_PRIVATE_KEY ? 'Configured ✅' : 'Not configured ⚠️'}`);
+    const workerSelection = selectWorkerKey();
+    console.log(`   Trading Key: ${workerSelection ? 'Configured ✅' : 'Not configured ⚠️'}`);
+    if (workerSelection && workerSelection.total > 1) {
+        console.log(`   Worker Pool: ${workerSelection.index + 1}/${workerSelection.total}`);
+    }
     console.log(`   Real Trading: ${ENABLE_REAL_TRADING ? 'Enabled ✅' : 'Disabled ⛔'}`);
     console.log(`   Chain ID: ${CHAIN_ID}`);
     const selectedRpc = await selectExecutionRpc();
@@ -1378,28 +1742,33 @@ async function start(): Promise<void> {
     }
 
     // Initialize TradingService if private key is available
-    if (TRADING_PRIVATE_KEY) {
+    if (workerSelection) {
         try {
             const rateLimiter = new RateLimiter();
             const cache = createUnifiedCache();
             tradingService = new TradingService(rateLimiter, cache, {
-                privateKey: TRADING_PRIVATE_KEY,
+                privateKey: workerSelection.privateKey,
                 chainId: CHAIN_ID,
             });
             await tradingService.initialize();
 
             // Initialize Execution Service
             const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
-            const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+            const signer = new ethers.Wallet(workerSelection.privateKey, provider);
             executionSigner = signer;
             executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
+            activeWorkerKey = workerSelection.privateKey;
+            activeWorkerAddress = await signer.getAddress();
 
             console.log(`   Trading Wallet: ${tradingService.getAddress()}`);
+            console.log(`   Execution Worker: ${activeWorkerAddress}`);
             console.log(`   Execution Service: Ready ✅`);
         } catch (error) {
             console.error('   ⚠️ Failed to initialize TradingService:', error);
             tradingService = null;
             executionService = null;
+            activeWorkerKey = null;
+            activeWorkerAddress = null;
         }
     }
 
@@ -1413,12 +1782,13 @@ async function start(): Promise<void> {
         }
     }, REFRESH_INTERVAL_MS);
 
-    // Set up periodic stats display
+    // Set up periodic stats + metrics + alerts
     setInterval(() => {
-        if (isRunning) {
-            displayStats();
-        }
-    }, 5 * 60 * 1000); // Every 5 minutes
+        if (!isRunning) return;
+        displayStats();
+        logMetricsSummary();
+        void checkBalanceAlerts();
+    }, METRICS_INTERVAL_MS);
 
     // Set up periodic RECOVERY task
     setInterval(async () => {
@@ -1426,6 +1796,13 @@ async function start(): Promise<void> {
             await recoverPendingTrades();
         }
     }, 2 * 60 * 1000); // Every 2 minutes
+
+    // Set up periodic RETRY task
+    setInterval(async () => {
+        if (isRunning && executionService) {
+            await retryFailedTrades();
+        }
+    }, RETRY_INTERVAL_MS);
 
     // Periodic settlement reconciliation (in case WS missed or redemption failed)
     setInterval(async () => {

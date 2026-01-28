@@ -330,6 +330,9 @@ model CopyTrade {
   errorMessage String?
   realizedPnL  Float? // Profit/Loss for SELL trades (calculated by PositionService)
   usedBotFloat Boolean         @default(false)
+  executedBy   String? // Worker address that executed the trade
+  retryCount   Int             @default(0)
+  nextRetryAt  DateTime?
 
   // Timestamps
   detectedAt DateTime  @default(now())

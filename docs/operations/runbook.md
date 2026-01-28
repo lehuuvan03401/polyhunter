@@ -67,6 +67,25 @@ CopyExec 日志流畅输出：Funds Check -> Place Order -> Settlement。
 最后显示 ✅ Job Complete。
 如果不报错，恭喜您！这套系统已经准备好上战场了。
 
+---
+
+## Copy Trading 执行环境变量（核心）
+
+完整清单见 `frontend/.env.example`。以下是执行相关的核心项：
+
+- `ENABLE_REAL_TRADING`：真实执行开关
+- `COPY_TRADING_EXECUTION_ALLOWLIST`：执行白名单（可选）
+- `COPY_TRADING_MAX_TRADE_USD`：单笔上限（可选）
+- `COPY_TRADING_DAILY_CAP_USD` / `COPY_TRADING_WALLET_DAILY_CAP_USD`：日限额（可选）
+- `COPY_TRADING_RPC_URL` / `COPY_TRADING_RPC_URLS`：执行 RPC（支持多节点兜底）
+- `COPY_TRADING_WORKER_KEYS` / `COPY_TRADING_WORKER_INDEX`：多 Worker 分片
+- `COPY_TRADING_MAX_RETRY_ATTEMPTS`：失败重试次数
+
+建议在启动 worker 前运行就绪检查：
+```
+npx tsx scripts/verify/copy-trading-readiness.ts
+```
+
 
 setup-local-fork.ts的说明：
 

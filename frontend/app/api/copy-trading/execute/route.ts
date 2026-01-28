@@ -11,6 +11,11 @@ import { GuardrailService } from '@/lib/services/guardrail-service';
 
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
+const WORKER_KEYS = (process.env.COPY_TRADING_WORKER_KEYS || '')
+    .split(',')
+    .map((key) => key.trim())
+    .filter(Boolean);
+const WORKER_INDEX = parseInt(process.env.COPY_TRADING_WORKER_INDEX || '0', 10);
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .split(',')
@@ -23,10 +28,19 @@ import { ethers } from 'ethers';
 import { PROXY_FACTORY_ABI, POLY_HUNTER_PROXY_ABI, ERC20_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '@/lib/contracts/abis';
 
 // Helper to get provider and signer
-const getBotSigner = () => {
-    if (!TRADING_PRIVATE_KEY) return null;
-    const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-    return new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+const getWorkerKey = (): { privateKey: string; index: number; total: number } | null => {
+    if (WORKER_KEYS.length > 0) {
+        if (Number.isNaN(WORKER_INDEX) || WORKER_INDEX < 0 || WORKER_INDEX >= WORKER_KEYS.length) {
+            throw new Error(`COPY_TRADING_WORKER_INDEX out of range (0-${WORKER_KEYS.length - 1})`);
+        }
+        return { privateKey: WORKER_KEYS[WORKER_INDEX], index: WORKER_INDEX, total: WORKER_KEYS.length };
+    }
+
+    if (TRADING_PRIVATE_KEY) {
+        return { privateKey: TRADING_PRIVATE_KEY, index: 0, total: 1 };
+    }
+
+    return null;
 };
 
 async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
@@ -189,6 +203,7 @@ export async function POST(request: NextRequest) {
 
         // === SERVER-SIDE EXECUTION ===
         if (executeOnServer) {
+            const workerSelection = getWorkerKey();
             // Quick check for Kill Switch using Guardrail Service (amount=0 just to check flag)
             // Or we can just check the flag directly if we kept the env var, but better to use service for consistency
             // Actually, for just the first check, we can check a small amount or refactor service to expose isOpen?
@@ -209,7 +224,7 @@ export async function POST(request: NextRequest) {
                 }, { status: 403 });
             }
 
-            if (!TRADING_PRIVATE_KEY) {
+            if (!workerSelection) {
                 return NextResponse.json({
                     success: false,
                     requiresManualExecution: true,
@@ -260,15 +275,16 @@ export async function POST(request: NextRequest) {
                 const rateLimiter = new RateLimiter();
                 const cache = createUnifiedCache();
                 const tradingService = new TradingService(rateLimiter, cache, {
-                    privateKey: TRADING_PRIVATE_KEY,
+                    privateKey: workerSelection.privateKey,
                     chainId: CHAIN_ID,
                 });
                 await tradingService.initialize();
 
                 // Initialize Execution Service
                 const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
-                const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+                const signer = new ethers.Wallet(workerSelection.privateKey, provider);
                 const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
+                const workerAddress = await signer.getAddress();
 
                 const proxyAddress = await executionService.resolveProxyAddress(walletAddress);
                 if (!proxyAddress) {
@@ -324,6 +340,7 @@ export async function POST(request: NextRequest) {
                             executedAt: new Date(),
                             txHash: result.transactionHashes?.[0] || result.orderId,
                             usedBotFloat: (result as any).usedBotFloat ?? false,
+                            executedBy: workerAddress,
                         },
                     });
 

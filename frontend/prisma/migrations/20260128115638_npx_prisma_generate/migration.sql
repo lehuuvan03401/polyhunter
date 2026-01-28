@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "CopyTrade" ALTER COLUMN "nextRetryAt" SET DATA TYPE TIMESTAMP(3);
