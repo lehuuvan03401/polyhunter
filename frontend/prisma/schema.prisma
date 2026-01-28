@@ -299,6 +299,7 @@ model CopyTrade {
   id       String            @id @default(cuid())
   config   CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
   configId String
+  idempotencyKey String @unique @default(cuid())
 
   // Original trade info
   originalTrader String
@@ -330,6 +331,7 @@ model CopyTrade {
   @@index([configId])
   @@index([status])
   @@index([detectedAt])
+  @@unique([configId, originalTxHash])
 }
 
 // Sync log for tracking sync history

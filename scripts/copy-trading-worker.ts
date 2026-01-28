@@ -20,12 +20,19 @@
  * - TRADING_PRIVATE_KEY: Private key for server-side execution (optional)
  * - CHAIN_ID: Chain ID for trading (default: 137 for Polygon)
  * - DATABASE_URL: Prisma database URL
+ * - ENABLE_REAL_TRADING: Master switch for real execution (default: false)
+ * - COPY_TRADING_DAILY_CAP_USD: Global daily cap for real execution (optional)
+ * - COPY_TRADING_WALLET_DAILY_CAP_USD: Per-wallet daily cap for real execution (optional)
+ * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
+ * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
 import type { ActivityTrade, MarketEvent } from '../src/services/realtime-service-v2.js';
 import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService, GammaApiClient } from '../src/index.js';
 import { ethers } from 'ethers';
+import { createHash } from 'crypto';
+import { CTF_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '../src/core/contracts.js';
 
 // Dynamic import for Prisma to handle different runtime contexts
 let prisma: any = null;
@@ -39,6 +46,11 @@ const API_BASE_URL = process.env.COPY_TRADING_API_URL || 'http://localhost:3000'
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
+const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
+const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
+const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
+const PRICE_TTL_MS = parseInt(process.env.COPY_TRADING_PRICE_TTL_MS || '5000', 10);
+const IDEMPOTENCY_BUCKET_MS = parseInt(process.env.COPY_TRADING_IDEMPOTENCY_BUCKET_MS || '5000', 10);
 
 // ============================================================================
 // Initialize Clients
@@ -49,6 +61,7 @@ const realtimeService = new RealtimeServiceV2({ debug: false });
 // Trading service for direct execution (if private key is available)
 let tradingService: TradingService | null = null;
 let executionService: CopyTradingExecutionService | null = null;
+let executionSigner: ethers.Wallet | null = null;
 const rateLimiter = new RateLimiter();
 const cache = createUnifiedCache();
 const gammaClient = new GammaApiClient(rateLimiter, cache);
@@ -161,6 +174,172 @@ function calculateCopySize(
     const clampedValue = Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 
     return clampedValue;
+}
+
+// ========================================================================
+// Idempotency + Guardrails
+// ========================================================================
+
+function normalizeNumber(value: number, decimals: number = 6): string {
+    if (!Number.isFinite(value)) return '0';
+    return Number(value).toFixed(decimals);
+}
+
+function buildIdempotencyKey(configId: string, trade: ActivityTrade, side: string): string {
+    const txHash = trade.transactionHash?.toLowerCase();
+    if (txHash) {
+        return createHash('sha256')
+            .update(`tx:${configId}:${txHash}`)
+            .digest('hex');
+    }
+
+    const bucket = Math.floor((trade.timestamp * 1000) / IDEMPOTENCY_BUCKET_MS);
+    const raw = [
+        'fallback',
+        configId,
+        trade.asset || 'unknown',
+        side,
+        normalizeNumber(trade.size, 6),
+        normalizeNumber(trade.price, 6),
+        String(bucket),
+    ].join('|');
+
+    return createHash('sha256').update(raw).digest('hex');
+}
+
+async function fetchFreshPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<{ price: number; fetchedAt: number; source: string } | null> {
+    if (!tradingService) return null;
+
+    try {
+        const fetchedAt = Date.now();
+        const orderbook = await tradingService.getOrderBook(tokenId);
+
+        const bestAsk = Number(orderbook.asks?.[0]?.price || 0);
+        const bestBid = Number(orderbook.bids?.[0]?.price || 0);
+
+        let price = side === 'BUY' ? bestAsk : bestBid;
+        if (!price && bestAsk && bestBid) {
+            price = (bestAsk + bestBid) / 2;
+        }
+        if (!price) price = bestAsk || bestBid;
+
+        if (!price || !Number.isFinite(price)) return null;
+        return { price, fetchedAt, source: 'orderbook' };
+    } catch (error) {
+        console.warn(`[Worker] Failed to fetch orderbook price for ${tokenId}:`, error);
+        return null;
+    }
+}
+
+async function getExecutedTotalSince(since: Date, walletAddress?: string): Promise<number> {
+    const where = {
+        status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
+        executedAt: { gte: since },
+        ...(walletAddress
+            ? { config: { walletAddress: walletAddress.toLowerCase() } }
+            : {}),
+    } as any;
+
+    const result = await prisma.copyTrade.aggregate({
+        _sum: { copySize: true },
+        where,
+    });
+
+    return Number(result?._sum?.copySize || 0);
+}
+
+async function checkExecutionGuardrails(walletAddress: string, amount: number): Promise<{ allowed: boolean; reason?: string }> {
+    if (!ENABLE_REAL_TRADING) {
+        return { allowed: false, reason: 'REAL_TRADING_DISABLED' };
+    }
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    if (GLOBAL_DAILY_CAP_USD > 0) {
+        const globalUsed = await getExecutedTotalSince(since);
+        if (globalUsed + amount > GLOBAL_DAILY_CAP_USD) {
+            return {
+                allowed: false,
+                reason: `GLOBAL_DAILY_CAP_EXCEEDED (${globalUsed.toFixed(2)} + ${amount.toFixed(2)} > ${GLOBAL_DAILY_CAP_USD})`,
+            };
+        }
+    }
+
+    if (WALLET_DAILY_CAP_USD > 0) {
+        const walletUsed = await getExecutedTotalSince(since, walletAddress);
+        if (walletUsed + amount > WALLET_DAILY_CAP_USD) {
+            return {
+                allowed: false,
+                reason: `WALLET_DAILY_CAP_EXCEEDED (${walletUsed.toFixed(2)} + ${amount.toFixed(2)} > ${WALLET_DAILY_CAP_USD})`,
+            };
+        }
+    }
+
+    return { allowed: true };
+}
+
+async function preflightExecution(
+    walletAddress: string,
+    proxyAddress: string | null,
+    side: 'BUY' | 'SELL',
+    tokenId: string,
+    copySize: number,
+    price: number
+): Promise<{ allowed: boolean; reason?: string; adjustedCopySize: number; adjustedCopyShares: number }> {
+    if (!executionService || !executionSigner) {
+        return { allowed: true, adjustedCopySize: copySize, adjustedCopyShares: copySize / price };
+    }
+
+    if (!proxyAddress) {
+        return { allowed: false, reason: 'NO_PROXY', adjustedCopySize: copySize, adjustedCopyShares: copySize / price };
+    }
+
+    if (!price || price <= 0) {
+        return { allowed: false, reason: 'INVALID_PRICE', adjustedCopySize: copySize, adjustedCopyShares: 0 };
+    }
+
+    if (side === 'BUY') {
+        const [proxyBalance, botBalance] = await Promise.all([
+            executionService.getProxyUsdcBalance(proxyAddress, executionSigner).catch(() => 0),
+            executionService.getBotUsdcBalance(executionSigner).catch(() => 0),
+        ]);
+
+        if (proxyBalance < copySize && botBalance < copySize) {
+            return {
+                allowed: false,
+                reason: `INSUFFICIENT_FUNDS proxy=${proxyBalance.toFixed(2)} bot=${botBalance.toFixed(2)}`,
+                adjustedCopySize: copySize,
+                adjustedCopyShares: copySize / price,
+            };
+        }
+
+        if (proxyBalance < copySize && botBalance >= copySize) {
+            console.warn(`[Worker] ⚠️ Proxy balance low (${proxyBalance.toFixed(2)}), bot float will be used.`);
+        }
+
+        return { allowed: true, adjustedCopySize: copySize, adjustedCopyShares: copySize / price };
+    }
+
+    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
+    const balanceRaw = await ctf.balanceOf(proxyAddress, tokenId);
+    const actualShares = Number(ethers.utils.formatUnits(balanceRaw, USDC_DECIMALS));
+
+    const requestedShares = copySize / price;
+    const adjustedShares = Math.min(requestedShares, actualShares);
+
+    if (adjustedShares <= 0) {
+        return { allowed: false, reason: 'NO_SHARES_AVAILABLE', adjustedCopySize: 0, adjustedCopyShares: 0 };
+    }
+
+    if (adjustedShares < requestedShares) {
+        console.log(`[Worker] ⚠️ Capping sell size: requested ${requestedShares.toFixed(2)}, available ${actualShares.toFixed(2)}`);
+    }
+
+    return {
+        allowed: true,
+        adjustedCopySize: adjustedShares * price,
+        adjustedCopyShares: adjustedShares,
+    };
 }
 
 // ========================================================================
@@ -328,10 +507,60 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 continue;
             }
 
+            const idempotencyKey = buildIdempotencyKey(config.id, trade, copySide);
+            const existingByKey = await prisma.copyTrade.findUnique({
+                where: { idempotencyKey },
+                select: { id: true },
+            });
+
+            if (existingByKey) {
+                console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (idempotency), skipping.`);
+                continue;
+            }
+
+            if (trade.transactionHash) {
+                const existingByTx = await prisma.copyTrade.findUnique({
+                    where: { configId_originalTxHash: { configId: config.id, originalTxHash: trade.transactionHash } },
+                    select: { id: true },
+                });
+                if (existingByTx) {
+                    console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (txHash), skipping.`);
+                    continue;
+                }
+            }
+
+            const canAttemptExecution = Boolean(TRADING_PRIVATE_KEY && executionService && executionSigner && trade.asset);
+            let basePrice = trade.price;
+            let priceSource = 'trade';
+            let priceGuardError: string | null = null;
+
+            if (canAttemptExecution && trade.asset) {
+                const quote = await fetchFreshPrice(trade.asset, copySide as 'BUY' | 'SELL');
+                if (!quote) {
+                    priceGuardError = 'PRICE_QUOTE_UNAVAILABLE';
+                } else {
+                    const priceAgeMs = Date.now() - quote.fetchedAt;
+                    if (priceAgeMs > PRICE_TTL_MS) {
+                        priceGuardError = 'PRICE_QUOTE_STALE';
+                    }
+                    basePrice = quote.price;
+                    priceSource = quote.source;
+                    if (trade.price > 0) {
+                        const maxDeviation = (config.maxSlippage ?? 0) / 100;
+                        if (maxDeviation > 0) {
+                            const deviation = Math.abs(basePrice - trade.price) / trade.price;
+                            if (deviation > maxDeviation) {
+                                priceGuardError = `PRICE_DEVIATION_${(deviation * 100).toFixed(2)}%`;
+                            }
+                        }
+                    }
+                }
+            }
+
             const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
             const execPrice = copySide === 'BUY'
-                ? trade.price * (1 + fixedSlippage)
-                : trade.price * (1 - fixedSlippage);
+                ? basePrice * (1 + fixedSlippage)
+                : basePrice * (1 - fixedSlippage);
             const copyShares = execPrice > 0 ? (copySize / execPrice) : 0;
 
             if (copyShares <= 0 || !Number.isFinite(copyShares)) {
@@ -339,59 +568,140 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 continue;
             }
 
-            // Check for duplicate (same trade within 5s window)
-            const tradeTimeMs = trade.timestamp * 1000;
-            const existing = await prisma.copyTrade.findFirst({
-                where: {
-                    configId: config.id,
-                    originalTrader: traderAddr,
-                    tokenId: trade.asset,
-                    detectedAt: {
-                        gte: new Date(tradeTimeMs - 5000),
-                        lte: new Date(tradeTimeMs + 5000),
-                    },
-                    originalSide: copySide,
-                    originalSize: trade.size,
-                },
-            });
-
-            if (existing) {
-                console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate, skipping.`);
-                continue;
-            }
-
             // ========================================
             // Create PENDING CopyTrade Record
             // ========================================
 
-            const copyTrade = await prisma.copyTrade.create({
-                data: {
-                    configId: config.id,
-                    originalTrader: traderAddr,
-                    originalSide: copySide,
-                    originalSize: trade.size,
-                    originalPrice: trade.price,
-                    marketSlug: trade.marketSlug || null,
-                    conditionId: trade.conditionId || null,
-                    tokenId: trade.asset || null,
-                    outcome: trade.outcome || null,
-                    originalTxHash: trade.transactionHash || null,
-                    copySize,
-                    copyPrice: execPrice,
-                    status: 'PENDING',
-                    expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
-                },
-            });
+            let copyTrade;
+            try {
+                copyTrade = await prisma.copyTrade.create({
+                    data: {
+                        configId: config.id,
+                        idempotencyKey,
+                        originalTrader: traderAddr,
+                        originalSide: copySide,
+                        originalSize: trade.size,
+                        originalPrice: trade.price,
+                        marketSlug: trade.marketSlug || null,
+                        conditionId: trade.conditionId || null,
+                        tokenId: trade.asset || null,
+                        outcome: trade.outcome || null,
+                        originalTxHash: trade.transactionHash || null,
+                        copySize,
+                        copyPrice: execPrice,
+                        status: 'PENDING',
+                        expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
+                    },
+                });
+            } catch (error: any) {
+                if (error?.code === 'P2002') {
+                    console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (unique constraint), skipping.`);
+                    stats.tradesSkipped++;
+                    continue;
+                }
+                throw error;
+            }
 
             stats.tradesCreated++;
             console.log(`   [Config ${config.id.slice(0, 8)}] Created PENDING trade: ${copyTrade.id.slice(0, 8)}`);
-            console.log(`   Copy: ${copySide} $${copySize.toFixed(2)} @ ${execPrice.toFixed(4)}`);
+            console.log(`   Copy: ${copySide} $${copySize.toFixed(2)} @ ${execPrice.toFixed(4)} (${priceSource})`);
 
             // ========================================
             // Execute Immediately (if configured)
             // ========================================
 
-            if (TRADING_PRIVATE_KEY && executionService && trade.asset) {
+            if (canAttemptExecution) {
+                if (!ENABLE_REAL_TRADING) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: 'REAL_TRADING_DISABLED',
+                        },
+                    });
+                    stats.tradesSkipped++;
+                    console.log(`   ⛔ Real trading disabled. Skipped execution.`);
+                    continue;
+                }
+
+                if (priceGuardError) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: `PRICE_GUARD_${priceGuardError}`,
+                        },
+                    });
+                    stats.tradesSkipped++;
+                    console.log(`   ⛔ Price guard blocked execution: ${priceGuardError}`);
+                    continue;
+                }
+
+                let adjustedCopySize = copySize;
+                let adjustedCopyShares = copyShares;
+                const proxyAddress = await executionService!.resolveProxyAddress(config.walletAddress, executionSigner!);
+                const preflight = await preflightExecution(
+                    config.walletAddress,
+                    proxyAddress,
+                    copySide as 'BUY' | 'SELL',
+                    trade.asset!,
+                    copySize,
+                    basePrice
+                );
+
+                if (!preflight.allowed) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: `PREFLIGHT_${preflight.reason || 'FAILED'}`,
+                        },
+                    });
+                    stats.tradesSkipped++;
+                    console.log(`   ⛔ Preflight blocked execution: ${preflight.reason}`);
+                    continue;
+                }
+
+                adjustedCopySize = preflight.adjustedCopySize;
+                adjustedCopyShares = preflight.adjustedCopyShares;
+
+                if (adjustedCopySize < 1) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: 'ADJUSTED_SIZE_TOO_SMALL',
+                        },
+                    });
+                    stats.tradesSkipped++;
+                    console.log(`   ⛔ Adjusted size below minimum after preflight.`);
+                    continue;
+                }
+
+                if (adjustedCopySize !== copySize) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            copySize: adjustedCopySize,
+                            copyPrice: execPrice,
+                        },
+                    });
+                }
+
+                const guardrail = await checkExecutionGuardrails(config.walletAddress, adjustedCopySize);
+                if (!guardrail.allowed) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                        },
+                    });
+                    stats.tradesSkipped++;
+                    console.log(`   ⛔ Guardrail blocked execution: ${guardrail.reason}`);
+                    continue;
+                }
+
                 try {
                     // Execute via CopyTradingExecutionService (handles Proxy & Order)
                     console.log(`   🚀 Executing via Service for ${config.walletAddress}...`);
@@ -401,8 +711,9 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         walletAddress: config.walletAddress,
                         tokenId: trade.asset,
                         side: copySide as 'BUY' | 'SELL',
-                        amount: copySize,
-                        price: trade.price,
+                        amount: adjustedCopySize,
+                        price: basePrice,
+                        proxyAddress: proxyAddress || undefined,
                         slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined, // If FIXED, use maxSlippage as the value
                         maxSlippage: config.maxSlippage, // Pass for AUTO content
                         slippageMode: config.slippageType as 'FIXED' | 'AUTO',
@@ -437,16 +748,16 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 
                         // Update positions + realized PnL
                         let realizedPnL: number | null = null;
-                        let adjustedCopySize = copySize;
+                        let finalCopySize = adjustedCopySize;
 
                         try {
                             if (copySide === 'BUY') {
-                                await recordBuyPosition(config.walletAddress, trade.asset, copyShares, execPrice, copySize);
+                                await recordBuyPosition(config.walletAddress, trade.asset, adjustedCopyShares, execPrice, finalCopySize);
                             } else {
-                                const sellResult = await recordSellPosition(config.walletAddress, trade.asset, copyShares, execPrice);
+                                const sellResult = await recordSellPosition(config.walletAddress, trade.asset, adjustedCopyShares, execPrice);
                                 realizedPnL = sellResult.realizedPnL;
-                                if (sellResult.proceeds > 0 && sellResult.proceeds < adjustedCopySize) {
-                                    adjustedCopySize = sellResult.proceeds;
+                                if (sellResult.proceeds > 0 && sellResult.proceeds < finalCopySize) {
+                                    finalCopySize = sellResult.proceeds;
                                 }
                             }
                         } catch (positionErr) {
@@ -461,7 +772,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                                 txHash: result.transactionHashes?.[0] || result.orderId,
                                 errorMessage: isSettled ? null : "Settlement Pending: Funds/Tokens not returned",
                                 realizedPnL: realizedPnL ?? undefined,
-                                copySize: adjustedCopySize,
+                                copySize: finalCopySize,
                                 copyPrice: execPrice,
                                 usedBotFloat: result.usedBotFloat ?? false
                             },
@@ -921,6 +1232,7 @@ async function start(): Promise<void> {
     console.log('🚀 Starting Copy Trading Worker...');
     console.log(`   API Base URL: ${API_BASE_URL}`);
     console.log(`   Trading Key: ${TRADING_PRIVATE_KEY ? 'Configured ✅' : 'Not configured ⚠️'}`);
+    console.log(`   Real Trading: ${ENABLE_REAL_TRADING ? 'Enabled ✅' : 'Disabled ⛔'}`);
     console.log(`   Chain ID: ${CHAIN_ID}`);
 
     // Initialize Prisma dynamically
@@ -948,6 +1260,7 @@ async function start(): Promise<void> {
             // Initialize Execution Service
             const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
             const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+            executionSigner = signer;
             executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
 
             console.log(`   Trading Wallet: ${tradingService.getAddress()}`);
