@@ -561,7 +561,7 @@ export class RealtimeServiceV2 extends EventEmitter {
    * @param handlers - Event handlers
    */
   subscribeActivity(
-    filter: { eventSlug?: string; marketSlug?: string } = {},
+    filter: { eventSlug?: string; marketSlug?: string; traderAddress?: string; traderAddresses?: string[] } = {},
     handlers: ActivityHandlers = {}
   ): Subscription {
     const subId = `activity_${++this.subscriptionIdCounter}`;
@@ -572,6 +572,10 @@ export class RealtimeServiceV2 extends EventEmitter {
     const filterObj: Record<string, string> = {};
     if (filter.eventSlug) filterObj.event_slug = filter.eventSlug;
     if (filter.marketSlug) filterObj.market_slug = filter.marketSlug;
+    if (filter.traderAddress) filterObj.trader_address = filter.traderAddress;
+    if (filter.traderAddresses && filter.traderAddresses.length > 0) {
+      filterObj.trader_addresses = filter.traderAddresses;
+    }
 
     // Create subscription objects - only include filters field if we have filters
     const subscriptions = hasFilter

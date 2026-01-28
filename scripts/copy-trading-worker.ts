@@ -24,12 +24,13 @@
  * - COPY_TRADING_DAILY_CAP_USD: Global daily cap for real execution (optional)
  * - COPY_TRADING_WALLET_DAILY_CAP_USD: Per-wallet daily cap for real execution (optional)
  * - COPY_TRADING_RPC_URL: RPC URL for copy-trading execution (optional)
+ * - COPY_TRADING_WS_FILTER_BY_ADDRESS: Use address-filtered activity subscription when supported (optional)
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
-import type { ActivityTrade, MarketEvent } from '../src/services/realtime-service-v2.js';
+import type { ActivityTrade, MarketEvent, Subscription } from '../src/services/realtime-service-v2.js';
 import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService, GammaApiClient } from '../src/index.js';
 import { ethers } from 'ethers';
 import { createHash } from 'crypto';
@@ -48,6 +49,7 @@ const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
 const EXECUTION_RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
+const WS_ADDRESS_FILTER = process.env.COPY_TRADING_WS_FILTER_BY_ADDRESS === 'true';
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
@@ -93,6 +95,10 @@ interface WatchedConfig {
 let activeConfigs: Map<string, WatchedConfig[]> = new Map(); // traderAddress -> configs[]
 let watchedAddresses: Set<string> = new Set();
 let isRunning = true;
+let activitySubscription: Subscription | null = null;
+let activityHandlers: { onTrade: (trade: ActivityTrade) => void; onError?: (error: Error) => void } | null = null;
+let lastSubscriptionKey = '';
+let lastSubscriptionMode: 'filtered' | 'all' | null = null;
 
 // Stats
 const stats = {
@@ -150,6 +156,9 @@ async function refreshConfigs(): Promise<void> {
         watchedAddresses = newSet;
 
         console.log(`[Worker] Updated: Monitoring ${configs.length} configs for ${newSet.size} traders.`);
+
+        // Refresh WS subscription if we are using address filters
+        subscribeToActivityIfNeeded();
     } catch (error) {
         console.error('[Worker] Failed to refresh configs:', error);
     }
@@ -178,6 +187,45 @@ function calculateCopySize(
     const clampedValue = Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 
     return clampedValue;
+}
+
+function getAddressKey(addresses: Set<string>): string {
+    return Array.from(addresses)
+        .map((addr) => addr.toLowerCase())
+        .sort()
+        .join(',');
+}
+
+function subscribeToActivityIfNeeded(): void {
+    if (!activityHandlers || !realtimeService) return;
+
+    const canFilter = WS_ADDRESS_FILTER && watchedAddresses.size > 0;
+    const nextMode: 'filtered' | 'all' = canFilter ? 'filtered' : 'all';
+    const nextKey = canFilter ? getAddressKey(watchedAddresses) : 'all';
+
+    if (activitySubscription && nextMode === lastSubscriptionMode && nextKey === lastSubscriptionKey) {
+        return;
+    }
+
+    if (activitySubscription) {
+        activitySubscription.unsubscribe();
+        activitySubscription = null;
+    }
+
+    if (canFilter) {
+        const addresses = Array.from(watchedAddresses);
+        activitySubscription = realtimeService.subscribeActivity(
+            { traderAddresses: addresses },
+            activityHandlers
+        );
+        console.log(`[Worker] Activity subscription: filtered (${addresses.length} traders)`);
+    } else {
+        activitySubscription = realtimeService.subscribeAllActivity(activityHandlers);
+        console.log('[Worker] Activity subscription: all-activity');
+    }
+
+    lastSubscriptionKey = nextKey;
+    lastSubscriptionMode = nextMode;
 }
 
 function normalizeTradeSizing(
@@ -1373,9 +1421,9 @@ async function start(): Promise<void> {
         }
     });
 
-    // Subscribe to ALL trading activity
-    console.log('📡 Subscribing to all trading activity...');
-    const subscription = realtimeService.subscribeAllActivity({
+    // Subscribe to trading activity
+    console.log('📡 Subscribing to trading activity...');
+    activityHandlers = {
         onTrade: async (trade: ActivityTrade) => {
             try {
                 await handleRealtimeTrade(trade);
@@ -1386,9 +1434,13 @@ async function start(): Promise<void> {
         onError: (error: Error) => {
             console.error('Activity subscription error:', error);
         },
-    });
+    };
 
-    console.log(`✅ Subscribed to activity (ID: ${subscription.id})`);
+    subscribeToActivityIfNeeded();
+
+    if (activitySubscription) {
+        console.log(`✅ Subscribed to activity (ID: ${activitySubscription.id})`);
+    }
     console.log('\n🟢 Worker is running. Press Ctrl+C to exit.\n');
 }
 
