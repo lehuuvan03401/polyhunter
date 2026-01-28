@@ -5,6 +5,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { TradingService } from '../../src/services/trading-service';
 import { CopyTradingExecutionService } from '../../src/services/copy-trading-execution-service';
+import { CONTRACT_ADDRESSES, POLY_HUNTER_PROXY_ABI, CTF_ABI } from '../../src/core/contracts';
 import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache } from '../../src/core/unified-cache';
 import readline from 'readline';
@@ -18,15 +19,8 @@ const rl = readline.createInterface({
 
 const REQUIRED_ENV_VARS = ['TRADING_PRIVATE_KEY', 'NEXT_PUBLIC_RPC_URL', 'DATABASE_URL'];
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
-const USDC_DECIMALS = 6;
-const CONTRACT_ADDRESSES = {
-    polygon: {
-        usdc: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", // USDC.e
-        ctf: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045",
-        proxyFactory: "0xa56375E010260212CF17415f368C93a74695E8c9", // Gnosis Safe Proxy Factory (standard) or Custom
-        executor: "0xd8622449a502f430587d4a7c2937012d46698967" // Polymarket Exchange / CTF Exchange
-    }
-};
+const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+const ctfAddress = process.env.NEXT_PUBLIC_CTF_ADDRESS || CONTRACT_ADDRESSES.ctf;
 
 const question = (query: string): Promise<string> => {
     return new Promise((resolve) => rl.question(query, resolve));
@@ -132,8 +126,18 @@ async function main() {
         console.warn(`   You MUST approve the Exchange to spend your Proxy's USDC.`);
         const approve = await question("   Attempt Auto-Approve USDC? (y/n): ");
         if (approve.toLowerCase() === 'y') {
-            console.log("   (Auto-Approve logic would go here - for now, please use Dashboard)");
-            // TODO: Implement auto-approve call if needed, or just warn.
+            try {
+                if (!addresses.executor) {
+                    throw new Error('Executor address not configured');
+                }
+                const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, wallet);
+                const tx = await proxy.approveTrading(addresses.executor, ethers.constants.MaxUint256);
+                console.log(`   🔁 Approving USDC... Tx: ${tx.hash}`);
+                await tx.wait();
+                console.log("   ✅ USDC Approve Success");
+            } catch (err: any) {
+                console.error("   ❌ Auto-Approve USDC failed:", err.message || err);
+            }
         }
     } else {
         console.log(`✅ USDC Approved (Allowance: ${usdcCheck.allowance})`);
@@ -150,6 +154,26 @@ async function main() {
     if (!ctfCheck.allowed) {
         console.warn(`⚠️  CTF Allowance Missing! (${ctfCheck.reason})`);
         console.warn(`   You MUST approve the Exchange to spend your Conditional Tokens.`);
+        const approve = await question("   Attempt Auto-Approve CTF? (y/n): ");
+        if (approve.toLowerCase() === 'y') {
+            try {
+                if (!addresses.executor) {
+                    throw new Error('Executor address not configured');
+                }
+                if (!ctfAddress) {
+                    throw new Error('CTF address not configured');
+                }
+                const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, wallet);
+                const ctfIface = new ethers.utils.Interface(CTF_ABI);
+                const data = ctfIface.encodeFunctionData('setApprovalForAll', [addresses.executor, true]);
+                const tx = await proxy.execute(ctfAddress, data);
+                console.log(`   🔁 Approving CTF... Tx: ${tx.hash}`);
+                await tx.wait();
+                console.log("   ✅ CTF Approve Success");
+            } catch (err: any) {
+                console.error("   ❌ Auto-Approve CTF failed:", err.message || err);
+            }
+        }
     } else {
         console.log(`✅ CTF Approved`);
     }
@@ -176,6 +200,9 @@ async function main() {
         }
     });
 
+    const maxSlippageInput = await question("📉 Max Slippage % (default 1.0): ");
+    const maxSlippage = maxSlippageInput ? Number(maxSlippageInput) : 1.0;
+
     if (existing) {
         console.log(`⚠️  Config already exists for this trader.`);
         const overwrite = await question("Overwrite with Safe Mode ($1 Fixed)? (y/n): ");
@@ -191,7 +218,7 @@ async function main() {
                 fixedAmount: 1,
                 maxSizePerTrade: 1,
                 slippageType: 'FIXED',
-                maxSlippage: 1.0,
+                maxSlippage: Number.isFinite(maxSlippage) ? maxSlippage : 1.0,
                 autoExecute: true,
                 isActive: true, // Make sure it's active
                 executionMode: 'PROXY',
@@ -209,7 +236,7 @@ async function main() {
                 fixedAmount: 1,
                 maxSizePerTrade: 1,
                 slippageType: 'FIXED',
-                maxSlippage: 1.0,
+                maxSlippage: Number.isFinite(maxSlippage) ? maxSlippage : 1.0,
                 autoExecute: true,
                 isActive: true,
                 executionMode: 'PROXY',
@@ -222,6 +249,7 @@ async function main() {
     console.log(`\n🎉 Setup Complete!`);
     console.log(`To start trading, run:`);
     console.log(`export TRADING_PRIVATE_KEY=${process.env.TRADING_PRIVATE_KEY}`);
+    console.log(`export COPY_TRADING_DRY_RUN=true  # Optional: dry-run mode, no real orders`);
     console.log(`npx tsx scripts/copy-trading-worker.ts`);
 
     process.exit(0);

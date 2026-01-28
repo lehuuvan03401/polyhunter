@@ -33,6 +33,7 @@ const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const POLL_INTERVAL_MS = 30000; // Refresh configs every 30s
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
+const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
 
 if (!TRADING_PRIVATE_KEY) {
     console.error('Missing TRADING_PRIVATE_KEY env var');
@@ -69,6 +70,20 @@ let isProcessing = false;
 
 // --- HELPERS ---
 
+async function logSkippedTrade(data: any, reason: string) {
+    try {
+        await prisma.copyTrade.create({
+            data: {
+                ...data,
+                status: 'SKIPPED',
+                errorMessage: reason,
+            }
+        });
+    } catch (e) {
+        console.log(`[Worker] Failed to log SKIPPED trade (likely duplicate):`, e);
+    }
+}
+
 async function refreshConfigs() {
     try {
         const configs = await prisma.copyTradingConfig.findMany({
@@ -88,16 +103,14 @@ async function refreshConfigs() {
     }
 }
 
-async function getPrice(tokenId: string): Promise<number> {
+async function getPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number> {
     try {
         const orderbook = await tradingService.getOrderBook(tokenId);
-        // Mid price or best ask/bid depending on side? 
-        // For simplicity, use mid price of best bid/ask
         const bestAsk = Number(orderbook.asks[0]?.price || 0);
         const bestBid = Number(orderbook.bids[0]?.price || 0);
 
-        if (bestAsk && bestBid) return (bestAsk + bestBid) / 2;
-        return bestAsk || bestBid || 0.5; // Fallback
+        if (side === 'BUY') return bestAsk || bestBid || 0.5;
+        return bestBid || bestAsk || 0.5;
     } catch (e) {
         console.warn(`[Worker] Failed to fetch price for ${tokenId}, defaulting to 0.5`);
         return 0.5;
@@ -471,7 +484,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
     }
 
     const tokenId = trade.asset;
-    const price = trade.price;
+    const leaderPrice = trade.price;
     const rawSize = trade.size;
     const side = trade.side; // BUY or SELL
     const txHash = trade.transactionHash;
@@ -483,9 +496,9 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
     for (const config of configs) {
         try {
-            const { tradeShares, tradeNotional } = normalizeTradeSizing(config, rawSize, price);
+            const { tradeShares, tradeNotional } = normalizeTradeSizing(config, rawSize, leaderPrice);
 
-            console.log(`[Worker] 🎯 Target: ${traderAddress} | Side: ${side} | Token: ${tokenId} | Size: ${tradeShares.toFixed(2)} | Price: $${price.toFixed(4)}`);
+            console.log(`[Worker] 🎯 Target: ${traderAddress} | Side: ${side} | Token: ${tokenId} | Size: ${tradeShares.toFixed(2)} | Price: $${leaderPrice.toFixed(4)}`);
 
             // Apply Basic Filters
             if (config.sideFilter && config.sideFilter !== side) continue;
@@ -499,7 +512,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             }
 
             // Calc Size
-            const copySizeUsdc = calculateCopySize(config, tradeShares, price);
+            const copySizeUsdc = calculateCopySize(config, tradeShares, leaderPrice);
             if (copySizeUsdc <= 0) continue;
 
             // Get Strategy Parameters
@@ -532,34 +545,93 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
 
+            // 1.6 Price guard + max execution price check
+            const marketPrice = await getPrice(tokenId, copySide as 'BUY' | 'SELL');
+            const maxDeviation = (config.maxSlippage ?? 0) / 100;
+            if (leaderPrice > 0 && maxDeviation > 0) {
+                const deviation = Math.abs(marketPrice - leaderPrice) / leaderPrice;
+                if (deviation > maxDeviation) {
+                    console.warn(`[Worker] 🛑 Price guard: deviation ${(deviation * 100).toFixed(2)}% > max ${(maxDeviation * 100).toFixed(2)}%`);
+                    await logSkippedTrade({
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: copySide,
+                        originalSize: tradeShares,
+                        originalPrice: leaderPrice,
+                        tokenId: tokenId,
+                        copySize: copySizeUsdc,
+                        copyPrice: marketPrice,
+                        originalTxHash: txHash || `auto-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }, `PRICE_DEVIATION_${(deviation * 100).toFixed(2)}%`);
+                    continue;
+                }
+
+                const maxExecPrice = leaderPrice * (1 + maxDeviation);
+                const minExecPrice = leaderPrice * (1 - maxDeviation);
+                if (copySide === 'BUY' && marketPrice > maxExecPrice) {
+                    console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} > max ${maxExecPrice.toFixed(4)}`);
+                    await logSkippedTrade({
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: copySide,
+                        originalSize: tradeShares,
+                        originalPrice: leaderPrice,
+                        tokenId: tokenId,
+                        copySize: copySizeUsdc,
+                        copyPrice: marketPrice,
+                        originalTxHash: txHash || `auto-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }, 'PRICE_MAX_EXCEEDED');
+                    continue;
+                }
+                if (copySide === 'SELL' && marketPrice < minExecPrice) {
+                    console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} < min ${minExecPrice.toFixed(4)}`);
+                    await logSkippedTrade({
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: copySide,
+                        originalSize: tradeShares,
+                        originalPrice: leaderPrice,
+                        tokenId: tokenId,
+                        copySize: copySizeUsdc,
+                        copyPrice: marketPrice,
+                        originalTxHash: txHash || `auto-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }, 'PRICE_MIN_EXCEEDED');
+                    continue;
+                }
+            }
+
             // 1. Guardrail Check (NEW)
             const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc);
             if (!guardrail.allowed) {
                 console.warn(`[Worker] 🛑 Guardrail Blocked: ${guardrail.reason}`);
                 // Log skipped trade to DB so user knows
-                try {
-                    await prisma.copyTrade.create({
-                        data: {
-                            configId: config.id,
-                            originalTrader: traderAddress,
-                            originalSide: copySide,
-                            originalSize: tradeShares,
-                            originalPrice: price,
-                            tokenId: tokenId,
-                            copySize: copySizeUsdc,
-                            copyPrice: price,
-                            status: 'SKIPPED',
-                            errorMessage: guardrail.reason,
-                            originalTxHash: txHash || `auto-${Date.now()}`, // Ensure unique if no txHash
-                            detectedAt: new Date(),
-                            marketSlug: metadata.marketSlug,
-                            conditionId: metadata.conditionId,
-                            outcome: metadata.outcome
-                        }
-                    });
-                } catch (e) {
-                    console.log(`[Worker] Failed to log SKIPPED trade (likely duplicate):`, e);
-                }
+                await logSkippedTrade({
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    tokenId: tokenId,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash: txHash || `auto-${Date.now()}`, // Ensure unique if no txHash
+                    detectedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, guardrail.reason || 'GUARDRAIL_BLOCKED');
                 continue;
             }
 
@@ -572,10 +644,10 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         originalTrader: traderAddress,
                         originalSide: copySide,
                         originalSize: tradeShares,
-                        originalPrice: price,
+                        originalPrice: leaderPrice,
                         tokenId: tokenId,
                         copySize: copySizeUsdc,
-                        copyPrice: price,
+                        copyPrice: marketPrice,
                         status: 'PENDING', // Start as PENDING
                         originalTxHash: txHash || `auto-${Date.now()}`,
                         detectedAt: new Date(),
@@ -595,6 +667,20 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 continue; // ABORT if we can't record the trade
             }
 
+            if (DRY_RUN) {
+                await prisma.copyTrade.update({
+                    where: { id: tradeId },
+                    data: {
+                        status: 'SKIPPED',
+                        errorMessage: 'DRY_RUN',
+                        copyPrice: marketPrice,
+                        executedAt: new Date(),
+                    }
+                });
+                console.log(`[Worker] 🧪 DRY_RUN enabled. Skipped execution.`);
+                continue;
+            }
+
             // 3. Execute
             let result;
             try {
@@ -604,7 +690,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     side: copySide,
                     amount: copySizeUsdc,
-                    price: price,
+                    price: marketPrice,
                     slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
                     maxSlippage: config.maxSlippage,
                     slippageMode: config.slippageType as 'FIXED' | 'AUTO',
@@ -630,14 +716,14 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 console.log(`[Worker] ✅ Execution Success! Tx: ${result.transactionHashes?.[0]}`);
                 // 5. Update Position
                 try {
-                    const sharesBought = copySizeUsdc / price;
+                    const sharesBought = copySizeUsdc / marketPrice;
                     if (copySide === 'BUY') {
                         await positionService.recordBuy({
                             walletAddress: config.walletAddress,
                             tokenId: tokenId,
                             side: 'BUY',
                             amount: sharesBought,
-                            price: price,
+                            price: marketPrice,
                             totalValue: copySizeUsdc
                         });
                         console.log(`[Worker] 📊 Position updated +${sharesBought.toFixed(2)}`);
@@ -647,7 +733,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                             tokenId: tokenId,
                             side: 'SELL',
                             amount: sharesBought,
-                            price: price,
+                            price: marketPrice,
                             totalValue: copySizeUsdc
                         });
                         console.log(`[Worker] 📊 Position updated -${sharesBought.toFixed(2)}`);
