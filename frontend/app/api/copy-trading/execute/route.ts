@@ -12,7 +12,7 @@ import { GuardrailService } from '@/lib/services/guardrail-service';
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
+const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 
 // Imports for Proxy Execution
 import { ethers } from 'ethers';

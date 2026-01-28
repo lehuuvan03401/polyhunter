@@ -23,6 +23,7 @@
  * - ENABLE_REAL_TRADING: Master switch for real execution (default: false)
  * - COPY_TRADING_DAILY_CAP_USD: Global daily cap for real execution (optional)
  * - COPY_TRADING_WALLET_DAILY_CAP_USD: Per-wallet daily cap for real execution (optional)
+ * - COPY_TRADING_RPC_URL: RPC URL for copy-trading execution (optional)
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  */
@@ -46,6 +47,7 @@ const API_BASE_URL = process.env.COPY_TRADING_API_URL || 'http://localhost:3000'
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
+const EXECUTION_RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
@@ -616,6 +618,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         idempotencyKey,
                         originalTrader: traderAddr,
                         originalSide: copySide,
+                        leaderSide: trade.side,
                         originalSize: tradeShares,
                         originalPrice: trade.price,
                         marketSlug: trade.marketSlug || null,
@@ -1270,6 +1273,7 @@ async function start(): Promise<void> {
     console.log(`   Trading Key: ${TRADING_PRIVATE_KEY ? 'Configured ✅' : 'Not configured ⚠️'}`);
     console.log(`   Real Trading: ${ENABLE_REAL_TRADING ? 'Enabled ✅' : 'Disabled ⛔'}`);
     console.log(`   Chain ID: ${CHAIN_ID}`);
+    console.log(`   Execution RPC: ${EXECUTION_RPC_URL}`);
 
     // Initialize Prisma dynamically
     try {
@@ -1294,7 +1298,7 @@ async function start(): Promise<void> {
             await tradingService.initialize();
 
             // Initialize Execution Service
-            const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+            const provider = new ethers.providers.JsonRpcProvider(EXECUTION_RPC_URL);
             const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
             executionSigner = signer;
             executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);

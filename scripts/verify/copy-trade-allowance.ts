@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, ERC20_ABI, CTF_ABI, USDC_DECIMALS } from '../../src/core/contracts.js';
 
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
+const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137', 10);
 const PROXY_ADDRESS = process.env.VERIFY_PROXY_ADDRESS;
 const TOKEN_ID = process.env.VERIFY_TOKEN_ID || '';

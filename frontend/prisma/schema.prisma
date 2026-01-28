@@ -311,6 +311,7 @@ model CopyTrade {
   // Original trade info
   originalTrader String
   originalSide   String // 'BUY' | 'SELL'
+  leaderSide     String? // Leader's original side (for COUNTER mode auditing)
   originalSize   Float
   originalPrice  Float
   marketSlug     String?

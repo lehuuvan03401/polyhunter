@@ -204,6 +204,7 @@ export async function POST(request: NextRequest) {
                                 configId: config.id,
                                 originalTrader: traderAddress,
                                 originalSide: copySide, // Use potentially flipped side for COUNTER
+                                leaderSide: trade.side,
                                 originalSize: tradeShares,
                                 originalPrice: trade.price,
                                 marketSlug: trade.slug || null,
