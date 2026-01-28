@@ -4,7 +4,7 @@ import { GammaMarket } from '@catalyst-team/poly-sdk';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Wallet, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { toast } from 'sonner';
 
 interface MarketTradingProps {
@@ -12,7 +12,7 @@ interface MarketTradingProps {
 }
 
 export function MarketTrading({ market }: MarketTradingProps) {
-    const { authenticated, login, user } = usePrivy();
+    const { authenticated, login, user } = usePrivyLogin();
     const [side, setSide] = useState<'buy' | 'sell'>('buy');
     const [outcome, setOutcome] = useState<'yes' | 'no'>('yes');
     const [amount, setAmount] = useState('');
@@ -225,4 +225,3 @@ export function MarketTrading({ market }: MarketTradingProps) {
         </div>
     );
 }
-

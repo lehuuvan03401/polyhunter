@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Check, Zap, Crown, Rocket, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
 import { polyClient } from '@/lib/polymarket';
 
@@ -22,7 +22,7 @@ function SignalBars({ level }: { level: 1 | 2 | 3 }) {
 // --- Main Page Component ---
 
 export default function PricingPage() {
-    const { authenticated } = usePrivy();
+    const { authenticated } = usePrivyLogin();
 
     if (authenticated) {
         return <AuthenticatedPricing />;
@@ -34,7 +34,7 @@ export default function PricingPage() {
 // --- Authenticated View ---
 
 function AuthenticatedPricing() {
-    const { user } = usePrivy();
+    const { user } = usePrivyLogin();
     const [userVolume, setUserVolume] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -294,7 +294,7 @@ function AuthenticatedPricing() {
 // --- Public View (Original) ---
 
 function PublicPricing() {
-    const { login } = usePrivy();
+    const { login } = usePrivyLogin();
 
     return (
         <div className="flex flex-col min-h-screen">

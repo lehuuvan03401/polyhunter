@@ -4,7 +4,7 @@ import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import Link from 'next/link';
 import { AlertCircle, RefreshCcw, Wallet } from 'lucide-react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { TableSkeleton } from './table-skeleton';
@@ -31,7 +31,7 @@ interface SmartMoneyTableProps {
 }
 
 export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTableProps) {
-    const { authenticated, login, ready } = usePrivy();
+    const { authenticated, login, ready } = usePrivyLogin();
     const [data, setData] = useState<SmartMoneyWallet[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);

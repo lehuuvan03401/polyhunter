@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { ProxyWalletCard } from '@/components/proxy/proxy-wallet-card';
 import { SmartMoneyTable } from '@/components/smart-money/smart-money-table';
 import { RisingStarsTable } from '@/components/smart-money/rising-stars-table';
@@ -11,7 +11,7 @@ import { Shield, Users, TrendingUp, Lock, ArrowRight, Crown, Star } from 'lucide
 type Tab = 'performers' | 'rising';
 
 export function SmartMoneyPage() {
-    const { authenticated, ready, login } = usePrivy();
+    const { authenticated, ready, login } = usePrivyLogin();
     const [page, setPage] = useState(1);
     const [activeTab, setActiveTab] = useState<Tab>('performers');
 
@@ -194,4 +194,3 @@ export function SmartMoneyPage() {
 }
 
 export default SmartMoneyPage;
-

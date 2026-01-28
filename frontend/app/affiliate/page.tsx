@@ -80,7 +80,7 @@ const TESTIMONIALS = [
 
 {/* CTA (Existing) */ }
 import { cn } from '@/lib/utils';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink, type Payout } from '@/lib/affiliate-api';
@@ -90,7 +90,7 @@ import { TeamSummaryView } from '@/components/affiliate/team-summary-view';
 import { WithdrawDialog } from '@/components/affiliate/withdraw-dialog';
 
 export default function AffiliatePage() {
-    const { authenticated, user, ready } = usePrivy();
+    const { authenticated, user, ready } = usePrivyLogin();
 
     if (!ready) {
         return (
@@ -747,7 +747,7 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
 
 // --- Guest Landing View ---
 function GuestView() {
-    const { login } = usePrivy();
+    const { login } = usePrivyLogin();
 
     const BENEFITS = [
         { icon: <Coins className="h-10 w-10" />, title: 'Commission', desc: 'Earn a share of platform fees from trades' },
@@ -1063,5 +1063,4 @@ function TeamNetworkSection({ walletAddress }: { walletAddress: string }) {
         </div>
     );
 }
-
 

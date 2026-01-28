@@ -7,10 +7,10 @@ import { Suspense, useEffect, useState } from 'react';
 import { LeaderboardSection } from '@/components/home/leaderboard-section';
 import { LeaderboardSkeleton } from '@/components/home/leaderboard-skeleton';
 import { ImportTraderSection } from '@/components/home/import-trader-section';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 
 export function Home() {
-  const { authenticated, ready, login } = usePrivy();
+  const { authenticated, ready, login } = usePrivyLogin();
   const [homeStats, setHomeStats] = useState<{ traderCount: number | null; totalVolume: number | null }>({
     traderCount: null,
     totalVolume: null

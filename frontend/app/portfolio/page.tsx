@@ -1,6 +1,6 @@
 'use client';
 
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { polyClient } from '@/lib/polymarket';
 import {
     Wallet,
@@ -39,7 +39,7 @@ const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export default function PortfolioPage() {
-    const { user, authenticated, ready, login } = usePrivy();
+    const { user, authenticated, ready, login } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
     const [totalPnL, setTotalPnL] = useState(0);
     const [positions, setPositions] = useState<any[]>([]);

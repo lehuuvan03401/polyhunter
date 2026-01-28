@@ -2,12 +2,12 @@
 
 import { MarketsList } from '@/components/markets-list';
 import { GammaMarket } from '@catalyst-team/poly-sdk';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
 import { Lock, TrendingUp, BarChart3, Search } from 'lucide-react';
 
 export function MarketsPage() {
-    const { authenticated, ready, login } = usePrivy();
+    const { authenticated, ready, login } = usePrivyLogin();
     const [markets, setMarkets] = useState<GammaMarket[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 

@@ -14,12 +14,12 @@ const navItems = [
     { name: 'Portfolio', href: '/portfolio', icon: Wallet },
 ];
 
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 import { UserMenu } from './user-menu';
 
 export function Navbar() {
     const pathname = usePathname();
-    const { login, authenticated, user, logout, ready } = usePrivy();
+    const { login, authenticated, user, logout, ready } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = React.useState<number | null>(null);
 
     // Fetch USDC balance when authenticated

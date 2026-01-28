@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Loader2, Info, TrendingUp, Star } from 'lucide-react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivyLogin } from '@/lib/privy-login';
 
 interface RisingStar {
     address: string;
@@ -43,7 +43,7 @@ interface RisingStarsTableProps {
 }
 
 export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingStarsTableProps) {
-    const { authenticated, login } = usePrivy();
+    const { authenticated, login } = usePrivyLogin();
     const [traders, setTraders] = useState<RisingStar[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
