@@ -568,8 +568,8 @@ export class RealtimeServiceV2 extends EventEmitter {
 
     // Build filter object with snake_case keys (as expected by the server)
     // Only include filters if we have actual filter values
-    const hasFilter = filter.eventSlug || filter.marketSlug;
-    const filterObj: Record<string, string> = {};
+    const hasFilter = filter.eventSlug || filter.marketSlug || filter.traderAddress || (filter.traderAddresses && filter.traderAddresses.length > 0);
+    const filterObj: Record<string, string | string[]> = {};
     if (filter.eventSlug) filterObj.event_slug = filter.eventSlug;
     if (filter.marketSlug) filterObj.market_slug = filter.marketSlug;
     if (filter.traderAddress) filterObj.trader_address = filter.traderAddress;

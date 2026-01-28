@@ -327,6 +327,13 @@ function OrderRow({
 }) {
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
+    const leaderShares = order.leaderSize ?? 0;
+    const leaderNotional = order.leaderPrice && leaderShares
+        ? leaderShares * order.leaderPrice
+        : null;
+    const copyNotional = order.size;
+    const copyShares = order.price ? (copyNotional / order.price) : 0;
+    const copyRatio = leaderShares > 0 ? (copyShares / leaderShares) : null;
 
     return (
         <div className="border-b border-border/30 last:border-b-0">
@@ -368,7 +375,10 @@ function OrderRow({
                         </span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                        <span title="Leader Size vs My Size" className="font-mono">L: ${order.leaderSize?.toFixed(2) ?? '-'} • My: ${order.size.toFixed(2)}</span>
+                        <span title="Leader vs My Size (shares)" className="font-mono">
+                            L: {leaderShares ? leaderShares.toFixed(2) : '-'} sh • My: {copyShares.toFixed(2)} sh
+                            {copyRatio !== null ? ` (${copyRatio.toFixed(2)}x)` : ''}
+                        </span>
                         {order.leaderTxHash && (
                             <a
                                 href={`https://polygonscan.com/tx/${order.leaderTxHash}`}
@@ -473,7 +483,13 @@ function OrderRow({
                             />
                             <DetailItem
                                 label="Leader Size"
-                                value={`$${order.leaderSize?.toFixed(2) ?? 'N/A'}`}
+                                value={`${leaderShares ? leaderShares.toFixed(2) : 'N/A'} sh`}
+                                subValue={leaderNotional !== null ? `$${leaderNotional.toFixed(2)}` : undefined}
+                            />
+                            <DetailItem
+                                label="My Size"
+                                value={`${copyShares.toFixed(2)} sh`}
+                                subValue={`$${copyNotional.toFixed(2)}`}
                             />
                             {order.leaderTxHash && (
                                 <div className="col-span-2 sm:col-span-1">

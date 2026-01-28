@@ -12,7 +12,9 @@
  * npx tsx scripts/simulate-copy-trading.ts
  */
 
-import 'dotenv/config';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -24,10 +26,14 @@ import { createUnifiedCache } from '../../src/core/unified-cache';
 import { getStrategyConfig, StrategyProfile } from '../../src/config/strategy-profiles';
 import { normalizeTradeSizing } from '../../src/utils/trade-sizing.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-const SIMULATION_DURATION_MS = 120 * 60 * 1000; // 2 hours
+const SIMULATION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '1'); // Ignored (using Leader Size)
 const SIMULATED_PROFILE = StrategyProfile.CONSERVATIVE; // Test CONSERVATIVE profile
@@ -37,6 +43,7 @@ const strategy = getStrategyConfig(SIMULATED_PROFILE);
 // 0.005 * 10000 = 50 BPS.
 const SLIPPAGE_BPS = strategy.maxSlippage * 10000;
 const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + overhead)
+const COPY_MODE = (process.env.SIM_COPY_MODE || 'LEADER_SHARES').toUpperCase();
 
 // No validation needed - using local dev.db
 
@@ -48,11 +55,10 @@ console.log(`Follower Wallet: ${FOLLOWER_WALLET}`);
 console.log(`Duration: ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes`);
 console.log(`Fixed Copy Amount: $${FIXED_COPY_AMOUNT}`);
 console.log(`Stategy Profile: ${SIMULATED_PROFILE} (Slippage: ${strategy.maxSlippage * 100}%)`);
+console.log(`Copy Mode: ${COPY_MODE}`);
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 // --- PRISMA ---
-import path from 'path';
-
 console.log('DEBUG: DATABASE_URL loaded:', process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':****@'));
 const connectionString = `${process.env.DATABASE_URL}`;
 const pool = new Pool({ connectionString });
@@ -85,6 +91,7 @@ let totalBuyVolume = 0;
 let totalSellVolume = 0;
 let realizedPnL = 0;
 const startTime = Date.now();
+const seenTrades = new Set<string>();
 
 // --- SEED CONFIG ---
 async function seedConfig() {
@@ -367,31 +374,47 @@ async function recordCopyTrade(
     execPrice: number,
     originalShares: number,
     pnl?: number
-) {
+): Promise<boolean> {
     try {
         // Enrich trade metadata if missing
         const enriched = await enrichTradeMetadata(trade);
 
-        await prisma.copyTrade.create({
-            data: {
-                configId: configId,
-                originalTrader: trade.trader?.address || '',
-                originalSide: trade.side,
-                originalSize: originalShares,
-                originalPrice: trade.price,
-                tokenId: trade.asset,
-                conditionId: enriched.conditionId,
-                marketSlug: enriched.marketSlug,
-                outcome: enriched.outcome,
-                copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
-                copyPrice: execPrice,
-                status: 'EXECUTED',
-                txHash: `SIM-${trade.transactionHash}`,
-                originalTxHash: trade.transactionHash,
-                executedAt: new Date(),
-                realizedPnL: pnl,
-            }
-        });
+        const baseData = {
+            configId: configId,
+            originalTrader: trade.trader?.address || '',
+            originalSide: trade.side,
+            originalSize: originalShares,
+            originalPrice: trade.price,
+            tokenId: trade.asset,
+            conditionId: enriched.conditionId,
+            marketSlug: enriched.marketSlug,
+            outcome: enriched.outcome,
+            copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
+            copyPrice: execPrice,
+            status: 'EXECUTED',
+            txHash: trade.transactionHash ? `SIM-${trade.transactionHash}` : `SIM-${Date.now()}`,
+            originalTxHash: trade.transactionHash || null,
+            executedAt: new Date(),
+            realizedPnL: pnl,
+        };
+
+        if (trade.transactionHash) {
+            await prisma.copyTrade.upsert({
+                where: {
+                    configId_originalTxHash: {
+                        configId: configId,
+                        originalTxHash: trade.transactionHash,
+                    }
+                },
+                create: baseData,
+                update: {
+                    ...baseData,
+                    detectedAt: new Date(),
+                }
+            });
+        } else {
+            await prisma.copyTrade.create({ data: baseData });
+        }
 
         // Update or create position in DB
         const tokenId = trade.asset;
@@ -421,8 +444,14 @@ async function recordCopyTrade(
         }
 
         tradesRecorded++;
-    } catch (err) {
+        return true;
+    } catch (err: any) {
+        if (err?.code === 'P2002') {
+            console.log('   ⏭️  Duplicate trade detected, skipping record.');
+            return false;
+        }
         console.error('   ❌ Failed to record trade:', err);
+        return false;
     }
 }
 
@@ -440,7 +469,7 @@ async function handleTrade(trade: ActivityTrade) {
     // }
 
     // Safety Filter: Exclude outdated/political keywords to ensure realism
-    const lowerSlug = trade.marketSlug.toLowerCase();
+    const lowerSlug = (trade.marketSlug || '').toLowerCase();
     // if (lowerSlug.includes('biden') || lowerSlug.includes('trump') || lowerSlug.includes('election') || lowerSlug.includes('coronavirus')) {
     //     console.log(`[DEBUG] ⏭️  Skipped Outdated/Political: ${trade.marketSlug}`);
     //     return;
@@ -453,6 +482,25 @@ async function handleTrade(trade: ActivityTrade) {
     if (!trade.conditionId && !trade.marketSlug) {
         console.log(`\n⏭️  SKIPPED (no metadata): tokenId ${trade.asset.slice(0, 20)}...`);
         return;
+    }
+
+    const dedupeKey = trade.transactionHash ? `${configId}:${trade.transactionHash}` : null;
+    if (dedupeKey && seenTrades.has(dedupeKey)) {
+        return;
+    }
+    if (dedupeKey) {
+        const existing = await prisma.copyTrade.findUnique({
+            where: {
+                configId_originalTxHash: {
+                    configId,
+                    originalTxHash: trade.transactionHash!,
+                }
+            }
+        });
+        if (existing) {
+            seenTrades.add(dedupeKey);
+            return;
+        }
     }
 
     const now = new Date();
@@ -472,17 +520,23 @@ async function handleTrade(trade: ActivityTrade) {
 
     const { tradeShares, tradeNotional } = normalizeTradeSizing(activeConfig, trade.size, trade.price);
 
-    let copyAmount = calculateCopySize(activeConfig, tradeShares, trade.price);
-    if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
-        console.log(`\n⏭️  SKIPPED (invalid copy size): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
-        return;
-    }
-
     // APPLY SLIPPAGE MODEL
     const slipFactor = trade.side === 'BUY' ? (1 + SLIPPAGE_BPS / 10000) : (1 - SLIPPAGE_BPS / 10000);
     const execPrice = trade.price * slipFactor;
 
-    let copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
+    let copyShares = 0;
+    let copyAmount = 0;
+    if (COPY_MODE === 'LEADER_SHARES') {
+        copyShares = tradeShares;
+        copyAmount = copyShares * execPrice;
+    } else {
+        copyAmount = calculateCopySize(activeConfig, tradeShares, trade.price);
+        if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
+            console.log(`\n⏭️  SKIPPED (invalid copy size): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+            return;
+        }
+        copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
+    }
 
     // 🔥 CRITICAL: Skip SELL trades if we don't have a position
     // In real copy trading, we only sell what we've bought
@@ -499,19 +553,11 @@ async function handleTrade(trade: ActivityTrade) {
         }
     }
 
-    console.log('\n🎯 ═══════════════════════════════════════════════════════════');
-    console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded + 1})`);
-    console.log('   ───────────────────────────────────────────────────────────');
-    console.log(`   ⏰ ${now.toISOString()}`);
-    console.log(`   📊 Leader: ${tradeShares.toFixed(2)} shares ($${tradeNotional.toFixed(2)})`);
-    console.log(`   📊 Copy:   ${trade.side} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
-    console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
-    console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
-    console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
-    console.log(`   🔗 TX: ${trade.transactionHash?.substring(0, 30)}...`);
-
     // Process trade
     let tradePnL: number | undefined = undefined;
+    let positionLine: string | null = null;
+    let pnlLine: string | null = null;
+    let remainingLine: string | null = null;
 
     if (trade.side === 'BUY') {
         const enriched = await enrichTradeMetadata(trade);
@@ -523,7 +569,7 @@ async function handleTrade(trade: ActivityTrade) {
         totalBuyVolume += copyAmount;
 
         const pos = positions.get(trade.asset)!;
-        console.log(`   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`);
+        positionLine = `   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`;
     } else {
         const pnl = updatePositionOnSell(trade.asset, copyShares, execPrice);
         tradePnL = pnl;
@@ -540,16 +586,36 @@ async function handleTrade(trade: ActivityTrade) {
         // Let's just log Gross vs Net for this specific trade action?
         // Actually, let's track Total Fees separately to deduct at end.
 
-        console.log(`   💰 Gross P&L: $${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}`);
-        console.log(`   💼 Remaining: ${remaining} shares`);
+        pnlLine = `   💰 Gross P&L: $${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}`;
+        remainingLine = `   💼 Remaining: ${remaining} shares`;
     }
-
-    console.log('   ═══════════════════════════════════════════════════════════\n');
 
     // Record to database
     // We record the EXECUTION price (simulated)
     // Pass the trade-specific PnL (calculated above for sells)
-    await recordCopyTrade(trade, copyAmount, execPrice, tradeShares, tradePnL);
+    const recorded = await recordCopyTrade(trade, copyAmount, execPrice, tradeShares, tradePnL);
+    if (!recorded) {
+        return;
+    }
+
+    if (dedupeKey) {
+        seenTrades.add(dedupeKey);
+    }
+
+    console.log('\n🎯 ═══════════════════════════════════════════════════════════');
+    console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded})`);
+    console.log('   ───────────────────────────────────────────────────────────');
+    console.log(`   ⏰ ${now.toISOString()}`);
+    console.log(`   📊 Leader: ${tradeShares.toFixed(2)} shares ($${tradeNotional.toFixed(2)})`);
+    console.log(`   📊 Copy:   ${trade.side} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
+    console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
+    console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
+    console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
+    console.log(`   🔗 TX: ${trade.transactionHash?.substring(0, 30)}...`);
+    if (positionLine) console.log(positionLine);
+    if (pnlLine) console.log(pnlLine);
+    if (remainingLine) console.log(remainingLine);
+    console.log('   ═══════════════════════════════════════════════════════════\n');
 }
 
 // --- SETTLEMENT HANDLER ---
@@ -838,7 +904,7 @@ async function processRedemptions() {
                                     copySize: 0, // Proceeds at $0
                                     copyPrice: execPrice,
                                     originalTrader: 'PROTOCOL',
-                                    originalSize: 0,
+                                    originalSize: pos.balance,
                                     originalPrice: 0.0,
                                     status: 'EXECUTED',
                                     executedAt: new Date(),

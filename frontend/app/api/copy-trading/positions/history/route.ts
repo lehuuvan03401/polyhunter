@@ -97,6 +97,36 @@ export async function GET(request: Request) {
             take: 50 // Limit to recent 50
         });
 
+        const lossTradesNeedingFallback = trades.filter((t) => {
+            const isLoss = (t.originalTrader === 'POLYMARKET_SETTLEMENT' || t.originalTrader === 'PROTOCOL')
+                ? t.originalPrice === 0
+                : (t.originalSide === 'SELL' && (t.txHash || '').includes('loss'));
+            return isLoss && (!t.originalSize || t.originalSize <= 0) && !!t.realizedPnL;
+        });
+
+        const fallbackPriceMap = new Map<string, number>();
+        await Promise.all(lossTradesNeedingFallback.map(async (t) => {
+            if (!t.tokenId || !t.configId || !t.executedAt) return;
+            const key = `${t.configId}:${t.tokenId}:${t.executedAt.getTime()}`;
+            if (fallbackPriceMap.has(key)) return;
+
+            const lastBuy = await prisma.copyTrade.findFirst({
+                where: {
+                    configId: t.configId,
+                    tokenId: t.tokenId,
+                    originalSide: 'BUY',
+                    executedAt: { lte: t.executedAt }
+                },
+                orderBy: { executedAt: 'desc' },
+                select: { copyPrice: true, originalPrice: true }
+            });
+
+            const price = lastBuy?.copyPrice ?? lastBuy?.originalPrice ?? 0;
+            if (price > 0) {
+                fallbackPriceMap.set(key, price);
+            }
+        }));
+
         // Map to Position interface structure for UI compatibility
         const positions = trades.map(t => {
             const unitPrice = t.copyPrice ?? t.originalPrice ?? 0;
@@ -106,6 +136,13 @@ export async function GET(request: Request) {
             let sizeShares = unitPrice > 0 ? (proceeds / unitPrice) : 0;
             if (sizeShares <= 0 && (t.originalSize || 0) > 0) {
                 sizeShares = t.originalSize;
+            }
+            if (sizeShares <= 0 && pnlAbs < 0 && t.tokenId && t.executedAt) {
+                const fallbackKey = `${t.configId}:${t.tokenId}:${t.executedAt.getTime()}`;
+                const fallbackPrice = fallbackPriceMap.get(fallbackKey);
+                if (fallbackPrice && fallbackPrice > 0) {
+                    sizeShares = Math.abs(pnlAbs) / fallbackPrice;
+                }
             }
 
             return ({

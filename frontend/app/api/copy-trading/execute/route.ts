@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 
 // Trading configuration from environment (Restored)
@@ -26,6 +26,35 @@ const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_
 // Imports for Proxy Execution
 import { ethers } from 'ethers';
 import { PROXY_FACTORY_ABI, POLY_HUNTER_PROXY_ABI, ERC20_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '@/lib/contracts/abis';
+
+const CTF_APPROVAL_ABI = [
+    'function isApprovedForAll(address account, address operator) external view returns (bool)',
+];
+
+interface AllowanceCheckResult {
+    allowed: boolean;
+    reason?: string;
+    allowance?: number;
+}
+
+interface ExecutionServiceWithAllowance {
+    resolveProxyAddress: (walletAddress: string) => Promise<string | null>;
+    executeOrderWithProxy: (params: any) => Promise<any>;
+    checkProxyAllowance?: (params: {
+        proxyAddress: string;
+        side: 'BUY' | 'SELL';
+        tokenId: string;
+        amount: number;
+        signer?: ethers.Signer;
+    }) => Promise<AllowanceCheckResult>;
+}
+
+const getChainAddresses = () => {
+    if (CHAIN_ID === 137) return CONTRACT_ADDRESSES.polygon;
+    if (CHAIN_ID === 80001 || CHAIN_ID === 80002) return CONTRACT_ADDRESSES.amoy;
+    if (CHAIN_ID === 31337 || CHAIN_ID === 1337) return CONTRACT_ADDRESSES.localhost;
+    return CONTRACT_ADDRESSES.polygon;
+};
 
 // Helper to get provider and signer
 const getWorkerKey = (): { privateKey: string; index: number; total: number } | null => {
@@ -70,10 +99,40 @@ async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
  * Get USDC balance of a Proxy wallet
  */
 async function getProxyUsdcBalance(proxyAddress: string, signer: ethers.Wallet): Promise<number> {
-    const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+    const addresses = getChainAddresses();
     const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, signer);
     const balance = await usdc.balanceOf(proxyAddress);
     return Number(balance) / (10 ** USDC_DECIMALS);
+}
+
+async function checkProxyAllowanceFallback(params: {
+    proxyAddress: string;
+    side: 'BUY' | 'SELL';
+    amount: number;
+    signer: ethers.Signer;
+}): Promise<AllowanceCheckResult> {
+    const addresses = getChainAddresses();
+    if (!addresses.executor) return { allowed: false, reason: 'EXECUTOR_NOT_CONFIGURED' };
+
+    if (params.side === 'BUY') {
+        if (!addresses.usdc) return { allowed: false, reason: 'USDC_ADDRESS_NOT_CONFIGURED' };
+        const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, params.signer);
+        const allowanceRaw = await usdc.allowance(params.proxyAddress, addresses.executor);
+        const allowance = Number(allowanceRaw) / (10 ** USDC_DECIMALS);
+        if (allowance <= 0 || allowance < params.amount) {
+            return { allowed: false, reason: 'ALLOWANCE_MISSING_USDC', allowance };
+        }
+        return { allowed: true, allowance };
+    }
+
+    const ctfAddress = addresses.ctfContract || CONTRACT_ADDRESSES.polygon.ctfContract;
+    if (!ctfAddress) return { allowed: false, reason: 'CTF_ADDRESS_NOT_CONFIGURED' };
+    const ctf = new ethers.Contract(ctfAddress, CTF_APPROVAL_ABI, params.signer);
+    const approved = await ctf.isApprovedForAll(params.proxyAddress, addresses.executor);
+    if (!approved) {
+        return { allowed: false, reason: 'ALLOWANCE_MISSING_CTF' };
+    }
+    return { allowed: true };
 }
 
 /**
@@ -283,7 +342,7 @@ export async function POST(request: NextRequest) {
                 // Initialize Execution Service
                 const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
                 const signer = new ethers.Wallet(workerSelection.privateKey, provider);
-                const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
+                const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID) as ExecutionServiceWithAllowance;
                 const workerAddress = await signer.getAddress();
 
                 const proxyAddress = await executionService.resolveProxyAddress(walletAddress);
@@ -294,13 +353,20 @@ export async function POST(request: NextRequest) {
                     }, { status: 400 });
                 }
 
-                const allowanceCheck = await executionService.checkProxyAllowance({
+                const allowanceCheck = executionService.checkProxyAllowance
+                    ? await executionService.checkProxyAllowance({
                     proxyAddress,
                     side: trade.originalSide as 'BUY' | 'SELL',
                     tokenId: trade.tokenId,
                     amount: trade.copySize,
                     signer,
-                });
+                })
+                    : await checkProxyAllowanceFallback({
+                        proxyAddress,
+                        side: trade.originalSide as 'BUY' | 'SELL',
+                        amount: trade.copySize,
+                        signer,
+                    });
                 if (!allowanceCheck.allowed) {
                     await prisma.copyTrade.update({
                         where: { id: trade.id },
@@ -412,6 +478,13 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
     try {
+        if (!isDatabaseEnabled) {
+            return NextResponse.json({
+                pendingTrades: [],
+                warning: 'Database not configured',
+            });
+        }
+
         const { searchParams } = new URL(request.url);
         const walletAddress = searchParams.get('wallet');
 
