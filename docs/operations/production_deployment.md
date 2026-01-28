@@ -192,6 +192,23 @@ DATABASE_URL="postgresql://user:password@db-host:5432/polyhunter?schema=public"
 NEXTAUTH_SECRET="请生成一个复杂的随机字符串"
 ```
 
+### Copy Trading 执行相关（可选但建议配置）
+
+完整清单见 `frontend/.env.example`。生产环境常用项：
+
+- `ENABLE_REAL_TRADING=true`
+- `COPY_TRADING_RPC_URLS`（多节点兜底，建议至少 2 个）
+- `COPY_TRADING_EXECUTION_ALLOWLIST`（灰度/风控时使用）
+- `COPY_TRADING_MAX_TRADE_USD`
+- `COPY_TRADING_DAILY_CAP_USD` / `COPY_TRADING_WALLET_DAILY_CAP_USD`
+- `COPY_TRADING_WORKER_KEYS` / `COPY_TRADING_WORKER_INDEX`
+- `COPY_TRADING_MAX_RETRY_ATTEMPTS`
+
+上线前建议执行就绪检查：
+```
+npx tsx scripts/verify/copy-trading-readiness.ts
+```
+
 ---
 
 ## 3. 部署流程 (Deployment Sequence)

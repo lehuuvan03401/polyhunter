@@ -815,3 +815,17 @@ import type {
 ## License
 
 MIT
+
+---
+
+## Copy Trading Environment Variables (Core)
+
+Full list lives in `frontend/.env.example`. Common execution variables:
+
+- `ENABLE_REAL_TRADING`
+- `COPY_TRADING_RPC_URL` / `COPY_TRADING_RPC_URLS`
+- `COPY_TRADING_EXECUTION_ALLOWLIST`
+- `COPY_TRADING_MAX_TRADE_USD`
+- `COPY_TRADING_DAILY_CAP_USD` / `COPY_TRADING_WALLET_DAILY_CAP_USD`
+- `COPY_TRADING_WORKER_KEYS` / `COPY_TRADING_WORKER_INDEX`
+- `COPY_TRADING_MAX_RETRY_ATTEMPTS`

@@ -117,6 +117,43 @@ async function main() {
         console.log(`✅ Funds OK`);
     }
 
+    // 5. Check Allowances (Critical)
+    console.log(`\n🔐 Checking Allowances...`);
+    const usdcCheck = await executionService.checkProxyAllowance({
+        proxyAddress,
+        side: 'BUY',
+        tokenId: "0", // Invalid Token ID, but checkProxyAllowance only needs it for conditional tokens? No, for BUY it checks USDC.
+        amount: 1000000, // 1000k Check
+        signer: wallet
+    });
+
+    if (!usdcCheck.allowed) {
+        console.warn(`⚠️  USDC Allowance Missing or Low! (${usdcCheck.reason})`);
+        console.warn(`   You MUST approve the Exchange to spend your Proxy's USDC.`);
+        const approve = await question("   Attempt Auto-Approve USDC? (y/n): ");
+        if (approve.toLowerCase() === 'y') {
+            console.log("   (Auto-Approve logic would go here - for now, please use Dashboard)");
+            // TODO: Implement auto-approve call if needed, or just warn.
+        }
+    } else {
+        console.log(`✅ USDC Approved (Allowance: ${usdcCheck.allowance})`);
+    }
+
+    const ctfCheck = await executionService.checkProxyAllowance({
+        proxyAddress,
+        side: 'SELL',
+        tokenId: "0", // CTF check usually checks "setApprovalForAll" which ignores token ID
+        amount: 0,
+        signer: wallet
+    });
+
+    if (!ctfCheck.allowed) {
+        console.warn(`⚠️  CTF Allowance Missing! (${ctfCheck.reason})`);
+        console.warn(`   You MUST approve the Exchange to spend your Conditional Tokens.`);
+    } else {
+        console.log(`✅ CTF Approved`);
+    }
+
     // 5. Config Setup
     console.log(`\n⚙️  Setting up Safe Configuration...`);
     let targetTrader = await question("🎯 Enter Target Trader Address to Copy (or press Enter for default): ");
