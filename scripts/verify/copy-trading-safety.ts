@@ -6,6 +6,11 @@ const prisma = new PrismaClient();
 const IDEMPOTENCY_BUCKET_MS = parseInt(process.env.COPY_TRADING_IDEMPOTENCY_BUCKET_MS || '5000', 10);
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
+const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
+    .split(',')
+    .map((addr) => addr.trim().toLowerCase())
+    .filter(Boolean);
+const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
 
 function normalizeNumber(value: number, decimals: number = 6): string {
     if (!Number.isFinite(value)) return '0';
@@ -97,6 +102,17 @@ async function main() {
     }
 
     if (amountUsd > 0) {
+        if (EXECUTION_ALLOWLIST.length > 0) {
+            const normalized = walletAddress.toLowerCase();
+            const allowed = EXECUTION_ALLOWLIST.includes(normalized);
+            console.log(`Allowlist check: ${allowed ? 'allowed' : 'blocked'} (${normalized || 'missing wallet'})`);
+        }
+
+        if (MAX_TRADE_USD > 0) {
+            const allowed = amountUsd <= MAX_TRADE_USD;
+            console.log(`Per-trade cap: ${allowed ? 'ok' : 'exceeded'} (${amountUsd.toFixed(2)} / ${MAX_TRADE_USD})`);
+        }
+
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const globalUsed = await getExecutedTotalSince(since);
         console.log(`Global used (24h): ${globalUsed.toFixed(2)} / ${GLOBAL_DAILY_CAP_USD || '∞'}`);

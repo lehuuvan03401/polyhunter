@@ -4,6 +4,11 @@ import { prisma } from '@/lib/prisma';
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
+const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
+    .split(',')
+    .map((addr) => addr.trim().toLowerCase())
+    .filter(Boolean);
+const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
 
 export interface GuardrailResult {
     allowed: boolean;
@@ -43,6 +48,17 @@ export class GuardrailService {
         // 1. Kill Switch
         if (!ENABLE_REAL_TRADING) {
             return { allowed: false, reason: 'REAL_TRADING_DISABLED' };
+        }
+
+        if (EXECUTION_ALLOWLIST.length > 0) {
+            const normalized = walletAddress.toLowerCase();
+            if (!EXECUTION_ALLOWLIST.includes(normalized)) {
+                return { allowed: false, reason: 'ALLOWLIST_BLOCKED' };
+            }
+        }
+
+        if (MAX_TRADE_USD > 0 && amount > MAX_TRADE_USD) {
+            return { allowed: false, reason: `MAX_TRADE_EXCEEDED (${amount.toFixed(2)} > ${MAX_TRADE_USD})` };
         }
 
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours

@@ -25,6 +25,8 @@
  * - COPY_TRADING_WALLET_DAILY_CAP_USD: Per-wallet daily cap for real execution (optional)
  * - COPY_TRADING_RPC_URL: RPC URL for copy-trading execution (optional)
  * - COPY_TRADING_WS_FILTER_BY_ADDRESS: Use address-filtered activity subscription when supported (optional)
+ * - COPY_TRADING_EXECUTION_ALLOWLIST: Comma-separated wallet allowlist for real execution (optional)
+ * - COPY_TRADING_MAX_TRADE_USD: Per-trade max notional cap for real execution (optional)
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  */
@@ -50,6 +52,11 @@ const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
 const EXECUTION_RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 const WS_ADDRESS_FILTER = process.env.COPY_TRADING_WS_FILTER_BY_ADDRESS === 'true';
+const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
+    .split(',')
+    .map((addr) => addr.trim().toLowerCase())
+    .filter(Boolean);
+const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
@@ -320,6 +327,17 @@ async function getExecutedTotalSince(since: Date, walletAddress?: string): Promi
 async function checkExecutionGuardrails(walletAddress: string, amount: number): Promise<{ allowed: boolean; reason?: string }> {
     if (!ENABLE_REAL_TRADING) {
         return { allowed: false, reason: 'REAL_TRADING_DISABLED' };
+    }
+
+    if (EXECUTION_ALLOWLIST.length > 0) {
+        const normalized = walletAddress.toLowerCase();
+        if (!EXECUTION_ALLOWLIST.includes(normalized)) {
+            return { allowed: false, reason: 'ALLOWLIST_BLOCKED' };
+        }
+    }
+
+    if (MAX_TRADE_USD > 0 && amount > MAX_TRADE_USD) {
+        return { allowed: false, reason: `MAX_TRADE_EXCEEDED (${amount.toFixed(2)} > ${MAX_TRADE_USD})` };
     }
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
