@@ -39,7 +39,7 @@ const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export default function PortfolioPage() {
-    const { user, authenticated, ready, login } = usePrivyLogin();
+    const { user, authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
     const [totalPnL, setTotalPnL] = useState(0);
     const [positions, setPositions] = useState<any[]>([]);
@@ -417,9 +417,18 @@ export default function PortfolioPage() {
                 </p>
                 <button
                     onClick={login}
-                    className="mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                    disabled={isLoggingIn}
+                    aria-busy={isLoggingIn}
+                    className="mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                 >
-                    Connect Wallet
+                    {isLoggingIn ? (
+                        <>
+                            Connecting...
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        </>
+                    ) : (
+                        'Connect Wallet'
+                    )}
                 </button>
             </div>
         )

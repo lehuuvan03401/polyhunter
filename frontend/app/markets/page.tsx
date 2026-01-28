@@ -4,10 +4,10 @@ import { MarketsList } from '@/components/markets-list';
 import { GammaMarket } from '@catalyst-team/poly-sdk';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
-import { Lock, TrendingUp, BarChart3, Search } from 'lucide-react';
+import { Lock, TrendingUp, BarChart3, Search, Loader2 } from 'lucide-react';
 
 export function MarketsPage() {
-    const { authenticated, ready, login } = usePrivyLogin();
+    const { authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [markets, setMarkets] = useState<GammaMarket[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -94,9 +94,18 @@ export function MarketsPage() {
 
                         <button
                             onClick={login}
-                            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
+                            disabled={isLoggingIn}
+                            aria-busy={isLoggingIn}
+                            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            Connect Wallet to View Markets
+                            {isLoggingIn ? (
+                                <>
+                                    Connecting...
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                </>
+                            ) : (
+                                <>Connect Wallet to View Markets</>
+                            )}
                         </button>
                     </div>
                 </div>

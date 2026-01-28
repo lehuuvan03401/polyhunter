@@ -43,7 +43,7 @@ interface RisingStarsTableProps {
 }
 
 export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingStarsTableProps) {
-    const { authenticated, login } = usePrivyLogin();
+    const { authenticated, login, isLoggingIn } = usePrivyLogin();
     const [traders, setTraders] = useState<RisingStar[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -203,9 +203,18 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                                 ) : (
                                     <button
                                         onClick={login}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground text-xs font-medium transition-colors"
+                                        disabled={isLoggingIn}
+                                        aria-busy={isLoggingIn}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
-                                        Connect
+                                        {isLoggingIn ? (
+                                            <>
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                Connecting
+                                            </>
+                                        ) : (
+                                            'Connect'
+                                        )}
                                     </button>
                                 )}
                             </td>

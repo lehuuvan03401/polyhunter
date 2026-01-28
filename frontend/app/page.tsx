@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 
-import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck, Lock, TrendingUp, BarChart3 } from 'lucide-react';
+import { ArrowRight, ChevronDown, Trophy, Users, Zap, ShieldCheck, Lock, TrendingUp, BarChart3, Loader2 } from 'lucide-react';
 import { Suspense, useEffect, useState } from 'react';
 import { LeaderboardSection } from '@/components/home/leaderboard-section';
 import { LeaderboardSkeleton } from '@/components/home/leaderboard-skeleton';
@@ -10,7 +10,7 @@ import { ImportTraderSection } from '@/components/home/import-trader-section';
 import { usePrivyLogin } from '@/lib/privy-login';
 
 export function Home() {
-  const { authenticated, ready, login } = usePrivyLogin();
+  const { authenticated, ready, login, isLoggingIn } = usePrivyLogin();
   const [homeStats, setHomeStats] = useState<{ traderCount: number | null; totalVolume: number | null }>({
     traderCount: null,
     totalVolume: null
@@ -155,10 +155,21 @@ export function Home() {
 
               <button
                 onClick={login}
-                className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-semibold transition-colors"
+                disabled={isLoggingIn}
+                aria-busy={isLoggingIn}
+                className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Connect Wallet to View Traders
-                <ArrowRight className="h-4 w-4" />
+                {isLoggingIn ? (
+                  <>
+                    Connecting...
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </>
+                ) : (
+                  <>
+                    Connect Wallet to View Traders
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
             </div>
           )}

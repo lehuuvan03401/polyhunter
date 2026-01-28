@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LineChart, LayoutDashboard, Wallet, Search } from 'lucide-react';
+import { LineChart, LayoutDashboard, Wallet, Search, Loader2 } from 'lucide-react';
 import { ethers } from 'ethers';
 
 const navItems = [
@@ -19,7 +19,7 @@ import { UserMenu } from './user-menu';
 
 export function Navbar() {
     const pathname = usePathname();
-    const { login, authenticated, user, logout, ready } = usePrivyLogin();
+    const { login, authenticated, user, logout, ready, isLoggingIn } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = React.useState<number | null>(null);
 
     // Fetch USDC balance when authenticated
@@ -145,9 +145,18 @@ export function Navbar() {
                     ) : (
                         <button
                             onClick={login}
-                            className="hidden md:flex items-center justify-center rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors border border-white/10"
+                            disabled={isLoggingIn}
+                            aria-busy={isLoggingIn}
+                            className="hidden md:flex items-center justify-center rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors border border-white/10 disabled:opacity-60 disabled:cursor-not-allowed gap-2"
                         >
-                            Log in or sign up
+                            {isLoggingIn ? (
+                                <>
+                                    Connecting
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                </>
+                            ) : (
+                                'Log in or sign up'
+                            )}
                         </button>
                     )}
                 </div>

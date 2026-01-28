@@ -12,7 +12,7 @@ interface MarketTradingProps {
 }
 
 export function MarketTrading({ market }: MarketTradingProps) {
-    const { authenticated, login, user } = usePrivyLogin();
+    const { authenticated, login, user, isLoggingIn } = usePrivyLogin();
     const [side, setSide] = useState<'buy' | 'sell'>('buy');
     const [outcome, setOutcome] = useState<'yes' | 'no'>('yes');
     const [amount, setAmount] = useState('');
@@ -28,6 +28,7 @@ export function MarketTrading({ market }: MarketTradingProps) {
 
     const handleTrade = async () => {
         if (!authenticated) {
+            if (isLoggingIn) return;
             login();
             return;
         }
@@ -186,7 +187,7 @@ export function MarketTrading({ market }: MarketTradingProps) {
             {/* Action Button */}
             <button
                 onClick={handleTrade}
-                disabled={isLoading || (authenticated && (!amount || Number(amount) <= 0))}
+                disabled={isLoading || (authenticated && (!amount || Number(amount) <= 0)) || (!authenticated && isLoggingIn)}
                 className={cn(
                     "w-full rounded-lg py-3 font-semibold text-white shadow-sm transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2",
                     side === 'buy' ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"
@@ -199,8 +200,17 @@ export function MarketTrading({ market }: MarketTradingProps) {
                     </>
                 ) : !authenticated ? (
                     <>
-                        <Wallet className="h-4 w-4" />
-                        Connect Wallet to Trade
+                        {isLoggingIn ? (
+                            <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Connecting...
+                            </>
+                        ) : (
+                            <>
+                                <Wallet className="h-4 w-4" />
+                                Connect Wallet to Trade
+                            </>
+                        )}
                     </>
                 ) : (
                     <>

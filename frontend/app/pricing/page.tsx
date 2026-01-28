@@ -294,7 +294,7 @@ function AuthenticatedPricing() {
 // --- Public View (Original) ---
 
 function PublicPricing() {
-    const { login } = usePrivyLogin();
+    const { login, isLoggingIn } = usePrivyLogin();
 
     return (
         <div className="flex flex-col min-h-screen">
@@ -383,8 +383,20 @@ function PublicPricing() {
                                 </div>
                             </div>
 
-                            <button onClick={login} className="w-full py-3 rounded-lg bg-white/10 border border-white/10 hover:bg-white/20 font-medium transition-colors">
-                                Start Copying
+                            <button
+                                onClick={login}
+                                disabled={isLoggingIn}
+                                aria-busy={isLoggingIn}
+                                className="w-full py-3 rounded-lg bg-white/10 border border-white/10 hover:bg-white/20 font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                            >
+                                {isLoggingIn ? (
+                                    <>
+                                        Connecting...
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    </>
+                                ) : (
+                                    'Start Copying'
+                                )}
                             </button>
                         </div>
 
@@ -418,8 +430,20 @@ function PublicPricing() {
                                 </div>
                             </div>
 
-                            <button onClick={login} className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 font-medium transition-colors text-white">
-                                Start Copying
+                            <button
+                                onClick={login}
+                                disabled={isLoggingIn}
+                                aria-busy={isLoggingIn}
+                                className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 font-medium transition-colors text-white disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                            >
+                                {isLoggingIn ? (
+                                    <>
+                                        Connecting...
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    </>
+                                ) : (
+                                    'Start Copying'
+                                )}
                             </button>
                         </div>
 
@@ -457,8 +481,20 @@ function PublicPricing() {
                                 </div>
                             </div>
 
-                            <button onClick={login} className="w-full py-3 rounded-lg border border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black font-medium transition-all">
-                                Start Copying
+                            <button
+                                onClick={login}
+                                disabled={isLoggingIn}
+                                aria-busy={isLoggingIn}
+                                className="w-full py-3 rounded-lg border border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                            >
+                                {isLoggingIn ? (
+                                    <>
+                                        Connecting...
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    </>
+                                ) : (
+                                    'Start Copying'
+                                )}
                             </button>
                         </div>
                     </div>

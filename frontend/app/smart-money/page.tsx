@@ -6,12 +6,12 @@ import { ProxyWalletCard } from '@/components/proxy/proxy-wallet-card';
 import { SmartMoneyTable } from '@/components/smart-money/smart-money-table';
 import { RisingStarsTable } from '@/components/smart-money/rising-stars-table';
 import { TableSkeleton } from '@/components/smart-money/table-skeleton';
-import { Shield, Users, TrendingUp, Lock, ArrowRight, Crown, Star } from 'lucide-react';
+import { Shield, Users, TrendingUp, Lock, ArrowRight, Crown, Star, Loader2 } from 'lucide-react';
 
 type Tab = 'performers' | 'rising';
 
 export function SmartMoneyPage() {
-    const { authenticated, ready, login } = usePrivyLogin();
+    const { authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [page, setPage] = useState(1);
     const [activeTab, setActiveTab] = useState<Tab>('performers');
 
@@ -78,10 +78,21 @@ export function SmartMoneyPage() {
 
                         <button
                             onClick={login}
-                            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
+                            disabled={isLoggingIn}
+                            aria-busy={isLoggingIn}
+                            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            Connect Wallet to Continue
-                            <ArrowRight className="h-4 w-4" />
+                            {isLoggingIn ? (
+                                <>
+                                    Connecting...
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                </>
+                            ) : (
+                                <>
+                                    Connect Wallet to Continue
+                                    <ArrowRight className="h-4 w-4" />
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>

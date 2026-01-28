@@ -747,7 +747,7 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
 
 // --- Guest Landing View ---
 function GuestView() {
-    const { login } = usePrivyLogin();
+    const { login, isLoggingIn } = usePrivyLogin();
 
     const BENEFITS = [
         { icon: <Coins className="h-10 w-10" />, title: 'Commission', desc: 'Earn a share of platform fees from trades' },
@@ -812,9 +812,18 @@ function GuestView() {
                     <div className="pt-4">
                         <button
                             onClick={login}
-                            className="px-10 py-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/30 active:scale-[0.98]"
+                            disabled={isLoggingIn}
+                            aria-busy={isLoggingIn}
+                            className="px-10 py-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/30 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                         >
-                            Connect Wallet to Start
+                            {isLoggingIn ? (
+                                <>
+                                    Connecting...
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                </>
+                            ) : (
+                                'Connect Wallet to Start'
+                            )}
                         </button>
                     </div>
                 </div>
@@ -929,9 +938,18 @@ function GuestView() {
                     </p>
                     <button
                         onClick={login}
-                        className="px-12 py-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-500/20"
+                        disabled={isLoggingIn}
+                        aria-busy={isLoggingIn}
+                        className="px-12 py-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg transition-all shadow-lg shadow-yellow-500/20 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                     >
-                        Connect Wallet
+                        {isLoggingIn ? (
+                            <>
+                                Connecting...
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                            </>
+                        ) : (
+                            'Connect Wallet'
+                        )}
                     </button>
 
                     <div className="flex items-center justify-center gap-6 pt-4 text-sm text-center">
@@ -1063,4 +1081,3 @@ function TeamNetworkSection({ walletAddress }: { walletAddress: string }) {
         </div>
     );
 }
-

@@ -3,7 +3,7 @@
 import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import Link from 'next/link';
-import { AlertCircle, RefreshCcw, Wallet } from 'lucide-react';
+import { AlertCircle, RefreshCcw, Wallet, Loader2 } from 'lucide-react';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -31,7 +31,7 @@ interface SmartMoneyTableProps {
 }
 
 export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTableProps) {
-    const { authenticated, login, ready } = usePrivyLogin();
+    const { authenticated, login, ready, isLoggingIn } = usePrivyLogin();
     const [data, setData] = useState<SmartMoneyWallet[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -148,10 +148,21 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                                                     },
                                                 });
                                             }}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/50 hover:bg-blue-600 text-white/70 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+                                            disabled={isLoggingIn}
+                                            aria-busy={isLoggingIn}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/50 hover:bg-blue-600 text-white/70 hover:text-white text-xs font-medium transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
-                                            <Wallet className="h-3 w-3" />
-                                            Connect to Copy
+                                            {isLoggingIn ? (
+                                                <>
+                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                    Connecting...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Wallet className="h-3 w-3" />
+                                                    Connect to Copy
+                                                </>
+                                            )}
                                         </button>
                                     )}
                                 </td>
