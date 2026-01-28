@@ -12,6 +12,10 @@ import { GuardrailService } from '@/lib/services/guardrail-service';
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
+const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
 const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 
 // Imports for Proxy Execution
@@ -24,6 +28,25 @@ const getBotSigner = () => {
     const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
     return new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
 };
+
+async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
+    const candidates = RPC_URLS.length > 0 ? RPC_URLS : [RPC_URL];
+
+    for (const url of candidates) {
+        try {
+            const provider = new ethers.providers.JsonRpcProvider(url);
+            await Promise.race([
+                provider.getBlockNumber(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), timeoutMs)),
+            ]);
+            return url;
+        } catch (error) {
+            console.warn(`[CopyTradingExecute] RPC unhealthy, skipping: ${url}`);
+        }
+    }
+
+    return RPC_URL;
+}
 
 // ============================================================================
 // OPTION B: Proxy Fund Management Helpers
@@ -227,6 +250,8 @@ export async function POST(request: NextRequest) {
 
             // --- EXECUTION VIA SERVICE ---
             try {
+                const selectedRpc = await selectExecutionRpc();
+                console.log(`[CopyTradingExecute] Using RPC: ${selectedRpc}`);
                 // Dynamic import to avoid build-time issues if any
                 const { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService } = await import('@catalyst-team/poly-sdk');
                 const { ethers } = await import('ethers');
@@ -241,7 +266,7 @@ export async function POST(request: NextRequest) {
                 await tradingService.initialize();
 
                 // Initialize Execution Service
-                const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+                const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
                 const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
                 const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
 

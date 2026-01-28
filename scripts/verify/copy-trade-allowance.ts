@@ -1,6 +1,10 @@
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, ERC20_ABI, CTF_ABI, USDC_DECIMALS } from '../../src/core/contracts.js';
 
+const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
 const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137', 10);
 const PROXY_ADDRESS = process.env.VERIFY_PROXY_ADDRESS;
@@ -20,9 +24,27 @@ if (!addresses.executor) {
     process.exit(1);
 }
 
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
+    const candidates = RPC_URLS.length > 0 ? RPC_URLS : [RPC_URL];
+
+    for (const url of candidates) {
+        try {
+            const provider = new ethers.providers.JsonRpcProvider(url);
+            await Promise.race([
+                provider.getBlockNumber(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), timeoutMs)),
+            ]);
+            return url;
+        } catch (error) {
+            console.warn(`[AllowanceCheck] RPC unhealthy, skipping: ${url}`);
+        }
+    }
+
+    return RPC_URL;
+}
 
 async function main() {
+    const provider = new ethers.providers.JsonRpcProvider(await selectExecutionRpc());
     if (!addresses.usdc) {
         console.error('USDC address not configured.');
         process.exit(1);

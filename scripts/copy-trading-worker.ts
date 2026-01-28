@@ -29,6 +29,7 @@
  * - COPY_TRADING_MAX_TRADE_USD: Per-trade max notional cap for real execution (optional)
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
+ * - COPY_TRADING_RPC_URLS: Comma-separated RPC list for failover (optional)
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
@@ -50,6 +51,10 @@ const API_BASE_URL = process.env.COPY_TRADING_API_URL || 'http://localhost:3000'
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
+const EXECUTION_RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
 const EXECUTION_RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 const WS_ADDRESS_FILTER = process.env.COPY_TRADING_WS_FILTER_BY_ADDRESS === 'true';
 const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
@@ -201,6 +206,25 @@ function getAddressKey(addresses: Set<string>): string {
         .map((addr) => addr.toLowerCase())
         .sort()
         .join(',');
+}
+
+async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
+    const candidates = EXECUTION_RPC_URLS.length > 0 ? EXECUTION_RPC_URLS : [EXECUTION_RPC_URL];
+
+    for (const url of candidates) {
+        try {
+            const provider = new ethers.providers.JsonRpcProvider(url);
+            await Promise.race([
+                provider.getBlockNumber(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), timeoutMs)),
+            ]);
+            return url;
+        } catch (error) {
+            console.warn(`[Worker] RPC unhealthy, skipping: ${url}`);
+        }
+    }
+
+    return EXECUTION_RPC_URL;
 }
 
 function subscribeToActivityIfNeeded(): void {
@@ -1339,7 +1363,8 @@ async function start(): Promise<void> {
     console.log(`   Trading Key: ${TRADING_PRIVATE_KEY ? 'Configured ✅' : 'Not configured ⚠️'}`);
     console.log(`   Real Trading: ${ENABLE_REAL_TRADING ? 'Enabled ✅' : 'Disabled ⛔'}`);
     console.log(`   Chain ID: ${CHAIN_ID}`);
-    console.log(`   Execution RPC: ${EXECUTION_RPC_URL}`);
+    const selectedRpc = await selectExecutionRpc();
+    console.log(`   Execution RPC: ${selectedRpc}`);
 
     // Initialize Prisma dynamically
     try {
@@ -1364,7 +1389,7 @@ async function start(): Promise<void> {
             await tradingService.initialize();
 
             // Initialize Execution Service
-            const provider = new ethers.providers.JsonRpcProvider(EXECUTION_RPC_URL);
+            const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
             const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
             executionSigner = signer;
             executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
