@@ -7,14 +7,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { GuardrailService } from '@/lib/services/guardrail-service';
 
-// Trading configuration from environment
+// Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
-const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
-const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
-const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
 
 // Imports for Proxy Execution
 import { ethers } from 'ethers';
@@ -26,53 +24,6 @@ const getBotSigner = () => {
     const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
     return new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
 };
-
-async function getExecutedTotalSince(since: Date, walletAddress?: string): Promise<number> {
-    const where = {
-        status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
-        executedAt: { gte: since },
-        ...(walletAddress
-            ? { config: { walletAddress: walletAddress.toLowerCase() } }
-            : {}),
-    } as any;
-
-    const result = await prisma.copyTrade.aggregate({
-        _sum: { copySize: true },
-        where,
-    });
-
-    return Number(result?._sum?.copySize || 0);
-}
-
-async function checkExecutionGuardrails(walletAddress: string, amount: number): Promise<{ allowed: boolean; reason?: string }> {
-    if (!ENABLE_REAL_TRADING) {
-        return { allowed: false, reason: 'REAL_TRADING_DISABLED' };
-    }
-
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-    if (GLOBAL_DAILY_CAP_USD > 0) {
-        const globalUsed = await getExecutedTotalSince(since);
-        if (globalUsed + amount > GLOBAL_DAILY_CAP_USD) {
-            return {
-                allowed: false,
-                reason: `GLOBAL_DAILY_CAP_EXCEEDED (${globalUsed.toFixed(2)} + ${amount.toFixed(2)} > ${GLOBAL_DAILY_CAP_USD})`,
-            };
-        }
-    }
-
-    if (WALLET_DAILY_CAP_USD > 0) {
-        const walletUsed = await getExecutedTotalSince(since, walletAddress);
-        if (walletUsed + amount > WALLET_DAILY_CAP_USD) {
-            return {
-                allowed: false,
-                reason: `WALLET_DAILY_CAP_EXCEEDED (${walletUsed.toFixed(2)} + ${amount.toFixed(2)} > ${WALLET_DAILY_CAP_USD})`,
-            };
-        }
-    }
-
-    return { allowed: true };
-}
 
 // ============================================================================
 // OPTION B: Proxy Fund Management Helpers
@@ -215,7 +166,12 @@ export async function POST(request: NextRequest) {
 
         // === SERVER-SIDE EXECUTION ===
         if (executeOnServer) {
-            if (!ENABLE_REAL_TRADING) {
+            // Quick check for Kill Switch using Guardrail Service (amount=0 just to check flag)
+            // Or we can just check the flag directly if we kept the env var, but better to use service for consistency
+            // Actually, for just the first check, we can check a small amount or refactor service to expose isOpen?
+            // Let's just use the guardrail check with 0 amount to check the flag.
+            const guardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, 0);
+            if (guardrail.reason === 'REAL_TRADING_DISABLED') {
                 return NextResponse.json({
                     success: false,
                     requiresManualExecution: true,
@@ -252,19 +208,19 @@ export async function POST(request: NextRequest) {
                 });
             }
 
-            const guardrail = await checkExecutionGuardrails(walletAddress, trade.copySize);
-            if (!guardrail.allowed) {
+            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, trade.copySize);
+            if (!serverGuardrail.allowed) {
                 await prisma.copyTrade.update({
                     where: { id: trade.id },
                     data: {
                         status: 'SKIPPED',
-                        errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                        errorMessage: serverGuardrail.reason || 'GUARDRAIL_BLOCKED',
                     },
                 });
 
                 return NextResponse.json({
                     success: false,
-                    error: guardrail.reason || 'Guardrail blocked execution',
+                    error: serverGuardrail.reason || 'Guardrail blocked execution',
                     status: 'SKIPPED',
                 }, { status: 429 });
             }

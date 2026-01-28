@@ -22,6 +22,7 @@ import { TradingService } from '../../src/services/trading-service';
 import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache } from '../../src/core/unified-cache';
 import { PositionService } from '../lib/services/position-service';
+import { GuardrailService } from '../lib/services/guardrail-service';
 import { RealtimeServiceV2, ActivityTrade, MarketEvent } from '../../src/services/realtime-service-v2';
 import { GammaApiClient } from '../../src/index';
 
@@ -528,50 +529,105 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
 
-            // 1. Execute
-            const result = await executionService.executeOrderWithProxy({
-                tradeId: 'auto-' + Date.now(),
-                walletAddress: config.walletAddress,
-                tokenId: tokenId,
-                side: copySide,
-                amount: copySizeUsdc,
-                price: price, // Use trade execution price as reference
-                slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
-                maxSlippage: config.maxSlippage,
-                slippageMode: config.slippageType as 'FIXED' | 'AUTO',
-                orderType: 'market',
-            });
+            // 1. Guardrail Check (NEW)
+            const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc);
+            if (!guardrail.allowed) {
+                console.warn(`[Worker] 🛑 Guardrail Blocked: ${guardrail.reason}`);
+                // Log skipped trade to DB so user knows
+                try {
+                    await prisma.copyTrade.create({
+                        data: {
+                            configId: config.id,
+                            originalTrader: traderAddress,
+                            originalSide: copySide,
+                            originalSize: sizeShares,
+                            originalPrice: price,
+                            tokenId: tokenId,
+                            copySize: copySizeUsdc,
+                            copyPrice: price,
+                            status: 'SKIPPED',
+                            errorMessage: guardrail.reason,
+                            originalTxHash: txHash || `auto-${Date.now()}`, // Ensure unique if no txHash
+                            detectedAt: new Date(),
+                            marketSlug: metadata.marketSlug,
+                            conditionId: metadata.conditionId,
+                            outcome: metadata.outcome
+                        }
+                    });
+                } catch (e) {
+                    console.log(`[Worker] Failed to log SKIPPED trade (likely duplicate):`, e);
+                }
+                continue;
+            }
 
-            // 2. Log to DB
-            await prisma.copyTrade.create({
-                data: {
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: sizeShares,
-                    originalPrice: price,
+            // 2. Create PENDING Record (Prevent Ghost Trades)
+            let tradeId: string;
+            try {
+                const pendingTrade = await prisma.copyTrade.create({
+                    data: {
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: copySide,
+                        originalSize: sizeShares,
+                        originalPrice: price,
+                        tokenId: tokenId,
+                        copySize: copySizeUsdc,
+                        copyPrice: price,
+                        status: 'PENDING', // Start as PENDING
+                        originalTxHash: txHash || `auto-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome,
+                    }
+                });
+                tradeId = pendingTrade.id;
+                console.log(`[Worker] 📝 Logged PENDING trade: ${tradeId}`);
+            } catch (dbErr: any) {
+                if (dbErr.code === 'P2002') {
+                    console.log(`[Worker] ⚠️ Duplicate trade detected (P2002). Skipping.`);
+                } else {
+                    console.error(`[Worker] ❌ Failed to create PENDING record. Aborting to save funds.`, dbErr);
+                }
+                continue; // ABORT if we can't record the trade
+            }
+
+            // 3. Execute
+            let result;
+            try {
+                result = await executionService.executeOrderWithProxy({
+                    tradeId: tradeId, // Use the DB ID
+                    walletAddress: config.walletAddress,
                     tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: price,
-                    usedBotFloat: result.usedBotFloat ?? false,
+                    side: copySide,
+                    amount: copySizeUsdc,
+                    price: price,
+                    slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
+                    maxSlippage: config.maxSlippage,
+                    slippageMode: config.slippageType as 'FIXED' | 'AUTO',
+                    orderType: 'market',
+                });
+            } catch (execErr: any) {
+                result = { success: false, error: execErr.message || 'Execution Exception' };
+            }
+
+            // 4. Update Record
+            await prisma.copyTrade.update({
+                where: { id: tradeId },
+                data: {
                     status: result.success ? 'EXECUTED' : 'FAILED',
                     executedAt: result.success ? new Date() : null,
-                    txHash: result.transactionHashes?.[0] || txHash || 'ws-event',
-                    errorMessage: result.error,
-                    originalTxHash: txHash || null,
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome,
+                    txHash: result.transactionHashes?.[0] || result.orderId || null,
+                    errorMessage: result.error || null,
+                    usedBotFloat: (result as any).usedBotFloat ?? false,
                 }
             });
 
             if (result.success) {
-                // 3. Update Position
+                console.log(`[Worker] ✅ Execution Success! Tx: ${result.transactionHashes?.[0]}`);
+                // 5. Update Position
                 try {
-                    const sharesBought = copySizeUsdc / price; // Est shares based on ref price (approx)
-                    // Note: Actual execution price might differ slightly, but for tracking this is close enough
-
+                    const sharesBought = copySizeUsdc / price;
                     if (copySide === 'BUY') {
                         await positionService.recordBuy({
                             walletAddress: config.walletAddress,
@@ -596,6 +652,8 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 } catch (posErr) {
                     console.error(`[Worker] ⚠️ Failed to update position:`, posErr);
                 }
+            } else {
+                console.error(`[Worker] ❌ Execution Failed: ${result.error}`);
             }
 
             console.log(`[Worker] ✅ Execution Result: ${result.success ? 'Success' : 'Failed'}`);
