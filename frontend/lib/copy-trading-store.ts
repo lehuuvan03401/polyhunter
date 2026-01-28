@@ -48,7 +48,7 @@ interface CopyTradingState {
     tradeLogs: CopyTradeLog[];
 
     // Actions
-    addConfig: (config: Omit<CopyTradingConfig, 'id' | 'startedAt' | 'isActive'>) => string;
+    addConfig: (config: Omit<CopyTradingConfig, 'startedAt' | 'isActive'> & { id?: string }) => string;
     removeConfig: (id: string) => void;
     updateConfig: (id: string, updates: Partial<CopyTradingConfig>) => void;
     setActive: (id: string, isActive: boolean) => void;
@@ -69,7 +69,8 @@ export const useCopyTradingStore = create<CopyTradingState>()(
             tradeLogs: [],
 
             addConfig: (config) => {
-                const id = `copy_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                // Use provided ID (from DB) or generate temporary one
+                const id = 'id' in config && config.id ? config.id : `copy_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                 const newConfig: CopyTradingConfig = {
                     ...config,
                     id,

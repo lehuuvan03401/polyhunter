@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+type PayoutWithReferrer = {
+    id: string;
+    amountUsd: number;
+    status: string;
+    txHash: string | null;
+    createdAt: Date;
+    processedAt: Date | null;
+    referrer: {
+        walletAddress: string;
+        tier: string;
+        referralCode: string | null;
+    };
+};
+
 // Check admin authorization
 function isAdmin(request: NextRequest): boolean {
     const adminWallet = request.headers.get('x-admin-wallet');
@@ -47,13 +61,13 @@ export async function GET(request: NextRequest) {
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
             take: limit
-        });
+        }) as PayoutWithReferrer[];
 
         // Filter by search if provided (wallet address search)
         let filteredPayouts = payouts;
         if (search) {
             const searchLower = search.toLowerCase();
-            filteredPayouts = payouts.filter(p =>
+            filteredPayouts = payouts.filter((p) =>
                 p.referrer.walletAddress.toLowerCase().includes(searchLower) ||
                 p.referrer.referralCode?.toLowerCase().includes(searchLower)
             );
@@ -70,7 +84,7 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({
-            payouts: filteredPayouts.map(p => ({
+            payouts: filteredPayouts.map((p) => ({
                 id: p.id,
                 walletAddress: p.referrer.walletAddress,
                 referralCode: p.referrer.referralCode,

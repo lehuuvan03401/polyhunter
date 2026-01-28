@@ -23,6 +23,7 @@ import {
     isCacheFresh,
     Period as CachePeriod
 } from '@/lib/services/leaderboard-cache-service';
+import { isDatabaseEnabled } from '@/lib/prisma';
 
 // ===== Types =====
 
@@ -59,12 +60,23 @@ interface CachedData {
     fetchedAt: number;
 }
 
+type ActiveTraderResponse = {
+    traders: ActiveTrader[];
+    cached: boolean;
+    source: 'memory' | 'database' | 'live';
+    cachedAt: string;
+    algorithm: string;
+    ttlRemaining?: number;
+    fresh?: boolean;
+};
+
 // ===== Cache Settings =====
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in-memory
 const DB_CACHE_TTL_MINUTES = 10; // 10 minutes DB cache
 
 // In-memory cache by period
 const memoryCache: Record<string, CachedData> = {};
+const inFlightRequests: Record<string, Promise<ActiveTraderResponse> | undefined> = {};
 
 // ===== Score Calculation =====
 // Now uses trader-scoring-service for scientific scoring
@@ -217,6 +229,71 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
 
 // ===== API Handler =====
 
+async function buildResponsePayload(
+    limit: number,
+    period: Period,
+    forceRefresh: boolean
+): Promise<ActiveTraderResponse> {
+    const now = Date.now();
+    const cacheKey = `${period}-${limit}`;
+
+    // Layer 1: In-memory cache check
+    const inMemory = memoryCache[cacheKey];
+    if (!forceRefresh && inMemory && (now - inMemory.fetchedAt) < CACHE_TTL) {
+        return {
+            traders: inMemory.traders,
+            cached: true,
+            source: 'memory',
+            cachedAt: new Date(inMemory.fetchedAt).toISOString(),
+            ttlRemaining: Math.round((CACHE_TTL - (now - inMemory.fetchedAt)) / 1000),
+            algorithm: 'active-traders-v2-period',
+        };
+    }
+
+    // Layer 2: Database cache check
+    if (!forceRefresh && isDatabaseEnabled && process.env.USE_LEADERBOARD_CACHE !== 'false') {
+        const dbTraders = await getLeaderboardFromCache(period as CachePeriod, limit);
+        const dbMeta = await getCacheMetadata(period as CachePeriod);
+
+        if (dbTraders && dbMeta) {
+            const fresh = isCacheFresh(dbMeta.lastUpdateAt, DB_CACHE_TTL_MINUTES);
+
+            memoryCache[cacheKey] = {
+                traders: dbTraders as any[],
+                fetchedAt: dbMeta.lastUpdateAt.getTime(),
+            };
+
+            return {
+                traders: dbTraders,
+                cached: true,
+                source: 'database',
+                fresh,
+                cachedAt: dbMeta.lastUpdateAt.toISOString(),
+                algorithm: 'active-traders-v2-period',
+            };
+        }
+    }
+
+    // Layer 3: Fetch fresh data from Polymarket (Fallback)
+    console.log(`[ActiveTraders] No valid cache found. Fetching fresh data for period: ${period}...`);
+    const traders = await fetchActiveTraders(Math.max(limit, 20), period);
+
+    memoryCache[cacheKey] = {
+        traders,
+        fetchedAt: now,
+    };
+
+    console.log(`[ActiveTraders] Found ${traders.length} active traders for ${period} (Live Fetch)`);
+
+    return {
+        traders: traders.slice(0, limit),
+        cached: false,
+        source: 'live',
+        cachedAt: new Date(now).toISOString(),
+        algorithm: 'active-traders-v2-period',
+    };
+}
+
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '10');
@@ -224,70 +301,22 @@ export async function GET(request: NextRequest) {
     const forceRefresh = searchParams.get('refresh') === 'true';
 
     try {
-        const now = Date.now();
         const cacheKey = `${period}-${limit}`;
 
-        // Layer 1: In-memory cache check
-        const inMemory = memoryCache[cacheKey];
-        if (!forceRefresh && inMemory && (now - inMemory.fetchedAt) < CACHE_TTL) {
-            return NextResponse.json({
-                traders: inMemory.traders,
-                cached: true,
-                source: 'memory',
-                cachedAt: new Date(inMemory.fetchedAt).toISOString(),
-                ttlRemaining: Math.round((CACHE_TTL - (now - inMemory.fetchedAt)) / 1000),
-                algorithm: 'active-traders-v2-period',
-            });
+        if (!forceRefresh && inFlightRequests[cacheKey]) {
+            const sharedPayload = await inFlightRequests[cacheKey];
+            return NextResponse.json(sharedPayload);
         }
 
-        // Layer 2: Database cache check
-        if (!forceRefresh) {
-            const dbTraders = await getLeaderboardFromCache(period as CachePeriod, limit);
-            const dbMeta = await getCacheMetadata(period as CachePeriod);
+        const requestPromise = buildResponsePayload(limit, period, forceRefresh);
+        inFlightRequests[cacheKey] = requestPromise;
 
-            if (dbTraders && dbMeta) {
-                const fresh = isCacheFresh(dbMeta.lastUpdateAt, DB_CACHE_TTL_MINUTES);
-
-                // Return DB cache even if slightly stale, as per design
-                // If it's very stale (e.g., failed updates for hours), we might want to fetch fresh
-                // But for now, returning DB cache is sub-second which is the goal.
-
-                // Update memory cache
-                memoryCache[cacheKey] = {
-                    traders: dbTraders as any[],
-                    fetchedAt: dbMeta.lastUpdateAt.getTime(),
-                };
-
-                return NextResponse.json({
-                    traders: dbTraders,
-                    cached: true,
-                    source: 'database',
-                    fresh,
-                    cachedAt: dbMeta.lastUpdateAt.toISOString(),
-                    algorithm: 'active-traders-v2-period',
-                });
-            }
+        try {
+            const payload = await requestPromise;
+            return NextResponse.json(payload);
+        } finally {
+            delete inFlightRequests[cacheKey];
         }
-
-        // Layer 3: Fetch fresh data from Polymarket (Fallback)
-        console.log(`[ActiveTraders] No valid cache found. Fetching fresh data for period: ${period}...`);
-        const traders = await fetchActiveTraders(Math.max(limit, 20), period);
-
-        // Update memory cache
-        memoryCache[cacheKey] = {
-            traders,
-            fetchedAt: now,
-        };
-
-        console.log(`[ActiveTraders] Found ${traders.length} active traders for ${period} (Live Fetch)`);
-
-        return NextResponse.json({
-            traders: traders.slice(0, limit),
-            cached: false,
-            source: 'live',
-            cachedAt: new Date(now).toISOString(),
-            algorithm: 'active-traders-v2-period',
-        });
     } catch (error) {
         console.error('[ActiveTraders] Error:', error);
         return NextResponse.json(
@@ -296,5 +325,3 @@ export async function GET(request: NextRequest) {
         );
     }
 }
-
-

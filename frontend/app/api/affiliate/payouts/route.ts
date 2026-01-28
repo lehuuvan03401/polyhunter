@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, normalizeAddress, errorResponse } from '../utils';
 import { ethers } from 'ethers';
 
+type PayoutRow = {
+    id: string;
+    amountUsd: number;
+    status: string;
+    txHash: string | null;
+    createdAt: Date;
+    processedAt: Date | null;
+};
+
 export async function GET(request: NextRequest) {
     try {
         const walletAddress = request.nextUrl.searchParams.get('walletAddress');
@@ -23,7 +32,7 @@ export async function GET(request: NextRequest) {
         const payouts = await prisma.payout.findMany({
             where: { referrerId: referrer.id },
             orderBy: { createdAt: 'desc' },
-        });
+        }) as PayoutRow[];
 
         return NextResponse.json(
             payouts.map((p) => ({
@@ -103,7 +112,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Proceed with payout (signature verified)
-        const result = await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx: any) => {
             const amount = referrer.pendingPayout;
 
             // Debit balance
@@ -172,4 +181,3 @@ export async function PUT(request: NextRequest) {
         return errorResponse('Internal server error', 500);
     }
 }
-

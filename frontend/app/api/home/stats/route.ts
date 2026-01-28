@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { polyClient } from '@/lib/polymarket';
-import { prisma } from '@/lib/prisma';
+import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 60;
@@ -22,6 +22,9 @@ export async function GET() {
         console.warn('[HomeStats] Live fetch failed, falling back to cache:', error);
 
         try {
+            if (!isDatabaseEnabled) {
+                return NextResponse.json({ traderCount: 500, totalVolume: 2000000, source: 'static' });
+            }
             // Fallback: Calculate from standard cache
             // We use '90d' period (ALL time) as the best proxy for "Total Volume"
             const entries = await prisma.cachedTraderLeaderboard.findMany({

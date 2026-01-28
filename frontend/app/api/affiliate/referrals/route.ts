@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, normalizeAddress, errorResponse } from '../utils';
 
+type ReferralRow = {
+    refereeAddress: string;
+    createdAt: Date;
+    lifetimeVolume: number;
+    last30DaysVolume: number;
+    lastActiveAt: Date | null;
+};
+
 export async function GET(request: NextRequest) {
     try {
         const walletAddress = request.nextUrl.searchParams.get('walletAddress');
@@ -22,7 +30,7 @@ export async function GET(request: NextRequest) {
         const referrals = await prisma.referral.findMany({
             where: { referrerId: referrer.id },
             orderBy: { createdAt: 'desc' },
-        });
+        }) as ReferralRow[];
 
         return NextResponse.json(
             referrals.map((r) => ({

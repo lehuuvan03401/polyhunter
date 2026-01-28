@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server';
 import { affiliateEngine } from '@/lib/services/affiliate-engine';
 import { prisma, normalizeAddress, errorResponse } from '../utils';
 
+type CommissionLogRow = {
+    type: string;
+    referrer: {
+        walletAddress: string;
+        tier: string;
+    };
+    generation: number;
+    amount: number;
+};
+
 /**
  * POST /api/affiliate/simulate-trade
  * Simulates a trade and triggers full commission distribution (Zero Line + Sun Line)
@@ -51,17 +61,17 @@ export async function POST(request: Request) {
             },
             include: { referrer: true },
             orderBy: { createdAt: 'desc' }
-        });
+        }) as CommissionLogRow[];
 
         // 5. Summarize results
         const summary = {
-            zeroLine: recentCommissions.filter(c => c.type === 'ZERO_LINE').map(c => ({
+            zeroLine: recentCommissions.filter((c) => c.type === 'ZERO_LINE').map((c) => ({
                 referrer: c.referrer.walletAddress.slice(0, 10) + '...',
                 tier: c.referrer.tier,
                 generation: c.generation,
                 amount: c.amount.toFixed(4)
             })),
-            sunLine: recentCommissions.filter(c => c.type === 'SUN_LINE').map(c => ({
+            sunLine: recentCommissions.filter((c) => c.type === 'SUN_LINE').map((c) => ({
                 referrer: c.referrer.walletAddress.slice(0, 10) + '...',
                 tier: c.referrer.tier,
                 generation: c.generation,

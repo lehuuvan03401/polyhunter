@@ -18,3 +18,4 @@
 - [x] Verify database schema update.
 - [x] Verify that changing profile in UI updates the DB.
 - [x] Verify (via logs/simulation) that "Conservative" profile rejects trades with high slippage.
+- [x] Verify `npm run build` succeeds (Type Safety Check).

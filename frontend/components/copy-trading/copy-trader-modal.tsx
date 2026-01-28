@@ -163,8 +163,12 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                 throw new Error(err.error || 'Failed to save config');
             }
 
+            const responseData = await apiResponse.json();
+            const createdConfig = responseData.config;
+
             // Also save to Zustand for local state
             addConfig({
+                id: createdConfig.id, // Use the DB ID!
                 traderAddress,
                 traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
                 mode: copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage',
@@ -173,6 +177,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                 maxSizePerTrade: Number(maxPerTrade) || 100,
                 sideFilter: undefined,
                 dryRun: false, // Now using real backend!
+                strategyProfile: 'MODERATE' // Default or grab from input if added to modal
             });
 
             toast.success(

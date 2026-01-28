@@ -5,7 +5,7 @@
  * Used by background scripts to update cache and by API routes to read cached data.
  */
 
-import { prisma } from '../prisma';
+import { prisma, isDatabaseEnabled } from '../prisma';
 import { polyClient } from '@/lib/polymarket';
 import {
     calculateScientificScore,
@@ -89,6 +89,18 @@ function mapPeriodToSdk(period: Period): 'WEEK' | 'MONTH' | 'ALL' {
     }
 }
 
+const dbEnabled = isDatabaseEnabled;
+let dbWarningLogged = false;
+
+function ensureDatabaseEnabled(action: string): boolean {
+    if (dbEnabled) return true;
+    if (!dbWarningLogged) {
+        console.warn(`[LeaderboardCache] Skipping ${action} because DATABASE_URL is missing or invalid.`);
+        dbWarningLogged = true;
+    }
+    return false;
+}
+
 /**
  * Update leaderboard cache for a specific period
  */
@@ -96,6 +108,9 @@ export async function updateLeaderboardCache(
     period: Period,
     limit: number = 20
 ): Promise<{ success: boolean; traderCount: number; error?: string }> {
+    if (!ensureDatabaseEnabled('leaderboard cache update')) {
+        return { success: false, traderCount: 0, error: 'Database not configured' };
+    }
     console.log(`[LeaderboardCache] Updating cache for period: ${period}, limit: ${limit}`);
 
     try {
@@ -260,6 +275,7 @@ export async function getLeaderboardFromCache(
     period: Period,
     limit: number = 10
 ): Promise<CachedTrader[] | null> {
+    if (!ensureDatabaseEnabled('leaderboard cache read')) return null;
     try {
         const cached = await prisma.cachedTraderLeaderboard.findMany({
             where: { period },
@@ -282,6 +298,7 @@ export async function getLeaderboardFromCache(
  * Get cache metadata for a period
  */
 export async function getCacheMetadata(period: Period): Promise<CacheMetadata | null> {
+    if (!ensureDatabaseEnabled('leaderboard cache metadata')) return null;
     try {
         const meta = await prisma.leaderboardCacheMeta.findUnique({
             where: { period },
@@ -317,6 +334,9 @@ export function isCacheFresh(lastUpdateAt: Date, ttlMinutes: number = 10): boole
 export async function updateSmartMoneyCache(
     limit: number = 100
 ): Promise<{ success: boolean; traderCount: number; error?: string }> {
+    if (!ensureDatabaseEnabled('smart money cache update')) {
+        return { success: false, traderCount: 0, error: 'Database not configured' };
+    }
     console.log(`[SmartMoneyCache] Updating cache, limit: ${limit}`);
 
     try {
@@ -411,6 +431,7 @@ export async function getSmartMoneyFromCache(
     page: number = 1,
     limit: number = 20
 ): Promise<any[] | null> {
+    if (!ensureDatabaseEnabled('smart money cache read')) return null;
     try {
         const skip = (page - 1) * limit;
         const cached = await prisma.cachedSmartMoney.findMany({
@@ -434,6 +455,7 @@ export async function getSmartMoneyFromCache(
  * Get Smart Money cache metadata
  */
 export async function getSmartMoneyCacheMetadata(): Promise<SmartMoneyCacheMetadata | null> {
+    if (!ensureDatabaseEnabled('smart money cache metadata')) return null;
     try {
         const meta = await prisma.smartMoneyCacheMeta.findUnique({
             where: { id: 'singleton' },

@@ -1,10 +1,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, errorResponse, normalizeAddress } from '../../affiliate/utils';
+import type { Prisma } from '@prisma/client';
 
 // Valid tier values for validation
 const VALID_TIERS = ['ORDINARY', 'VIP', 'ELITE', 'PARTNER', 'SUPER_PARTNER'] as const;
 type TierType = typeof VALID_TIERS[number];
+type ReferrerWithCounts = Prisma.ReferrerGetPayload<{
+    include: {
+        _count: { select: { referrals: true } };
+    };
+}>;
+type TeamSizeCount = Prisma.TeamClosureGroupByOutputType;
 
 // Admin wallet configuration
 const ADMIN_WALLETS = (process.env.ADMIN_WALLETS || '').split(',').map(w => w.toLowerCase()).filter(Boolean);
@@ -61,10 +68,10 @@ export async function GET(request: NextRequest) {
                     }
                 }
             })
-        ]);
+        ]) as [number, ReferrerWithCounts[]];
 
         // Batch query for team sizes - avoid N+1
-        const affiliateIds = affiliates.map(a => a.id);
+        const affiliateIds = affiliates.map((a) => a.id);
         const teamSizeCounts = await prisma.teamClosure.groupBy({
             by: ['ancestorId'],
             where: {
@@ -76,11 +83,11 @@ export async function GET(request: NextRequest) {
 
         // Create lookup map for O(1) access
         const teamSizeMap = new Map(
-            teamSizeCounts.map(t => [t.ancestorId, t._count.descendantId])
+            teamSizeCounts.map((t) => [t.ancestorId, t._count.descendantId])
         );
 
         // Enrich affiliates with team sizes
-        const enrichedAffiliates = affiliates.map(aff => ({
+        const enrichedAffiliates = affiliates.map((aff) => ({
             ...aff,
             teamSize: teamSizeMap.get(aff.id) || 0,
             directReferrals: aff._count.referrals

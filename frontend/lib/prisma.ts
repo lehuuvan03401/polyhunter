@@ -8,6 +8,12 @@ const globalForPrisma = globalThis as unknown as {
 
 // Use adapter for Prisma 7 + Postgres (Config Mode)
 const connectionString = `${process.env.DATABASE_URL}`;
+const rawDatabaseUrl = process.env.DATABASE_URL || '';
+const hasPlaceholderUrl = /USER:PASS@HOST:PORT/i.test(rawDatabaseUrl);
+export const isDatabaseEnabled =
+    Boolean(rawDatabaseUrl) &&
+    !hasPlaceholderUrl &&
+    /^(postgres|postgresql):\/\//i.test(rawDatabaseUrl);
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 
