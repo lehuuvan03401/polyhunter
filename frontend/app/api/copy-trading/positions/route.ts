@@ -15,12 +15,24 @@ const RESPONSE_TTL_MS = 20000;
 const PRICE_TTL_MS = 10000;
 const GAMMA_TTL_MS = 30000;
 const RESOLUTION_TTL_MS = 30000;
+const GAMMA_TIMEOUT_MS = 3000;
+const GAMMA_FAILURE_TTL_MS = 10000;
 
 const responseCache = createTTLCache<any>();
 const orderbookPriceCache = createTTLCache<number>();
 const gammaPriceCache = createTTLCache<number>();
 const resolutionCache = createTTLCache<{ resolved: boolean; winner: boolean }>();
 const gammaMarketCache = createTTLCache<any>();
+
+async function fetchWithTimeout(url: string, timeoutMs: number) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 const applyGammaMarket = (
     market: any,
@@ -267,17 +279,24 @@ export async function GET(request: Request) {
                             url += `&slug=${task.value}`;
                         }
 
-                        const response = await fetch(url);
-                        if (!response.ok) return;
+                        const response = await fetchWithTimeout(url, GAMMA_TIMEOUT_MS);
+                        if (!response.ok) {
+                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                            return;
+                        }
 
                         const data = await response.json();
                         if (Array.isArray(data) && data.length > 0) {
                             const market = data[0];
                             gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
                             applyGammaMarket(market, uniqueTokenIds, metadataMap, gammaPriceMap, marketResolutionMap);
+                        } else {
+                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
                         }
                     } catch (e) {
                         console.error(`Failed to fetch/parse market ${task.value}`, e);
+                        const cacheKey = `${task.type}:${task.value}`;
+                        gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
                     }
                 }));
             }

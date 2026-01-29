@@ -10,11 +10,23 @@ export const revalidate = 0;
 const RESPONSE_TTL_MS = 20000;
 const PRICE_TTL_MS = 10000;
 const GAMMA_TTL_MS = 30000;
+const GAMMA_TIMEOUT_MS = 3000;
+const GAMMA_FAILURE_TTL_MS = 10000;
 
 const responseCache = createTTLCache<any>();
 const orderbookPriceCache = createTTLCache<number>();
 const gammaPriceCache = createTTLCache<number>();
 const gammaMarketCache = createTTLCache<any>();
+
+async function fetchWithTimeout(url: string, timeoutMs: number) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -105,11 +117,17 @@ export async function GET(request: Request) {
                             const cacheKey = `slug:${slug}`;
                             let market = gammaMarketCache.get(cacheKey);
                             if (!market) {
-                                const res = await fetch(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`);
+                                const res = await fetchWithTimeout(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`, GAMMA_TIMEOUT_MS);
+                                if (!res.ok) {
+                                    gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                                    return;
+                                }
                                 const data = await res.json();
                                 market = data?.[0];
                                 if (market) {
                                     gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
+                                } else {
+                                    gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
                                 }
                             }
 
@@ -136,6 +154,8 @@ export async function GET(request: Request) {
                             }
                         } catch (e) {
                             console.warn(`Gamma fetch failed for ${slug}:`, e);
+                            const cacheKey = `slug:${slug}`;
+                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
                         }
                     }));
                 }

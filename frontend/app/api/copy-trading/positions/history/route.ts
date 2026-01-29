@@ -44,25 +44,27 @@ export async function GET(request: Request) {
             };
 
             if (type === 'COUNTS') {
-                const redeemedCount = await prisma.copyTrade.count({
-                    where: {
-                        configId: { in: configIds },
-                        OR: [
-                            { originalSide: 'REDEEM' }, // Actual Redeems
-                            { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] } // Simulated Wins
-                        ]
-                    }
-                });
-                // Loss = Sell by Settlement with 0 price OR Sell with 'loss' hash
-                const lostCount = await prisma.copyTrade.count({
-                    where: {
-                        configId: { in: configIds },
-                        OR: [
-                            { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] }, // Settlement Loss
-                            { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] } // Explicit Loss
-                        ]
-                    }
-                });
+            const redeemedCount = await prisma.copyTrade.count({
+                where: {
+                    configId: { in: configIds },
+                    status: 'EXECUTED',
+                    OR: [
+                        { originalSide: 'REDEEM' }, // Actual Redeems
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] } // Simulated Wins
+                    ]
+                }
+            });
+            // Loss = Sell by Settlement with 0 price OR Sell with 'loss' hash
+            const lostCount = await prisma.copyTrade.count({
+                where: {
+                    configId: { in: configIds },
+                    status: 'EXECUTED',
+                    OR: [
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] }, // Settlement Loss
+                        { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] } // Explicit Loss
+                    ]
+                }
+            });
                 return {
                     REDEEMED: redeemedCount,
                     SETTLED_LOSS: lostCount
