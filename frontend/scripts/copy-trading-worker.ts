@@ -36,6 +36,12 @@ const POLL_INTERVAL_MS = 30000; // Refresh configs every 30s
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
 const speedProfile = getSpeedProfile();
+const CLOB_API_KEY = process.env.POLY_API_KEY || process.env.CLOB_API_KEY;
+const CLOB_API_SECRET = process.env.POLY_API_SECRET || process.env.CLOB_API_SECRET;
+const CLOB_API_PASSPHRASE = process.env.POLY_API_PASSPHRASE || process.env.CLOB_API_PASSPHRASE;
+const clobCredentials = CLOB_API_KEY && CLOB_API_SECRET && CLOB_API_PASSPHRASE
+    ? { key: CLOB_API_KEY, secret: CLOB_API_SECRET, passphrase: CLOB_API_PASSPHRASE }
+    : undefined;
 
 if (!TRADING_PRIVATE_KEY) {
     console.error('Missing TRADING_PRIVATE_KEY env var');
@@ -60,6 +66,7 @@ const positionService = new PositionService(prisma);
 const tradingService = new TradingService(rateLimiter, cache, {
     privateKey: TRADING_PRIVATE_KEY,
     chainId: CHAIN_ID,
+    credentials: clobCredentials,
 });
 const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
 const realtimeService = new RealtimeServiceV2({ autoReconnect: true });
@@ -73,16 +80,34 @@ let isProcessing = false;
 // --- HELPERS ---
 
 async function logSkippedTrade(data: any, reason: string) {
+    const payload = {
+        ...data,
+        status: 'SKIPPED',
+        errorMessage: reason,
+    };
+    const compositeKey = data?.configId && data?.originalTxHash
+        ? { configId: data.configId, originalTxHash: data.originalTxHash }
+        : null;
     try {
-        await prisma.copyTrade.create({
-            data: {
-                ...data,
-                status: 'SKIPPED',
-                errorMessage: reason,
+        if (compositeKey) {
+            const existing = await prisma.copyTrade.findUnique({
+                where: { configId_originalTxHash: compositeKey },
+                select: { status: true },
+            });
+            if (existing) {
+                if (existing.status === 'SKIPPED') {
+                    await prisma.copyTrade.update({
+                        where: { configId_originalTxHash: compositeKey },
+                        data: { errorMessage: reason },
+                    });
+                }
+                return;
             }
-        });
-    } catch (e) {
-        console.log(`[Worker] Failed to log SKIPPED trade (likely duplicate):`, e);
+        }
+        await prisma.copyTrade.create({ data: payload });
+    } catch (e: any) {
+        if (e?.code === 'P2002') return;
+        console.log(`[Worker] Failed to log SKIPPED trade:`, e);
     }
 }
 
@@ -479,7 +504,18 @@ async function resolvePositions(conditionId: string): Promise<void> {
 
 async function startListener() {
     // 1. Initialize Services
-    await tradingService.initialize();
+    if (!clobCredentials && !DRY_RUN) {
+        console.warn('[Worker] ⚠️ Missing CLOB API credentials. Will attempt to derive at startup.');
+    }
+    try {
+        await tradingService.initialize();
+    } catch (error) {
+        console.error('[Worker] ❌ TradingService initialization failed (CLOB auth).', error);
+        console.error('[Worker] ➜ Set POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE in frontend/.env or ensure the wallet can create CLOB API keys.');
+        if (!DRY_RUN) {
+            process.exit(1);
+        }
+    }
     await refreshConfigs();
     console.log(`[Worker] ⚡ Speed profile: ${speedProfile.name} | maxSpreadBps=${speedProfile.maxSpreadBps} | minDepthUsd=${speedProfile.minDepthUsd} | minDepthRatio=${speedProfile.minDepthRatio}`);
 
