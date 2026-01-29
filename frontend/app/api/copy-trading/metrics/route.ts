@@ -2,9 +2,19 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
+import { createTTLCache } from '@/lib/server-cache';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+const RESPONSE_TTL_MS = 15000;
+const PRICE_TTL_MS = 10000;
+const GAMMA_TTL_MS = 30000;
+
+const responseCache = createTTLCache<any>();
+const orderbookPriceCache = createTTLCache<number>();
+const gammaPriceCache = createTTLCache<number>();
+const gammaMarketCache = createTTLCache<any>();
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -18,6 +28,12 @@ export async function GET(request: Request) {
     const normalizedWallet = walletAddress.toLowerCase();
 
     try {
+        const cacheKey = `metrics:${normalizedWallet}`;
+        const cachedResponse = responseCache.get(cacheKey);
+        if (cachedResponse) {
+            return NextResponse.json(cachedResponse);
+        }
+
         // 1. Get Open Positions (for Invested Funds & Unrealized PnL)
         const positions = await prisma.userPosition.findMany({
             where: {
@@ -35,61 +51,96 @@ export async function GET(request: Request) {
         if (positions.length > 0) {
             try {
                 // Get unique token IDs
-                const tokenIds = positions.map(p => p.tokenId);
+                const tokenIds = Array.from(new Set(positions.map(p => p.tokenId)));
 
                 // Fetch orderbooks to get current mid/best price (CLOB)
-                const orderbooks = await polyClient.markets.getTokenOrderbooks(
-                    tokenIds.map(id => ({ tokenId: id, side: 'BUY' }))
-                );
-
-                // Build CLOB price map
                 const clobPriceMap = new Map<string, number>();
-                orderbooks.forEach((book, tid) => {
-                    if (book.bids.length > 0) {
-                        clobPriceMap.set(tid, Number(book.bids[0].price));
+                tokenIds.forEach((tid) => {
+                    const cached = orderbookPriceCache.get(tid);
+                    if (cached !== undefined) {
+                        clobPriceMap.set(tid, cached);
                     }
                 });
 
+                const tokensToFetch = tokenIds.filter((tid) => !clobPriceMap.has(tid));
+                if (tokensToFetch.length > 0) {
+                    const orderbooks = await polyClient.markets.getTokenOrderbooks(
+                        tokensToFetch.map(id => ({ tokenId: id, side: 'BUY' }))
+                    );
+
+                    orderbooks.forEach((book, tid) => {
+                        if (book.bids.length > 0) {
+                            const price = Number(book.bids[0].price);
+                            clobPriceMap.set(tid, price);
+                            orderbookPriceCache.set(tid, price, PRICE_TTL_MS);
+                        }
+                    });
+                }
+
+                const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid));
+
                 // Fallback: Fetch Gamma prices using marketSlug from CopyTrade metadata
-                const tradeMetadata = await prisma.copyTrade.findMany({
-                    where: { tokenId: { in: tokenIds } },
-                    select: { tokenId: true, marketSlug: true, outcome: true },
-                    orderBy: { detectedAt: 'desc' },
-                    distinct: ['tokenId']
-                });
+                const tradeMetadata = tokensNeedingGamma.length > 0
+                    ? await prisma.copyTrade.findMany({
+                        where: { tokenId: { in: tokensNeedingGamma } },
+                        select: { tokenId: true, marketSlug: true, outcome: true },
+                        orderBy: { detectedAt: 'desc' },
+                        distinct: ['tokenId']
+                    })
+                    : [];
 
                 const gammaPriceMap = new Map<string, number>();
+                tokenIds.forEach((tid) => {
+                    const cached = gammaPriceCache.get(tid);
+                    if (cached !== undefined) {
+                        gammaPriceMap.set(tid, cached);
+                    }
+                });
 
                 // Query Gamma by slug for each unique market
                 const slugsToQuery = [...new Set(tradeMetadata.filter(t => t.marketSlug && !t.marketSlug.includes('unknown')).map(t => t.marketSlug!))];
 
-                for (const slug of slugsToQuery) {
-                    try {
-                        const res = await fetch(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`);
-                        const data = await res.json();
-                        const market = data?.[0];
-                        if (market?.outcomePrices && market?.outcomes) {
-                            const outcomePrices = typeof market.outcomePrices === 'string'
-                                ? JSON.parse(market.outcomePrices).map(Number)
-                                : market.outcomePrices.map(Number);
-                            const outcomes = typeof market.outcomes === 'string'
-                                ? JSON.parse(market.outcomes)
-                                : market.outcomes;
-
-                            // Map prices to tokens
-                            tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
-                                if (!t.tokenId) return; // Skip if no tokenId
-                                const idx = outcomes.findIndex((o: string) =>
-                                    o.toLowerCase() === t.outcome?.toLowerCase()
-                                );
-                                if (idx >= 0 && outcomePrices[idx] !== undefined) {
-                                    gammaPriceMap.set(t.tokenId, outcomePrices[idx]);
+                const BATCH_SIZE = 5;
+                for (let i = 0; i < slugsToQuery.length; i += BATCH_SIZE) {
+                    const batch = slugsToQuery.slice(i, i + BATCH_SIZE);
+                    await Promise.all(batch.map(async (slug) => {
+                        try {
+                            const cacheKey = `slug:${slug}`;
+                            let market = gammaMarketCache.get(cacheKey);
+                            if (!market) {
+                                const res = await fetch(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`);
+                                const data = await res.json();
+                                market = data?.[0];
+                                if (market) {
+                                    gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
                                 }
-                            });
+                            }
+
+                            if (market?.outcomePrices && market?.outcomes) {
+                                const outcomePrices = typeof market.outcomePrices === 'string'
+                                    ? JSON.parse(market.outcomePrices).map(Number)
+                                    : market.outcomePrices.map(Number);
+                                const outcomes = typeof market.outcomes === 'string'
+                                    ? JSON.parse(market.outcomes)
+                                    : market.outcomes;
+
+                                // Map prices to tokens
+                                tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
+                                    if (!t.tokenId) return; // Skip if no tokenId
+                                    const idx = outcomes.findIndex((o: string) =>
+                                        o.toLowerCase() === t.outcome?.toLowerCase()
+                                    );
+                                    if (idx >= 0 && outcomePrices[idx] !== undefined) {
+                                        const price = outcomePrices[idx];
+                                        gammaPriceMap.set(t.tokenId, price);
+                                        gammaPriceCache.set(t.tokenId, price, GAMMA_TTL_MS);
+                                    }
+                                });
+                            }
+                        } catch (e) {
+                            console.warn(`Gamma fetch failed for ${slug}:`, e);
                         }
-                    } catch (e) {
-                        console.warn(`Gamma fetch failed for ${slug}:`, e);
-                    }
+                    }));
                 }
 
                 // Calculate PnL per position, prioritizing CLOB, then Gamma, then entry price
@@ -256,7 +307,7 @@ export async function GET(request: Request) {
         tradingPnL = realizedWins + realizedLosses;
         const settlementPnL = settlementWins + settlementLosses;
 
-        return NextResponse.json({
+        const responsePayload = {
             totalInvested,
             activePositions: positions.length,
             realizedPnL,      // Net realized
@@ -269,7 +320,10 @@ export async function GET(request: Request) {
             tradingPnL,       // Same as realized, explicitly named
             totalPnL: unrealizedPnL, // Use unrealized as the "main" PnL
             cumulativeInvestment // Total Volume since start
-        });
+        };
+
+        responseCache.set(cacheKey, responsePayload, RESPONSE_TTL_MS);
+        return NextResponse.json(responsePayload);
 
     } catch (error) {
         console.error('Error fetching metrics:', error);

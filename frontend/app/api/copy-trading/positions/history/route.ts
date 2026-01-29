@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseMarketSlug, parseOutcome } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
+import { createTTLCache } from '@/lib/server-cache';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+const RESPONSE_TTL_MS = 15000;
+const responseCache = createTTLCache<any>();
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -31,6 +35,12 @@ export async function GET(request: Request) {
     const configIds = configs.map(c => c.id);
 
     try {
+        const cacheKey = `history:${normalizedWallet}:${type || 'ALL'}`;
+        const cachedResponse = responseCache.get(cacheKey);
+        if (cachedResponse) {
+            return NextResponse.json(cachedResponse);
+        }
+
         // Query filters
         let whereClause: Prisma.CopyTradeWhereInput = {
             configId: { in: configIds },
@@ -57,10 +67,12 @@ export async function GET(request: Request) {
                     ]
                 }
             });
-            return NextResponse.json({
+            const responsePayload = {
                 REDEEMED: redeemedCount,
                 SETTLED_LOSS: lostCount
-            });
+            };
+            responseCache.set(cacheKey, responsePayload, RESPONSE_TTL_MS);
+            return NextResponse.json(responsePayload);
         }
 
         if (type === 'REDEEMED') {
@@ -105,27 +117,39 @@ export async function GET(request: Request) {
         });
 
         const fallbackPriceMap = new Map<string, number>();
-        await Promise.all(lossTradesNeedingFallback.map(async (t) => {
-            if (!t.tokenId || !t.configId || !t.executedAt) return;
-            const key = `${t.configId}:${t.tokenId}:${t.executedAt.getTime()}`;
-            if (fallbackPriceMap.has(key)) return;
-
-            const lastBuy = await prisma.copyTrade.findFirst({
+        const lossTokenIds = Array.from(new Set(lossTradesNeedingFallback.map(t => t.tokenId).filter((id): id is string => !!id)));
+        if (lossTokenIds.length > 0) {
+            const buyTrades = await prisma.copyTrade.findMany({
                 where: {
-                    configId: t.configId,
-                    tokenId: t.tokenId,
+                    configId: { in: configIds },
+                    tokenId: { in: lossTokenIds },
                     originalSide: 'BUY',
-                    executedAt: { lte: t.executedAt }
+                    executedAt: { not: null }
                 },
                 orderBy: { executedAt: 'desc' },
-                select: { copyPrice: true, originalPrice: true }
+                select: { tokenId: true, executedAt: true, copyPrice: true, originalPrice: true }
             });
 
-            const price = lastBuy?.copyPrice ?? lastBuy?.originalPrice ?? 0;
-            if (price > 0) {
-                fallbackPriceMap.set(key, price);
-            }
-        }));
+            const buysByToken = new Map<string, typeof buyTrades>();
+            buyTrades.forEach((t) => {
+                if (!t.tokenId) return;
+                const list = buysByToken.get(t.tokenId) || [];
+                list.push(t);
+                buysByToken.set(t.tokenId, list);
+            });
+
+            lossTradesNeedingFallback.forEach((t) => {
+                if (!t.tokenId || !t.configId || !t.executedAt) return;
+                const key = `${t.configId}:${t.tokenId}:${t.executedAt.getTime()}`;
+                if (fallbackPriceMap.has(key)) return;
+                const candidates = buysByToken.get(t.tokenId) || [];
+                const lastBuy = candidates.find((b) => b.executedAt && b.executedAt <= t.executedAt);
+                const price = lastBuy?.copyPrice ?? lastBuy?.originalPrice ?? 0;
+                if (price > 0) {
+                    fallbackPriceMap.set(key, price);
+                }
+            });
+        }
 
         // Map to Position interface structure for UI compatibility
         const positions = trades.map(t => {
@@ -184,6 +208,7 @@ export async function GET(request: Request) {
             }
         });
 
+        responseCache.set(cacheKey, positions, RESPONSE_TTL_MS);
         return NextResponse.json(positions);
 
     } catch (error) {

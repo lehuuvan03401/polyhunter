@@ -28,7 +28,7 @@ export function useCopyTradingMetrics(walletAddress: string) {
         walletAddress ? `/api/copy-trading/metrics?wallet=${walletAddress}` : null,
         fetcher,
         {
-            refreshInterval: 3000,
+            refreshInterval: 15000,
             fallbackData: {
                 totalInvested: 0,
                 activePositions: 0,

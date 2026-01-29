@@ -10,6 +10,7 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseMarketSlug } from '@/lib/utils';
+import { createTTLCache } from '@/lib/server-cache';
 // Order status types
 export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'SETTLEMENT_PENDING';
 
@@ -24,6 +25,9 @@ interface OrderStatusInfo {
     createdAt: number;
     updatedAt?: number;
 }
+
+const RESPONSE_TTL_MS = 10000;
+const responseCache = createTTLCache<any>();
 
 /**
  * GET /api/copy-trading/orders
@@ -41,6 +45,12 @@ export async function GET(request: NextRequest) {
                 { error: 'Missing wallet address' },
                 { status: 400 }
             );
+        }
+
+        const cacheKey = `orders:${walletAddress.toLowerCase()}:${tradeId || 'all'}:${status || 'all'}`;
+        const cachedResponse = responseCache.get(cacheKey);
+        if (cachedResponse) {
+            return NextResponse.json(cachedResponse);
         }
 
         // Build query
@@ -148,7 +158,9 @@ export async function GET(request: NextRequest) {
             failed: orders.filter((o: OrderItem) => o.status === 'REJECTED').length,
         };
 
-        return NextResponse.json({ orders, stats });
+        const responsePayload = { orders, stats };
+        responseCache.set(cacheKey, responsePayload, RESPONSE_TTL_MS);
+        return NextResponse.json(responsePayload);
     } catch (error) {
         console.error('[Orders] Error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

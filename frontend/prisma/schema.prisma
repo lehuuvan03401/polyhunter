@@ -342,6 +342,12 @@ model CopyTrade {
   @@index([configId])
   @@index([status])
   @@index([detectedAt])
+  @@index([configId, status, detectedAt])
+  @@index([configId, originalSide])
+  @@index([configId, tokenId])
+  @@index([tokenId, executedAt])
+  @@index([originalTrader, originalPrice])
+  @@index([txHash])
   @@unique([configId, originalTxHash])
 }
 
@@ -394,6 +400,7 @@ model UserPosition {
 
   @@unique([walletAddress, tokenId])
   @@index([walletAddress])
+  @@index([walletAddress, balance])
 }
 
 // Volume-Based Fee Tier Configuration

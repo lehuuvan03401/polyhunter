@@ -20,7 +20,7 @@ export function useSimulatedPositions(walletAddress: string) {
         walletAddress ? `/api/copy-trading/positions?wallet=${walletAddress}` : null,
         fetcher,
         {
-            refreshInterval: 3000,
+            refreshInterval: 15000,
             fallbackData: []
         }
     );

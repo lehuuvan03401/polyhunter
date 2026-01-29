@@ -8,7 +8,7 @@ export function useSimulatedHistory(walletAddress: string) {
         walletAddress ? `/api/copy-trading/history?wallet=${walletAddress}` : null,
         fetcher,
         {
-            refreshInterval: 10000, // Refresh every 10s
+            refreshInterval: 15000, // Refresh every 15s
         }
     );
 
