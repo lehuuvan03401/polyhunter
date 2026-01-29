@@ -78,6 +78,7 @@ let monitoredAddresses: Set<string> = new Set();
 let isProcessing = false;
 
 // --- HELPERS ---
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function logSkippedTrade(data: any, reason: string) {
     const payload = {
@@ -629,8 +630,8 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
 
             // 1.6 Price guard + optional FOK limit fallback
-            const orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
-            const marketPrice = orderbookSnapshot.price;
+            let orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
+            let marketPrice = orderbookSnapshot.price;
             const maxDeviation = (config.maxSlippage ?? 0) / 100;
             let useLimitFallback = false;
             let limitPrice = marketPrice;
@@ -784,7 +785,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             // 2. Create PENDING Record (Prevent Ghost Trades)
             let tradeId: string;
-            const executionPrice = useLimitFallback ? limitPrice : marketPrice;
+            let executionPrice = useLimitFallback ? limitPrice : marketPrice;
             try {
                 const pendingTrade = await prisma.copyTrade.create({
                     data: {
@@ -832,18 +833,34 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             // 3. Execute
             let result;
             try {
-                result = await executionService.executeOrderWithProxy({
-                    tradeId: tradeId, // Use the DB ID
-                    walletAddress: config.walletAddress,
-                    tokenId: tokenId,
-                    side: copySide,
-                    amount: copySizeUsdc,
-                    price: executionPrice,
-                    slippage: useLimitFallback ? 0 : (config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined),
-                    maxSlippage: useLimitFallback ? 0 : config.maxSlippage,
-                    slippageMode: useLimitFallback ? 'FIXED' : (config.slippageType as 'FIXED' | 'AUTO'),
-                    orderType: 'market',
-                });
+                const maxAttempts = useLimitFallback ? 2 : 1;
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    if (attempt > 1) {
+                        await sleep(200);
+                        orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
+                        marketPrice = orderbookSnapshot.price;
+                        executionPrice = limitPrice;
+                        console.log(`[Worker] 🔁 Retry ${attempt}/${maxAttempts} | leader=$${leaderPrice.toFixed(4)} | book=$${marketPrice.toFixed(4)} | cap=$${executionPrice.toFixed(4)}`);
+                    } else if (leaderPrice > 0 && useLimitFallback) {
+                        console.log(`[Worker] 🧾 Exec attempt ${attempt}/${maxAttempts} | leader=$${leaderPrice.toFixed(4)} | book=$${marketPrice.toFixed(4)} | cap=$${executionPrice.toFixed(4)}`);
+                    }
+
+                    result = await executionService.executeOrderWithProxy({
+                        tradeId: tradeId, // Use the DB ID
+                        walletAddress: config.walletAddress,
+                        tokenId: tokenId,
+                        side: copySide,
+                        amount: copySizeUsdc,
+                        price: executionPrice,
+                        slippage: useLimitFallback ? 0 : (config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined),
+                        maxSlippage: useLimitFallback ? 0 : config.maxSlippage,
+                        slippageMode: useLimitFallback ? 'FIXED' : (config.slippageType as 'FIXED' | 'AUTO'),
+                        orderType: 'market',
+                    });
+
+                    if (result?.success) break;
+                    if (!useLimitFallback) break;
+                }
             } catch (execErr: any) {
                 result = { success: false, error: execErr.message || 'Execution Exception' };
             }
