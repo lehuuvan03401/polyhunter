@@ -26,6 +26,7 @@ import { GuardrailService } from '../lib/services/guardrail-service';
 import { RealtimeServiceV2, ActivityTrade, MarketEvent } from '../../src/services/realtime-service-v2';
 import { GammaApiClient } from '../../src/index';
 import { normalizeTradeSizing } from '../../src/utils/trade-sizing.js';
+import { getSpeedProfile } from '../config/speed-profile';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -34,6 +35,7 @@ const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const POLL_INTERVAL_MS = 30000; // Refresh configs every 30s
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
+const speedProfile = getSpeedProfile();
 
 if (!TRADING_PRIVATE_KEY) {
     console.error('Missing TRADING_PRIVATE_KEY env var');
@@ -103,18 +105,62 @@ async function refreshConfigs() {
     }
 }
 
-async function getPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number> {
+async function getOrderbookPrice(tokenId: string, side: 'BUY' | 'SELL') {
     try {
         const orderbook = await tradingService.getOrderBook(tokenId);
         const bestAsk = Number(orderbook.asks[0]?.price || 0);
         const bestBid = Number(orderbook.bids[0]?.price || 0);
-
-        if (side === 'BUY') return bestAsk || bestBid || 0.5;
-        return bestBid || bestAsk || 0.5;
+        const price = side === 'BUY' ? (bestAsk || bestBid || 0.5) : (bestBid || bestAsk || 0.5);
+        return { orderbook, price, bestAsk, bestBid };
     } catch (e) {
-        console.warn(`[Worker] Failed to fetch price for ${tokenId}, defaulting to 0.5`);
-        return 0.5;
+        console.warn(`[Worker] Failed to fetch orderbook for ${tokenId}`, e);
+        return { orderbook: null, price: 0.5, bestAsk: 0, bestBid: 0 };
     }
+}
+
+function getLevelSize(level: any): number {
+    return Number(level?.size ?? level?.amount ?? level?.quantity ?? 0);
+}
+
+function evaluateOrderbookGuardrails(params: {
+    orderbook: any;
+    side: 'BUY' | 'SELL';
+    notionalUsd: number;
+    profile: ReturnType<typeof getSpeedProfile>;
+}) {
+    const { orderbook, side, notionalUsd, profile } = params;
+    const bestAsk = Number(orderbook?.asks?.[0]?.price || 0);
+    const bestBid = Number(orderbook?.bids?.[0]?.price || 0);
+
+    if (bestAsk <= 0 || bestBid <= 0) {
+        return { allowed: false, reason: 'ORDERBOOK_EMPTY', bestAsk, bestBid };
+    }
+
+    const mid = (bestAsk + bestBid) / 2;
+    const spreadBps = mid > 0 ? ((bestAsk - bestBid) / mid) * 10000 : 0;
+    if (profile.maxSpreadBps > 0 && spreadBps > profile.maxSpreadBps) {
+        return { allowed: false, reason: `SPREAD_${spreadBps.toFixed(1)}BPS`, spreadBps, bestAsk, bestBid };
+    }
+
+    const levels = side === 'BUY' ? orderbook.asks : orderbook.bids;
+    const maxLevels = profile.depthLevels;
+    const requiredShares = bestAsk > 0 ? notionalUsd / (side === 'BUY' ? bestAsk : bestBid) : 0;
+    let depthShares = 0;
+    for (let i = 0; i < Math.min(levels.length, maxLevels); i++) {
+        depthShares += getLevelSize(levels[i]);
+        if (requiredShares > 0 && depthShares >= requiredShares * profile.minDepthRatio) break;
+    }
+    const depthUsd = depthShares * (side === 'BUY' ? bestAsk : bestBid);
+
+    if (profile.minDepthUsd > 0 && depthUsd < profile.minDepthUsd) {
+        return { allowed: false, reason: `DEPTH_USD_${depthUsd.toFixed(2)}`, depthUsd, depthShares, bestAsk, bestBid };
+    }
+
+    if (requiredShares > 0 && depthShares < requiredShares * profile.minDepthRatio) {
+        return { allowed: false, reason: `DEPTH_RATIO_${depthShares.toFixed(2)}`, depthUsd, depthShares, bestAsk, bestBid };
+    }
+
+    return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
 }
 
 // Cache to prevent API spam and rate limits
@@ -435,6 +481,7 @@ async function startListener() {
     // 1. Initialize Services
     await tradingService.initialize();
     await refreshConfigs();
+    console.log(`[Worker] ⚡ Speed profile: ${speedProfile.name} | maxSpreadBps=${speedProfile.maxSpreadBps} | minDepthUsd=${speedProfile.minDepthUsd} | minDepthRatio=${speedProfile.minDepthRatio}`);
 
     // 2. Setup WebSocket Listener
     console.log('[Worker] 🔌 Connecting to Polymarket WebSocket...');
@@ -546,7 +593,8 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
 
             // 1.6 Price guard + max execution price check
-            const marketPrice = await getPrice(tokenId, copySide as 'BUY' | 'SELL');
+            const orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
+            const marketPrice = orderbookSnapshot.price;
             const maxDeviation = (config.maxSlippage ?? 0) / 100;
             if (leaderPrice > 0 && maxDeviation > 0) {
                 const deviation = Math.abs(marketPrice - leaderPrice) / leaderPrice;
@@ -610,6 +658,53 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     }, 'PRICE_MIN_EXCEEDED');
                     continue;
                 }
+            }
+
+            // 1.7 Orderbook guardrails (spread + depth)
+            if (!orderbookSnapshot.orderbook) {
+                await logSkippedTrade({
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    tokenId: tokenId,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash: txHash || `auto-${Date.now()}`,
+                    detectedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, 'ORDERBOOK_UNAVAILABLE');
+                continue;
+            }
+
+            const orderbookGuard = evaluateOrderbookGuardrails({
+                orderbook: orderbookSnapshot.orderbook,
+                side: copySide as 'BUY' | 'SELL',
+                notionalUsd: copySizeUsdc,
+                profile: speedProfile,
+            });
+
+            if (!orderbookGuard.allowed) {
+                console.warn(`[Worker] 🛑 Orderbook guardrail: ${orderbookGuard.reason}`);
+                await logSkippedTrade({
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    tokenId: tokenId,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash: txHash || `auto-${Date.now()}`,
+                    detectedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, `ORDERBOOK_${orderbookGuard.reason}`);
+                continue;
             }
 
             // 1. Guardrail Check (NEW)

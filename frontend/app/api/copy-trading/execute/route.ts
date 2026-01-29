@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 import { createTTLCache } from '@/lib/server-cache';
+import { getSpeedProfile } from '@/config/speed-profile';
 
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
@@ -26,6 +27,7 @@ const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_
 
 const PENDING_TRADES_TTL_MS = 10000;
 const pendingTradesCache = createTTLCache<any>();
+const speedProfile = getSpeedProfile();
 
 // Imports for Proxy Execution
 import { ethers } from 'ethers';
@@ -137,6 +139,56 @@ async function checkProxyAllowanceFallback(params: {
         return { allowed: false, reason: 'ALLOWANCE_MISSING_CTF' };
     }
     return { allowed: true };
+}
+
+function getLevelSize(level: any): number {
+    return Number(level?.size ?? level?.amount ?? level?.quantity ?? 0);
+}
+
+function evaluateOrderbookGuardrails(params: {
+    orderbook: any;
+    side: 'BUY' | 'SELL';
+    notionalUsd: number;
+    maxSpreadBps: number;
+    minDepthUsd: number;
+    minDepthRatio: number;
+    depthLevels: number;
+}) {
+    const { orderbook, side, notionalUsd, maxSpreadBps, minDepthUsd, minDepthRatio, depthLevels } = params;
+    const bestAsk = Number(orderbook?.asks?.[0]?.price || 0);
+    const bestBid = Number(orderbook?.bids?.[0]?.price || 0);
+
+    if (bestAsk <= 0 || bestBid <= 0) {
+        return { allowed: false, reason: 'ORDERBOOK_EMPTY', bestAsk, bestBid };
+    }
+
+    const mid = (bestAsk + bestBid) / 2;
+    const spreadBps = mid > 0 ? ((bestAsk - bestBid) / mid) * 10000 : 0;
+    if (maxSpreadBps > 0 && spreadBps > maxSpreadBps) {
+        return { allowed: false, reason: `SPREAD_${spreadBps.toFixed(1)}BPS`, spreadBps, bestAsk, bestBid };
+    }
+
+    const levels = side === 'BUY' ? orderbook.asks : orderbook.bids;
+    const requiredShares = (side === 'BUY' ? bestAsk : bestBid) > 0
+        ? notionalUsd / (side === 'BUY' ? bestAsk : bestBid)
+        : 0;
+
+    let depthShares = 0;
+    for (let i = 0; i < Math.min(levels?.length || 0, depthLevels); i++) {
+        depthShares += getLevelSize(levels[i]);
+        if (requiredShares > 0 && depthShares >= requiredShares * minDepthRatio) break;
+    }
+
+    const depthUsd = depthShares * (side === 'BUY' ? bestAsk : bestBid);
+    if (minDepthUsd > 0 && depthUsd < minDepthUsd) {
+        return { allowed: false, reason: `DEPTH_USD_${depthUsd.toFixed(2)}`, depthUsd, depthShares, bestAsk, bestBid };
+    }
+
+    if (requiredShares > 0 && depthShares < requiredShares * minDepthRatio) {
+        return { allowed: false, reason: `DEPTH_RATIO_${depthShares.toFixed(2)}`, depthUsd, depthShares, bestAsk, bestBid };
+    }
+
+    return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
 }
 
 /**
@@ -342,6 +394,33 @@ export async function POST(request: NextRequest) {
                     chainId: CHAIN_ID,
                 });
                 await tradingService.initialize();
+
+                const orderbook = await tradingService.getOrderBook(trade.tokenId);
+                const orderbookGuard = evaluateOrderbookGuardrails({
+                    orderbook,
+                    side: trade.originalSide as 'BUY' | 'SELL',
+                    notionalUsd: trade.copySize,
+                    maxSpreadBps: speedProfile.maxSpreadBps,
+                    minDepthUsd: speedProfile.minDepthUsd,
+                    minDepthRatio: speedProfile.minDepthRatio,
+                    depthLevels: speedProfile.depthLevels,
+                });
+
+                if (!orderbookGuard.allowed) {
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'SKIPPED',
+                            errorMessage: `ORDERBOOK_${orderbookGuard.reason}`,
+                        },
+                    });
+
+                    return NextResponse.json({
+                        success: false,
+                        error: `Orderbook guardrail: ${orderbookGuard.reason}`,
+                        status: 'SKIPPED',
+                    }, { status: 422 });
+                }
 
                 // Initialize Execution Service
                 const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
