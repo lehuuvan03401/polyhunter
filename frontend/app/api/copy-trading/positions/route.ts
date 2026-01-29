@@ -234,15 +234,17 @@ export async function GET(request: Request) {
 
             uniqueTokenIds.forEach(id => {
                 const info = metadataMap.get(id);
-                if (info) {
-                    // Start with slug (preferred for resolution logic alignment with metrics)
-                    if (info.marketSlug && !info.marketSlug.includes('unknown')) {
-                        jobs.set(info.marketSlug, { type: 'slug', value: info.marketSlug });
-                    }
-                    // Fallback to ConditionID if slug is missing/unknown and ConditionID is valid
-                    else if (info.conditionId && info.conditionId !== '0x0' && info.conditionId.length > 10) {
-                        jobs.set(info.conditionId, { type: 'condition', value: info.conditionId });
-                    }
+                if (!info) return;
+                const hasGamma = gammaPriceMap.has(id);
+                const hasResolution = marketResolutionMap.has(id);
+                if (hasGamma && hasResolution) return;
+                // Start with slug (preferred for resolution logic alignment with metrics)
+                if (info.marketSlug && !info.marketSlug.includes('unknown')) {
+                    jobs.set(info.marketSlug, { type: 'slug', value: info.marketSlug });
+                }
+                // Fallback to ConditionID if slug is missing/unknown and ConditionID is valid
+                else if (info.conditionId && info.conditionId !== '0x0' && info.conditionId.length > 10) {
+                    jobs.set(info.conditionId, { type: 'condition', value: info.conditionId });
                 }
             });
 

@@ -140,10 +140,11 @@ export async function GET(request: Request) {
 
             lossTradesNeedingFallback.forEach((t) => {
                 if (!t.tokenId || !t.configId || !t.executedAt) return;
-                const key = `${t.configId}:${t.tokenId}:${t.executedAt.getTime()}`;
+                const executedAt = t.executedAt;
+                const key = `${t.configId}:${t.tokenId}:${executedAt.getTime()}`;
                 if (fallbackPriceMap.has(key)) return;
                 const candidates = buysByToken.get(t.tokenId) || [];
-                const lastBuy = candidates.find((b) => b.executedAt && b.executedAt <= t.executedAt);
+                const lastBuy = candidates.find((b) => b.executedAt && b.executedAt <= executedAt);
                 const price = lastBuy?.copyPrice ?? lastBuy?.originalPrice ?? 0;
                 if (price > 0) {
                     fallbackPriceMap.set(key, price);

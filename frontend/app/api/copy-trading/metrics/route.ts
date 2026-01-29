@@ -77,7 +77,7 @@ export async function GET(request: Request) {
                     });
                 }
 
-                const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid));
+                const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid) && gammaPriceCache.get(tid) === undefined);
 
                 // Fallback: Fetch Gamma prices using marketSlug from CopyTrade metadata
                 const tradeMetadata = tokensNeedingGamma.length > 0

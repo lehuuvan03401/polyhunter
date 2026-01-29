@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
+import { createTTLCache } from '@/lib/server-cache';
 
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
@@ -22,6 +23,9 @@ const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .map((url) => url.trim())
     .filter(Boolean);
 const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
+
+const PENDING_TRADES_TTL_MS = 10000;
+const pendingTradesCache = createTTLCache<any>();
 
 // Imports for Proxy Execution
 import { ethers } from 'ethers';
@@ -495,6 +499,12 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        const cacheKey = `pending:${walletAddress.toLowerCase()}`;
+        const cachedResponse = pendingTradesCache.get(cacheKey);
+        if (cachedResponse) {
+            return NextResponse.json(cachedResponse);
+        }
+
         // Get pending trades that haven't expired
         const pendingTrades = await prisma.copyTrade.findMany({
             where: {
@@ -532,7 +542,9 @@ export async function GET(request: NextRequest) {
             },
         });
 
-        return NextResponse.json({ pendingTrades });
+        const responsePayload = { pendingTrades };
+        pendingTradesCache.set(cacheKey, responsePayload, PENDING_TRADES_TTL_MS);
+        return NextResponse.json(responsePayload);
     } catch (error) {
         console.error('Error fetching pending trades:', error);
         return NextResponse.json(

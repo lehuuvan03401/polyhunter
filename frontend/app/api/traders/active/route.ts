@@ -17,6 +17,7 @@ import {
     calculateScientificScore,
     Trade,
 } from '@/lib/services/trader-scoring-service';
+import { createTTLCache } from '@/lib/server-cache';
 import {
     getLeaderboardFromCache,
     getCacheMetadata,
@@ -73,10 +74,15 @@ type ActiveTraderResponse = {
 // ===== Cache Settings =====
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in-memory
 const DB_CACHE_TTL_MINUTES = 10; // 10 minutes DB cache
+const LEADERBOARD_TTL_MS = 60 * 1000; // 1 minute
+const TRADER_DETAIL_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TRADER_ERROR_TTL_MS = 30 * 1000; // 30 seconds
 
 // In-memory cache by period
 const memoryCache: Record<string, CachedData> = {};
 const inFlightRequests: Record<string, Promise<ActiveTraderResponse> | undefined> = {};
+const leaderboardCache = createTTLCache<any>();
+const traderDetailCache = createTTLCache<ActiveTrader | null>();
 
 // ===== Score Calculation =====
 // Now uses trader-scoring-service for scientific scoring
@@ -129,11 +135,16 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
     const timePeriod = mapPeriodToSdk(period);
 
     // Step 1: Get leaderboard as candidate pool (profitable traders in period)
-    const leaderboard = await polyClient.dataApi.getLeaderboard({
-        timePeriod,
-        orderBy: 'PNL',
-        limit: 50, // Fetch more to filter down
-    });
+    const leaderboardKey = `leaderboard:${timePeriod}`;
+    let leaderboard = leaderboardCache.get(leaderboardKey);
+    if (!leaderboard) {
+        leaderboard = await polyClient.dataApi.getLeaderboard({
+            timePeriod,
+            orderBy: 'PNL',
+            limit: 50, // Fetch more to filter down
+        });
+        leaderboardCache.set(leaderboardKey, leaderboard, LEADERBOARD_TTL_MS);
+    }
 
     // Step 2: For each candidate, fetch positions and activity in parallel
     // Calculate start time based on actual period for activity filtering
@@ -145,8 +156,18 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
 
     const startTime = nowSeconds - days * 24 * 60 * 60;
 
-    const enrichedTraders = await Promise.all(
-        leaderboard.entries.map(async (trader) => {
+    const results: Array<ActiveTrader | null> = [];
+    const batchSize = 5;
+
+    type LeaderboardEntry = (typeof leaderboard.entries)[number];
+
+    for (let i = 0; i < leaderboard.entries.length; i += batchSize) {
+        const batch = leaderboard.entries.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(async (trader: LeaderboardEntry) => {
+            const cacheKey = `detail:${period}:${trader.address.toLowerCase()}`;
+            const cached = traderDetailCache.get(cacheKey);
+            if (cached !== undefined) return cached;
+
             try {
                 const [positions, activities] = await Promise.all([
                     polyClient.dataApi.getPositions(trader.address, { limit: 50 }),
@@ -177,7 +198,7 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
                 // Calculate scientific metrics
                 const metrics = calculateScientificScore(enrichedTrades, { periodDays: days });
 
-                return {
+                const enriched: ActiveTrader = {
                     address: trader.address.toLowerCase(),
                     name: trader.userName || null,
                     profileImage: trader.profileImage,
@@ -201,12 +222,19 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
                     copyScore: metrics.scientificScore,
                     rank: 0, // Assigned below
                 };
+
+                traderDetailCache.set(cacheKey, enriched, TRADER_DETAIL_TTL_MS);
+                return enriched;
             } catch (error) {
                 console.error(`[ActiveTraders] Failed to fetch data for ${trader.address}:`, error);
+                traderDetailCache.set(cacheKey, null, TRADER_ERROR_TTL_MS);
                 return null;
             }
-        })
-    );
+        }));
+        results.push(...batchResults);
+    }
+
+    const enrichedTraders = results;
 
     // Step 3: Filter out failed fetches and inactive traders
     const validTraders = enrichedTraders.filter((t): t is NonNullable<typeof t> =>
