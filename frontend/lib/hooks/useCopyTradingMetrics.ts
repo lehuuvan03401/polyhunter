@@ -29,6 +29,7 @@ export function useCopyTradingMetrics(walletAddress: string) {
         fetcher,
         {
             refreshInterval: 15000,
+            dedupingInterval: 15000,
             fallbackData: {
                 totalInvested: 0,
                 activePositions: 0,

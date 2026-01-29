@@ -131,11 +131,14 @@ export function useOrderStatus(
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
     const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const refreshingRef = useRef(false);
 
     // Fetch orders
     const refresh = useCallback(async () => {
         if (!walletAddress) return;
+        if (refreshingRef.current) return;
 
+        refreshingRef.current = true;
         setIsLoading(true);
         setError(null);
 
@@ -167,6 +170,7 @@ export function useOrderStatus(
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error');
         } finally {
+            refreshingRef.current = false;
             setIsLoading(false);
         }
     }, [walletAddress, statusFilter]);
@@ -226,4 +230,3 @@ export function useOrderStatus(
         lastUpdated,
     };
 }
-

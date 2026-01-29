@@ -9,6 +9,7 @@ export function useSimulatedHistory(walletAddress: string) {
         fetcher,
         {
             refreshInterval: 15000, // Refresh every 15s
+            dedupingInterval: 15000,
         }
     );
 

@@ -25,9 +25,11 @@ const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .filter(Boolean);
 const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
 
-const PENDING_TRADES_TTL_MS = 10000;
+const PENDING_TRADES_TTL_MS = 20000;
 const pendingTradesCache = createTTLCache<any>();
 const speedProfile = getSpeedProfile();
+const EXPIRY_CHECK_INTERVAL_MS = 60000;
+let lastExpiryCheckAt = 0;
 
 // Imports for Proxy Execution
 import { ethers } from 'ethers';
@@ -579,50 +581,49 @@ export async function GET(request: NextRequest) {
         }
 
         const cacheKey = `pending:${walletAddress.toLowerCase()}`;
-        const cachedResponse = pendingTradesCache.get(cacheKey);
-        if (cachedResponse) {
-            return NextResponse.json(cachedResponse);
-        }
-
-        // Get pending trades that haven't expired
-        const pendingTrades = await prisma.copyTrade.findMany({
-            where: {
-                config: {
-                    walletAddress: walletAddress.toLowerCase(),
-                    isActive: true,
+        const responsePayload = await pendingTradesCache.getOrSet(cacheKey, PENDING_TRADES_TTL_MS, async () => {
+            // Get pending trades that haven't expired
+            const pendingTrades = await prisma.copyTrade.findMany({
+                where: {
+                    config: {
+                        walletAddress: walletAddress.toLowerCase(),
+                        isActive: true,
+                    },
+                    status: 'PENDING',
+                    OR: [
+                        { expiresAt: null },
+                        { expiresAt: { gt: new Date() } },
+                    ],
                 },
-                status: 'PENDING',
-                OR: [
-                    { expiresAt: null },
-                    { expiresAt: { gt: new Date() } },
-                ],
-            },
-            include: {
-                config: {
-                    select: {
-                        traderName: true,
-                        traderAddress: true,
+                include: {
+                    config: {
+                        select: {
+                            traderName: true,
+                            traderAddress: true,
+                        },
                     },
                 },
-            },
-            orderBy: { detectedAt: 'desc' },
-        });
+                orderBy: { detectedAt: 'desc' },
+            });
 
-        // Expire old pending trades
-        await prisma.copyTrade.updateMany({
-            where: {
-                status: 'PENDING',
-                expiresAt: {
-                    lt: new Date(),
-                },
-            },
-            data: {
-                status: 'EXPIRED',
-            },
-        });
+            const now = Date.now();
+            if (now - lastExpiryCheckAt > EXPIRY_CHECK_INTERVAL_MS) {
+                lastExpiryCheckAt = now;
+                await prisma.copyTrade.updateMany({
+                    where: {
+                        status: 'PENDING',
+                        expiresAt: {
+                            lt: new Date(),
+                        },
+                    },
+                    data: {
+                        status: 'EXPIRED',
+                    },
+                });
+            }
 
-        const responsePayload = { pendingTrades };
-        pendingTradesCache.set(cacheKey, responsePayload, PENDING_TRADES_TTL_MS);
+            return { pendingTrades };
+        });
         return NextResponse.json(responsePayload);
     } catch (error) {
         console.error('Error fetching pending trades:', error);

@@ -7,7 +7,7 @@ import { createTTLCache } from '@/lib/server-cache';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const RESPONSE_TTL_MS = 15000;
+const RESPONSE_TTL_MS = 20000;
 const responseCache = createTTLCache<any>();
 
 export async function GET(request: Request) {
@@ -36,121 +36,115 @@ export async function GET(request: Request) {
 
     try {
         const cacheKey = `history:${normalizedWallet}:${type || 'ALL'}`;
-        const cachedResponse = responseCache.get(cacheKey);
-        if (cachedResponse) {
-            return NextResponse.json(cachedResponse);
-        }
+        const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
+            // Query filters
+            let whereClause: Prisma.CopyTradeWhereInput = {
+                configId: { in: configIds },
+                status: 'EXECUTED'
+            };
 
-        // Query filters
-        let whereClause: Prisma.CopyTradeWhereInput = {
-            configId: { in: configIds },
-            status: 'EXECUTED'
-        };
+            if (type === 'COUNTS') {
+                const redeemedCount = await prisma.copyTrade.count({
+                    where: {
+                        configId: { in: configIds },
+                        OR: [
+                            { originalSide: 'REDEEM' }, // Actual Redeems
+                            { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] } // Simulated Wins
+                        ]
+                    }
+                });
+                // Loss = Sell by Settlement with 0 price OR Sell with 'loss' hash
+                const lostCount = await prisma.copyTrade.count({
+                    where: {
+                        configId: { in: configIds },
+                        OR: [
+                            { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] }, // Settlement Loss
+                            { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] } // Explicit Loss
+                        ]
+                    }
+                });
+                return {
+                    REDEEMED: redeemedCount,
+                    SETTLED_LOSS: lostCount
+                };
+            }
 
-        if (type === 'COUNTS') {
-            const redeemedCount = await prisma.copyTrade.count({
-                where: {
-                    configId: { in: configIds },
+            if (type === 'REDEEMED') {
+                whereClause = {
+                    ...whereClause,
                     OR: [
-                        { originalSide: 'REDEEM' }, // Actual Redeems
-                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] } // Simulated Wins
+                        { originalSide: 'REDEEM' },
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] }
                     ]
-                }
-            });
-            // Loss = Sell by Settlement with 0 price OR Sell with 'loss' hash
-            const lostCount = await prisma.copyTrade.count({
-                where: {
-                    configId: { in: configIds },
+                };
+            } else if (type === 'SETTLED_LOSS') {
+                whereClause = {
+                    ...whereClause,
                     OR: [
-                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] }, // Settlement Loss
-                        { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] } // Explicit Loss
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] },
+                        { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] }
                     ]
-                }
-            });
-            const responsePayload = {
-                REDEEMED: redeemedCount,
-                SETTLED_LOSS: lostCount
-            };
-            responseCache.set(cacheKey, responsePayload, RESPONSE_TTL_MS);
-            return NextResponse.json(responsePayload);
-        }
+                };
+            } else {
+                // ALL history (both types)
+                whereClause = {
+                    ...whereClause,
+                    OR: [
+                        { originalSide: 'REDEEM' },
+                        { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] },
+                        { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] }
+                    ]
+                };
+            }
 
-        if (type === 'REDEEMED') {
-            whereClause = {
-                ...whereClause,
-                OR: [
-                    { originalSide: 'REDEEM' },
-                    { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 1 }] }
-                ]
-            };
-        } else if (type === 'SETTLED_LOSS') {
-            whereClause = {
-                ...whereClause,
-                OR: [
-                    { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] },
-                    { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] }
-                ]
-            };
-        } else {
-            // ALL history (both types)
-            whereClause = {
-                ...whereClause,
-                OR: [
-                    { originalSide: 'REDEEM' },
-                    { AND: [{ originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }, { originalPrice: 0 }] },
-                    { AND: [{ originalSide: 'SELL' }, { txHash: { contains: 'loss' } }] }
-                ]
-            };
-        }
-
-        const trades = await prisma.copyTrade.findMany({
-            where: whereClause,
-            orderBy: { executedAt: 'desc' },
-            take: 50 // Limit to recent 50
-        });
-
-        const lossTradesNeedingFallback = trades.filter((t) => {
-            const isLoss = (t.originalTrader === 'POLYMARKET_SETTLEMENT' || t.originalTrader === 'PROTOCOL')
-                ? t.originalPrice === 0
-                : (t.originalSide === 'SELL' && (t.txHash || '').includes('loss'));
-            return isLoss && (!t.originalSize || t.originalSize <= 0) && !!t.realizedPnL;
-        });
-
-        const fallbackPriceMap = new Map<string, number>();
-        const lossTokenIds = Array.from(new Set(lossTradesNeedingFallback.map(t => t.tokenId).filter((id): id is string => !!id)));
-        if (lossTokenIds.length > 0) {
-            const buyTrades = await prisma.copyTrade.findMany({
-                where: {
-                    configId: { in: configIds },
-                    tokenId: { in: lossTokenIds },
-                    originalSide: 'BUY',
-                    executedAt: { not: null }
-                },
+            const trades = await prisma.copyTrade.findMany({
+                where: whereClause,
                 orderBy: { executedAt: 'desc' },
-                select: { tokenId: true, executedAt: true, copyPrice: true, originalPrice: true }
+                take: 50 // Limit to recent 50
             });
 
-            const buysByToken = new Map<string, typeof buyTrades>();
-            buyTrades.forEach((t) => {
-                if (!t.tokenId) return;
-                const list = buysByToken.get(t.tokenId) || [];
-                list.push(t);
-                buysByToken.set(t.tokenId, list);
+            const lossTradesNeedingFallback = trades.filter((t) => {
+                const isLoss = (t.originalTrader === 'POLYMARKET_SETTLEMENT' || t.originalTrader === 'PROTOCOL')
+                    ? t.originalPrice === 0
+                    : (t.originalSide === 'SELL' && (t.txHash || '').includes('loss'));
+                return isLoss && (!t.originalSize || t.originalSize <= 0) && !!t.realizedPnL;
             });
 
-            lossTradesNeedingFallback.forEach((t) => {
-                if (!t.tokenId || !t.configId || !t.executedAt) return;
-                const executedAt = t.executedAt;
-                const key = `${t.configId}:${t.tokenId}:${executedAt.getTime()}`;
-                if (fallbackPriceMap.has(key)) return;
-                const candidates = buysByToken.get(t.tokenId) || [];
-                const lastBuy = candidates.find((b) => b.executedAt && b.executedAt <= executedAt);
-                const price = lastBuy?.copyPrice ?? lastBuy?.originalPrice ?? 0;
-                if (price > 0) {
-                    fallbackPriceMap.set(key, price);
-                }
-            });
-        }
+            const fallbackPriceMap = new Map<string, number>();
+            const lossTokenIds = Array.from(new Set(lossTradesNeedingFallback.map(t => t.tokenId).filter((id): id is string => !!id)));
+            if (lossTokenIds.length > 0) {
+                const buyTrades = await prisma.copyTrade.findMany({
+                    where: {
+                        configId: { in: configIds },
+                        tokenId: { in: lossTokenIds },
+                        originalSide: 'BUY',
+                        executedAt: { not: null }
+                    },
+                    orderBy: { executedAt: 'desc' },
+                    select: { tokenId: true, executedAt: true, copyPrice: true, originalPrice: true }
+                });
+
+                const buysByToken = new Map<string, typeof buyTrades>();
+                buyTrades.forEach((t) => {
+                    if (!t.tokenId) return;
+                    const list = buysByToken.get(t.tokenId) || [];
+                    list.push(t);
+                    buysByToken.set(t.tokenId, list);
+                });
+
+                lossTradesNeedingFallback.forEach((t) => {
+                    if (!t.tokenId || !t.configId || !t.executedAt) return;
+                    const executedAt = t.executedAt;
+                    const key = `${t.configId}:${t.tokenId}:${executedAt.getTime()}`;
+                    if (fallbackPriceMap.has(key)) return;
+                    const candidates = buysByToken.get(t.tokenId) || [];
+                    const lastBuy = candidates.find((b) => b.executedAt && b.executedAt <= executedAt);
+                    const price = lastBuy?.copyPrice ?? lastBuy?.originalPrice ?? 0;
+                    if (price > 0) {
+                        fallbackPriceMap.set(key, price);
+                    }
+                });
+            }
 
         // Map to Position interface structure for UI compatibility
         const positions = trades.map(t => {
@@ -209,8 +203,10 @@ export async function GET(request: Request) {
             }
         });
 
-        responseCache.set(cacheKey, positions, RESPONSE_TTL_MS);
-        return NextResponse.json(positions);
+            return positions;
+        });
+
+        return NextResponse.json(responsePayload);
 
     } catch (error) {
         console.error('Error fetching history:', error);

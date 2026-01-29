@@ -7,7 +7,7 @@ import { createTTLCache } from '@/lib/server-cache';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const RESPONSE_TTL_MS = 15000;
+const RESPONSE_TTL_MS = 20000;
 const PRICE_TTL_MS = 10000;
 const GAMMA_TTL_MS = 30000;
 
@@ -29,10 +29,7 @@ export async function GET(request: Request) {
 
     try {
         const cacheKey = `metrics:${normalizedWallet}`;
-        const cachedResponse = responseCache.get(cacheKey);
-        if (cachedResponse) {
-            return NextResponse.json(cachedResponse);
-        }
+        const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
 
         // 1. Get Open Positions (for Invested Funds & Unrealized PnL)
         const positions = await prisma.userPosition.findMany({
@@ -307,7 +304,7 @@ export async function GET(request: Request) {
         tradingPnL = realizedWins + realizedLosses;
         const settlementPnL = settlementWins + settlementLosses;
 
-        const responsePayload = {
+            return {
             totalInvested,
             activePositions: positions.length,
             realizedPnL,      // Net realized
@@ -320,9 +317,8 @@ export async function GET(request: Request) {
             tradingPnL,       // Same as realized, explicitly named
             totalPnL: unrealizedPnL, // Use unrealized as the "main" PnL
             cumulativeInvestment // Total Volume since start
-        };
-
-        responseCache.set(cacheKey, responsePayload, RESPONSE_TTL_MS);
+            };
+        });
         return NextResponse.json(responsePayload);
 
     } catch (error) {

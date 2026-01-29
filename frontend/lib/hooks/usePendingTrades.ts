@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface PendingTrade {
     id: string;
@@ -33,13 +33,16 @@ export function usePendingTrades(walletAddress: string | undefined) {
     const [pendingTrades, setPendingTrades] = useState<PendingTrade[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const inFlightRef = useRef(false);
 
     const fetchPendingTrades = useCallback(async () => {
         if (!walletAddress) {
             setPendingTrades([]);
             return;
         }
+        if (inFlightRef.current) return;
 
+        inFlightRef.current = true;
         setIsLoading(true);
         setError(null);
 
@@ -55,6 +58,7 @@ export function usePendingTrades(walletAddress: string | undefined) {
             setError(err instanceof Error ? err.message : 'Unknown error');
             setPendingTrades([]);
         } finally {
+            inFlightRef.current = false;
             setIsLoading(false);
         }
     }, [walletAddress]);

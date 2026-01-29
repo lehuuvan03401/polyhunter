@@ -21,6 +21,7 @@ export function useSimulatedPositions(walletAddress: string) {
         fetcher,
         {
             refreshInterval: 15000,
+            dedupingInterval: 15000,
             fallbackData: []
         }
     );

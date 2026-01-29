@@ -11,7 +11,7 @@ const GAMMA_API_BASE = process.env.GAMMA_API_URL || 'https://gamma-api.polymarke
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const RESPONSE_TTL_MS = 15000;
+const RESPONSE_TTL_MS = 20000;
 const PRICE_TTL_MS = 10000;
 const GAMMA_TTL_MS = 30000;
 const RESOLUTION_TTL_MS = 30000;
@@ -136,10 +136,7 @@ export async function GET(request: Request) {
 
     try {
         const cacheKey = `positions:${normalizedWallet}`;
-        const cachedResponse = responseCache.get(cacheKey);
-        if (cachedResponse) {
-            return NextResponse.json(cachedResponse);
-        }
+        const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
 
         // Fetch local DB positions
         const positions = await prisma.userPosition.findMany({
@@ -356,8 +353,9 @@ export async function GET(request: Request) {
             };
         });
 
-        responseCache.set(cacheKey, enrichedPositions, RESPONSE_TTL_MS);
-        return NextResponse.json(enrichedPositions);
+        return enrichedPositions;
+        });
+        return NextResponse.json(responsePayload);
 
     } catch (error) {
         console.error('Error fetching positions:', error);
