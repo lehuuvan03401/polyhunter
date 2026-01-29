@@ -628,72 +628,74 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
 
-            // 1.6 Price guard + max execution price check
+            // 1.6 Price guard + optional FOK limit fallback
             const orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
             const marketPrice = orderbookSnapshot.price;
             const maxDeviation = (config.maxSlippage ?? 0) / 100;
+            let useLimitFallback = false;
+            let limitPrice = marketPrice;
+            let deviationPct = 0;
+
             if (leaderPrice > 0 && maxDeviation > 0) {
                 const deviation = Math.abs(marketPrice - leaderPrice) / leaderPrice;
-                if (deviation > maxDeviation) {
-                    console.warn(`[Worker] 🛑 Price guard: deviation ${(deviation * 100).toFixed(2)}% > max ${(maxDeviation * 100).toFixed(2)}%`);
-                    await logSkippedTrade({
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: copySide,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: copySizeUsdc,
-                        copyPrice: marketPrice,
-                        originalTxHash: txHash || `auto-${Date.now()}`,
-                        detectedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }, `PRICE_DEVIATION_${(deviation * 100).toFixed(2)}%`);
-                    continue;
-                }
+                deviationPct = deviation * 100;
 
-                const maxExecPrice = leaderPrice * (1 + maxDeviation);
-                const minExecPrice = leaderPrice * (1 - maxDeviation);
-                if (copySide === 'BUY' && marketPrice > maxExecPrice) {
-                    console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} > max ${maxExecPrice.toFixed(4)}`);
-                    await logSkippedTrade({
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: copySide,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: copySizeUsdc,
-                        copyPrice: marketPrice,
-                        originalTxHash: txHash || `auto-${Date.now()}`,
-                        detectedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }, 'PRICE_MAX_EXCEEDED');
-                    continue;
+                if (deviation > maxDeviation) {
+                    limitPrice = copySide === 'BUY'
+                        ? leaderPrice * (1 + maxDeviation)
+                        : leaderPrice * (1 - maxDeviation);
+                    useLimitFallback = true;
+                    console.warn(`[Worker] 🛑 Price guard: deviation ${deviationPct.toFixed(2)}% > max ${(maxDeviation * 100).toFixed(2)}%`);
+                    console.warn(`[Worker] 🧭 FOK limit fallback: cap=${limitPrice.toFixed(4)} (leader=${leaderPrice.toFixed(4)}, book=${marketPrice.toFixed(4)})`);
+                } else {
+                    const maxExecPrice = leaderPrice * (1 + maxDeviation);
+                    const minExecPrice = leaderPrice * (1 - maxDeviation);
+                    if (copySide === 'BUY' && marketPrice > maxExecPrice) {
+                        console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} > max ${maxExecPrice.toFixed(4)}`);
+                        await logSkippedTrade({
+                            configId: config.id,
+                            originalTrader: traderAddress,
+                            originalSide: copySide,
+                            originalSize: tradeShares,
+                            originalPrice: leaderPrice,
+                            tokenId: tokenId,
+                            copySize: copySizeUsdc,
+                            copyPrice: marketPrice,
+                            originalTxHash: txHash || `auto-${Date.now()}`,
+                            detectedAt: new Date(),
+                            marketSlug: metadata.marketSlug,
+                            conditionId: metadata.conditionId,
+                            outcome: metadata.outcome
+                        }, 'PRICE_MAX_EXCEEDED');
+                        continue;
+                    }
+                    if (copySide === 'SELL' && marketPrice < minExecPrice) {
+                        console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} < min ${minExecPrice.toFixed(4)}`);
+                        await logSkippedTrade({
+                            configId: config.id,
+                            originalTrader: traderAddress,
+                            originalSide: copySide,
+                            originalSize: tradeShares,
+                            originalPrice: leaderPrice,
+                            tokenId: tokenId,
+                            copySize: copySizeUsdc,
+                            copyPrice: marketPrice,
+                            originalTxHash: txHash || `auto-${Date.now()}`,
+                            detectedAt: new Date(),
+                            marketSlug: metadata.marketSlug,
+                            conditionId: metadata.conditionId,
+                            outcome: metadata.outcome
+                        }, 'PRICE_MIN_EXCEEDED');
+                        continue;
+                    }
                 }
-                if (copySide === 'SELL' && marketPrice < minExecPrice) {
-                    console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} < min ${minExecPrice.toFixed(4)}`);
-                    await logSkippedTrade({
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: copySide,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: copySizeUsdc,
-                        copyPrice: marketPrice,
-                        originalTxHash: txHash || `auto-${Date.now()}`,
-                        detectedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }, 'PRICE_MIN_EXCEEDED');
-                    continue;
-                }
+            }
+
+            if (leaderPrice > 0) {
+                const compareLine = useLimitFallback
+                    ? `cap=$${limitPrice.toFixed(4)}`
+                    : `book=$${marketPrice.toFixed(4)}`;
+                console.log(`[Worker] 📈 Price compare | leader=$${leaderPrice.toFixed(4)} | ${compareLine} | deviation=${deviationPct.toFixed(2)}%`);
             }
 
             // 1.7 Orderbook guardrails (spread + depth)
@@ -782,6 +784,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             // 2. Create PENDING Record (Prevent Ghost Trades)
             let tradeId: string;
+            const executionPrice = useLimitFallback ? limitPrice : marketPrice;
             try {
                 const pendingTrade = await prisma.copyTrade.create({
                     data: {
@@ -792,7 +795,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         originalPrice: leaderPrice,
                         tokenId: tokenId,
                         copySize: copySizeUsdc,
-                        copyPrice: marketPrice,
+                        copyPrice: executionPrice,
                         status: 'PENDING', // Start as PENDING
                         originalTxHash: txHash || `auto-${Date.now()}`,
                         detectedAt: new Date(),
@@ -818,7 +821,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     data: {
                         status: 'SKIPPED',
                         errorMessage: 'DRY_RUN',
-                        copyPrice: marketPrice,
+                        copyPrice: executionPrice,
                         executedAt: new Date(),
                     }
                 });
@@ -835,10 +838,10 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     side: copySide,
                     amount: copySizeUsdc,
-                    price: marketPrice,
-                    slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
-                    maxSlippage: config.maxSlippage,
-                    slippageMode: config.slippageType as 'FIXED' | 'AUTO',
+                    price: executionPrice,
+                    slippage: useLimitFallback ? 0 : (config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined),
+                    maxSlippage: useLimitFallback ? 0 : config.maxSlippage,
+                    slippageMode: useLimitFallback ? 'FIXED' : (config.slippageType as 'FIXED' | 'AUTO'),
                     orderType: 'market',
                 });
             } catch (execErr: any) {
@@ -859,6 +862,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             if (result.success) {
                 console.log(`[Worker] ✅ Execution Success! Tx: ${result.transactionHashes?.[0]}`);
+                console.log(`[Worker] 💰 Exec price cap: $${executionPrice.toFixed(4)} | Leader: $${leaderPrice.toFixed(4)} | Book: $${marketPrice.toFixed(4)}`);
                 // 5. Update Position
                 try {
                     const sharesBought = copySizeUsdc / marketPrice;
