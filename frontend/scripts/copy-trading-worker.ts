@@ -79,6 +79,56 @@ let isProcessing = false;
 
 // --- HELPERS ---
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const toNumber = (value: any) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+};
+
+async function fetchClobExecutionPrice(orderId: string): Promise<{ price: number; size: number; source: string } | null> {
+    try {
+        if (!tradingService.isInitialized()) {
+            await tradingService.initialize();
+        }
+        const client = tradingService.getClobClient();
+        if (!client) return null;
+
+        const order = await client.getOrder(orderId);
+        const orderPrice = toNumber(order?.price);
+        const orderMatched = toNumber(order?.size_matched);
+        const tradeIds = Array.isArray(order?.associate_trades) ? order.associate_trades : [];
+
+        if (!tradeIds.length) {
+            if (orderPrice > 0 && orderMatched > 0) {
+                return { price: orderPrice, size: orderMatched, source: 'order' };
+            }
+            return orderPrice > 0 ? { price: orderPrice, size: orderMatched, source: 'order' } : null;
+        }
+
+        let total = 0;
+        let qty = 0;
+        for (const tradeId of tradeIds) {
+            const trades = await client.getTrades({ id: tradeId });
+            const trade = trades?.[0];
+            const price = toNumber(trade?.price);
+            const size = toNumber(trade?.size);
+            if (price > 0 && size > 0) {
+                total += price * size;
+                qty += size;
+            }
+        }
+
+        if (qty > 0) {
+            return { price: total / qty, size: qty, source: 'trades' };
+        }
+        if (orderPrice > 0) {
+            return { price: orderPrice, size: orderMatched, source: 'order' };
+        }
+        return null;
+    } catch (error) {
+        console.warn('[Worker] ⚠️ Failed to fetch CLOB execution price:', error);
+        return null;
+    }
+}
 
 async function logSkippedTrade(data: any, reason: string) {
     const payload = {
@@ -907,6 +957,22 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 result = { success: false, error: execErr.message || 'Execution Exception' };
             }
 
+            let finalExecutionPrice = executionPrice;
+            let executionPriceSource = 'cap';
+
+            if (result.success && result.orderId) {
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    const execInfo = await fetchClobExecutionPrice(result.orderId);
+                    if (execInfo?.price) {
+                        finalExecutionPrice = execInfo.price;
+                        executionPriceSource = execInfo.source;
+                        console.log(`[Worker] 💵 CLOB fill price: $${finalExecutionPrice.toFixed(4)} (source=${execInfo.source}, size=${execInfo.size.toFixed(4)})`);
+                        break;
+                    }
+                    await sleep(250);
+                }
+            }
+
             // 4. Update Record
             await prisma.copyTrade.update({
                 where: { id: tradeId },
@@ -916,22 +982,23 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     txHash: result.transactionHashes?.[0] || result.orderId || null,
                     errorMessage: result.error || null,
                     usedBotFloat: (result as any).usedBotFloat ?? false,
+                    copyPrice: finalExecutionPrice,
                 }
             });
 
             if (result.success) {
                 console.log(`[Worker] ✅ Execution Success! Tx: ${result.transactionHashes?.[0]}`);
-                console.log(`[Worker] 💰 Exec price cap: $${executionPrice.toFixed(4)} | Leader: $${leaderPrice.toFixed(4)} | Book: $${marketPrice.toFixed(4)}`);
+                console.log(`[Worker] 💰 Exec price (${executionPriceSource}): $${finalExecutionPrice.toFixed(4)} | Leader: $${leaderPrice.toFixed(4)} | Book: $${marketPrice.toFixed(4)} | Cap: $${executionPrice.toFixed(4)}`);
                 // 5. Update Position
                 try {
-                    const sharesBought = copySizeUsdc / marketPrice;
+                    const sharesBought = copySizeUsdc / finalExecutionPrice;
                     if (copySide === 'BUY') {
                         await positionService.recordBuy({
                             walletAddress: config.walletAddress,
                             tokenId: tokenId,
                             side: 'BUY',
                             amount: sharesBought,
-                            price: marketPrice,
+                            price: finalExecutionPrice,
                             totalValue: copySizeUsdc
                         });
                         console.log(`[Worker] 📊 Position updated +${sharesBought.toFixed(2)}`);
@@ -941,7 +1008,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                             tokenId: tokenId,
                             side: 'SELL',
                             amount: sharesBought,
-                            price: marketPrice,
+                            price: finalExecutionPrice,
                             totalValue: copySizeUsdc
                         });
                         console.log(`[Worker] 📊 Position updated -${sharesBought.toFixed(2)}`);
