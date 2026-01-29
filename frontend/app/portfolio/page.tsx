@@ -99,6 +99,9 @@ export default function PortfolioPage() {
         return { wins, losses, pnl: wins + losses };
     })();
 
+    const effectivePnL = totalPnL + (ctMetrics?.totalPnL || 0);
+    const settlementPnL = ctMetrics?.settlementPnL || 0;
+
     // Fetch settled history when filter is redeemed (win/loss)
     useEffect(() => {
         const fetchSettledHistory = async () => {
@@ -472,7 +475,7 @@ export default function PortfolioPage() {
                         </div>
                         <div className="text-3xl font-bold tracking-tight mb-1">
                             {usdcBalance !== null
-                                ? `$${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `$${usdcBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '--'}
                             <span className="text-lg text-muted-foreground font-normal ml-1">USDC</span>
                         </div>
@@ -502,42 +505,25 @@ export default function PortfolioPage() {
                             </div>
                             <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">Unrealized</div>
                         </div>
-                        {(() => {
-                            const effectivePnL = totalPnL + (ctMetrics?.totalPnL || 0);
-                            return (
-                                <div className={cn("text-3xl font-bold tracking-tight", effectivePnL >= 0 ? "text-green-500" : "text-red-500")}>
-                                    {effectivePnL >= 0 ? '+' : ''}${effectivePnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </div>
-                            );
-                        })()}
+                        <div className={cn("text-3xl font-bold tracking-tight", effectivePnL >= 0 ? "text-green-500" : "text-red-500")}>
+                            {effectivePnL >= 0 ? '+' : ''}${effectivePnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
 
                         {/* Settlement PnL (Resolved + Redeemed) */}
                         <div className="mt-3 pt-3 border-t border-border/50">
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground">Settlement P&L (Resolved)</span>
                                 <div className="flex flex-col items-end">
-                                    {(() => {
-                                        const basePnL = ctMetrics?.settlementPnL || 0;
-                                        const combinedPnL = basePnL;
-                                        return (
-                                            <span className={cn("text-xs font-medium", combinedPnL >= 0 ? "text-green-400" : "text-red-400")}>
-                                                {combinedPnL >= 0 ? '+' : ''}${combinedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                        );
-                                    })()}
+                                    <span className={cn("text-xs font-medium", settlementPnL >= 0 ? "text-green-400" : "text-red-400")}>
+                                        {settlementPnL >= 0 ? '+' : ''}${settlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
                                     {ctMetrics && (
                                         <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
                                             <span className="text-green-400">
-                                                {(() => {
-                                                    const baseWins = ctMetrics.settlementWins || 0;
-                                                    return `W: +$${baseWins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                                                })()}
+                                                W: +${(ctMetrics.settlementWins || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                             <span className="text-red-400">
-                                                {(() => {
-                                                    const baseLosses = ctMetrics.settlementLosses || 0;
-                                                    return `L: -$${Math.abs(baseLosses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                                                })()}
+                                                L: -${Math.abs(ctMetrics.settlementLosses || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     )}
@@ -549,20 +535,15 @@ export default function PortfolioPage() {
                             <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground">Settled (Not Redeemed)</span>
                                 <div className="flex flex-col items-end">
-                                    {(() => {
-                                        const pnl = settledOpenStats.pnl;
-                                        return (
-                                            <span className={cn("text-xs font-medium", pnl >= 0 ? "text-green-400" : "text-red-400")}>
-                                                {pnl >= 0 ? '+' : ''}${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                        );
-                                    })()}
+                                    <span className={cn("text-xs font-medium", settledOpenStats.pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                                        {settledOpenStats.pnl >= 0 ? '+' : ''}${settledOpenStats.pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
                                     <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
                                         <span className="text-green-400">
-                                            {`W: +$${settledOpenStats.wins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                            {`W: +$${settledOpenStats.wins.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                         </span>
                                         <span className="text-red-400">
-                                            {`L: -$${Math.abs(settledOpenStats.losses).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                            {`L: -$${Math.abs(settledOpenStats.losses).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                         </span>
                                     </div>
                                 </div>
@@ -593,7 +574,7 @@ export default function PortfolioPage() {
                             <Zap className="h-5 w-5 text-yellow-500" />
                         </div>
                         <div className="text-3xl font-bold tracking-tight mb-1">
-                            ${(ctMetrics?.totalInvested || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${(ctMetrics?.totalInvested || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                         <div className="flex flex-col gap-1">
                             <div className="text-sm text-muted-foreground">
@@ -601,7 +582,7 @@ export default function PortfolioPage() {
                             </div>
                             {ctMetrics?.cumulativeInvestment !== undefined && (
                                 <div className="text-xs text-muted-foreground opacity-80 mt-1 text-yellow-500/80">
-                                    Total Volume: ${(ctMetrics.cumulativeInvestment).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    Total Volume: ${(ctMetrics.cumulativeInvestment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                             )}
                         </div>
@@ -843,7 +824,7 @@ export default function PortfolioPage() {
                                                                     )}
                                                                 >
                                                                     <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
-                                                                        {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '-'}
+                                                                        {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString('en-US') : '-'}
                                                                     </td>
                                                                     <td className="p-4 align-middle font-medium max-w-[250px]" title={pos.title}>
                                                                         <div className="flex items-center gap-1.5">
@@ -1048,7 +1029,7 @@ export default function PortfolioPage() {
                                                         )}
                                                     >
                                                         <td className="p-4 align-middle text-xs text-muted-foreground whitespace-nowrap">
-                                                            {new Date(item.timestamp * 1000).toLocaleString()}
+                                                            {new Date(item.timestamp * 1000).toLocaleString('en-US')}
                                                         </td>
                                                         <td className="p-4 align-middle">
                                                             <div className="flex items-center justify-center gap-2">

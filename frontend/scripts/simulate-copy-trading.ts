@@ -33,7 +33,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-const SIMULATION_DURATION_MS = 240 * 60 * 1000; // 4 hours
+const SIMULATION_DURATION_MS = 120 * 60 * 1000; // 2 hours
 const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '1'); // Ignored (using Leader Size)
 const SIMULATED_PROFILE = StrategyProfile.CONSERVATIVE; // Test CONSERVATIVE profile
