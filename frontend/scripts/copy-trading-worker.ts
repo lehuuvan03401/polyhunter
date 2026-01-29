@@ -58,6 +58,7 @@ const prisma = new PrismaClient({
 });
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 const signer = new ethers.Wallet(TRADING_PRIVATE_KEY, provider);
+const WORKER_ADDRESS = signer.address;
 
 // Services
 const rateLimiter = new RateLimiter();
@@ -899,16 +900,14 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             }
 
             // 1. Guardrail Check (NEW)
-            const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc);
+            const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc, {
+                source: 'worker',
+                workerAddress: WORKER_ADDRESS,
+                marketSlug: metadata.marketSlug,
+                tokenId,
+            });
             if (!guardrail.allowed) {
                 console.warn(`[Worker] 🛑 Guardrail Blocked: ${guardrail.reason}`);
-                GuardrailService.recordGuardrailTrigger({
-                    reason: guardrail.reason || 'GUARDRAIL_BLOCKED',
-                    source: 'worker',
-                    walletAddress: config.walletAddress,
-                    amount: copySizeUsdc,
-                    tokenId,
-                });
                 // Log skipped trade to DB so user knows
                 await logSkippedTrade({
                     configId: config.id,

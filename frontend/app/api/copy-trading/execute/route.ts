@@ -321,16 +321,27 @@ export async function POST(request: NextRequest) {
         // === SERVER-SIDE EXECUTION ===
         if (executeOnServer) {
             const workerSelection = getWorkerKey();
+            const workerAddress = workerSelection
+                ? new ethers.Wallet(workerSelection.privateKey).address
+                : undefined;
             // Quick check for Kill Switch using Guardrail Service (amount=0 just to check flag)
             // Or we can just check the flag directly if we kept the env var, but better to use service for consistency
             // Actually, for just the first check, we can check a small amount or refactor service to expose isOpen?
             // Let's just use the guardrail check with 0 amount to check the flag.
-            const guardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, 0);
-            if (guardrail.reason === 'REAL_TRADING_DISABLED') {
+            const guardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, 0, {
+                source: 'api',
+                workerAddress,
+                tradeId: trade.id,
+                tokenId: trade.tokenId || undefined,
+                marketSlug: trade.marketSlug || undefined,
+            });
+            if (guardrail.reason === 'REAL_TRADING_DISABLED' || guardrail.reason === 'EMERGENCY_PAUSE' || guardrail.reason === 'DRY_RUN') {
                 return NextResponse.json({
                     success: false,
                     requiresManualExecution: true,
-                    message: 'Real trading disabled by ENABLE_REAL_TRADING.',
+                    message: guardrail.reason === 'DRY_RUN'
+                        ? 'Dry-run mode enabled; execution skipped.'
+                        : 'Real trading disabled by guardrails.',
                     trade: {
                         id: trade.id,
                         tokenId: trade.tokenId,
@@ -363,7 +374,13 @@ export async function POST(request: NextRequest) {
                 });
             }
 
-            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, trade.copySize);
+            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, trade.copySize, {
+                source: 'api',
+                workerAddress,
+                tradeId: trade.id,
+                tokenId: trade.tokenId || undefined,
+                marketSlug: trade.marketSlug || undefined,
+            });
             if (!serverGuardrail.allowed) {
                 await prisma.copyTrade.update({
                     where: { id: trade.id },

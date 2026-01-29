@@ -383,6 +383,23 @@ model DebtRecord {
   @@index([status])
 }
 
+// Guardrail events for audit/monitoring
+model GuardrailEvent {
+  id            String   @id @default(cuid())
+  reason        String
+  source        String
+  walletAddress String?
+  amount        Float?
+  tradeId       String?
+  tokenId       String?
+  createdAt     DateTime @default(now())
+
+  @@index([reason])
+  @@index([walletAddress])
+  @@index([tokenId])
+  @@index([createdAt])
+}
+
 // ========================================
 // Profit-Based Fee System Models
 // ========================================
