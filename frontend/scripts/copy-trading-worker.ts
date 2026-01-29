@@ -84,6 +84,57 @@ const toNumber = (value: any) => {
     return Number.isFinite(num) ? num : 0;
 };
 
+const slippageStats = {
+    count: 0,
+    totalNotionalUsd: 0,
+    sumCostPct: 0,
+    sumAbsPct: 0,
+    maxCostPct: 0,
+    maxAbsPct: 0,
+    worstTx: '',
+    lastReportAt: 0,
+};
+
+function calcSlippageCostPct(params: { leader: number; exec: number; side: 'BUY' | 'SELL' }) {
+    const { leader, exec, side } = params;
+    if (leader <= 0 || exec <= 0) return 0;
+    if (side === 'BUY') return ((exec - leader) / leader) * 100;
+    return ((leader - exec) / leader) * 100;
+}
+
+function recordSlippageSample(params: {
+    leader: number;
+    exec: number;
+    side: 'BUY' | 'SELL';
+    notionalUsd: number;
+    txHash?: string;
+}) {
+    const { leader, exec, side, notionalUsd, txHash } = params;
+    if (leader <= 0 || exec <= 0) return;
+    const costPct = calcSlippageCostPct({ leader, exec, side });
+    const absPct = Math.abs(((exec - leader) / leader) * 100);
+
+    slippageStats.count += 1;
+    slippageStats.totalNotionalUsd += notionalUsd;
+    slippageStats.sumCostPct += costPct;
+    slippageStats.sumAbsPct += absPct;
+    if (costPct > slippageStats.maxCostPct) {
+        slippageStats.maxCostPct = costPct;
+        slippageStats.worstTx = txHash || '';
+    }
+    if (absPct > slippageStats.maxAbsPct) {
+        slippageStats.maxAbsPct = absPct;
+    }
+
+    const now = Date.now();
+    if (slippageStats.count % 20 === 0 || now - slippageStats.lastReportAt > 60000) {
+        const avgCost = slippageStats.sumCostPct / slippageStats.count;
+        const avgAbs = slippageStats.sumAbsPct / slippageStats.count;
+        console.log(`[Worker] 📊 Slippage stats | trades=${slippageStats.count} | avgCost=${avgCost.toFixed(2)}% | avgAbs=${avgAbs.toFixed(2)}% | maxCost=${slippageStats.maxCostPct.toFixed(2)}% | maxAbs=${slippageStats.maxAbsPct.toFixed(2)}% | notional=$${slippageStats.totalNotionalUsd.toFixed(2)}${slippageStats.worstTx ? ` | worstTx=${slippageStats.worstTx.slice(0, 10)}...` : ''}`);
+        slippageStats.lastReportAt = now;
+    }
+}
+
 async function fetchClobExecutionPrice(orderId: string): Promise<{ price: number; size: number; source: string } | null> {
     try {
         if (!tradingService.isInitialized()) {
@@ -989,6 +1040,13 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             if (result.success) {
                 console.log(`[Worker] ✅ Execution Success! Tx: ${result.transactionHashes?.[0]}`);
                 console.log(`[Worker] 💰 Exec price (${executionPriceSource}): $${finalExecutionPrice.toFixed(4)} | Leader: $${leaderPrice.toFixed(4)} | Book: $${marketPrice.toFixed(4)} | Cap: $${executionPrice.toFixed(4)}`);
+                recordSlippageSample({
+                    leader: leaderPrice,
+                    exec: finalExecutionPrice,
+                    side: copySide as 'BUY' | 'SELL',
+                    notionalUsd: copySizeUsdc,
+                    txHash: result.transactionHashes?.[0] || result.orderId,
+                });
                 // 5. Update Position
                 try {
                     const sharesBought = copySizeUsdc / finalExecutionPrice;
