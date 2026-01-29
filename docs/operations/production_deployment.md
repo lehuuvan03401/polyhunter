@@ -203,6 +203,14 @@ NEXTAUTH_SECRET="请生成一个复杂的随机字符串"
 - `COPY_TRADING_DAILY_CAP_USD` / `COPY_TRADING_WALLET_DAILY_CAP_USD`
 - `COPY_TRADING_WORKER_KEYS` / `COPY_TRADING_WORKER_INDEX`
 - `COPY_TRADING_MAX_RETRY_ATTEMPTS`
+- `COPY_TRADING_MIN_WALLET_MATIC`（readiness 面板提示用）
+- `COPY_TRADING_MIN_PROXY_USDC`（readiness 面板提示用）
+
+资金/授权 Readiness 面板会轮询 `/api/copy-trading/readiness`，展示：
+- 钱包 MATIC / USDC.e 余额
+- Proxy USDC.e 余额
+- USDC 与 CTF 授权状态
+- 缺失项的下一步指引（充值或授权）
 
 上线前建议执行就绪检查：
 ```
