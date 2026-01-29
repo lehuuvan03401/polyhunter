@@ -189,6 +189,37 @@ function evaluateOrderbookGuardrails(params: {
     return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
 }
 
+const MAX_DYNAMIC_DEVIATION = 0.2; // 20% hard cap to avoid extreme overpay
+
+function getDynamicMaxDeviation(params: {
+    baseMaxDeviation: number;
+    depthUsd?: number;
+}) {
+    const { baseMaxDeviation, depthUsd = 0 } = params;
+    if (baseMaxDeviation <= 0) {
+        return { maxDeviation: 0, tier: 'disabled', multiplier: 0 };
+    }
+
+    let multiplier = 1;
+    let tier = 'deep';
+    if (depthUsd >= 1000) {
+        multiplier = 1;
+        tier = 'deep';
+    } else if (depthUsd >= 200) {
+        multiplier = 1.5;
+        tier = 'mid';
+    } else if (depthUsd >= 50) {
+        multiplier = 2;
+        tier = 'shallow';
+    } else {
+        multiplier = 3;
+        tier = 'thin';
+    }
+
+    const maxDeviation = Math.min(baseMaxDeviation * multiplier, MAX_DYNAMIC_DEVIATION);
+    return { maxDeviation, tier, multiplier };
+}
+
 // Cache to prevent API spam and rate limits
 const metadataCache = new Map<string, { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache (metadata rarely changes)
@@ -629,10 +660,74 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
 
-            // 1.6 Price guard + optional FOK limit fallback
+            // 1.6 Orderbook guardrails + dynamic slippage tiers
             let orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
             let marketPrice = orderbookSnapshot.price;
-            const maxDeviation = (config.maxSlippage ?? 0) / 100;
+
+            if (!orderbookSnapshot.orderbook) {
+                await logSkippedTrade({
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    tokenId: tokenId,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash: txHash || `auto-${Date.now()}`,
+                    detectedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, 'ORDERBOOK_UNAVAILABLE');
+                continue;
+            }
+
+            const orderbookGuard = evaluateOrderbookGuardrails({
+                orderbook: orderbookSnapshot.orderbook,
+                side: copySide as 'BUY' | 'SELL',
+                notionalUsd: copySizeUsdc,
+                profile: speedProfile,
+            });
+
+            if (!orderbookGuard.allowed) {
+                console.warn(`[Worker] 🛑 Orderbook guardrail: ${orderbookGuard.reason}`);
+                GuardrailService.recordGuardrailTrigger({
+                    reason: `ORDERBOOK_${orderbookGuard.reason}`,
+                    source: 'worker',
+                    walletAddress: config.walletAddress,
+                    amount: copySizeUsdc,
+                    tokenId,
+                });
+                await logSkippedTrade({
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    tokenId: tokenId,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash: txHash || `auto-${Date.now()}`,
+                    detectedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, `ORDERBOOK_${orderbookGuard.reason}`);
+                continue;
+            }
+
+            const baseMaxDeviation = (config.maxSlippage ?? 0) / 100;
+            const dynamicMax = getDynamicMaxDeviation({
+                baseMaxDeviation,
+                depthUsd: orderbookGuard.depthUsd,
+            });
+            const maxDeviation = dynamicMax.maxDeviation;
+            if (baseMaxDeviation > 0 && maxDeviation !== baseMaxDeviation) {
+                console.log(`[Worker] 🧪 Liquidity tier=${dynamicMax.tier} depth=$${(orderbookGuard.depthUsd || 0).toFixed(2)} -> maxSlippage ${(maxDeviation * 100).toFixed(2)}% (base ${(baseMaxDeviation * 100).toFixed(2)}%)`);
+            }
+
+            // 1.7 Price guard + optional FOK limit fallback
             let useLimitFallback = false;
             let limitPrice = marketPrice;
             let deviationPct = 0;
@@ -699,60 +794,6 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 console.log(`[Worker] 📈 Price compare | leader=$${leaderPrice.toFixed(4)} | ${compareLine} | deviation=${deviationPct.toFixed(2)}%`);
             }
 
-            // 1.7 Orderbook guardrails (spread + depth)
-            if (!orderbookSnapshot.orderbook) {
-                await logSkippedTrade({
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: tradeShares,
-                    originalPrice: leaderPrice,
-                    tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: marketPrice,
-                    originalTxHash: txHash || `auto-${Date.now()}`,
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, 'ORDERBOOK_UNAVAILABLE');
-                continue;
-            }
-
-            const orderbookGuard = evaluateOrderbookGuardrails({
-                orderbook: orderbookSnapshot.orderbook,
-                side: copySide as 'BUY' | 'SELL',
-                notionalUsd: copySizeUsdc,
-                profile: speedProfile,
-            });
-
-            if (!orderbookGuard.allowed) {
-                console.warn(`[Worker] 🛑 Orderbook guardrail: ${orderbookGuard.reason}`);
-                GuardrailService.recordGuardrailTrigger({
-                    reason: `ORDERBOOK_${orderbookGuard.reason}`,
-                    source: 'worker',
-                    walletAddress: config.walletAddress,
-                    amount: copySizeUsdc,
-                    tokenId,
-                });
-                await logSkippedTrade({
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: tradeShares,
-                    originalPrice: leaderPrice,
-                    tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: marketPrice,
-                    originalTxHash: txHash || `auto-${Date.now()}`,
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, `ORDERBOOK_${orderbookGuard.reason}`);
-                continue;
-            }
-
             // 1. Guardrail Check (NEW)
             const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc);
             if (!guardrail.allowed) {
@@ -786,6 +827,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             // 2. Create PENDING Record (Prevent Ghost Trades)
             let tradeId: string;
             let executionPrice = useLimitFallback ? limitPrice : marketPrice;
+            const effectiveMaxSlippagePct = maxDeviation > 0 ? (maxDeviation * 100) : (config.maxSlippage ?? 0);
             try {
                 const pendingTrade = await prisma.copyTrade.create({
                     data: {
@@ -852,8 +894,8 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         side: copySide,
                         amount: copySizeUsdc,
                         price: executionPrice,
-                        slippage: useLimitFallback ? 0 : (config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined),
-                        maxSlippage: useLimitFallback ? 0 : config.maxSlippage,
+                        slippage: useLimitFallback ? 0 : (config.slippageType === 'FIXED' ? (effectiveMaxSlippagePct / 100) : undefined),
+                        maxSlippage: useLimitFallback ? 0 : effectiveMaxSlippagePct,
                         slippageMode: useLimitFallback ? 'FIXED' : (config.slippageType as 'FIXED' | 'AUTO'),
                         orderType: 'market',
                     });
