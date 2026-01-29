@@ -235,6 +235,9 @@ async function refreshConfigs() {
 async function getOrderbookPrice(tokenId: string, side: 'BUY' | 'SELL') {
     try {
         const orderbook = await tradingService.getOrderBook(tokenId);
+        if (!orderbook?.asks || !orderbook?.bids || (!orderbook.asks.length && !orderbook.bids.length)) {
+            return { orderbook: null, price: 0.5, bestAsk: 0, bestBid: 0 };
+        }
         const bestAsk = Number(orderbook.asks[0]?.price || 0);
         const bestBid = Number(orderbook.bids[0]?.price || 0);
         const price = side === 'BUY' ? (bestAsk || bestBid || 0.5) : (bestBid || bestAsk || 0.5);
