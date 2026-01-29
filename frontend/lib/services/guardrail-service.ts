@@ -9,6 +9,24 @@ const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
     .map((addr) => addr.trim().toLowerCase())
     .filter(Boolean);
 const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
+const GUARDRAIL_LOG_INTERVAL_MS = Number(process.env.COPY_TRADING_GUARDRAIL_LOG_INTERVAL_MS || '60000');
+const GUARDRAIL_ALERT_THRESHOLD = Number(process.env.COPY_TRADING_GUARDRAIL_ALERT_THRESHOLD || '20');
+
+type GuardrailStatState = {
+    total: number;
+    byReason: Map<string, number>;
+    bySource: Map<string, number>;
+    lastLogAt: number;
+    lastAlertAt: number;
+};
+
+const guardrailStats: GuardrailStatState = {
+    total: 0,
+    byReason: new Map(),
+    bySource: new Map(),
+    lastLogAt: Date.now(),
+    lastAlertAt: 0,
+};
 
 export interface GuardrailResult {
     allowed: boolean;
@@ -16,6 +34,42 @@ export interface GuardrailResult {
 }
 
 export class GuardrailService {
+    static recordGuardrailTrigger(params: {
+        reason: string;
+        source: string;
+        walletAddress?: string;
+        amount?: number;
+        tradeId?: string;
+        tokenId?: string;
+    }) {
+        guardrailStats.total += 1;
+        guardrailStats.byReason.set(params.reason, (guardrailStats.byReason.get(params.reason) || 0) + 1);
+        guardrailStats.bySource.set(params.source, (guardrailStats.bySource.get(params.source) || 0) + 1);
+
+        const now = Date.now();
+        if (GUARDRAIL_ALERT_THRESHOLD > 0 && guardrailStats.total >= GUARDRAIL_ALERT_THRESHOLD && now - guardrailStats.lastAlertAt > GUARDRAIL_LOG_INTERVAL_MS) {
+            guardrailStats.lastAlertAt = now;
+            console.warn(`[Guardrail] ⚠️ High trigger volume: ${guardrailStats.total} hits in last ${(GUARDRAIL_LOG_INTERVAL_MS / 1000).toFixed(0)}s`);
+        }
+
+        if (now - guardrailStats.lastLogAt >= GUARDRAIL_LOG_INTERVAL_MS) {
+            const reasonSummary = Array.from(guardrailStats.byReason.entries())
+                .map(([reason, count]) => `${reason}:${count}`)
+                .join(', ');
+            const sourceSummary = Array.from(guardrailStats.bySource.entries())
+                .map(([source, count]) => `${source}:${count}`)
+                .join(', ');
+
+            console.log(
+                `[Guardrail] Summary last ${(GUARDRAIL_LOG_INTERVAL_MS / 1000).toFixed(0)}s | total=${guardrailStats.total} | reasons=[${reasonSummary}] | sources=[${sourceSummary}]`
+            );
+
+            guardrailStats.total = 0;
+            guardrailStats.byReason.clear();
+            guardrailStats.bySource.clear();
+            guardrailStats.lastLogAt = now;
+        }
+    }
     /**
      * Calculate total executed volume (in USD) since a given date.
      */
@@ -47,17 +101,20 @@ export class GuardrailService {
     static async checkExecutionGuardrails(walletAddress: string, amount: number): Promise<GuardrailResult> {
         // 1. Kill Switch
         if (!ENABLE_REAL_TRADING) {
+            GuardrailService.recordGuardrailTrigger({ reason: 'REAL_TRADING_DISABLED', source: 'guardrail', walletAddress, amount });
             return { allowed: false, reason: 'REAL_TRADING_DISABLED' };
         }
 
         if (EXECUTION_ALLOWLIST.length > 0) {
             const normalized = walletAddress.toLowerCase();
             if (!EXECUTION_ALLOWLIST.includes(normalized)) {
+                GuardrailService.recordGuardrailTrigger({ reason: 'ALLOWLIST_BLOCKED', source: 'guardrail', walletAddress, amount });
                 return { allowed: false, reason: 'ALLOWLIST_BLOCKED' };
             }
         }
 
         if (MAX_TRADE_USD > 0 && amount > MAX_TRADE_USD) {
+            GuardrailService.recordGuardrailTrigger({ reason: 'MAX_TRADE_EXCEEDED', source: 'guardrail', walletAddress, amount });
             return { allowed: false, reason: `MAX_TRADE_EXCEEDED (${amount.toFixed(2)} > ${MAX_TRADE_USD})` };
         }
 
@@ -67,6 +124,7 @@ export class GuardrailService {
         if (GLOBAL_DAILY_CAP_USD > 0) {
             const globalUsed = await this.getExecutedTotalSince(since);
             if (globalUsed + amount > GLOBAL_DAILY_CAP_USD) {
+                GuardrailService.recordGuardrailTrigger({ reason: 'GLOBAL_DAILY_CAP_EXCEEDED', source: 'guardrail', walletAddress, amount });
                 return {
                     allowed: false,
                     reason: `GLOBAL_DAILY_CAP_EXCEEDED (${globalUsed.toFixed(2)} + ${amount.toFixed(2)} > ${GLOBAL_DAILY_CAP_USD})`,
@@ -78,6 +136,7 @@ export class GuardrailService {
         if (WALLET_DAILY_CAP_USD > 0) {
             const walletUsed = await this.getExecutedTotalSince(since, walletAddress);
             if (walletUsed + amount > WALLET_DAILY_CAP_USD) {
+                GuardrailService.recordGuardrailTrigger({ reason: 'WALLET_DAILY_CAP_EXCEEDED', source: 'guardrail', walletAddress, amount });
                 return {
                     allowed: false,
                     reason: `WALLET_DAILY_CAP_EXCEEDED (${walletUsed.toFixed(2)} + ${amount.toFixed(2)} > ${WALLET_DAILY_CAP_USD})`,

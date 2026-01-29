@@ -409,6 +409,14 @@ export async function POST(request: NextRequest) {
                 });
 
                 if (!orderbookGuard.allowed) {
+                    GuardrailService.recordGuardrailTrigger({
+                        reason: `ORDERBOOK_${orderbookGuard.reason}`,
+                        source: 'api',
+                        walletAddress,
+                        amount: trade.copySize,
+                        tokenId: trade.tokenId || undefined,
+                        tradeId: trade.id,
+                    });
                     await prisma.copyTrade.update({
                         where: { id: trade.id },
                         data: {

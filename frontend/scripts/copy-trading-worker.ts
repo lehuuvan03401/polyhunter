@@ -689,6 +689,13 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             if (!orderbookGuard.allowed) {
                 console.warn(`[Worker] 🛑 Orderbook guardrail: ${orderbookGuard.reason}`);
+                GuardrailService.recordGuardrailTrigger({
+                    reason: `ORDERBOOK_${orderbookGuard.reason}`,
+                    source: 'worker',
+                    walletAddress: config.walletAddress,
+                    amount: copySizeUsdc,
+                    tokenId,
+                });
                 await logSkippedTrade({
                     configId: config.id,
                     originalTrader: traderAddress,
@@ -711,6 +718,13 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc);
             if (!guardrail.allowed) {
                 console.warn(`[Worker] 🛑 Guardrail Blocked: ${guardrail.reason}`);
+                GuardrailService.recordGuardrailTrigger({
+                    reason: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                    source: 'worker',
+                    walletAddress: config.walletAddress,
+                    amount: copySizeUsdc,
+                    tokenId,
+                });
                 // Log skipped trade to DB so user knows
                 await logSkippedTrade({
                     configId: config.id,
