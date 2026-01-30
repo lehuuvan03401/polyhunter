@@ -13,8 +13,10 @@ export function useSimulatedHistory(walletAddress: string) {
         }
     );
 
+    const history = Array.isArray(data) ? data : [];
+
     return {
-        history: data || [],
+        history,
         isLoading,
         isError: error,
         mutate
