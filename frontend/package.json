@@ -9,8 +9,8 @@
     "lint": "eslint",
     "cache:update": "tsx scripts/update-leaderboard-cache.ts",
     "copy-worker:speed": "COPY_TRADING_SPEED_MODE=true npx tsx scripts/copy-trading-worker.ts",
-    "env:mainnet": "cp -f .env.local.mainnet .env.local",
-    "env:local": "cp -f .env.local.localhost .env.local"
+    "env:mainnet": "sh -c \"cat .env.local.mainnet .env.local.secrets 2>/dev/null > .env.local\"",
+    "env:local": "sh -c \"cat .env.local.localhost .env.local.secrets 2>/dev/null > .env.local\""
   },
   "dependencies": {
     "@catalyst-team/poly-sdk": "file:./vendor/poly-sdk.tgz",
