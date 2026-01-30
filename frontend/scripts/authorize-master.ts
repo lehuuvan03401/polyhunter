@@ -40,7 +40,20 @@ async function main() {
     console.log("⚠️ Wallet not authorized. Sending addWorker transaction...");
 
     try {
-        const tx = await executor.addWorker(wallet.address);
+        const feeData = await provider.getFeeData();
+        const minTipGwei = 30;
+        const minTip = ethers.utils.parseUnits(minTipGwei.toString(), 'gwei');
+        const priorityFee = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas.gt(minTip)
+            ? feeData.maxPriorityFeePerGas
+            : minTip;
+        const maxFee = feeData.maxFeePerGas && feeData.maxFeePerGas.gt(priorityFee.mul(2))
+            ? feeData.maxFeePerGas
+            : priorityFee.mul(2);
+
+        const tx = await executor.addWorker(wallet.address, {
+            maxPriorityFeePerGas: priorityFee,
+            maxFeePerGas: maxFee,
+        });
         console.log(`Tx sent: ${tx.hash}`);
         await tx.wait();
         console.log("✅ Authorization Success! Master Wallet is now a Worker.");
