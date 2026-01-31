@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { Loader2, Plus, Wallet, ArrowDownLeft, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 
 export function ProxyWalletCard() {
+    const t = useTranslations('ProxyWallet');
     const {
         hasProxy,
         proxyAddress,
@@ -26,22 +28,23 @@ export function ProxyWalletCard() {
     const [operatorAddress, setOperatorAddress] = useState('');
 
     const getStatusText = (status: typeof txStatus) => {
+        if (!status) return t('status.processing');
         switch (status) {
-            case 'APPROVING': return 'Approving USDC...';
-            case 'DEPOSITING': return 'Sign Deposit Tx...';
-            case 'WITHDRAWING': return 'Withdrawing...';
-            case 'AUTHORIZING': return 'Authorizing...';
-            case 'EXECUTING': return 'Executing...';
-            case 'CONFIRMING': return 'Confirming...';
-            case 'CREATING': return 'Creating Wallet...';
-            default: return 'Processing...';
+            case 'APPROVING': return t('status.approving');
+            case 'DEPOSITING': return t('status.depositing');
+            case 'WITHDRAWING': return t('status.withdrawing');
+            case 'AUTHORIZING': return t('status.authorizing');
+            case 'EXECUTING': return t('status.executing');
+            case 'CONFIRMING': return t('status.confirming');
+            case 'CREATING': return t('status.creating');
+            default: return t('status.processing');
         }
     };
 
     const handleCreateProxy = async () => {
         const address = await createProxy('STARTER');
         if (address) {
-            toast.success('Proxy wallet created successfully!');
+            toast.success(t('toast.createSuccess'));
         } else if (error) {
             toast.error(error);
         }
@@ -51,10 +54,10 @@ export function ProxyWalletCard() {
         if (!amount || isNaN(Number(amount))) return;
         const success = await deposit(Number(amount));
         if (success) {
-            toast.success('Deposit successful!');
+            toast.success(t('toast.depositSuccess'));
             setAmount('');
         } else {
-            toast.error(error || 'Deposit failed');
+            toast.error(error || t('toast.depositFail'));
         }
     };
 
@@ -62,10 +65,10 @@ export function ProxyWalletCard() {
         if (!amount || isNaN(Number(amount))) return;
         const success = await withdraw(Number(amount));
         if (success) {
-            toast.success('Withdrawal successful!');
+            toast.success(t('toast.withdrawSuccess'));
             setAmount('');
         } else {
-            toast.error(error || 'Withdrawal failed');
+            toast.error(error || t('toast.withdrawFail'));
         }
     };
 
@@ -75,16 +78,16 @@ export function ProxyWalletCard() {
         const targetOp = operatorAddress.trim() || defaultBot;
 
         if (!targetOp || !targetOp.startsWith('0x')) {
-            toast.error('Invalid operator address');
+            toast.error(t('toast.invalidOp'));
             return;
         }
 
         const result = await authorizeOperator(targetOp, true);
         if (result.success) {
-            toast.success('Operator authorized successfully!');
+            toast.success(t('toast.authSuccess'));
             setOperatorAddress('');
         } else {
-            toast.error(result.error || 'Authorization failed');
+            toast.error(result.error || t('toast.authFail'));
         }
     };
 
@@ -123,10 +126,10 @@ export function ProxyWalletCard() {
                 <div className="flex flex-col space-y-1.5 pb-4">
                     <h3 className="font-semibold leading-none tracking-tight flex items-center gap-2">
                         <Wallet className="h-5 w-5" />
-                        Smart Wallet
+                        {t('title')}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                        Create a dedicated smart wallet to enable Copy Trading.
+                        {t('createDesc')}
                     </p>
                 </div>
                 <div>
@@ -143,7 +146,7 @@ export function ProxyWalletCard() {
                         ) : (
                             <>
                                 <Plus className="mr-2 h-4 w-4" />
-                                <span>Create Smart Wallet</span>
+                                <span>{t('createBtn')}</span>
                             </>
                         )}
                     </button>
@@ -160,7 +163,7 @@ export function ProxyWalletCard() {
                     <div>
                         <h3 className="font-semibold leading-none tracking-tight flex items-center gap-2">
                             <Wallet className="h-5 w-5 text-blue-500" />
-                            Smart Wallet
+                            {t('title')}
                         </h3>
                         <p className="text-xs font-mono mt-1 text-muted-foreground">
                             {proxyAddress?.slice(0, 6)}...{proxyAddress?.slice(-4)}
@@ -171,7 +174,7 @@ export function ProxyWalletCard() {
                             ${stats?.balance.toLocaleString() || '0.00'}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                            Profit: <span className={(stats?.profit || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            {t('profit')} <span className={(stats?.profit || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>
                                 ${(stats?.profit || 0).toFixed(2)}
                             </span>
                         </div>
@@ -188,7 +191,7 @@ export function ProxyWalletCard() {
                                 onClick={() => setActiveTab(tab as any)}
                                 className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${activeTab === tab ? 'bg-white text-black shadow dark:bg-gray-950 dark:text-white' : ''}`}
                             >
-                                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                {t(`tabs.${tab}`)}
                             </button>
                         ))}
                     </div>
@@ -196,7 +199,7 @@ export function ProxyWalletCard() {
                     {activeTab === 'deposit' && (
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Amount (USDC)</label>
+                                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{t('amount')}</label>
                                 <div className="relative">
                                     <input
                                         type="number"
@@ -215,10 +218,10 @@ export function ProxyWalletCard() {
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <p className={!isNaN(Number(amount)) && Number(amount) > usdcBalance ? 'text-red-500 font-medium' : 'text-muted-foreground'}>
-                                        {!isNaN(Number(amount)) && Number(amount) > usdcBalance ? 'Insufficient Balance' : ''}
+                                        {!isNaN(Number(amount)) && Number(amount) > usdcBalance ? t('insufficient') : ''}
                                     </p>
                                     <p className="text-muted-foreground text-right">
-                                        Wallet Balance: ${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {t('balance')} ${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </p>
                                 </div>
                             </div>
@@ -232,7 +235,7 @@ export function ProxyWalletCard() {
                                         rel="noopener noreferrer"
                                         className="text-xs text-blue-500 hover:text-blue-600 underline"
                                     >
-                                        Buy USDC on Uniswap ↗
+                                        {t('buyUSDC')}
                                     </a>
                                 </div>
                             )}
@@ -250,14 +253,14 @@ export function ProxyWalletCard() {
                                 ) : (
                                     <>
                                         <ArrowDownLeft className="mr-2 h-4 w-4" />
-                                        <span>Deposit Funds</span>
+                                        <span>{t('depositBtn')}</span>
                                     </>
                                 )}
                             </button>
 
                             {txPending && (txStatus === 'APPROVING' || txStatus === 'DEPOSITING') && (
                                 <p className="text-xs text-center text-blue-500 animate-pulse pt-2">
-                                    Please sign the transaction in your wallet
+                                    {t('signTx')}
                                 </p>
                             )}
                         </div>
@@ -266,7 +269,7 @@ export function ProxyWalletCard() {
                     {activeTab === 'withdraw' && (
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Amount (USDC)</label>
+                                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{t('amount')}</label>
                                 <div className="relative">
                                     <input
                                         type="number"
@@ -283,7 +286,7 @@ export function ProxyWalletCard() {
                                     </button>
                                 </div>
                                 <p className="text-xs text-muted-foreground text-right">
-                                    Max: ${stats?.balance.toLocaleString() || '0.00'}
+                                    {t('max')} ${stats?.balance.toLocaleString() || '0.00'}
                                 </p>
                             </div>
                             <button
@@ -299,7 +302,7 @@ export function ProxyWalletCard() {
                                 ) : (
                                     <>
                                         <ArrowUpRight className="mr-2 h-4 w-4" />
-                                        <span>Withdraw Funds</span>
+                                        <span>{t('withdrawBtn')}</span>
                                     </>
                                 )}
                             </button>
@@ -311,10 +314,10 @@ export function ProxyWalletCard() {
                             <div className="rounded-md bg-muted p-3 text-sm bg-gray-100 dark:bg-gray-800">
                                 <div className="flex items-center gap-2 mb-2 font-medium">
                                     <ShieldCheck className="h-4 w-4" />
-                                    Bot Authorization
+                                    {t('botAuth')}
                                 </div>
                                 <p className="text-xs text-muted-foreground mb-3">
-                                    Authorize the platform bot to execute trades on your behalf.
+                                    {t('botAuthDesc')}
                                 </p>
                                 <div className="space-y-2">
                                     <input
@@ -333,7 +336,7 @@ export function ProxyWalletCard() {
                                                 <Loader2 className="h-3 w-3 animate-spin" />
                                                 <span className="ml-2">{getStatusText(txStatus)}</span>
                                             </>
-                                        ) : 'Authorize Bot'}
+                                        ) : t('authBtn')}
                                     </button>
                                 </div>
                             </div>

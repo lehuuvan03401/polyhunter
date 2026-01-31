@@ -2,6 +2,8 @@
 
 import { cn } from '@/lib/utils';
 
+import { useTranslations } from 'next-intl';
+
 interface GenerationData {
     generation: number;
     count: number;
@@ -23,10 +25,12 @@ const GENERATION_COLORS = [
 ];
 
 export function GenerationSummaryBar({ data, total, className }: GenerationSummaryBarProps) {
+    const t = useTranslations('Affiliate.teamView');
+
     if (data.length === 0) {
         return (
             <div className={cn("p-4 rounded-xl border border-white/10 bg-white/5", className)}>
-                <p className="text-sm text-muted-foreground text-center">No team members yet</p>
+                <p className="text-sm text-muted-foreground text-center">{t('empty')}</p>
             </div>
         );
     }
@@ -35,8 +39,8 @@ export function GenerationSummaryBar({ data, total, className }: GenerationSumma
         <div className={cn("p-4 rounded-xl border border-white/10 bg-white/5", className)}>
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-medium text-muted-foreground">Generation Breakdown</h4>
-                <span className="text-sm text-white font-mono">{total} total</span>
+                <h4 className="text-sm font-medium text-muted-foreground">{t('breakdown')}</h4>
+                <span className="text-sm text-white font-mono">{t('total', { count: total })}</span>
             </div>
 
             {/* Bar Chart */}

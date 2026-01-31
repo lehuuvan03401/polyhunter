@@ -13,7 +13,10 @@ interface WithdrawDialogProps {
 
 type DialogStep = 'confirm' | 'signing' | 'submitting' | 'success' | 'error';
 
+import { useTranslations } from 'next-intl';
+
 export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: WithdrawDialogProps) {
+    const t = useTranslations('Affiliate.withdraw');
     const [step, setStep] = useState<DialogStep>('confirm');
     const [errorMessage, setErrorMessage] = useState<string>('');
     const [withdrawingAmount, setWithdrawingAmount] = useState<number>(0);
@@ -27,7 +30,7 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
             await onConfirm();
             setStep('success');
         } catch (error: any) {
-            setErrorMessage(error.message || 'Withdrawal failed');
+            setErrorMessage(error.message || t('failed.title'));
             setStep('error');
         }
     };
@@ -67,14 +70,14 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                                     <Wallet className="h-6 w-6 text-green-500" />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-white">Request Withdrawal</h2>
-                                    <p className="text-sm text-muted-foreground">Withdraw your affiliate earnings</p>
+                                    <h2 className="text-xl font-bold text-white">{t('title')}</h2>
+                                    <p className="text-sm text-muted-foreground">{t('desc')}</p>
                                 </div>
                             </div>
 
                             {/* Amount */}
                             <div className="bg-white/5 border border-white/10 rounded-xl p-6 mb-6 text-center">
-                                <div className="text-sm text-muted-foreground mb-2">Available to Withdraw</div>
+                                <div className="text-sm text-muted-foreground mb-2">{t('available')}</div>
                                 <div className="text-4xl font-bold text-green-500 font-mono">
                                     ${pendingAmount.toFixed(2)}
                                 </div>
@@ -84,7 +87,7 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                             <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl mb-6">
                                 <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
                                 <div className="text-sm text-yellow-500/90">
-                                    You will be asked to sign a message with your wallet to authorize this withdrawal. This is for security purposes.
+                                    {t('info')}
                                 </div>
                             </div>
 
@@ -94,13 +97,13 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                                     onClick={handleClose}
                                     className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-muted-foreground hover:text-white hover:bg-white/5 transition-colors font-medium"
                                 >
-                                    Cancel
+                                    {t('cancel')}
                                 </button>
                                 <button
                                     onClick={handleConfirm}
                                     className="flex-1 px-4 py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold transition-colors"
                                 >
-                                    Confirm Withdrawal
+                                    {t('confirm')}
                                 </button>
                             </div>
                         </>
@@ -109,9 +112,9 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                     {step === 'signing' && (
                         <div className="py-8 text-center">
                             <Loader2 className="h-12 w-12 animate-spin text-yellow-500 mx-auto mb-4" />
-                            <h2 className="text-xl font-bold text-white mb-2">Sign in Wallet</h2>
+                            <h2 className="text-xl font-bold text-white mb-2">{t('signing.title')}</h2>
                             <p className="text-muted-foreground">
-                                Please sign the message in your wallet to authorize the withdrawal...
+                                {t('signing.desc')}
                             </p>
                         </div>
                     )}
@@ -119,9 +122,9 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                     {step === 'submitting' && (
                         <div className="py-8 text-center">
                             <Loader2 className="h-12 w-12 animate-spin text-green-500 mx-auto mb-4" />
-                            <h2 className="text-xl font-bold text-white mb-2">Processing</h2>
+                            <h2 className="text-xl font-bold text-white mb-2">{t('submitting.title')}</h2>
                             <p className="text-muted-foreground">
-                                Submitting your withdrawal request...
+                                {t('submitting.desc')}
                             </p>
                         </div>
                     )}
@@ -131,15 +134,13 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                             <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
                                 <CheckCircle2 className="h-10 w-10 text-green-500" />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Withdrawal Submitted!</h2>
-                            <p className="text-muted-foreground mb-6">
-                                Your withdrawal request of <span className="text-green-500 font-bold">${withdrawingAmount.toFixed(2)}</span> has been submitted successfully.
-                            </p>
+                            <h2 className="text-xl font-bold text-white mb-2">{t('success.title')}</h2>
+                            <p className="text-muted-foreground mb-6" dangerouslySetInnerHTML={{ __html: t.raw('success.desc').replace('${amount}', withdrawingAmount.toFixed(2)) }} />
                             <button
                                 onClick={handleClose}
                                 className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
                             >
-                                Close
+                                {t('close')}
                             </button>
                         </div>
                     )}
@@ -149,7 +150,7 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                             <div className="h-16 w-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
                                 <X className="h-10 w-10 text-red-500" />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Withdrawal Failed</h2>
+                            <h2 className="text-xl font-bold text-white mb-2">{t('failed.title')}</h2>
                             <p className="text-muted-foreground mb-6">
                                 {errorMessage}
                             </p>
@@ -158,13 +159,13 @@ export function WithdrawDialog({ isOpen, onClose, pendingAmount, onConfirm }: Wi
                                     onClick={handleClose}
                                     className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
                                 >
-                                    Close
+                                    {t('close')}
                                 </button>
                                 <button
                                     onClick={() => setStep('confirm')}
                                     className="px-6 py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold transition-colors"
                                 >
-                                    Try Again
+                                    {t('tryAgain')}
                                 </button>
                             </div>
                         </div>

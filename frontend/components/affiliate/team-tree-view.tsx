@@ -126,7 +126,10 @@ function TreeNode({ member, depth = 0 }: { member: TreeMember; depth?: number })
     );
 }
 
+import { useTranslations } from 'next-intl';
+
 export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) {
+    const t = useTranslations('Affiliate.teamView');
     const [page, setPage] = useState(1);
     const pageSize = 10;
 
@@ -136,8 +139,8 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
                 <div className="h-12 w-12 mx-auto bg-white/5 rounded-full flex items-center justify-center mb-3 text-muted-foreground">
                     <Users className="h-6 w-6" />
                 </div>
-                <div className="font-medium text-white mb-1">Your team is empty</div>
-                <p className="text-sm text-muted-foreground">Share your link to start building your organization.</p>
+                <div className="font-medium text-white mb-1">{t('empty')}</div>
+                <p className="text-sm text-muted-foreground">{t('share')}</p>
             </div>
         );
     }
@@ -150,16 +153,16 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
             {/* Legend & Pagination Info */}
             <div className="flex items-center justify-between px-3 mb-3">
                 <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                    Direct Referrals ({directReferrals.length})
+                    {t('headers.directs')} ({directReferrals.length})
                 </div>
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                         <Zap className="h-3 w-3 text-green-400" />
-                        <span>Direct</span>
+                        <span>{t('legend.direct')}</span>
                     </div>
                     <div className="flex items-center gap-1">
                         <Sun className="h-3 w-3 text-yellow-400" />
-                        <span>Team Diff</span>
+                        <span>{t('legend.diff')}</span>
                     </div>
                 </div>
             </div>
@@ -173,7 +176,7 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
             {totalPages > 1 && (
                 <div className="flex items-center justify-between px-3 py-3 mt-2 border-t border-white/5">
                     <div className="text-xs text-muted-foreground">
-                        Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, directReferrals.length)} of {directReferrals.length}
+                        {t('pagination.showing', { start: (page - 1) * pageSize + 1, end: Math.min(page * pageSize, directReferrals.length), total: directReferrals.length })}
                     </div>
                     <div className="flex items-center gap-2">
                         <button
@@ -181,7 +184,7 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
                             disabled={page === 1}
                             className="px-2 py-1 text-xs font-medium rounded hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground transition-colors"
                         >
-                            Previous
+                            {t('pagination.previous')}
                         </button>
                         <div className="flex items-center gap-1">
                             {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
@@ -202,7 +205,7 @@ export function TeamTreeView({ directReferrals, className }: TeamTreeViewProps) 
                             disabled={page === totalPages}
                             className="px-2 py-1 text-xs font-medium rounded hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground transition-colors"
                         >
-                            Next
+                            {t('pagination.next')}
                         </button>
                     </div>
                 </div>

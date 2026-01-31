@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Loader2, Info, TrendingUp, Star } from 'lucide-react';
 import { usePrivyLogin } from '@/lib/privy-login';
+import { useTranslations } from 'next-intl';
 
 interface RisingStar {
     address: string;
@@ -43,6 +44,7 @@ interface RisingStarsTableProps {
 }
 
 export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingStarsTableProps) {
+    const t = useTranslations('SmartMoney.rising');
     const { authenticated, login, isLoggingIn } = usePrivyLogin();
     const [traders, setTraders] = useState<RisingStar[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -63,7 +65,7 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                 }
             } catch (err) {
                 console.error('Failed to fetch rising stars:', err);
-                setError('Failed to load traders. Please try again.');
+                setError(t('errorLoad'));
             } finally {
                 setIsLoading(false);
             }
@@ -88,7 +90,7 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                     onClick={() => window.location.reload()}
                     className="mt-4 text-blue-500 hover:text-blue-400"
                 >
-                    Retry
+                    {t('retry')}
                 </button>
             </div>
         );
@@ -97,7 +99,7 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
     if (traders.length === 0) {
         return (
             <div className="p-8 text-center text-muted-foreground">
-                No active traders found for this period.
+                {t('noActive')}
             </div>
         );
     }
@@ -111,8 +113,8 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                         key={p}
                         onClick={() => setPeriod(p)}
                         className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${period === p
-                                ? 'bg-yellow-600 text-white shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                            ? 'bg-yellow-600 text-white shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                             }`}
                     >
                         {p.toUpperCase()}
@@ -122,22 +124,22 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
             <table className="w-full caption-bottom text-sm">
                 <thead className="[&_tr]:border-b">
                     <tr className="border-b transition-colors hover:bg-muted/50">
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rank</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Trader</th>
-                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{period.toUpperCase()} PnL</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">{t('rank')}</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">{t('trader')}</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{period.toUpperCase()} {t('pnl')}</th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="PF" description="Profit Factor: Total gains / Total losses. >2 is excellent" />
+                            <MetricTooltip label="PF" description={t('tooltips.pf')} />
                         </th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="DD" description="Max Drawdown: Largest peak-to-trough decline" />
+                            <MetricTooltip label="DD" description={t('tooltips.dd')} />
                         </th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="WR" description="Volume-Weighted Win Rate" />
+                            <MetricTooltip label="WR" description={t('tooltips.wr')} />
                         </th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="Score" description="Scientific copy score based on risk-adjusted metrics" />
+                            <MetricTooltip label="Score" description={t('tooltips.score')} />
                         </th>
-                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('action')}</th>
                     </tr>
                 </thead>
                 <tbody className="[&_tr:last-child]:border-0">
@@ -198,7 +200,7 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-medium transition-colors"
                                     >
                                         <TrendingUp className="h-3 w-3" />
-                                        Follow
+                                        {t('follow')}
                                     </Link>
                                 ) : (
                                     <button
@@ -210,10 +212,10 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                                         {isLoggingIn ? (
                                             <>
                                                 <Loader2 className="h-3 w-3 animate-spin" />
-                                                Connecting
+                                                {t('connecting')}
                                             </>
                                         ) : (
-                                            'Connect'
+                                            t('connect')
                                         )}
                                     </button>
                                 )}

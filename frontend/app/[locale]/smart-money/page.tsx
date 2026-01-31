@@ -7,10 +7,12 @@ import { SmartMoneyTable } from '@/components/smart-money/smart-money-table';
 import { RisingStarsTable } from '@/components/smart-money/rising-stars-table';
 import { TableSkeleton } from '@/components/smart-money/table-skeleton';
 import { Shield, Users, TrendingUp, Lock, ArrowRight, Crown, Star, Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 type Tab = 'performers' | 'rising';
 
 export function SmartMoneyPage() {
+    const t = useTranslations('SmartMoney');
     const { authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [page, setPage] = useState(1);
     const [activeTab, setActiveTab] = useState<Tab>('performers');
@@ -19,7 +21,7 @@ export function SmartMoneyPage() {
         return (
             <div className="container py-10">
                 <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary" />
                 </div>
             </div>
         );
@@ -30,14 +32,14 @@ export function SmartMoneyPage() {
             <div className="container py-10">
                 <div className="mb-8 space-y-4 text-center">
                     <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-                        Mirror the Alpha. Master the Market.
+                        {t('title')}
                     </h1>
                     <p className="text-muted-foreground text-lg">
-                        Discover and follow the most profitable traders on Polymarket.
+                        {t('subtitle')}
                     </p>
                     <div className="flex justify-center gap-4">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500"></span> Live Updates</span>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> Verified Data</span>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500"></span> {t('liveUpdates')}</span>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> {t('verifiedData')}</span>
                     </div>
                 </div>
 
@@ -46,10 +48,9 @@ export function SmartMoneyPage() {
                         <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-blue-500/10 flex items-center justify-center">
                             <Lock className="h-10 w-10 text-blue-400" />
                         </div>
-                        <h2 className="text-2xl font-bold mb-3">Connect Your Wallet to View Traders</h2>
+                        <h2 className="text-2xl font-bold mb-3">{t('connectTitle')}</h2>
                         <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
-                            Access the complete leaderboard of top performers on Polymarket.
-                            View their trading history, profit metrics, and start copy trading with a single click.
+                            {t('connectDesc')}
                         </p>
 
                         <div className="grid md:grid-cols-3 gap-6 mb-8">
@@ -57,22 +58,22 @@ export function SmartMoneyPage() {
                                 <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-green-500/10 flex items-center justify-center">
                                     <Users className="h-5 w-5 text-green-400" />
                                 </div>
-                                <h3 className="font-semibold mb-1">500+ Traders</h3>
-                                <p className="text-xs text-muted-foreground">Verified and tracked</p>
+                                <h3 className="font-semibold mb-1">{t('featureTraders')}</h3>
+                                <p className="text-xs text-muted-foreground">{t('featureTradersDesc')}</p>
                             </div>
                             <div className="p-4 rounded-xl border border-white/5 bg-white/5">
                                 <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-500/10 flex items-center justify-center">
                                     <TrendingUp className="h-5 w-5 text-blue-400" />
                                 </div>
-                                <h3 className="font-semibold mb-1">Real-time Data</h3>
-                                <p className="text-xs text-muted-foreground">Live on-chain metrics</p>
+                                <h3 className="font-semibold mb-1">{t('featureData')}</h3>
+                                <p className="text-xs text-muted-foreground">{t('featureDataDesc')}</p>
                             </div>
                             <div className="p-4 rounded-xl border border-white/5 bg-white/5">
                                 <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-purple-500/10 flex items-center justify-center">
                                     <Shield className="h-5 w-5 text-purple-400" />
                                 </div>
-                                <h3 className="font-semibold mb-1">One-Click Copy</h3>
-                                <p className="text-xs text-muted-foreground">Automate your trades</p>
+                                <h3 className="font-semibold mb-1">{t('featureCopy')}</h3>
+                                <p className="text-xs text-muted-foreground">{t('featureCopyDesc')}</p>
                             </div>
                         </div>
 
@@ -84,12 +85,12 @@ export function SmartMoneyPage() {
                         >
                             {isLoggingIn ? (
                                 <>
-                                    Connecting...
+                                    {t('connecting')}
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                 </>
                             ) : (
                                 <>
-                                    Connect Wallet to Continue
+                                    {t('connectBtn')}
                                     <ArrowRight className="h-4 w-4" />
                                 </>
                             )}
@@ -104,14 +105,14 @@ export function SmartMoneyPage() {
         <div className="container py-10">
             <div className="mb-8 space-y-4 text-center">
                 <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-                    Mirror the Alpha. Master the Market.
+                    {t('title')}
                 </h1>
                 <p className="text-muted-foreground text-lg">
-                    Discover and follow the most profitable traders on Polymarket.
+                    {t('subtitle')}
                 </p>
                 <div className="flex justify-center gap-4">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500"></span> Live Updates</span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> Verified Data</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500"></span> {t('liveUpdates')}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500"></span> {t('verifiedData')}</span>
                 </div>
             </div>
 
@@ -120,13 +121,13 @@ export function SmartMoneyPage() {
                     <ProxyWalletCard />
 
                     <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
-                        <h3 className="font-semibold text-foreground mb-2">How it works</h3>
+                        <h3 className="font-semibold text-foreground mb-2">{t('howItWorks')}</h3>
                         <ul className="list-disc pl-4 space-y-1">
-                            <li>Create your Smart Wallet proxy.</li>
-                            <li>Deposit USDC funds.</li>
-                            <li>Select a trader to copy.</li>
-                            <li>The bot executes trades for you.</li>
-                            <li>Withdraw profits anytime.</li>
+                            <li>{t('steps.1')}</li>
+                            <li>{t('steps.2')}</li>
+                            <li>{t('steps.3')}</li>
+                            <li>{t('steps.4')}</li>
+                            <li>{t('steps.5')}</li>
                         </ul>
                     </div>
                 </div>
@@ -144,7 +145,7 @@ export function SmartMoneyPage() {
                                         }`}
                                 >
                                     <Crown className="h-4 w-4" />
-                                    Top Performers
+                                    {t('tabs.performers')}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('rising')}
@@ -154,13 +155,13 @@ export function SmartMoneyPage() {
                                         }`}
                                 >
                                     <Star className="h-4 w-4" />
-                                    Rising Stars
+                                    {t('tabs.rising')}
                                 </button>
                             </div>
                             <p className="text-xs text-muted-foreground mt-2">
                                 {activeTab === 'performers'
-                                    ? 'High-volume traders from Polymarket leaderboard'
-                                    : 'Active traders with strong risk-adjusted metrics (select period in table)'
+                                    ? t('descriptions.performers')
+                                    : t('descriptions.rising')
                                 }
                             </p>
                         </div>

@@ -8,6 +8,7 @@ import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { TableSkeleton } from './table-skeleton';
+import { useTranslations } from 'next-intl';
 
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 5;
@@ -31,6 +32,7 @@ interface SmartMoneyTableProps {
 }
 
 export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTableProps) {
+    const t = useTranslations('SmartMoney.table');
     const { authenticated, login, ready, isLoggingIn } = usePrivyLogin();
     const [data, setData] = useState<SmartMoneyWallet[] | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -64,14 +66,14 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                     <AlertCircle className="h-6 w-6 text-red-500" />
                 </div>
                 <div>
-                    <h3 className="font-medium text-lg mb-1">Unable to Load Traders</h3>
-                    <p className="text-muted-foreground text-sm max-w-md">{error}</p>
+                    <h3 className="font-medium text-lg mb-1">{t('errorTitle')}</h3>
+                    <p className="text-muted-foreground text-sm max-w-md">{t('errorDesc')}</p>
                 </div>
                 <button
                     onClick={() => { setIsLoading(true); setError(null); }} // Simple retry logic
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors"
                 >
-                    <RefreshCcw className="h-4 w-4" /> Retry
+                    <RefreshCcw className="h-4 w-4" /> {t('retry')}
                 </button>
             </div>
         );
@@ -80,13 +82,13 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
     if (!smartMoneyList || smartMoneyList.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-                <p className="text-muted-foreground">No traders found on this page.</p>
+                <p className="text-muted-foreground">{t('noTraders')}</p>
                 {currentPage > 1 && (
                     <button
                         onClick={() => onPageChange(1)}
                         className="mt-4 text-blue-500 hover:underline"
                     >
-                        Go back to first page
+                        {t('goBack')}
                     </button>
                 )}
             </div>
@@ -99,12 +101,12 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                 <table className="w-full caption-bottom text-sm">
                     <thead className="[&_tr]:border-b">
                         <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Rank</th>
-                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Trader</th>
-                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Volume</th>
-                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Profit</th>
-                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Score</th>
-                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Action</th>
+                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">{t('rank')}</th>
+                            <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">{t('trader')}</th>
+                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('volume')}</th>
+                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('profit')}</th>
+                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('score')}</th>
+                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('action')}</th>
                         </tr>
                     </thead>
                     <tbody className="[&_tr:last-child]:border-0">
@@ -135,15 +137,15 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                                             href={`/traders/${wallet.address}`}
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
                                         >
-                                            Copy Trader
+                                            {t('copyTrader')}
                                         </Link>
                                     ) : (
                                         <button
                                             onClick={() => {
-                                                toast('Please connect your wallet to copy traders', {
-                                                    description: 'You need to sign in to use copy trading features',
+                                                toast(t('toastTitle'), {
+                                                    description: t('toastDesc'),
                                                     action: {
-                                                        label: 'Connect Wallet',
+                                                        label: t('toastAction'),
                                                         onClick: () => login(),
                                                     },
                                                 });
@@ -155,12 +157,12 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                                             {isLoggingIn ? (
                                                 <>
                                                     <Loader2 className="h-3 w-3 animate-spin" />
-                                                    Connecting...
+                                                    {t('connecting')}
                                                 </>
                                             ) : (
                                                 <>
                                                     <Wallet className="h-3 w-3" />
-                                                    Connect to Copy
+                                                    {t('connectToCopy')}
                                                 </>
                                             )}
                                         </button>
@@ -182,10 +184,10 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                         : "opacity-50 text-muted-foreground cursor-not-allowed"
                         }`}
                 >
-                    Previous
+                    {t('previous')}
                 </button>
                 <span className="text-sm text-muted-foreground">
-                    Page {currentPage}
+                    {t('page')} {currentPage}
                 </span>
                 <button
                     onClick={() => hasNextPage && onPageChange(currentPage + 1)}
@@ -195,7 +197,7 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                         : "opacity-50 text-muted-foreground cursor-not-allowed"
                         }`}
                 >
-                    Next
+                    {t('next')}
                 </button>
             </div>
         </>

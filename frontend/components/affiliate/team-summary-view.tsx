@@ -21,7 +21,10 @@ interface TeamSummaryViewProps {
     className?: string;
 }
 
+import { useTranslations } from 'next-intl';
+
 export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewProps) {
+    const t = useTranslations('Affiliate.teamView');
     const [page, setPage] = useState(1);
     const pageSize = 10;
 
@@ -31,8 +34,8 @@ export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewP
                 <div className="h-12 w-12 mx-auto bg-white/5 rounded-full flex items-center justify-center mb-3 text-muted-foreground">
                     <Users className="h-6 w-6" />
                 </div>
-                <div className="font-medium text-white mb-1">Your team is empty</div>
-                <p className="text-sm text-muted-foreground">Share your link to start building your organization.</p>
+                <div className="font-medium text-white mb-1">{t('empty')}</div>
+                <p className="text-sm text-muted-foreground">{t('share')}</p>
             </div>
         );
     }
@@ -43,16 +46,16 @@ export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewP
     return (
         <div className={cn("space-y-2", className)}>
             <div className="text-xs text-muted-foreground uppercase tracking-wider mb-3 px-1">
-                Direct Referrals ({directReferrals.length})
+                {t('headers.directs')} ({directReferrals.length})
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                     <thead className="text-muted-foreground border-b border-white/5 uppercase text-xs">
                         <tr>
-                            <th className="py-2 font-medium pl-2">Member</th>
-                            <th className="py-2 font-medium">Rank</th>
-                            <th className="py-2 font-medium text-right">Volume</th>
-                            <th className="py-2 font-medium text-right pr-2 text-yellow-500">Team</th>
+                            <th className="py-2 font-medium pl-2">{t('headers.member')}</th>
+                            <th className="py-2 font-medium">{t('headers.rank')}</th>
+                            <th className="py-2 font-medium text-right">{t('headers.volume')}</th>
+                            <th className="py-2 font-medium text-right pr-2 text-yellow-500">{t('headers.team')}</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -92,7 +95,7 @@ export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewP
             {totalPages > 1 && (
                 <div className="flex items-center justify-between px-3 py-3 mt-2 border-t border-white/5">
                     <div className="text-xs text-muted-foreground">
-                        Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, directReferrals.length)} of {directReferrals.length}
+                        {t('pagination.showing', { start: (page - 1) * pageSize + 1, end: Math.min(page * pageSize, directReferrals.length), total: directReferrals.length })}
                     </div>
                     <div className="flex items-center gap-2">
                         <button
@@ -100,7 +103,7 @@ export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewP
                             disabled={page === 1}
                             className="px-2 py-1 text-xs font-medium rounded hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground transition-colors"
                         >
-                            Previous
+                            {t('pagination.previous')}
                         </button>
                         <div className="flex items-center gap-1">
                             {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
@@ -121,7 +124,7 @@ export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewP
                             disabled={page === totalPages}
                             className="px-2 py-1 text-xs font-medium rounded hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground transition-colors"
                         >
-                            Next
+                            {t('pagination.next')}
                         </button>
                     </div>
                 </div>

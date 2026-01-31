@@ -16,7 +16,7 @@
         "verifiedData": "Verified Data",
         "verifiedDataDesc": "On-chain verification",
         "connectWalletBtn": "Connect Wallet to View Traders",
-        "leaderboardTitle": "Top 10 Traders by Copy Score",
+        "leaderboardTitle": "Top Traders by Copy Score",
         "leaderboardSubtitle": "Ranked by scientific metrics: risk-adjusted returns, profit factor, and consistency.",
         "viewAllTraders": "View All 500+ Traders",
         "howToPickTitle": "How to Pick the Best Traders to Copy",
@@ -124,5 +124,315 @@
         "noMarkets": "No markets found.",
         "loadMore": "Load More Markets",
         "noMore": "No more markets to load"
+    },
+    "SmartMoney": {
+        "title": "Mirror the Alpha. Master the Market.",
+        "subtitle": "Discover and follow the most profitable traders on Polymarket.",
+        "liveUpdates": "Live Updates",
+        "verifiedData": "Verified Data",
+        "connectTitle": "Connect Your Wallet to View Traders",
+        "connectDesc": "Access the complete leaderboard of top performers on Polymarket. View their trading history, profit metrics, and start copy trading with a single click.",
+        "featureTraders": "500+ Traders",
+        "featureTradersDesc": "Verified and tracked",
+        "featureData": "Real-time Data",
+        "featureDataDesc": "Live on-chain metrics",
+        "featureCopy": "One-Click Copy",
+        "featureCopyDesc": "Automate your trades",
+        "connecting": "Connecting...",
+        "connectBtn": "Connect Wallet to Continue",
+        "howItWorks": "How it works",
+        "steps": {
+            "1": "Create your Smart Wallet proxy.",
+            "2": "Deposit USDC funds.",
+            "3": "Select a trader to copy.",
+            "4": "The bot executes trades for you.",
+            "5": "Withdraw profits anytime."
+        },
+        "tabs": {
+            "performers": "Top Performers",
+            "rising": "Rising Stars"
+        },
+        "descriptions": {
+            "performers": "High-volume traders from Polymarket leaderboard",
+            "rising": "Active traders with strong risk-adjusted metrics (select period in table)"
+        },
+        "table": {
+            "errorTitle": "Unable to Load Traders",
+            "errorDesc": "Failed to load trader data. Please try again.",
+            "retry": "Retry",
+            "noTraders": "No traders found on this page.",
+            "goBack": "Go back to first page",
+            "rank": "Rank",
+            "trader": "Trader",
+            "volume": "Volume",
+            "profit": "Profit",
+            "score": "Score",
+            "action": "Action",
+            "copyTrader": "Copy Trader",
+            "connectToCopy": "Connect to Copy",
+            "connecting": "Connecting...",
+            "toastTitle": "Please connect your wallet to copy traders",
+            "toastDesc": "You need to sign in to use copy trading features",
+            "toastAction": "Connect Wallet",
+            "previous": "Previous",
+            "next": "Next",
+            "page": "Page"
+        },
+        "rising": {
+            "errorLoad": "Failed to load traders. Please try again.",
+            "retry": "Retry",
+            "noActive": "No active traders found for this period.",
+            "rank": "Rank",
+            "trader": "Trader",
+            "pnl": "PnL",
+            "action": "Action",
+            "follow": "Follow",
+            "connect": "Connect",
+            "connecting": "Connecting...",
+            "tooltips": {
+                "pf": "Profit Factor: Total gains / Total losses. >2 is excellent",
+                "dd": "Max Drawdown: Largest peak-to-trough decline",
+                "wr": "Volume-Weighted Win Rate",
+                "score": "Scientific copy score based on risk-adjusted metrics"
+            }
+        }
+    },
+    "ProxyWallet": {
+        "status": {
+            "approving": "Approving USDC...",
+            "depositing": "Sign Deposit Tx...",
+            "withdrawing": "Withdrawing...",
+            "authorizing": "Authorizing...",
+            "executing": "Executing...",
+            "confirming": "Confirming...",
+            "creating": "Creating Wallet...",
+            "processing": "Processing..."
+        },
+        "toast": {
+            "createSuccess": "Proxy wallet created successfully!",
+            "depositSuccess": "Deposit successful!",
+            "depositFail": "Deposit failed",
+            "withdrawSuccess": "Withdrawal successful!",
+            "withdrawFail": "Withdrawal failed",
+            "invalidOp": "Invalid operator address",
+            "authSuccess": "Operator authorized successfully!",
+            "authFail": "Authorization failed"
+        },
+        "title": "Smart Wallet",
+        "createDesc": "Create a dedicated smart wallet to enable Copy Trading.",
+        "createBtn": "Create Smart Wallet",
+        "profit": "Profit:",
+        "tabs": {
+            "deposit": "Deposit",
+            "withdraw": "Withdraw",
+            "settings": "Settings"
+        },
+        "amount": "Amount (USDC)",
+        "insufficient": "Insufficient Balance",
+        "balance": "Wallet Balance:",
+        "buyUSDC": "Buy USDC on Uniswap ↗",
+        "depositBtn": "Deposit Funds",
+        "signTx": "Please sign the transaction in your wallet",
+        "max": "Max:",
+        "withdrawBtn": "Withdraw Funds",
+        "botAuth": "Bot Authorization",
+        "botAuthDesc": "Authorize the platform bot to execute trades on your behalf.",
+        "authBtn": "Authorize Bot"
+    },
+    "Affiliate": {
+        "hero": {
+            "badge": "Passive Income Opportunity",
+            "title": "Earn While <span class='text-yellow-500'>You Sleep</span>",
+            "desc": "Turn your network into income. Earn up to <strong class='text-green-500'>25% commission</strong> on every trade your referrals make — plus bonuses from <strong class='text-yellow-500'>5 generations</strong> of your team.",
+            "cta": "Start Earning Now",
+            "registering": "Registering...",
+            "subtext": "Free to join • No minimums • Instant setup"
+        },
+        "benefits": {
+            "title": "Why Join Our Affiliate Program?",
+            "commission": {
+                "title": "25% Commission",
+                "desc": "Earn from every trade your referrals make"
+            },
+            "generations": {
+                "title": "5 Generations Deep",
+                "desc": "Build a team and earn from your entire network"
+            },
+            "payouts": {
+                "title": "Instant Payouts",
+                "desc": "Withdraw your earnings anytime, no minimums"
+            },
+            "tiers": {
+                "title": "Tier Progression",
+                "desc": "Level up to unlock higher commission rates"
+            }
+        },
+        "howItWorks": {
+            "title": "How It Works",
+            "step1": {
+                "title": "Register",
+                "desc": "Sign up and get your unique referral link"
+            },
+            "step2": {
+                "title": "Share",
+                "desc": "Invite friends with your personal link"
+            },
+            "step3": {
+                "title": "Earn",
+                "desc": "Get paid on every trade they make"
+            }
+        },
+        "tierSystem": {
+            "title": "Tier System",
+            "desc": "Level up to unlock higher commission rates",
+            "headers": {
+                "tier": "Tier",
+                "directs": "Direct Referrals",
+                "team": "Team Size",
+                "zero": "Zero Line %",
+                "diff": "Team Diff %"
+            },
+            "ranks": {
+                "ordinary": "ORDINARY",
+                "vip": "VIP",
+                "elite": "ELITE",
+                "partner": "PARTNER",
+                "super": "SUPER"
+            }
+        },
+        "zeroLine": {
+            "title": "Earn From 5 Generations",
+            "desc": "Your cut from platform fees on every trade",
+            "gen1": "Direct Referral",
+            "gen2": "2nd Generation",
+            "gen3": "3rd Generation",
+            "gen4": "4th Generation",
+            "gen5": "5th Generation",
+            "example": "<strong>Example:</strong> $10,000 trade → $10 platform fee → <strong>$2.50</strong> to you (Gen 1)"
+        },
+        "cta": {
+            "title": "Ready to Start Earning?",
+            "desc": "Join thousands of affiliates building passive income",
+            "button": "Become an Affiliate",
+            "free": "Free to join",
+            "noMin": "No minimum",
+            "instant": "Instant setup"
+        },
+        "dashboard": {
+            "title": "Affiliate Dashboard",
+            "desc": "Track earnings and manage your team",
+            "rank": "Current Rank",
+            "directRate": "Direct",
+            "diffRate": "Team Diff",
+            "learnMore": "Learn More",
+            "nextRank": "Next Rank",
+            "members": "Team Members",
+            "goal": "Goal: {count} Active Members",
+            "topRank": "🎉 Top Rank Achieved! You are a Super Partner."
+        },
+        "stats": {
+            "directs": {
+                "label": "Direct Referrals",
+                "sub": "Zero Line (Gen 1)"
+            },
+            "team": {
+                "label": "Team Size",
+                "sub": "Total Network (Downline)"
+            },
+            "sunLines": {
+                "label": "Sun Lines",
+                "sub": "Strong Legs"
+            },
+            "earnings": {
+                "label": "Total Earnings",
+                "sub": "{zero} Zero / {sun} Sun"
+            },
+            "available": "Available",
+            "withdraw": "Withdraw"
+        },
+        "referral": {
+            "title": "Your Recruitment Link",
+            "desc": "Build your team. You earn overrides on 15 generations of referrals.",
+            "copy": "Copy",
+            "copied": "Referral link copied!"
+        },
+        "payouts": {
+            "title": "Payout History",
+            "empty": "No withdrawal history yet",
+            "headers": {
+                "status": "Status",
+                "amount": "Amount",
+                "date": "Date",
+                "tx": "Tx Hash"
+            },
+            "status": {
+                "completed": "Paid",
+                "pending": "Pending Approval",
+                "processing": "Approved (Processing)",
+                "rejected": "Rejected"
+            }
+        },
+        "withdraw": {
+            "title": "Request Withdrawal",
+            "desc": "Withdraw your affiliate earnings",
+            "available": "Available to Withdraw",
+            "info": "You will be asked to sign a message with your wallet to authorize this withdrawal. This is for security purposes.",
+            "cancel": "Cancel",
+            "confirm": "Confirm Withdrawal",
+            "signing": {
+                "title": "Sign in Wallet",
+                "desc": "Please sign the message in your wallet to authorize the withdrawal..."
+            },
+            "submitting": {
+                "title": "Processing",
+                "desc": "Submitting your withdrawal request..."
+            },
+            "success": {
+                "title": "Withdrawal Submitted!",
+                "desc": "Your withdrawal request of <span class='text-green-500 font-bold'>${amount}</span> has been submitted successfully."
+            },
+            "failed": {
+                "title": "Withdrawal Failed"
+            },
+            "close": "Close",
+            "tryAgain": "Try Again",
+            "minAmount": "Minimum withdrawal amount is $10"
+        },
+        "simulator": {
+            "title": "Commission Simulator",
+            "label": "Simulate Trade Fee (USDC)",
+            "button": "Simulate Fee Event",
+            "processing": "Processing...",
+            "success": "Simulated! Earned ${amount}",
+            "createRef": "Creating test referral...",
+            "createRefSuccess": "Created test referral!",
+            "createRefFail": "Failed to create test referral"
+        },
+        "teamView": {
+            "empty": "Your team is empty",
+            "share": "Share your link to start building your organization.",
+            "breakdown": "Generation Breakdown",
+            "total": "{count} total",
+            "legend": {
+                "direct": "Direct",
+                "diff": "Team Diff"
+            },
+            "headers": {
+                "member": "Member",
+                "rank": "Rank",
+                "volume": "Volume",
+                "team": "Team"
+            },
+            "pagination": {
+                "showing": "Showing {start}-{end} of {total}",
+                "previous": "Previous",
+                "next": "Next"
+            }
+        },
+        "toasts": {
+            "registerSuccess": "Successfully registered as affiliate!",
+            "registerFail": "Registration failed",
+            "simFail": "Simulation failed"
+        }
     }
 }
