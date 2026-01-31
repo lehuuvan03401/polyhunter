@@ -11,6 +11,7 @@ import { Target, StopCircle, RefreshCw, AlertCircle, ExternalLink, Settings2, Do
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslations } from 'next-intl';
 
 interface Strategy {
     id: string;
@@ -37,6 +38,7 @@ interface ActiveStrategiesPanelProps {
 }
 
 export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrategiesPanelProps) {
+    const t = useTranslations('Portfolio.activeStrategies');
     const [strategies, setStrategies] = useState<Strategy[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
     const paginatedStrategies = strategies.slice(startIndex, endIndex);
 
     const handleStopStrategy = async (strategyId: string) => {
-        const toastId = toast.loading('Stopping strategy...');
+        const toastId = toast.loading(t('stopModal.loading'));
 
         try {
             const response = await fetch(`/api/copy-trading/config?id=${strategyId}&wallet=${walletAddress}`, {
@@ -89,11 +91,11 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
 
             if (!response.ok) throw new Error('Failed to stop strategy');
 
-            toast.success('Strategy stopped', { id: toastId });
+            toast.success(t('stopModal.success'), { id: toastId });
             fetchStrategies(); // Refresh list
         } catch (error) {
             console.error('Stop error:', error);
-            toast.error('Failed to stop strategy', { id: toastId });
+            toast.error(t('stopModal.error'), { id: toastId });
         } finally {
             setStrategyToStop(null);
         }
@@ -133,9 +135,9 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
                         <Target className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                        <h3 className="font-semibold">Active Copy Trading Strategies</h3>
+                        <h3 className="font-semibold">{t('title')}</h3>
                         <p className="text-xs text-muted-foreground">
-                            {strategies.length} {strategies.length === 1 ? 'strategy' : 'strategies'} monitoring
+                            {t('subtitle', { count: strategies.length })}
                         </p>
                     </div>
                 </div>
@@ -150,8 +152,8 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
 
             {/* Filter Tabs */}
             <div className="flex border-b border-border/50 flex-shrink-0">
-                <FilterTab active={filter === 'active'} onClick={() => handleFilterChange('active')}>Active</FilterTab>
-                <FilterTab active={filter === 'stopped'} onClick={() => handleFilterChange('stopped')}>Stopped</FilterTab>
+                <FilterTab active={filter === 'active'} onClick={() => handleFilterChange('active')}>{t('badges.active')}</FilterTab>
+                <FilterTab active={filter === 'stopped'} onClick={() => handleFilterChange('stopped')}>{t('badges.stopped')}</FilterTab>
             </div>
 
             {/* Strategies List */}
@@ -166,8 +168,8 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
                 {!error && strategies.length === 0 && (
                     <div className="p-8 text-center text-muted-foreground">
                         <Target className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No active strategies</p>
-                        <p className="text-xs mt-1">Start copying a trader to see strategies here</p>
+                        <p className="text-sm">{t('empty.title')}</p>
+                        <p className="text-xs mt-1">{t('empty.desc')}</p>
                     </div>
                 )}
 
@@ -237,9 +239,9 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
                                     <div className="mb-4 rounded-full bg-red-500/10 p-3 ring-1 ring-red-500/20">
                                         <AlertCircle className="h-6 w-6 text-red-500" />
                                     </div>
-                                    <h3 className="mb-2 text-lg font-semibold text-white">Stop Copy Trading?</h3>
+                                    <h3 className="mb-2 text-lg font-semibold text-white">{t('stopModal.title')}</h3>
                                     <p className="text-sm text-muted-foreground leading-relaxed">
-                                        You are about to stop this strategy. Any open positions will remain, but no new trades will be copied.
+                                        {t('stopModal.desc')}
                                     </p>
                                 </div>
 
@@ -248,13 +250,13 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
                                         onClick={() => setStrategyToStop(null)}
                                         className="inline-flex items-center justify-center rounded-xl bg-white/5 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10 transition-colors border border-white/5"
                                     >
-                                        Cancel
+                                        {t('stopModal.cancel')}
                                     </button>
                                     <button
                                         onClick={() => handleStopStrategy(strategyToStop)}
                                         className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
                                     >
-                                        Stop Strategy
+                                        {t('stopModal.confirm')}
                                     </button>
                                 </div>
                             </div>
@@ -305,11 +307,12 @@ function StrategyCard({
     formatDuration?: (start: string, end: string) => string; // Optional for active prop safety
     showStopButton?: boolean;
 }) {
+    const t = useTranslations('Portfolio.activeStrategies');
     // Mode Display Logic
     const isFixed = strategy.mode === 'FIXED_AMOUNT' || strategy.fixedAmount !== null;
     const modeLabel = isFixed
-        ? `Fixed $${strategy.fixedAmount?.toFixed(2) || '0.00'}`
-        : `${(Number(strategy.sizeScale || 0) * 100).toFixed(0)}% Shares`;
+        ? `${t('risk.fixed')} $${strategy.fixedAmount?.toFixed(2) || '0.00'}`
+        : `${(Number(strategy.sizeScale || 0) * 100).toFixed(0)}% ${t('risk.shares')}`;
 
     return (
         <div className="p-4 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/30 transition-colors relative group">
@@ -330,28 +333,28 @@ function StrategyCard({
                         <div className="flex items-center gap-1.5">
                             {showStopButton ? (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/10 text-green-500 border border-green-500/20 uppercase tracking-wide">
-                                    Active
+                                    {t('badges.active')}
                                 </span>
                             ) : (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/10 text-gray-500 border border-gray-500/20 uppercase tracking-wide">
-                                    Stopped
+                                    {t('badges.stopped')}
                                 </span>
                             )}
 
                             {/* Execution Mode Badge */}
                             {strategy.executionMode === 'EOA' ? (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 uppercase tracking-wide flex items-center gap-1">
-                                    ⚡ Speed
+                                    ⚡ {t('badges.speed')}
                                 </span>
                             ) : (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20 uppercase tracking-wide flex items-center gap-1">
-                                    🛡️ Proxy
+                                    🛡️ {t('badges.proxy')}
                                 </span>
                             )}
                             {/* Auto Badge */}
                             {strategy.autoExecute && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-500 border border-purple-500/20 uppercase tracking-wide flex items-center gap-1">
-                                    🤖 Auto
+                                    🤖 {t('badges.auto')}
                                 </span>
                             )}
                         </div>
@@ -361,7 +364,7 @@ function StrategyCard({
                         <button
                             onClick={onStop}
                             className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors border border-red-500/20"
-                            title="Stop Strategy"
+                            title={t('actions.stop')}
                         >
                             <StopCircle className="h-4 w-4" />
                         </button>
@@ -372,7 +375,7 @@ function StrategyCard({
                 <div className="grid grid-cols-4 gap-2 text-xs bg-black/40 rounded-lg p-2 border border-white/5">
                     {/* Mode */}
                     <div className="flex flex-col items-center justify-center text-center gap-1 p-1">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Mode</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{t('risk.mode')}</span>
                         <div className="flex items-center gap-1.5">
                             <Settings2 className="h-3 w-3 text-primary opacity-70" />
                             <span className="font-medium text-white">{modeLabel}</span>
@@ -380,7 +383,7 @@ function StrategyCard({
                     </div>
                     {/* Max per Trade */}
                     <div className="flex flex-col items-center justify-center text-center gap-1 p-1 border-l border-white/5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Max Limit</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{t('risk.maxLimit')}</span>
                         <div className="flex items-center gap-1.5">
                             <DollarSign className="h-3 w-3 text-green-400 opacity-70" />
                             <span className="font-medium text-white">${strategy.maxSizePerTrade}</span>
@@ -388,17 +391,17 @@ function StrategyCard({
                     </div>
                     {/* Slippage */}
                     <div className="flex flex-col items-center justify-center text-center gap-1 p-1 border-l border-white/5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Slippage</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{t('risk.slippage')}</span>
                         <div className="flex items-center gap-1.5">
                             <Zap className="h-3 w-3 text-yellow-500 opacity-70" />
                             <span className="font-medium text-white">
-                                {strategy.slippageType === 'AUTO' ? 'Auto' : `${strategy.maxSlippage}%`}
+                                {strategy.slippageType === 'AUTO' ? t('badges.auto') : `${strategy.maxSlippage}%`}
                             </span>
                         </div>
                     </div>
                     {/* Direction */}
                     <div className="flex flex-col items-center justify-center text-center gap-1 p-1 border-l border-white/5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Direction</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{t('risk.direction')}</span>
                         <div className="flex items-center gap-1.5">
                             {strategy.direction === 'COUNTER' ? (
                                 <ArrowRightLeft className="h-3 w-3 text-red-400" />
@@ -409,7 +412,7 @@ function StrategyCard({
                                 "font-medium",
                                 strategy.direction === 'COUNTER' ? "text-red-400" : "text-green-400"
                             )}>
-                                {strategy.direction === 'COUNTER' ? 'Counter' : 'Copy'}
+                                {strategy.direction === 'COUNTER' ? t('risk.counter') : t('risk.copy')}
                             </span>
                         </div>
                     </div>
@@ -419,21 +422,22 @@ function StrategyCard({
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                     <div className="flex items-center gap-3">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                            <span>Started {formatTime(strategy.createdAt)}</span>
+                            <span>{t('footer.started', { time: formatTime(strategy.createdAt) })}</span>
                             {/* Duration for Active/Stopped strategies */}
                             {formatDuration && (
                                 <span className="text-muted-foreground/50">
-                                    • Active for <span className="text-foreground">
-                                        {formatDuration(
+                                    • {t.rich('footer.activeFor', {
+                                        duration: formatDuration(
                                             strategy.createdAt,
                                             showStopButton ? new Date().toISOString() : strategy.updatedAt
-                                        )}
-                                    </span>
+                                        ),
+                                        highlight: (chunks: any) => <span className="text-foreground">{chunks}</span>
+                                    })}
                                 </span>
                             )}
                             {!showStopButton && (
                                 <span className="text-muted-foreground/50">
-                                    • Stopped {formatTime(strategy.updatedAt)}
+                                    • {t('footer.stoppedAt', { time: formatTime(strategy.updatedAt) })}
                                 </span>
                             )}
 
@@ -441,7 +445,7 @@ function StrategyCard({
                             {strategy.infiniteMode && showStopButton && (
                                 <div className="flex items-center gap-1 text-green-400">
                                     <RefreshCw className="h-3 w-3" />
-                                    <span>Infinite Mode</span>
+                                    <span>{t('footer.infinite')}</span>
                                 </div>
                             )}
                         </div>

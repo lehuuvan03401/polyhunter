@@ -434,5 +434,233 @@
             "registerFail": "註冊失敗",
             "simFail": "模擬失敗"
         }
+    },
+    "Portfolio": {
+        "page": {
+            "title": "儀表板",
+            "subtitle": "監控您的投資組合和跟單交易活動",
+            "connectWallet": {
+                "title": "連接您的錢包",
+                "desc": "連接您的錢包以查看您的投資組合，跟踪倉位並管理跟單交易。",
+                "button": "連接錢包",
+                "connecting": "連接中..."
+            },
+            "walletCard": {
+                "title": "您的錢包",
+                "deposit": "充值",
+                "withdraw": "提現"
+            },
+            "pnlCard": {
+                "title": "結算盈虧",
+                "total": "總計",
+                "resolved": "結算盈虧 (已平倉)",
+                "settled": "已結算 (未贖回)"
+            },
+            "investedCard": {
+                "title": "投資資金",
+                "activePositions": "跨越 {count} 個活躍倉位",
+                "totalVolume": "總交易量：${amount}",
+                "currentPlan": "當前計劃",
+                "starter": "入門版",
+                "viewLimits": "查看計劃限制"
+            },
+            "tabs": {
+                "portfolio": "投資組合",
+                "strategies": "策略",
+                "orders": "訂單",
+                "positions": "倉位",
+                "trades": "交易",
+                "transfers": "轉賬"
+            },
+            "sellAll": {
+                "button": "全部賣出",
+                "confirm": "您確定要賣出所有 {count} 個倉位嗎？這將為所有內容執行市價賣單。",
+                "loading": "正在賣出所有倉位...",
+                "success": "成功賣出所有 {count} 個倉位！",
+                "warning": "已賣出 {success} 個倉位。失敗：{fail}",
+                "error": "全賣過程中出現嚴重錯誤"
+            },
+            "positionsTable": {
+                "filters": {
+                    "open": "持倉中",
+                    "settled": "已結算",
+                    "redeemedWin": "已贖回 (盈利)",
+                    "redeemedLoss": "已贖回 (虧損)"
+                },
+                "headers": {
+                    "time": "時間",
+                    "market": "市場",
+                    "side": "方向",
+                    "status": "狀態",
+                    "shares": "份額",
+                    "avgPrice": "均價",
+                    "current": "現價",
+                    "totalInvested": "總投資",
+                    "estValue": "預估價值",
+                    "roi": "收益率",
+                    "pnl": "盈虧",
+                    "action": "操作"
+                },
+                "empty": {
+                    "title": "尚無倉位",
+                    "desc": "真實和模擬倉位將顯示在這裡。"
+                }
+            },
+            "history": {
+                "headers": {
+                    "date": "日期",
+                    "action": "操作",
+                    "market": "市場",
+                    "outcome": "結果",
+                    "size": "數量",
+                    "price": "價格"
+                },
+                "empty": {
+                    "title": "暫無歷史記錄",
+                    "desc": "您的交易歷史和已完成的倉位將顯示在這裡。"
+                }
+            }
+        },
+        "orderStatus": {
+            "title": "訂單狀態",
+            "updated": "更新於 {time}",
+            "loading": "加載中...",
+            "stats": {
+                "total": "總計",
+                "pending": "待處理",
+                "open": "未完成",
+                "filled": "已成交",
+                "failed": "已失敗"
+            },
+            "filters": {
+                "all": "全部",
+                "mode": "模式",
+                "sim": "模擬",
+                "live": "實盤"
+            },
+            "empty": "沒有符合當前過濾條件的訂單",
+            "stopModal": {
+                "title": "停止跟單交易員？",
+                "desc": "您即將停止複製此策略。任何未平倉位將保持開放，但不會執行新交易。",
+                "cancel": "取消",
+                "confirm": "停止跟單",
+                "success": "已停止跟隨交易員",
+                "error": "停止跟單失敗"
+            },
+            "details": {
+                "leaderTime": "跟單時間",
+                "tradeId": "交易 ID",
+                "orderId": "訂單 ID",
+                "priceEx": "價格 (執行)",
+                "slippage": "滑點",
+                "mode": "模式",
+                "simulation": "模擬",
+                "live": "實盤",
+                "leaderSize": "跟單規模",
+                "posSize": "倉位規模",
+                "mySize": "我的規模",
+                "leaderTx": "跟單交易",
+                "filled": "成交比例",
+                "tokenId": "代幣 ID",
+                "executed": "執行時間",
+                "notYet": "尚未執行",
+                "viewPolygonScan": "在 PolygonScan 查看",
+                "result": "結果",
+                "error": "錯誤",
+                "historyButton": "歷史",
+                "viewHistory": "查看跟單歷史",
+                "stopCopying": "停止跟單",
+                "viewLeaderTx": "查看跟單交易",
+                "leaderVsMySize": "跟單 vs 我的規模 (份額)"
+            }
+        },
+        "activeStrategies": {
+            "title": "活躍跟單策略",
+            "subtitle": "{count} {count, plural, one {策略} other {策略}} 正在監控中",
+            "empty": {
+                "title": "沒有活躍策略",
+                "desc": "開始跟單交易員後，策略將顯示在這裡"
+            },
+            "badges": {
+                "active": "活躍",
+                "stopped": "已停止",
+                "speed": "極速",
+                "proxy": "代理",
+                "auto": "自動"
+            },
+            "risk": {
+                "mode": "模式",
+                "maxLimit": "最大限制",
+                "slippage": "滑點",
+                "direction": "方向",
+                "copy": "跟隨",
+                "counter": "反向",
+                "fixed": "固定",
+                "shares": "份額"
+            },
+            "footer": {
+                "started": "開始於 {time}",
+                "activeFor": "已運行 <highlight>{duration}</highlight>",
+                "stoppedAt": "停止於 {time}",
+                "infinite": "原本模式"
+            },
+            "stopModal": {
+                "title": "停止跟單策略？",
+                "desc": "您即將停止此策略。任何未平倉位將保持開放，但不會複製新交易。",
+                "confirm": "停止策略",
+                "cancel": "取消",
+                "loading": "正在停止策略...",
+                "success": "策略已停止",
+                "error": "停止策略失敗"
+            },
+            "actions": {
+                "stop": "停止策略"
+            }
+        },
+        "pendingTrades": {
+            "title": "待處理跟單交易",
+            "subtitle": "{count} {count, plural, one {筆交易} other {筆交易}} 等待確認",
+            "refresh": "刷新",
+            "proxyWarning": "未找到代理合約。請先創建一個以執行交易。",
+            "details": {
+                "original": "原始交易",
+                "yourCopy": "您的跟單",
+                "price": "價格",
+                "market": "市場"
+            },
+            "actions": {
+                "skip": "跳過",
+                "execute": "執行",
+                "skipped": "交易已跳過",
+                "executed": "交易已執行",
+                "failed": "執行交易失敗",
+                "tradeApproved": "交易已批准",
+                "manualNote": "注意：請通過 Polymarket 手動提交訂單"
+            },
+            "proxyError": {
+                "title": "未找到代理合約",
+                "desc": "請先在儀表板創建代理合約"
+            },
+            "time": {
+                "lessThanMin": "少於 1 分鐘",
+                "minLeft": "剩餘 {mins} 分鐘",
+                "expired": "已過期",
+                "noExpiry": "無過期時間"
+            }
+        },
+        "transactionHistory": {
+            "empty": "暫無交易記錄。",
+            "headers": {
+                "type": "類型",
+                "amount": "金額",
+                "status": "狀態",
+                "date": "日期",
+                "hash": "哈希"
+            },
+            "types": {
+                "deposit": "充值",
+                "withdraw": "提現"
+            }
+        }
     }
 }

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Loader2, ArrowUpRight, ArrowDownLeft, ExternalLink } from 'lucide-react';
 import { formatUSD } from '@/lib/utils';
-import { format } from 'date-fns';
+import { useTranslations, useFormatter } from 'next-intl';
 
 interface Transaction {
     id: string;
@@ -19,6 +19,8 @@ interface TransactionHistoryTableProps {
 }
 
 export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHistoryTableProps) {
+    const t = useTranslations('Portfolio.transactionHistory');
+    const format = useFormatter();
     const { user, authenticated } = usePrivy();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +58,7 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
     if (transactions.length === 0) {
         return (
             <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
-                No transaction history found.
+                {t('empty')}
             </div>
         );
     }
@@ -66,11 +68,11 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
             <table className="w-full text-sm text-left">
                 <thead className="bg-muted/50 text-muted-foreground bg-gray-50 dark:bg-gray-800/50">
                     <tr>
-                        <th className="px-4 py-3 font-medium">Type</th>
-                        <th className="px-4 py-3 font-medium">Amount</th>
-                        <th className="px-4 py-3 font-medium">Status</th>
-                        <th className="px-4 py-3 font-medium">Date</th>
-                        <th className="px-4 py-3 font-medium text-right">Hash</th>
+                        <th className="px-4 py-3 font-medium">{t('headers.type')}</th>
+                        <th className="px-4 py-3 font-medium">{t('headers.amount')}</th>
+                        <th className="px-4 py-3 font-medium">{t('headers.status')}</th>
+                        <th className="px-4 py-3 font-medium">{t('headers.date')}</th>
+                        <th className="px-4 py-3 font-medium text-right">{t('headers.hash')}</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -81,12 +83,12 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
                                     {tx.type === 'DEPOSIT' ? (
                                         <div className="flex items-center gap-1.5 text-green-600 bg-green-500/10 px-2 py-1 rounded text-xs font-medium dark:text-green-400">
                                             <ArrowDownLeft className="h-3 w-3" />
-                                            Deposit
+                                            {t('types.deposit')}
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-1.5 text-blue-600 bg-blue-500/10 px-2 py-1 rounded text-xs font-medium dark:text-blue-400">
                                             <ArrowUpRight className="h-3 w-3" />
-                                            Withdraw
+                                            {t('types.withdraw')}
                                         </div>
                                     )}
                                 </div>
@@ -101,7 +103,12 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
                                 </span>
                             </td>
                             <td className="px-4 py-3 text-muted-foreground">
-                                {format(new Date(tx.createdAt), 'MMM d, h:mm a')}
+                                {format.dateTime(new Date(tx.createdAt), {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: 'numeric',
+                                    minute: 'numeric'
+                                })}
                             </td>
                             <td className="px-4 py-3 text-right">
                                 {tx.txHash && (

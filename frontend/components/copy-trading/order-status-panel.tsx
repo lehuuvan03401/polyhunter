@@ -8,6 +8,7 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink, StopCircle, History } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useOrderStatus, getOrderStatusColor, getOrderStatusIcon, type Order, type OrderStatus } from '@/lib/hooks/useOrderStatus';
@@ -20,6 +21,7 @@ interface OrderStatusPanelProps {
 }
 
 export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelProps) {
+    const t = useTranslations('Portfolio.orderStatus');
     const { orders, isLoading, error, refresh, lastUpdated } = useOrderStatus(walletAddress, {
         pollInterval: 30000, // 30 seconds for real-time updates
     });
@@ -137,11 +139,11 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                 throw new Error('Failed to stop copying');
             }
 
-            toast.success('Stopped copying trader', { id: toastId });
+            toast.success(t('stopModal.success'), { id: toastId });
             refresh(); // Refresh list to remove it
         } catch (error) {
             console.error('Stop error:', error);
-            toast.error('Failed to stop copying', { id: toastId });
+            toast.error(t('stopModal.error'), { id: toastId });
         } finally {
             setOrderToStop(null);
         }
@@ -156,9 +158,9 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                         <Clock className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                        <h3 className="font-semibold">Order Status</h3>
+                        <h3 className="font-semibold">{t('title')}</h3>
                         <p className="text-xs text-muted-foreground">
-                            {lastUpdated ? `Updated ${formatTime(lastUpdated.toISOString())}` : 'Loading...'}
+                            {lastUpdated ? t('updated', { time: formatTime(lastUpdated.toISOString()) }) : t('loading')}
                         </p>
                     </div>
                 </div>
@@ -173,11 +175,11 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
             {/* Stats Bar */}
             <div className="flex items-center gap-3 p-3 bg-muted/20 text-xs">
-                <StatsItem label="Total" value={modeScopedOrders.length} />
-                <StatsItem label="Pending" value={statusCounts.pending} color="text-yellow-400" />
-                <StatsItem label="Open" value={statusCounts.open} color="text-blue-400" />
-                <StatsItem label="Filled" value={statusCounts.filled} color="text-green-400" />
-                <StatsItem label="Failed" value={statusCounts.failed} color="text-red-400" />
+                <StatsItem label={t('stats.total')} value={modeScopedOrders.length} />
+                <StatsItem label={t('stats.pending')} value={statusCounts.pending} color="text-yellow-400" />
+                <StatsItem label={t('stats.open')} value={statusCounts.open} color="text-blue-400" />
+                <StatsItem label={t('stats.filled')} value={statusCounts.filled} color="text-green-400" />
+                <StatsItem label={t('stats.failed')} value={statusCounts.failed} color="text-red-400" />
             </div>
 
             {/* Filters */}
@@ -200,7 +202,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                     </FilterTab>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2 border-t border-border/50 text-xs">
-                    <span className="text-muted-foreground">Mode:</span>
+                    <span className="text-muted-foreground">{t('filters.mode')}:</span>
                     <button
                         onClick={() => handleModeFilterChange('all')}
                         className={cn(
@@ -210,7 +212,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                                 : "bg-background text-muted-foreground border-border hover:bg-muted"
                         )}
                     >
-                        All
+                        {t('filters.all')}
                     </button>
                     <button
                         onClick={() => handleModeFilterChange('sim')}
@@ -221,7 +223,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                                 : "bg-background text-muted-foreground border-border hover:bg-muted"
                         )}
                     >
-                        Sim
+                        {t('filters.sim')}
                     </button>
                     <button
                         onClick={() => handleModeFilterChange('live')}
@@ -232,7 +234,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                                 : "bg-background text-muted-foreground border-border hover:bg-muted"
                         )}
                     >
-                        Live
+                        {t('filters.live')}
                     </button>
                 </div>
             </div>
@@ -249,7 +251,7 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                 {!error && filteredOrders.length === 0 && (
                     <div className="p-8 text-center text-muted-foreground">
                         <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No orders match the current filters</p>
+                        <p className="text-sm">{t('empty')}</p>
                     </div>
                 )}
 
@@ -330,9 +332,9 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                                     <div className="mb-4 rounded-full bg-red-500/10 p-3 ring-1 ring-red-500/20">
                                         <AlertCircle className="h-6 w-6 text-red-500" />
                                     </div>
-                                    <h3 className="mb-2 text-lg font-semibold text-white">Stop Copying Trader?</h3>
+                                    <h3 className="mb-2 text-lg font-semibold text-white">{t('stopModal.title')}</h3>
                                     <p className="text-sm text-muted-foreground leading-relaxed">
-                                        You are about to stop copying this strategy. Any open positions will remain open, but no new trades will be executed.
+                                        {t('stopModal.desc')}
                                     </p>
                                 </div>
 
@@ -341,13 +343,13 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
                                         onClick={() => setOrderToStop(null)}
                                         className="inline-flex items-center justify-center rounded-xl bg-white/5 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10 hover:text-white transition-colors border border-white/5"
                                     >
-                                        Cancel
+                                        {t('stopModal.cancel')}
                                     </button>
                                     <button
                                         onClick={confirmStopCopying}
                                         className="inline-flex items-center justify-center rounded-xl bg-red-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
                                     >
-                                        Stop Copying
+                                        {t('stopModal.confirm')}
                                     </button>
                                 </div>
                             </div>
@@ -418,6 +420,7 @@ function OrderRow({
     onStop?: (e: React.MouseEvent) => void;
     onOpenHistory: (address: string, name?: string) => void;
 }) {
+    const t = useTranslations('Portfolio.orderStatus');
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
     const isSimulation = order.isSim || (order.orderId?.toLowerCase().startsWith('sim-') ?? false) || (order.orderId?.toLowerCase().startsWith('adjust-') ?? false);
@@ -437,7 +440,7 @@ function OrderRow({
         order.errorMessage.startsWith('Settlement')
     );
     const leaderPrefix = isSimSettlement ? 'Pos' : 'L';
-    const leaderLabel = isSimSettlement ? 'Position Size' : 'Leader Size';
+    const leaderLabel = isSimSettlement ? t('details.posSize') : t('details.leaderSize');
     const settlementType = isSimulation && order.orderId
         ? (order.orderId.startsWith('sim-redeem') ? 'REDEEM' :
             order.orderId.startsWith('sim-settle') ? 'SETTLE' :
@@ -493,7 +496,7 @@ function OrderRow({
                         </span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                        <span title="Leader vs My Size (shares)" className="font-mono">
+                        <span title={t('details.leaderVsMySize')} className="font-mono">
                             {leaderPrefix}: {leaderShares ? leaderShares.toFixed(2) : '-'} sh • My: {copyShares.toFixed(2)} sh
                             {copyRatio !== null ? ` (${copyRatio.toFixed(2)}x)` : ''}
                         </span>
@@ -503,7 +506,7 @@ function OrderRow({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-400 hover:text-blue-300"
-                                title="View Leader Transaction"
+                                title={t('details.viewLeaderTx')}
                             >
                                 <ExternalLink className="h-3 w-3" />
                             </a>
@@ -528,10 +531,10 @@ function OrderRow({
                                 onOpenHistory(order.traderAddress, order.traderName || undefined);
                             }}
                             className="text-xs bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors z-20 relative pointer-events-auto ml-2 px-2 py-0.5 rounded-md"
-                            title="View Leader History"
+                            title={t('details.viewHistory')}
                         >
                             <History className="h-3 w-3" />
-                            <span>History</span>
+                            <span>{t('details.historyButton')}</span>
                         </button>
                     </div>
                 </div>
@@ -541,7 +544,7 @@ function OrderRow({
                     <button
                         onClick={onStop}
                         className="mr-2 p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
-                        title="Stop Copying"
+                        title={t('details.stopCopying')}
                     >
                         <StopCircle className="h-4 w-4" />
                     </button>
@@ -552,7 +555,7 @@ function OrderRow({
                     <div className={cn('text-xs font-medium', statusColor)}>
                         {order.status}
                     </div>
-                    <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1 mb-0.5">Leader Time</div>
+                    <div className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mt-1 mb-0.5">{t('details.leaderTime')}</div>
                     <div className="text-xs text-foreground/80 whitespace-nowrap font-mono">
                         {new Date(order.detectedAt).toLocaleString([], {
                             month: 'short',
@@ -583,25 +586,25 @@ function OrderRow({
                     <div className="ml-[3.5rem] space-y-2 bg-muted/10 rounded-lg p-3">
                         <div className="grid grid-cols-2 gap-4 text-xs">
                             <DetailItem
-                                label="Trade ID"
+                                label={t('details.tradeId')}
                                 value={order.tradeId}
                                 copyable
                                 className="col-span-2 sm:col-span-1"
                             />
-                            <DetailItem label="Order ID" value={order.orderId || 'N/A'} copyable={!!order.orderId} />
+                            <DetailItem label={t('details.orderId')} value={order.orderId || 'N/A'} copyable={!!order.orderId} />
                             <DetailItem
-                                label="Price (Ex.)"
+                                label={t('details.priceEx')}
                                 value={`$${order.price.toFixed(2)}`}
                                 subValue={order.leaderPrice ? `Leader: $${order.leaderPrice.toFixed(2)}` : undefined}
                             />
                             <DetailItem
-                                label="Slippage"
+                                label={t('details.slippage')}
                                 value={order.leaderPrice ? `${((order.price - order.leaderPrice) / order.leaderPrice * 100).toFixed(2)}%` : '-'}
                                 color={order.leaderPrice ? (order.price > order.leaderPrice ? 'text-red-400' : 'text-green-400') : undefined}
                             />
                             <DetailItem
-                                label="Mode"
-                                value={isSimulation ? 'Simulation' : 'Live'}
+                                label={t('details.mode')}
+                                value={isSimulation ? t('details.simulation') : t('details.live')}
                             />
                             <DetailItem
                                 label={leaderLabel}
@@ -609,13 +612,13 @@ function OrderRow({
                                 subValue={leaderNotional !== null ? `$${leaderNotional.toFixed(2)}` : undefined}
                             />
                             <DetailItem
-                                label="My Size"
+                                label={t('details.mySize')}
                                 value={`${copyShares.toFixed(2)} sh`}
                                 subValue={`$${copyNotional.toFixed(2)}`}
                             />
                             {order.leaderTxHash && (
                                 <div className="col-span-2 sm:col-span-1">
-                                    <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">Leader Tx</span>
+                                    <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">{t('details.leaderTx')}</span>
                                     <a
                                         href={`https://polygonscan.com/tx/${order.leaderTxHash}`}
                                         target="_blank"
@@ -628,23 +631,23 @@ function OrderRow({
                                 </div>
                             )}
                             <DetailItem
-                                label="Filled"
+                                label={t('details.filled')}
                                 value={`${order.filledPercent}%`}
                                 color={order.filledPercent === 100 ? 'text-green-400' : undefined}
                             />
-                            <DetailItem label="Token ID" value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
+                            <DetailItem label={t('details.tokenId')} value={order.tokenId ? (order.tokenId.slice(0, 12) + '...') : 'N/A'} />
                             <DetailItem
-                                label="Executed"
+                                label={t('details.executed')}
                                 value={order.executedAt
                                     ? new Date(order.executedAt).toLocaleString()
-                                    : 'Not yet'}
+                                    : t('details.notYet')}
                             />
                         </div>
                     </div>
 
                     {order.errorMessage && (
                         <div className={cn("p-2 rounded text-xs", infoMessage ? "bg-muted/40 text-muted-foreground" : "bg-red-500/10 text-red-400")}>
-                            {infoMessage ? 'Result' : 'Error'}: {order.errorMessage}
+                            {infoMessage ? t('details.result') : t('details.error')}: {order.errorMessage}
                         </div>
                     )}
 
@@ -656,7 +659,7 @@ function OrderRow({
                                 rel="noopener noreferrer"
                                 className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 w-fit"
                             >
-                                View on PolygonScan
+                                {t('details.viewPolygonScan')}
                                 <ExternalLink className="h-3 w-3" />
                             </a>
                         </div>

@@ -434,5 +434,233 @@
             "registerFail": "Registration failed",
             "simFail": "Simulation failed"
         }
+    },
+    "Portfolio": {
+        "page": {
+            "title": "Dashboard",
+            "subtitle": "Monitor your portfolio and copy trading activity",
+            "connectWallet": {
+                "title": "Connect Your Wallet",
+                "desc": "Connect your wallet to view your portfolio, track positions, and manage copy trading.",
+                "button": "Connect Wallet",
+                "connecting": "Connecting..."
+            },
+            "walletCard": {
+                "title": "Your Wallet",
+                "deposit": "Deposit",
+                "withdraw": "Withdraw"
+            },
+            "pnlCard": {
+                "title": "Settlement P&L",
+                "total": "Total",
+                "resolved": "Settlement P&L (Resolved)",
+                "settled": "Settled (Not Redeemed)"
+            },
+            "investedCard": {
+                "title": "Invested Funds",
+                "activePositions": "Across {count} active positions",
+                "totalVolume": "Total Volume: ${amount}",
+                "currentPlan": "Current Plan",
+                "starter": "Starter",
+                "viewLimits": "View Plan Limits"
+            },
+            "tabs": {
+                "portfolio": "Portfolio",
+                "strategies": "Strategies",
+                "orders": "Orders",
+                "positions": "Positions",
+                "trades": "Trades",
+                "transfers": "Transfers"
+            },
+            "sellAll": {
+                "button": "Sell All",
+                "confirm": "Are you sure you want to sell ALL {count} positions? This will execute market sell orders for everything.",
+                "loading": "Selling all positions...",
+                "success": "Successfully sold all {count} positions!",
+                "warning": "Sold {success} positions. Failed: {fail}",
+                "error": "Critical error during sell-all"
+            },
+            "positionsTable": {
+                "filters": {
+                    "open": "Open",
+                    "settled": "Settled",
+                    "redeemedWin": "Redeemed Win",
+                    "redeemedLoss": "Redeemed Loss"
+                },
+                "headers": {
+                    "time": "Time",
+                    "market": "Market",
+                    "side": "Side",
+                    "status": "Status",
+                    "shares": "Shares",
+                    "avgPrice": "Avg. Price",
+                    "current": "Current",
+                    "totalInvested": "Total Invested",
+                    "estValue": "Est. Value",
+                    "roi": "ROI",
+                    "pnl": "P&L",
+                    "action": "Action"
+                },
+                "empty": {
+                    "title": "No Positions Yet",
+                    "desc": "Real and simulated positions will appear here."
+                }
+            },
+            "history": {
+                "headers": {
+                    "date": "Date",
+                    "action": "Action",
+                    "market": "Market",
+                    "outcome": "Outcome",
+                    "size": "Size",
+                    "price": "Price"
+                },
+                "empty": {
+                    "title": "No History Yet",
+                    "desc": "Your trade history and completed positions will appear here."
+                }
+            }
+        },
+        "orderStatus": {
+            "title": "Order Status",
+            "updated": "Updated {time}",
+            "loading": "Loading...",
+            "stats": {
+                "total": "Total",
+                "pending": "Pending",
+                "open": "Open",
+                "filled": "Filled",
+                "failed": "Failed"
+            },
+            "filters": {
+                "all": "All",
+                "mode": "Mode",
+                "sim": "Sim",
+                "live": "Live"
+            },
+            "empty": "No orders match the current filters",
+            "stopModal": {
+                "title": "Stop Copying Trader?",
+                "desc": "You are about to stop copying this strategy. Any open positions will remain open, but no new trades will be executed.",
+                "cancel": "Cancel",
+                "confirm": "Stop Copying",
+                "success": "Stopped copying trader",
+                "error": "Failed to stop copying"
+            },
+            "details": {
+                "leaderTime": "Leader Time",
+                "tradeId": "Trade ID",
+                "orderId": "Order ID",
+                "priceEx": "Price (Ex.)",
+                "slippage": "Slippage",
+                "mode": "Mode",
+                "simulation": "Simulation",
+                "live": "Live",
+                "leaderSize": "Leader Size",
+                "posSize": "Position Size",
+                "mySize": "My Size",
+                "leaderTx": "Leader Tx",
+                "filled": "Filled",
+                "tokenId": "Token ID",
+                "executed": "Executed",
+                "notYet": "Not yet",
+                "viewPolygonScan": "View on PolygonScan",
+                "result": "Result",
+                "error": "Error",
+                "historyButton": "History",
+                "viewHistory": "View Leader History",
+                "stopCopying": "Stop Copying",
+                "viewLeaderTx": "View Leader Transaction",
+                "leaderVsMySize": "Leader vs My Size (shares)"
+            }
+        },
+        "activeStrategies": {
+            "title": "Active Copy Trading Strategies",
+            "subtitle": "{count} {count, plural, one {strategy} other {strategies}} monitoring",
+            "empty": {
+                "title": "No active strategies",
+                "desc": "Start copying a trader to see strategies here"
+            },
+            "badges": {
+                "active": "Active",
+                "stopped": "Stopped",
+                "speed": "Speed",
+                "proxy": "Proxy",
+                "auto": "Auto"
+            },
+            "risk": {
+                "mode": "Mode",
+                "maxLimit": "Max Limit",
+                "slippage": "Slippage",
+                "direction": "Direction",
+                "copy": "Copy",
+                "counter": "Counter",
+                "fixed": "Fixed",
+                "shares": "Shares"
+            },
+            "footer": {
+                "started": "Started {time}",
+                "activeFor": "Active for <highlight>{duration}</highlight>",
+                "stoppedAt": "Stopped {time}",
+                "infinite": "Infinite Mode"
+            },
+            "stopModal": {
+                "title": "Stop Copy Trading?",
+                "desc": "You are about to stop this strategy. Any open positions will remain, but no new trades will be copied.",
+                "confirm": "Stop Strategy",
+                "cancel": "Cancel",
+                "loading": "Stopping strategy...",
+                "success": "Strategy stopped",
+                "error": "Failed to stop strategy"
+            },
+            "actions": {
+                "stop": "Stop Strategy"
+            }
+        },
+        "pendingTrades": {
+            "title": "Pending Copy Trades",
+            "subtitle": "{count} {count, plural, one {trade} other {trades}} waiting for confirmation",
+            "refresh": "Refresh",
+            "proxyWarning": "No proxy contract found. Create one to execute trades.",
+            "details": {
+                "original": "Original Trade",
+                "yourCopy": "Your Copy",
+                "price": "Price",
+                "market": "Market"
+            },
+            "actions": {
+                "skip": "Skip",
+                "execute": "Execute",
+                "skipped": "Trade skipped",
+                "executed": "Trade Executed",
+                "failed": "Failed to execute trade",
+                "tradeApproved": "Trade Approved",
+                "manualNote": "Note: Submit order manually via Polymarket"
+            },
+            "proxyError": {
+                "title": "No Proxy Contract",
+                "desc": "Please create a proxy contract first from the Dashboard"
+            },
+            "time": {
+                "lessThanMin": "Less than 1 min",
+                "minLeft": "{mins} min left",
+                "expired": "Expired",
+                "noExpiry": "No expiry"
+            }
+        },
+        "transactionHistory": {
+            "empty": "No transaction history found.",
+            "headers": {
+                "type": "Type",
+                "amount": "Amount",
+                "status": "Status",
+                "date": "Date",
+                "hash": "Hash"
+            },
+            "types": {
+                "deposit": "Deposit",
+                "withdraw": "Withdraw"
+            }
+        }
     }
 }

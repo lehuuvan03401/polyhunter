@@ -17,8 +17,10 @@ import {
     AlertCircle,
     Check,
     ChevronUp,
+
     ChevronDown
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -41,6 +43,7 @@ const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export default function PortfolioPage() {
+    const t = useTranslations('Portfolio.page');
     const { user, authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
     const [totalPnL, setTotalPnL] = useState(0);
@@ -293,12 +296,12 @@ export default function PortfolioPage() {
     const handleSellAll = async () => {
         if (positions.length === 0) return;
 
-        if (!confirm(`Are you sure you want to sell ALL ${positions.length} positions? This will execute market sell orders for everything.`)) {
+        if (!confirm(t('sellAll.confirm', { count: positions.length }))) {
             return;
         }
 
         setIsSellingAll(true);
-        const toastId = toast.loading("Selling all positions...");
+        const toastId = toast.loading(t('sellAll.loading'));
 
         try {
             let successCount = 0;
@@ -332,12 +335,12 @@ export default function PortfolioPage() {
             failCount = results.filter(r => !r).length;
 
             if (failCount === 0) {
-                toast.success(`Successfully sold all ${successCount} positions!`, { id: toastId });
+                toast.success(t('sellAll.success', { count: successCount }), { id: toastId });
                 // Refresh positions
                 const newPos = await polyClient.wallets.getWalletPositions(user?.wallet?.address!);
                 setPositions(newPos);
             } else {
-                toast.warning(`Sold ${successCount} positions. Failed: ${failCount}`, { id: toastId });
+                toast.warning(t('sellAll.warning', { success: successCount, fail: failCount }), { id: toastId });
                 // Partial refresh
                 const newPos = await polyClient.wallets.getWalletPositions(user?.wallet?.address!);
                 setPositions(newPos);
@@ -345,7 +348,7 @@ export default function PortfolioPage() {
 
         } catch (e) {
             console.error("Sell all error", e);
-            toast.error("Critical error during sell-all", { id: toastId });
+            toast.error(t('sellAll.error'), { id: toastId });
         } finally {
             setIsSellingAll(false);
         }
@@ -433,9 +436,9 @@ export default function PortfolioPage() {
                 <div className="h-16 w-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
                     <Wallet className="h-8 w-8 text-blue-400" />
                 </div>
-                <h2 className="text-2xl font-bold">Connect Your Wallet</h2>
+                <h2 className="text-2xl font-bold">{t('connectWallet.title')}</h2>
                 <p className="text-muted-foreground max-w-md">
-                    Connect your wallet to view your portfolio, track positions, and manage copy trading.
+                    {t('connectWallet.desc')}
                 </p>
                 <button
                     onClick={login}
@@ -445,11 +448,11 @@ export default function PortfolioPage() {
                 >
                     {isLoggingIn ? (
                         <>
-                            Connecting...
+                            {t('connectWallet.connecting')}
                             <Loader2 className="h-4 w-4 animate-spin" />
                         </>
                     ) : (
-                        'Connect Wallet'
+                        t('connectWallet.button')
                     )}
                 </button>
             </div>
@@ -462,9 +465,9 @@ export default function PortfolioPage() {
         <div className="container max-w-[1360px] py-8">
             {/* Header */}
             <div className="mb-8 space-y-4 text-center">
-                <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
+                <h1 className="text-4xl font-bold tracking-tight">{t('title')}</h1>
                 <p className="text-muted-foreground text-lg">
-                    Monitor your portfolio and copy trading activity
+                    {t('subtitle')}
                 </p>
             </div>
 
@@ -476,7 +479,7 @@ export default function PortfolioPage() {
                     <div>
                         <div className="flex items-center gap-2 text-sm font-medium text-blue-400 mb-4">
                             <Wallet className="h-4 w-4" />
-                            <span>Your Wallet</span>
+                            <span>{t('walletCard.title')}</span>
                         </div>
                         <div className="text-3xl font-bold tracking-tight mb-1">
                             {usdcBalance !== null
@@ -492,10 +495,10 @@ export default function PortfolioPage() {
 
                     <div className="grid grid-cols-2 gap-3 mt-4">
                         <Link href="/dashboard/proxy" className="flex items-center justify-center rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
-                            Deposit
+                            {t('walletCard.deposit')}
                         </Link>
                         <Link href="/dashboard/proxy" className="flex items-center justify-center rounded-lg border border-input bg-transparent py-2 text-sm font-medium hover:bg-muted transition-colors">
-                            Withdraw
+                            {t('walletCard.withdraw')}
                         </Link>
                     </div>
                 </div>
@@ -506,9 +509,9 @@ export default function PortfolioPage() {
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 text-sm font-medium text-green-500">
                                 <TrendingUp className="h-4 w-4" />
-                                <span>Settlement P&L</span>
+                                <span>{t('pnlCard.title')}</span>
                             </div>
-                            <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">Total</div>
+                            <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">{t('pnlCard.total')}</div>
                         </div>
                         <div className="flex items-center justify-between">
                             <div className={cn("text-3xl font-bold tracking-tight", totalSettlementPnL >= 0 ? "text-green-500" : "text-red-500")}>
@@ -534,7 +537,7 @@ export default function PortfolioPage() {
                         )}>
                             <div className="mt-3 pt-3 border-t border-border/50">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-xs text-muted-foreground">Settlement P&L (Resolved)</span>
+                                    <span className="text-xs text-muted-foreground">{t('pnlCard.resolved')}</span>
                                     <div className="flex flex-col items-end">
                                         <span className={cn("text-xs font-medium", settlementPnL >= 0 ? "text-green-400" : "text-red-400")}>
                                             {settlementPnL >= 0 ? '+' : ''}${settlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -555,7 +558,7 @@ export default function PortfolioPage() {
                             {/* Settled but not redeemed */}
                             <div className="mt-2">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-xs text-muted-foreground">Settled (Not Redeemed)</span>
+                                    <span className="text-xs text-muted-foreground">{t('pnlCard.settled')}</span>
                                     <div className="flex flex-col items-end">
                                         <span className={cn("text-xs font-medium", settledOpenStats.pnl >= 0 ? "text-green-400" : "text-red-400")}>
                                             {settledOpenStats.pnl >= 0 ? '+' : ''}${settledOpenStats.pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -592,7 +595,7 @@ export default function PortfolioPage() {
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                                 <Coins className="h-4 w-4" />
-                                <span>Invested Funds</span>
+                                <span>{t('investedCard.title')}</span>
                             </div>
                             <Zap className="h-5 w-5 text-yellow-500" />
                         </div>
@@ -601,11 +604,11 @@ export default function PortfolioPage() {
                         </div>
                         <div className="flex flex-col gap-1">
                             <div className="text-sm text-muted-foreground">
-                                Across {ctMetrics?.activePositions || 0} active positions
+                                {t('investedCard.activePositions', { count: ctMetrics?.activePositions || 0 })}
                             </div>
                             {ctMetrics?.cumulativeInvestment !== undefined && (
                                 <div className="text-xs text-muted-foreground opacity-80 mt-1 text-yellow-500/80">
-                                    Total Volume: ${(ctMetrics.cumulativeInvestment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {t('investedCard.totalVolume', { amount: (ctMetrics.cumulativeInvestment).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}
                                 </div>
                             )}
                         </div>
@@ -613,8 +616,8 @@ export default function PortfolioPage() {
 
                     <div className="mt-6 space-y-3">
                         <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">Current Plan</span>
-                            <span className="font-medium text-yellow-500">Starter</span>
+                            <span className="text-muted-foreground">{t('investedCard.currentPlan')}</span>
+                            <span className="font-medium text-yellow-500">{t('investedCard.starter')}</span>
                         </div>
                         {/* Fake progress bar for plan usage */}
                         <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
@@ -622,7 +625,7 @@ export default function PortfolioPage() {
                         </div>
 
                         <Link href="/pricing" className="flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-                            View Plan Limits <ChevronRight className="h-3 w-3 ml-0.5" />
+                            {t('investedCard.viewLimits')} <ChevronRight className="h-3 w-3 ml-0.5" />
                         </Link>
                     </div>
                 </div>
@@ -645,7 +648,7 @@ export default function PortfolioPage() {
                 <div className="lg:col-span-12 rounded-xl border bg-card shadow-sm flex flex-col h-[600px]">
                     <div className="p-4 border-b flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <h3 className="font-semibold px-2">Portfolio</h3>
+                            <h3 className="font-semibold px-2">{t('tabs.portfolio')}</h3>
                             {/* Tabs */}
                             <div className="flex items-center rounded-lg bg-muted/50 p-1">
                                 <button
@@ -655,7 +658,8 @@ export default function PortfolioPage() {
                                         activeTab === 'strategies' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Strategies <span className="ml-1 text-muted-foreground">{activeStrategiesCount}</span>
+
+                                    {t('tabs.strategies')} <span className="ml-1 text-muted-foreground">{activeStrategiesCount}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('orders')}
@@ -664,7 +668,7 @@ export default function PortfolioPage() {
                                         activeTab === 'orders' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Orders <span className="ml-1 text-muted-foreground">{orderStats.total}</span>
+                                    {t('tabs.orders')} <span className="ml-1 text-muted-foreground">{orderStats.total}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('positions')}
@@ -673,7 +677,7 @@ export default function PortfolioPage() {
                                         activeTab === 'positions' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Positions <span className="ml-1 text-muted-foreground">{positions.length + (simPositions?.length || 0)}</span>
+                                    {t('tabs.positions')} <span className="ml-1 text-muted-foreground">{positions.length + (simPositions?.length || 0)}</span>
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('history')}
@@ -682,7 +686,7 @@ export default function PortfolioPage() {
                                         activeTab === 'history' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Trades
+                                    {t('tabs.trades')}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('transfers')}
@@ -691,7 +695,7 @@ export default function PortfolioPage() {
                                         activeTab === 'transfers' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
-                                    Transfers
+                                    {t('tabs.transfers')}
                                 </button>
                             </div>
                         </div>
@@ -702,7 +706,7 @@ export default function PortfolioPage() {
                                 className="text-xs font-medium text-red-400 hover:text-red-300 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 rounded px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                                 {isSellingAll && <Loader2 className="h-3 w-3 animate-spin" />}
-                                Sell All
+                                {t('sellAll.button')}
                             </button>
                         )}
                     </div>
@@ -751,9 +755,9 @@ export default function PortfolioPage() {
                                                 <Layers className="h-6 w-6" />
                                             </div>
                                             <div>
-                                                <h4 className="font-medium text-sm">No Positions Yet</h4>
+                                                <h4 className="font-medium text-sm">{t('positionsTable.empty.title')}</h4>
                                                 <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
-                                                    Real and simulated positions will appear here.
+                                                    {t('positionsTable.empty.desc')}
                                                 </p>
                                             </div>
                                         </div>
@@ -778,10 +782,10 @@ export default function PortfolioPage() {
                                                             : "bg-background text-muted-foreground border-border hover:bg-muted"
                                                     )}
                                                 >
-                                                    {filter === 'OPEN' ? `Open (${openPositions.length})` :
-                                                        filter === 'SETTLED' ? `Settled (${settledPositions.length})` :
-                                                            filter === 'REDEEMED_WIN' ? `Redeemed Win (${historyCounts.REDEEMED})` :
-                                                                `Redeemed Loss (${historyCounts.SETTLED_LOSS})`}
+                                                    {filter === 'OPEN' ? `${t('positionsTable.filters.open')} (${openPositions.length})` :
+                                                        filter === 'SETTLED' ? `${t('positionsTable.filters.settled')} (${settledPositions.length})` :
+                                                            filter === 'REDEEMED_WIN' ? `${t('positionsTable.filters.redeemedWin')} (${historyCounts.REDEEMED})` :
+                                                                `${t('positionsTable.filters.redeemedLoss')} (${historyCounts.SETTLED_LOSS})`}
                                                 </button>
                                             ))}
                                         </div>
@@ -790,20 +794,22 @@ export default function PortfolioPage() {
                                             <table className="w-full caption-bottom text-sm">
                                                 <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
                                                     <tr className="border-b transition-colors bg-card">
-                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[100px]">Time</th>
-                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
-                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">Side</th>
-                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[70px]">Status</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Shares</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">Avg. Price</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Current</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">Total Invested</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">Est. Value</th>
-
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">ROI</th>
-                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">PnL</th>
-                                                        <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">Action</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[100px]">{t('positionsTable.headers.time')}</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">{t('positionsTable.headers.market')}</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">{t('positionsTable.headers.side')}</th>
+                                                        <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card w-[70px]">{t('positionsTable.headers.status')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">{t('positionsTable.headers.shares')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">{t('positionsTable.headers.avgPrice')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">{t('positionsTable.headers.current')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">{t('positionsTable.headers.totalInvested')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card whitespace-nowrap">
+                                                            {t('positionsTable.headers.estValue')}
+                                                        </th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card w-[80px]">{t('positionsTable.headers.roi')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card w-[100px]">{t('positionsTable.headers.pnl')}</th>
+                                                        <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card w-[120px]">{t('positionsTable.headers.action')}</th>
                                                     </tr>
+
                                                 </thead>
                                                 <tbody>
                                                     {currentPositions.length === 0 ? (
@@ -1034,12 +1040,12 @@ export default function PortfolioPage() {
                                         <table className="w-full caption-bottom text-sm">
                                             <thead className="[&_tr]:border-b sticky top-0 bg-card z-10">
                                                 <tr className="border-b transition-colors bg-card">
-                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Date</th>
-                                                    <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground text-xs bg-card">Action</th>
-                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">Market</th>
-                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Outcome</th>
-                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Size</th>
-                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">Price</th>
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">{t('history.headers.date')}</th>
+                                                    <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground text-xs bg-card">{t('history.headers.action')}</th>
+                                                    <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground text-xs bg-card">{t('history.headers.market')}</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">{t('history.headers.outcome')}</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">{t('history.headers.size')}</th>
+                                                    <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground text-xs bg-card">{t('history.headers.price')}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1133,9 +1139,9 @@ export default function PortfolioPage() {
                                         <History className="h-6 w-6" />
                                     </div>
                                     <div>
-                                        <h4 className="font-medium text-sm">No History Yet</h4>
+                                        <h4 className="font-medium text-sm">{t('history.empty.title')}</h4>
                                         <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
-                                            Your trade history and completed positions will appear here.
+                                            {t('history.empty.desc')}
                                         </p>
                                     </div>
                                 </div>
