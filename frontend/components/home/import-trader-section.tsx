@@ -4,7 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Shield, Zap, Users } from 'lucide-react';
 
+import { useTranslations } from 'next-intl';
+
 export function ImportTraderSection() {
+    const t = useTranslations('ImportTrader');
     const router = useRouter();
     const [address, setAddress] = useState('');
     const [error, setError] = useState('');
@@ -18,12 +21,12 @@ export function ImportTraderSection() {
 
         // Basic validation
         if (!trimmedAddress) {
-            setError('Please enter a wallet address');
+            setError(t('errorEmpty'));
             return;
         }
 
         if (!trimmedAddress.startsWith('0x') || trimmedAddress.length !== 42) {
-            setError('Please enter a valid Ethereum wallet address (starts with 0x...)');
+            setError(t('errorInvalid'));
             return;
         }
 
@@ -34,7 +37,7 @@ export function ImportTraderSection() {
         try {
             router.push(`/traders/${trimmedAddress}`);
         } catch (err) {
-            setError('Failed to navigate to trader profile');
+            setError(t('errorNavigate'));
             setIsLoading(false);
         }
     };
@@ -43,10 +46,10 @@ export function ImportTraderSection() {
         <section className="py-16 px-4">
             <div className="container max-w-4xl mx-auto text-center">
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-                    Mirror the Alpha. Master the Market.
+                    {t('title')}
                 </h2>
                 <p className="text-xl text-muted-foreground mb-8">
-                    Pro-level Polymarket copy trading, simplified for everyone.
+                    {t('subtitle')}
                 </p>
 
                 <div className="max-w-xl mx-auto mb-8">
@@ -55,7 +58,7 @@ export function ImportTraderSection() {
                             type="text"
                             value={address}
                             onChange={(e) => setAddress(e.target.value)}
-                            placeholder="Paste wallet address (0x...)"
+                            placeholder={t('placeholder')}
                             className="w-full h-14 pl-5 pr-36 bg-white/5 border border-white/10 rounded-lg text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-muted-foreground/50"
                         />
                         <button
@@ -63,7 +66,7 @@ export function ImportTraderSection() {
                             disabled={isLoading}
                             className="absolute right-1 top-1 bottom-1 px-6 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {isLoading ? 'Loading...' : 'Import Trader'}
+                            {isLoading ? t('loading') : t('button')}
                         </button>
                     </form>
                     {error && (
@@ -76,15 +79,15 @@ export function ImportTraderSection() {
                 <div className="flex flex-wrap justify-center gap-8 text-sm font-medium text-muted-foreground">
                     <div className="flex items-center gap-2">
                         <Shield className="w-5 h-5 text-green-500" />
-                        <span>Non-custodial</span>
+                        <span>{t('features.nonCustodial')}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <Zap className="w-5 h-5 text-yellow-500" />
-                        <span>Gas sponsored</span>
+                        <span>{t('features.gasSponsored')}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <Users className="w-5 h-5 text-blue-500" />
-                        <span>2,110 traders tracked</span>
+                        <span>{t('features.tradersTracked')}</span>
                     </div>
                 </div>
             </div>

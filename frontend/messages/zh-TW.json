@@ -1,0 +1,103 @@
+{
+    "HomePage": {
+        "title": "用AI在Polymarket上像頂尖交易員一樣交易",
+        "subtitle": "停止在預測市場上的盲目猜測。跟隨那些擁有驗證勝率的成熟交易員，並自動將他們的交易AI跟单到您的錢包。",
+        "seeAll": "查看所有交易員",
+        "howItWorks": "如何運作",
+        "statsVerification": "已驗證交易員",
+        "statsVolume": "總交易量",
+        "statsData": "鏈上數據",
+        "connectWalletTitle": "連接錢包以查看頂級交易員",
+        "connectWalletText": "訪問 Polymarket 頂級表現者的完整排行榜。查看他們的交易歷史、利潤指標，並一鍵開始AI跟单交易。",
+        "topPreview": "前10名預覽",
+        "topPreviewDesc": "關注度最高的交易員",
+        "realTimePnl": "實時盈虧",
+        "realTimePnlDesc": "實時利潤追蹤",
+        "verifiedData": "已驗證數據",
+        "verifiedDataDesc": "鏈上驗證",
+        "connectWalletBtn": "連接錢包查看交易員",
+        "leaderboardTitle": "通過AI跟单評分排名的前10名交易員",
+        "leaderboardSubtitle": "根據科學指標排名：風險調整後回報、盈虧比和一致性。",
+        "viewAllTraders": "查看所有 500+ 交易員",
+        "howToPickTitle": "如何挑選最佳的交易員進行AI跟单",
+        "howToPickSubtitle": "並非所有交易員都是平等的。遵循這些提示以最大化您的AI跟单交易成功率。",
+        "howToPick": {
+            "diversify": {
+                "title": "分散投資於不同交易員",
+                "desc": "AI跟单3-5名風格迥異的交易員以降低風險並平滑回報。不要把雞蛋都放在一個籃子裡。"
+            },
+            "performance": {
+                "title": "檢查近期表現",
+                "desc": "關注7天和30天的數據，而不僅僅是歷史總數據。市場在變化，交易員的策略也在變化。"
+            },
+            "startSmall": {
+                "title": "小額起始",
+                "desc": "從小額分配開始，隨著您驗證交易員的表現和一致性而增加。"
+            },
+            "monitor": {
+                "title": "每週監控",
+                "desc": "每週檢查您的投資組合，並根據交易員的表現進行調整。儘早停止AI跟单表現不佳的交易員。"
+            }
+        },
+        "faqTitle": "常見問題",
+        "faq": {
+            "q1": "我如何知道該關注哪些 Polymarket 交易員？",
+            "a1": "尋找勝率穩定（超過55%）、7-30天內盈利為正且有多名追隨者的交易員。避免偶爾交易或近期連敗的交易員。",
+            "q2": "我可以同時AI跟单多名交易員嗎？",
+            "a2": "可以！使用 PolyHunter，您可以同時AI跟单無限數量的交易員。這也是我們推薦的做法——如果一名交易員表現不佳，其他人可能會平衡收益。",
+            "q3": "我應該為每名交易員分配多少資金？",
+            "a3": "我們建議每名交易員起步 $50-100，並分散在 3-5 名交易員之間。隨著您了解哪些交易員最適合您的風險承受能力，您可以調整分配。",
+            "q4": "如果頂級交易員開始虧損怎麼辦？",
+            "a4": "您可以立即暫停或停止AI跟单任何交易員。我們建議每週檢查一次投資組合，如果交易員在一個月內虧損超過 20%，請進行調整。",
+            "q5": "這些交易員經過驗證了嗎？",
+            "a5": "PolyHunter 上的所有交易員統計數據均直接來自鏈上 Polymarket 數據。勝率、盈虧和交易歷史均可驗證，無法偽造。"
+        },
+        "footerTitle": "今天開始AI跟单頂級交易員",
+        "footerText": "加入數千名已經AI跟单 Polymarket 巨鯨的交易員。免費開始——您只需在盈利時付費。",
+        "findTraders": "尋找可AI跟单的交易員",
+        "viewPricing": "查看定價"
+    },
+    "ImportTrader": {
+        "title": "鏡像 Alpha。掌握市場。",
+        "subtitle": "專業級 Polymarket AI跟单交易，讓每個人都能輕鬆上手。",
+        "placeholder": "粘貼錢包地址 (0x...)",
+        "button": "導入交易員",
+        "loading": "加載中...",
+        "errorEmpty": "請輸入錢包地址",
+        "errorInvalid": "請輸入有效的以太坊錢包地址 (以 0x 開頭...)",
+        "errorNavigate": "無法跳轉到交易員資料",
+        "features": {
+            "nonCustodial": "非託管",
+            "gasSponsored": "Gas 贊助",
+            "tradersTracked": "追踪 2,110 名交易員"
+        }
+    },
+    "Leaderboard": {
+        "rank": "排名",
+        "trader": "交易員",
+        "roi": "投資回報率",
+        "pnl": "盈虧",
+        "winRate": "勝率",
+        "trades": "交易數",
+        "copy": "AI跟单",
+        "period": {
+            "7d": "7天",
+            "30d": "30天",
+            "all": "全部"
+        },
+        "copyButton": "AI跟单"
+    },
+    "Navbar": {
+        "traders": "首页",
+        "markets": "市場",
+        "smartMoney": "頂尖交易員",
+        "affiliates": "聯盟推廣",
+        "portfolio": "投資組合",
+        "settings": "設置",
+        "pricing": "定價",
+        "connect": "連接錢包",
+        "connecting": "連接中",
+        "total": "總資產",
+        "cash": "現金"
+    }
+}

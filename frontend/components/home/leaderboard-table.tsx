@@ -68,7 +68,12 @@ interface LeaderboardTableProps {
     initialData: ActiveTrader[];
 }
 
+import { useTranslations } from 'next-intl';
+
+// ... (previous imports)
+
 export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
+    const t = useTranslations('Leaderboard');
     const [period, setPeriod] = useState<Period>('30d');
     const [traders, setTraders] = useState<ActiveTrader[]>(() => {
         // Try to use cached data first, fall back to initialData
@@ -188,7 +193,7 @@ export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
                                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                                 }`}
                         >
-                            {p.toUpperCase()} PnL
+                            {p.toUpperCase()} {t('pnl')}
                         </button>
                     ))}
                 </div>
@@ -196,9 +201,9 @@ export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
 
             {/* Column Headers */}
             <div className="grid grid-cols-12 gap-2 p-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b bg-muted/50">
-                <div className="col-span-1 text-center">Rank</div>
-                <div className="col-span-2">Trader</div>
-                <div className="col-span-2 text-right">{period.toUpperCase()} PnL</div>
+                <div className="col-span-1 text-center">{t('rank')}</div>
+                <div className="col-span-2">{t('trader')}</div>
+                <div className="col-span-2 text-right">{period.toUpperCase()} {t('pnl')}</div>
                 <div className="col-span-1 text-center">
                     <MetricTooltip label="PF" description="Profit Factor: Total gains / Total losses. >2 is excellent" />
                 </div>
@@ -270,7 +275,7 @@ export function LeaderboardTable({ initialData }: LeaderboardTableProps) {
                         </div>
                         <div className="col-span-2 text-right">
                             <Link href={`/traders/${trader.address}`} className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors inline-block">
-                                Copy
+                                {t('copyButton')}
                             </Link>
                         </div>
                     </div>

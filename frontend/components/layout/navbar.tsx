@@ -1,23 +1,18 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { Link, usePathname } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
 import { LineChart, LayoutDashboard, Wallet, Search, Loader2 } from 'lucide-react';
 import { ethers } from 'ethers';
-
-const navItems = [
-    { name: 'Home', href: '/', icon: LayoutDashboard },
-    { name: 'Markets', href: '/markets', icon: Search },
-    { name: 'Smart Money', href: '/smart-money', icon: LineChart },
-    { name: 'Portfolio', href: '/portfolio', icon: Wallet },
-];
+import { useTranslations } from 'next-intl';
+import { LanguageSwitcher } from '../language-switcher';
 
 import { usePrivyLogin } from '@/lib/privy-login';
 import { UserMenu } from './user-menu';
 
 export function Navbar() {
+    const t = useTranslations('Navbar');
     const pathname = usePathname();
     const { login, authenticated, user, logout, ready, isLoggingIn } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = React.useState<number | null>(null);
@@ -83,35 +78,35 @@ export function Navbar() {
                 {/* Center Nav */}
                 <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
                     <Link href="/" className={cn("transition-colors hover:text-foreground/80", pathname === "/" ? "text-foreground" : "text-muted-foreground")}>
-                        Home
+                        {t('traders')}
                     </Link>
                     <Link href="/markets" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/markets") ? "text-foreground" : "text-muted-foreground")}>
-                        Markets
+                        {t('markets')}
                     </Link>
                     {authenticated ? (
                         // 已登录用户看到的菜单
                         <>
                             <Link href="/smart-money" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/smart-money") ? "text-foreground" : "text-muted-foreground")}>
-                                Smart Money
+                                {t('smartMoney')}
                             </Link>
                             <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
-                                Affiliate
+                                {t('affiliates')}
                             </Link>
                             <Link href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
-                                Dashboard
+                                {t('portfolio')}
                             </Link>
                             <Link href="/settings" className={cn("transition-colors hover:text-foreground/80", pathname === "/settings" ? "text-foreground" : "text-muted-foreground")}>
-                                Settings
+                                {t('settings')}
                             </Link>
                         </>
                     ) : (
                         // 未登录用户看到的菜单
                         <>
                             <Link href="/pricing" className={cn("transition-colors hover:text-foreground/80", pathname === "/pricing" ? "text-foreground" : "text-muted-foreground")}>
-                                Pricing
+                                {t('pricing')}
                             </Link>
                             <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
-                                Affiliate
+                                {t('affiliates')}
                             </Link>
                         </>
                     )}
@@ -119,6 +114,8 @@ export function Navbar() {
 
                 {/* Right Side */}
                 <div className="flex items-center gap-4">
+                    <LanguageSwitcher />
+
                     {!ready ? (
                         // Loading Skeleton
                         <div className="h-9 w-24 bg-white/5 animate-pulse rounded-lg" />
@@ -127,13 +124,13 @@ export function Navbar() {
                             {/* Balance Stats */}
                             <div className="hidden lg:flex items-center gap-6 mr-2">
                                 <div className="flex flex-col items-end">
-                                    <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">TOTAL</span>
+                                    <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">{t('total')}</span>
                                     <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">
                                         {usdcBalance !== null ? `$${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
                                     </span>
                                 </div>
                                 <div className="flex flex-col items-end">
-                                    <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">CASH</span>
+                                    <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">{t('cash')}</span>
                                     <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">
                                         {usdcBalance !== null ? `$${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
                                     </span>
@@ -151,11 +148,11 @@ export function Navbar() {
                         >
                             {isLoggingIn ? (
                                 <>
-                                    Connecting
+                                    {t('connecting')}
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                 </>
                             ) : (
-                                'Log in or sign up'
+                                t('connect')
                             )}
                         </button>
                     )}

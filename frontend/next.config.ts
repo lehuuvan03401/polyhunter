@@ -1,5 +1,10 @@
+import createNextIntlPlugin from 'next-intl/plugin';
 import path from "path";
 import type { NextConfig } from "next";
+
+const withNextIntl = createNextIntlPlugin(
+  './i18n/request.ts'
+);
 
 const nextConfig: NextConfig = {
   turbopack: {
@@ -13,4 +18,4 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@catalyst-team/poly-sdk'],
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);
