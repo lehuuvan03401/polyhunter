@@ -239,202 +239,6 @@
         "botAuthDesc": "Authorize the platform bot to execute trades on your behalf.",
         "authBtn": "Authorize Bot"
     },
-    "Affiliate": {
-        "hero": {
-            "badge": "Passive Income Opportunity",
-            "title": "Earn While <span class='text-yellow-500'>You Sleep</span>",
-            "desc": "Turn your network into income. Earn up to <strong class='text-green-500'>25% commission</strong> on every trade your referrals make — plus bonuses from <strong class='text-yellow-500'>5 generations</strong> of your team.",
-            "cta": "Start Earning Now",
-            "registering": "Registering...",
-            "subtext": "Free to join • No minimums • Instant setup"
-        },
-        "benefits": {
-            "title": "Why Join Our Affiliate Program?",
-            "commission": {
-                "title": "25% Commission",
-                "desc": "Earn from every trade your referrals make"
-            },
-            "generations": {
-                "title": "5 Generations Deep",
-                "desc": "Build a team and earn from your entire network"
-            },
-            "payouts": {
-                "title": "Instant Payouts",
-                "desc": "Withdraw your earnings anytime, no minimums"
-            },
-            "tiers": {
-                "title": "Tier Progression",
-                "desc": "Level up to unlock higher commission rates"
-            }
-        },
-        "howItWorks": {
-            "title": "How It Works",
-            "step1": {
-                "title": "Register",
-                "desc": "Sign up and get your unique referral link"
-            },
-            "step2": {
-                "title": "Share",
-                "desc": "Invite friends with your personal link"
-            },
-            "step3": {
-                "title": "Earn",
-                "desc": "Get paid on every trade they make"
-            }
-        },
-        "tierSystem": {
-            "title": "Tier System",
-            "desc": "Level up to unlock higher commission rates",
-            "headers": {
-                "tier": "Tier",
-                "directs": "Direct Referrals",
-                "team": "Team Size",
-                "zero": "Zero Line %",
-                "diff": "Team Diff %"
-            },
-            "ranks": {
-                "ordinary": "ORDINARY",
-                "vip": "VIP",
-                "elite": "ELITE",
-                "partner": "PARTNER",
-                "super": "SUPER"
-            }
-        },
-        "zeroLine": {
-            "title": "Earn From 5 Generations",
-            "desc": "Your cut from platform fees on every trade",
-            "gen1": "Direct Referral",
-            "gen2": "2nd Generation",
-            "gen3": "3rd Generation",
-            "gen4": "4th Generation",
-            "gen5": "5th Generation",
-            "example": "<strong>Example:</strong> $10,000 trade → $10 platform fee → <strong>$2.50</strong> to you (Gen 1)"
-        },
-        "cta": {
-            "title": "Ready to Start Earning?",
-            "desc": "Join thousands of affiliates building passive income",
-            "button": "Become an Affiliate",
-            "free": "Free to join",
-            "noMin": "No minimum",
-            "instant": "Instant setup"
-        },
-        "dashboard": {
-            "title": "Affiliate Dashboard",
-            "desc": "Track earnings and manage your team",
-            "rank": "Current Rank",
-            "directRate": "Direct",
-            "diffRate": "Team Diff",
-            "learnMore": "Learn More",
-            "nextRank": "Next Rank",
-            "members": "Team Members",
-            "goal": "Goal: {count} Active Members",
-            "topRank": "🎉 Top Rank Achieved! You are a Super Partner."
-        },
-        "stats": {
-            "directs": {
-                "label": "Direct Referrals",
-                "sub": "Zero Line (Gen 1)"
-            },
-            "team": {
-                "label": "Team Size",
-                "sub": "Total Network (Downline)"
-            },
-            "sunLines": {
-                "label": "Sun Lines",
-                "sub": "Strong Legs"
-            },
-            "earnings": {
-                "label": "Total Earnings",
-                "sub": "{zero} Zero / {sun} Sun"
-            },
-            "available": "Available",
-            "withdraw": "Withdraw"
-        },
-        "referral": {
-            "title": "Your Recruitment Link",
-            "desc": "Build your team. You earn overrides on 15 generations of referrals.",
-            "copy": "Copy",
-            "copied": "Referral link copied!"
-        },
-        "payouts": {
-            "title": "Payout History",
-            "empty": "No withdrawal history yet",
-            "headers": {
-                "status": "Status",
-                "amount": "Amount",
-                "date": "Date",
-                "tx": "Tx Hash"
-            },
-            "status": {
-                "completed": "Paid",
-                "pending": "Pending Approval",
-                "processing": "Approved (Processing)",
-                "rejected": "Rejected"
-            }
-        },
-        "withdraw": {
-            "title": "Request Withdrawal",
-            "desc": "Withdraw your affiliate earnings",
-            "available": "Available to Withdraw",
-            "info": "You will be asked to sign a message with your wallet to authorize this withdrawal. This is for security purposes.",
-            "cancel": "Cancel",
-            "confirm": "Confirm Withdrawal",
-            "signing": {
-                "title": "Sign in Wallet",
-                "desc": "Please sign the message in your wallet to authorize the withdrawal..."
-            },
-            "submitting": {
-                "title": "Processing",
-                "desc": "Submitting your withdrawal request..."
-            },
-            "success": {
-                "title": "Withdrawal Submitted!",
-                "desc": "Your withdrawal request of <span class='text-green-500 font-bold'>${amount}</span> has been submitted successfully."
-            },
-            "failed": {
-                "title": "Withdrawal Failed"
-            },
-            "close": "Close",
-            "tryAgain": "Try Again",
-            "minAmount": "Minimum withdrawal amount is $10"
-        },
-        "simulator": {
-            "title": "Commission Simulator",
-            "label": "Simulate Trade Fee (USDC)",
-            "button": "Simulate Fee Event",
-            "processing": "Processing...",
-            "success": "Simulated! Earned ${amount}",
-            "createRef": "Creating test referral...",
-            "createRefSuccess": "Created test referral!",
-            "createRefFail": "Failed to create test referral"
-        },
-        "teamView": {
-            "empty": "Your team is empty",
-            "share": "Share your link to start building your organization.",
-            "breakdown": "Generation Breakdown",
-            "total": "{count} total",
-            "legend": {
-                "direct": "Direct",
-                "diff": "Team Diff"
-            },
-            "headers": {
-                "member": "Member",
-                "rank": "Rank",
-                "volume": "Volume",
-                "team": "Team"
-            },
-            "pagination": {
-                "showing": "Showing {start}-{end} of {total}",
-                "previous": "Previous",
-                "next": "Next"
-            }
-        },
-        "toasts": {
-            "registerSuccess": "Successfully registered as affiliate!",
-            "registerFail": "Registration failed",
-            "simFail": "Simulation failed"
-        }
-    },
     "Portfolio": {
         "page": {
             "title": "Dashboard",
@@ -661,6 +465,203 @@
                 "deposit": "Deposit",
                 "withdraw": "Withdraw"
             }
+        }
+    },
+    "Affiliate": {
+        "guest": {
+            "hero": {
+                "badge": "Passive Income Opportunity",
+                "title": "Earn While <highlight>You Sleep</highlight>",
+                "desc": "Turn your network into income. Earn up to <highlight1>25% commission</highlight1> on every trade your referrals make — plus bonuses from <highlight2>5 generations</highlight2> of your team.",
+                "cta": "Start Earning Now",
+                "registering": "Registering...",
+                "features": "Free to join • No minimums • Instant setup"
+            },
+            "benefits": {
+                "title": "Why Join Our Affiliate Program?",
+                "items": {
+                    "commission": {
+                        "title": "25% Commission",
+                        "desc": "Earn from every trade your referrals make"
+                    },
+                    "generations": {
+                        "title": "5 Generations Deep",
+                        "desc": "Build a team and earn from your entire network"
+                    },
+                    "payouts": {
+                        "title": "Instant Payouts",
+                        "desc": "Withdraw your earnings anytime, no minimums"
+                    },
+                    "tiers": {
+                        "title": "Tier Progression",
+                        "desc": "Level up to unlock higher commission rates"
+                    }
+                }
+            },
+            "howItWorks": {
+                "title": "How It Works",
+                "steps": {
+                    "1": {
+                        "title": "Register",
+                        "desc": "Sign up and get your unique referral link"
+                    },
+                    "2": {
+                        "title": "Share",
+                        "desc": "Invite friends with your personal link"
+                    },
+                    "3": {
+                        "title": "Earn",
+                        "desc": "Get paid on every trade they make"
+                    }
+                }
+            },
+            "tiers": {
+                "title": "Tier System",
+                "subtitle": "Level up to unlock higher commission rates",
+                "headers": {
+                    "tier": "Tier",
+                    "directs": "Direct Referrals",
+                    "team": "Team Size",
+                    "zero": "Zero Line %",
+                    "diff": "Team Diff %"
+                }
+            },
+            "zeroLine": {
+                "title": "Earn From 5 Generations",
+                "subtitle": "Your cut from platform fees on every trade",
+                "generations": {
+                    "1": "Direct Referral",
+                    "2": "2nd Generation",
+                    "3": "3rd Generation",
+                    "4": "4th Generation",
+                    "5": "5th Generation"
+                },
+                "example": "<strong>Example:</strong> $10,000 trade → $10 platform fee → <strong>$2.50</strong> to you (Gen 1)"
+            },
+            "cta": {
+                "title": "Ready to Start Earning?",
+                "subtitle": "Join thousands of affiliates building passive income",
+                "button": "Become an Affiliate",
+                "features": {
+                    "free": "Free to join",
+                    "min": "No minimum",
+                    "setup": "Instant setup"
+                }
+            }
+        },
+        "dashboard": {
+            "title": "Affiliate Dashboard",
+            "subtitle": "Track earnings and manage your team",
+            "currentRank": "Current Rank",
+            "direct": "Direct",
+            "teamDiff": "Team Diff",
+            "learnMoreTitle": "Learn about tiers",
+            "learnMore": "Learn More",
+            "nextRank": "Next Rank",
+            "teamMembers": "Team Members",
+            "goal": "Goal",
+            "activeMembers": "Active Members",
+            "topRankAchieved": "🎉 Top Rank Achieved! You are a Super Partner.",
+            "stats": {
+                "directReferrals": "Direct Referrals",
+                "zeroLine": "Zero Line (Gen 1)",
+                "teamSize": "Team Size",
+                "totalNetwork": "Total Network (Downline)",
+                "sunLines": "Sun Lines",
+                "strongLegs": "Strong Legs",
+                "totalEarnings": "Total Earnings",
+                "available": "Available",
+                "withdraw": "Withdraw"
+            },
+            "referralLink": {
+                "label": "Your Recruitment Link",
+                "desc": "Build your team. You earn overrides on 15 generations of referrals."
+            },
+            "payoutHistory": {
+                "title": "Payout History",
+                "empty": "No withdrawal history yet",
+                "headers": {
+                    "status": "Status",
+                    "amount": "Amount",
+                    "date": "Date",
+                    "txHash": "Tx Hash"
+                },
+                "status": {
+                    "paid": "Paid",
+                    "pending": "Pending Approval",
+                    "processing": "Approved (Processing)",
+                    "rejected": "Rejected"
+                }
+            },
+            "simulator": {
+                "title": "Commission Simulator",
+                "label": "Simulate Trade Fee (USDC)",
+                "button": "Simulate Fee Event",
+                "processing": "Processing..."
+            }
+        },
+        "common": {
+            "copy": "Copy"
+        },
+        "teamNetwork": {
+            "title": "Team Network Structure",
+            "summary": "Summary",
+            "tree": "Tree"
+        },
+        "teamView": {
+            "empty": "No team members yet",
+            "breakdown": "Generation Breakdown",
+            "total": "Total Members: {count}",
+            "share": "Share your link to start building your network",
+            "headers": {
+                "directs": "Direct Referrals",
+                "member": "Member",
+                "rank": "Rank",
+                "volume": "Volume",
+                "team": "Team"
+            },
+            "legend": {
+                "direct": "Direct Commission",
+                "diff": "Team Differential"
+            },
+            "pagination": {
+                "showing": "Showing {start}-{end} of {total}",
+                "previous": "Previous",
+                "next": "Next"
+            }
+        },
+        "withdraw": {
+            "title": "Withdraw Commission",
+            "desc": "Transfer your earnings to your wallet",
+            "available": "Available to Withdraw",
+            "info": "Withdrawals are processed instantly on Polygon network. Gas fees are covered by the platform.",
+            "cancel": "Cancel",
+            "confirm": "Confirm Withdrawal",
+            "signing": {
+                "title": "Sign Request",
+                "desc": "Please sign the message in your wallet to confirm ownership."
+            },
+            "submitting": {
+                "title": "Processing Withdrawal",
+                "desc": "Sending transaction to the blockchain..."
+            },
+            "success": {
+                "title": "Withdrawal Successful",
+                "desc": "Successfully withdrew <b>${amount}</b> to your wallet."
+            },
+            "failed": {
+                "title": "Withdrawal Failed"
+            },
+            "close": "Close",
+            "tryAgain": "Try Again"
+        },
+        "tiers": {
+            "ORDINARY": "Ordinary",
+            "VIP": "VIP",
+            "ELITE": "Elite",
+            "PARTNER": "Partner",
+            "SUPER": "Super Partner",
+            "SUPER_PARTNER": "Super Partner"
         }
     }
 }
