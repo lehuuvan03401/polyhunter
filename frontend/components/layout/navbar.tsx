@@ -95,9 +95,7 @@ export function Navbar() {
                             <Link href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('portfolio')}
                             </Link>
-                            <Link href="/settings" className={cn("transition-colors hover:text-foreground/80", pathname === "/settings" ? "text-foreground" : "text-muted-foreground")}>
-                                {t('settings')}
-                            </Link>
+
                         </>
                     ) : (
                         // 未登录用户看到的菜单
