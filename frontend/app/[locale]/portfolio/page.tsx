@@ -99,8 +99,10 @@ export default function PortfolioPage() {
         return { wins, losses, pnl: wins + losses };
     })();
 
-    const effectivePnL = totalPnL + (ctMetrics?.totalPnL || 0);
     const settlementPnL = ctMetrics?.settlementPnL || 0;
+    // Total Settlement P&L = Resolved (Redeemed) + Settled (Not Redeemed)
+    const totalSettlementPnL = settlementPnL + settledOpenStats.pnl;
+    const effectivePnL = totalPnL + (ctMetrics?.totalPnL || 0);
 
     // Fetch settled history when filter is redeemed (win/loss)
     useEffect(() => {
@@ -495,7 +497,7 @@ export default function PortfolioPage() {
                     </div>
                 </div>
 
-                {/* PnL Card - Now with Real + Simulated PnL */}
+                {/* PnL Card - Settlement P&L (Resolved + Pending) */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full min-h-[220px]">
                     <div>
                         <div className="flex items-center justify-between mb-2">
@@ -503,10 +505,10 @@ export default function PortfolioPage() {
                                 <TrendingUp className="h-4 w-4" />
                                 <span>Settlement P&L</span>
                             </div>
-                            <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">Unrealized</div>
+                            <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">Total</div>
                         </div>
-                        <div className={cn("text-3xl font-bold tracking-tight", effectivePnL >= 0 ? "text-green-500" : "text-red-500")}>
-                            {effectivePnL >= 0 ? '+' : ''}${effectivePnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className={cn("text-3xl font-bold tracking-tight", totalSettlementPnL >= 0 ? "text-green-500" : "text-red-500")}>
+                            {totalSettlementPnL >= 0 ? '+' : ''}${totalSettlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
 
                         {/* Settlement PnL (Resolved + Redeemed) */}
