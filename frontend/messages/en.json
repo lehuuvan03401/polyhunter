@@ -570,6 +570,7 @@
                 "sunLines": "Sun Lines",
                 "strongLegs": "Strong Legs",
                 "totalEarnings": "Total Earnings",
+                "earningsBreakdown": "{zero} Zero / {sun} Sun",
                 "available": "Available",
                 "withdraw": "Withdraw"
             },

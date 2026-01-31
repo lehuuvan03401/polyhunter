@@ -58,7 +58,7 @@
         "viewPricing": "查看定價"
     },
     "ImportTrader": {
-        "title": "鏡像 Alpha。掌握市場。",
+        "title": "同步Alpha。掌握市場。",
         "subtitle": "專業級 Polymarket AI跟单交易，讓每個人都能輕鬆上手。",
         "placeholder": "粘貼錢包地址 (0x...)",
         "button": "導入交易員",
@@ -522,7 +522,7 @@
                     "tier": "等級",
                     "directs": "直接推薦",
                     "team": "團隊規模",
-                    "zero": "零線 %",
+                    "zero": "直推 %",
                     "diff": "團隊差額 %"
                 }
             },
@@ -564,12 +564,13 @@
             "topRankAchieved": "🎉 達到最高等級！您是超級合夥人。",
             "stats": {
                 "directReferrals": "直接推薦",
-                "zeroLine": "零線 (第 1 代)",
+                "zeroLine": "直推 (第 1 代)",
                 "teamSize": "團隊規模",
                 "totalNetwork": "總網絡 (下線)",
-                "sunLines": "太陽線",
+                "sunLines": "團隊",
                 "strongLegs": "強腿",
                 "totalEarnings": "總收入",
+                "earningsBreakdown": "{zero} 直推 / {sun} 團隊",
                 "available": "可用金額",
                 "withdraw": "提現"
             },

@@ -573,7 +573,10 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                         {
                             label: t('dashboard.stats.totalEarnings'),
                             value: `$${(stats?.totalEarned || 0).toFixed(2)}`,
-                            sub: `${(stats?.earningsBreakdown?.zeroLine || 0).toFixed(2)} Zero / ${(stats?.earningsBreakdown?.sunLine || 0).toFixed(2)} Sun`,
+                            sub: t('dashboard.stats.earningsBreakdown', {
+                                zero: (stats?.earningsBreakdown?.zeroLine || 0).toFixed(2),
+                                sun: (stats?.earningsBreakdown?.sunLine || 0).toFixed(2)
+                            }),
                             icon: Calendar,
                             color: "text-green-500",
                             bg: "bg-green-500/10",

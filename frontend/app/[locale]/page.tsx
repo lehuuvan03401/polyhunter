@@ -9,6 +9,7 @@ import { LeaderboardSkeleton } from '@/components/home/leaderboard-skeleton';
 import { ImportTraderSection } from '@/components/home/import-trader-section';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useTranslations } from 'next-intl';
+import TextType from '@/components/ui/text-type';
 
 export function Home() {
   const t = useTranslations('HomePage');
@@ -54,10 +55,20 @@ export function Home() {
       {/* Hero Section */}
       <section className="pt-20 pb-16 md:pt-32 md:pb-24 text-center px-4">
         <div className="container max-w-4xl mx-auto space-y-6">
-          <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-foreground">
-            {t.rich('title', {
-              br: () => <br />
-            })}
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-foreground leading-tight">
+            <TextType
+              text={t('title')}
+              typingSpeed={70}
+              deletingSpeed={40}
+              pauseDuration={1400}
+              showCursor
+              cursorCharacter="|"
+              cursorBlinkDuration={0.6}
+              cursorClassName="w-0.5 md:w-[3px] h-7 md:h-11 bg-yellow-400/70 rounded-sm align-[-0.15em]"
+              reserveSpace
+              className="block whitespace-pre-line"
+              aria-label={t('title')}
+            />
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
             {t('subtitle')}
