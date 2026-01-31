@@ -27,7 +27,6 @@ import { Button } from '@/components/ui/button';
 import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 import { ActiveStrategiesPanel } from '@/components/copy-trading/active-strategies-panel';
-import { FundingStatusPanel } from '@/components/copy-trading/funding-status-panel';
 import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
 import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
 import { useSimulatedHistory } from '@/lib/hooks/useSimulatedHistory';
@@ -605,12 +604,6 @@ export default function PortfolioPage() {
                     </div>
                 </div>
             </div>
-
-            {user?.wallet?.address && (
-                <div className="mb-6">
-                    <FundingStatusPanel walletAddress={user.wallet.address} />
-                </div>
-            )}
 
             {/* Pending Copy Trades Alert */}
             {user?.wallet?.address && (

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { ProxyActionCenter } from '@/components/proxy/proxy-action-center';
 import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
+import { FundingStatusPanel } from '@/components/copy-trading/funding-status-panel';
 import { Copy, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -255,6 +256,12 @@ export default function ProxyDashboardPage() {
                         </div>
 
                         {/* Unified Action Center (Replaces Buttons & Modals) */}
+                        {user?.wallet?.address && (
+                            <div className="w-full max-w-2xl">
+                                <FundingStatusPanel walletAddress={user.wallet.address} />
+                            </div>
+                        )}
+
                         <ProxyActionCenter onSuccess={handleActionSuccess} />
 
                         {/* Upgrade CTA */}

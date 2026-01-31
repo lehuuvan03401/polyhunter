@@ -28,6 +28,9 @@ import { normalizeTradeSizing } from '../../src/utils/trade-sizing.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// Prefer .env.local + .env.local.secrets, fallback to .env
+dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
+dotenv.config({ path: path.join(__dirname, '..', '.env.local.secrets') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 // --- CONFIG ---
@@ -44,6 +47,8 @@ const strategy = getStrategyConfig(SIMULATED_PROFILE);
 const SLIPPAGE_BPS = strategy.maxSlippage * 10000;
 const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + overhead)
 const COPY_MODE = (process.env.SIM_COPY_MODE || 'LEADER_SHARES').toUpperCase();
+const SIM_ACTIVITY_FILTER = (process.env.SIM_ACTIVITY_FILTER || 'TRADER_ONLY').toUpperCase();
+const SIM_WS_SERVER_FILTER = (process.env.SIM_WS_SERVER_FILTER || 'false').toLowerCase() === 'true';
 
 // No validation needed - using local dev.db
 
@@ -1101,20 +1106,61 @@ async function main() {
 
     // 2. Connect to WebSocket
     const realtimeService = new RealtimeServiceV2({
-        autoReconnect: true,
+        // Use manual reconnect w/ backoff to avoid rapid reconnect storms (EADDRNOTAVAIL)
+        autoReconnect: false,
         debug: false,
     });
 
     console.log('🔌 Connecting to Polymarket WebSocket...');
     realtimeService.connect();
 
-    // 3. Subscribe to ALL activity
-    realtimeService.subscribeAllActivity({
-        onTrade: handleTrade,
-        onError: (err) => {
-            console.error('❌ WebSocket error:', err.message);
+    // Manual reconnect with exponential backoff
+    let reconnectAttempts = 0;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+    const scheduleReconnect = () => {
+        if (reconnectTimer) return;
+        const base = 1000; // 1s
+        const max = 30000; // 30s
+        const delay = Math.min(max, base * 2 ** reconnectAttempts);
+        const jitter = Math.floor(Math.random() * 500);
+        reconnectAttempts += 1;
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            console.warn(`🔁 Reconnecting WebSocket (attempt ${reconnectAttempts})...`);
+            realtimeService.connect();
+        }, delay + jitter);
+    };
+
+    realtimeService.on('disconnected', scheduleReconnect);
+    realtimeService.on('connected', () => {
+        reconnectAttempts = 0;
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
         }
     });
+
+    // 3. Subscribe to ALL activity
+    const shouldUseServerFilter = SIM_ACTIVITY_FILTER === 'TRADER_ONLY' && SIM_WS_SERVER_FILTER;
+    const activityFilter = shouldUseServerFilter
+        ? { traderAddress: TARGET_TRADER }
+        : {};
+
+    if (shouldUseServerFilter) {
+        realtimeService.subscribeActivity(activityFilter, {
+            onTrade: handleTrade,
+            onError: (err) => {
+                console.error('❌ WebSocket error:', err.message);
+            }
+        });
+    } else {
+        realtimeService.subscribeAllActivity({
+            onTrade: handleTrade,
+            onError: (err) => {
+                console.error('❌ WebSocket error:', err.message);
+            }
+        });
+    }
 
     // 4. Subscribe to Market Events (Settlement)
     console.log('🔌 Subscribing to Market Events (Resolutions)...');
@@ -1128,7 +1174,10 @@ async function main() {
         }
     });
 
-    console.log('🎧 Simulation started - tracking 0x8dxd trades...');
+    const filterLabel = SIM_ACTIVITY_FILTER === 'ALL'
+        ? 'ALL activity'
+        : (SIM_WS_SERVER_FILTER ? 'TRADER_ONLY (server filter)' : 'TRADER_ONLY (local filter)');
+    console.log(`🎧 Simulation started - tracking ${filterLabel}...`);
     console.log(`   (Will run for ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes)\n`);
 
     // 4. Progress updates
