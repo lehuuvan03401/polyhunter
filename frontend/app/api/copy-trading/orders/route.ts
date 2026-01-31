@@ -137,7 +137,10 @@ export async function GET(request: NextRequest) {
                 leaderSize: trade.originalSize,
                 leaderPrice: trade.originalPrice,
                 leaderTxHash: trade.originalTxHash,
-                isSim: (trade.txHash || '').toLowerCase().startsWith('sim-'),
+                isSim: (() => {
+                    const tx = (trade.txHash || '').toLowerCase();
+                    return tx.startsWith('sim-') || tx.startsWith('adjust-');
+                })(),
             }));
 
             // Sort by newest first (no need to combine with strategies anymore)

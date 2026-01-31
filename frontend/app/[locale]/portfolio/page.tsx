@@ -15,7 +15,9 @@ import {
     Loader2,
     Coins,
     AlertCircle,
-    Check
+    Check,
+    ChevronUp,
+    ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -46,6 +48,7 @@ export default function PortfolioPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [positionsPage, setPositionsPage] = useState(1);
     const [statusFilter, setStatusFilter] = useState<'OPEN' | 'SETTLED' | 'REDEEMED_WIN' | 'REDEEMED_LOSS'>('OPEN');
+    const [showSettlementDetails, setShowSettlementDetails] = useState(true);
     const [settledHistory, setSettledHistory] = useState<any[]>([]);
     const [isSettledLoading, setIsSettledLoading] = useState(false);
     const [historyCounts, setHistoryCounts] = useState<{ REDEEMED: number, SETTLED_LOSS: number }>({ REDEEMED: 0, SETTLED_LOSS: 0 });
@@ -507,46 +510,64 @@ export default function PortfolioPage() {
                             </div>
                             <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded">Total</div>
                         </div>
-                        <div className={cn("text-3xl font-bold tracking-tight", totalSettlementPnL >= 0 ? "text-green-500" : "text-red-500")}>
-                            {totalSettlementPnL >= 0 ? '+' : ''}${totalSettlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className="flex items-center justify-between">
+                            <div className={cn("text-3xl font-bold tracking-tight", totalSettlementPnL >= 0 ? "text-green-500" : "text-red-500")}>
+                                {totalSettlementPnL >= 0 ? '+' : ''}${totalSettlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <button
+                                onClick={() => setShowSettlementDetails(!showSettlementDetails)}
+                                className="p-1 hover:bg-muted/50 rounded transition-colors"
+                                aria-label="Toggle settlement details"
+                            >
+                                {showSettlementDetails ? (
+                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                )}
+                            </button>
                         </div>
 
                         {/* Settlement PnL (Resolved + Redeemed) */}
-                        <div className="mt-3 pt-3 border-t border-border/50">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">Settlement P&L (Resolved)</span>
-                                <div className="flex flex-col items-end">
-                                    <span className={cn("text-xs font-medium", settlementPnL >= 0 ? "text-green-400" : "text-red-400")}>
-                                        {settlementPnL >= 0 ? '+' : ''}${settlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                    {ctMetrics && (
-                                        <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
-                                            <span className="text-green-400">
-                                                W: +${(ctMetrics.settlementWins || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                            <span className="text-red-400">
-                                                L: -${Math.abs(ctMetrics.settlementLosses || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                    )}
+                        <div className={cn(
+                            "overflow-hidden transition-all duration-300 ease-in-out",
+                            showSettlementDetails ? "max-h-[200px] opacity-100" : "max-h-0 opacity-0"
+                        )}>
+                            <div className="mt-3 pt-3 border-t border-border/50">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">Settlement P&L (Resolved)</span>
+                                    <div className="flex flex-col items-end">
+                                        <span className={cn("text-xs font-medium", settlementPnL >= 0 ? "text-green-400" : "text-red-400")}>
+                                            {settlementPnL >= 0 ? '+' : ''}${settlementPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                        {ctMetrics && (
+                                            <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
+                                                <span className="text-green-400">
+                                                    W: +${(ctMetrics.settlementWins || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                                <span className="text-red-400">
+                                                    L: -${Math.abs(ctMetrics.settlementLosses || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        {/* Settled but not redeemed */}
-                        <div className="mt-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">Settled (Not Redeemed)</span>
-                                <div className="flex flex-col items-end">
-                                    <span className={cn("text-xs font-medium", settledOpenStats.pnl >= 0 ? "text-green-400" : "text-red-400")}>
-                                        {settledOpenStats.pnl >= 0 ? '+' : ''}${settledOpenStats.pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                    <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
-                                        <span className="text-green-400">
-                                            {`W: +$${settledOpenStats.wins.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            {/* Settled but not redeemed */}
+                            <div className="mt-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs text-muted-foreground">Settled (Not Redeemed)</span>
+                                    <div className="flex flex-col items-end">
+                                        <span className={cn("text-xs font-medium", settledOpenStats.pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                                            {settledOpenStats.pnl >= 0 ? '+' : ''}${settledOpenStats.pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
-                                        <span className="text-red-400">
-                                            {`L: -$${Math.abs(settledOpenStats.losses).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                                        </span>
+                                        <div className="flex gap-2 text-[10px] mt-0.5 opacity-80">
+                                            <span className="text-green-400">
+                                                {`W: +$${settledOpenStats.wins.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                            </span>
+                                            <span className="text-red-400">
+                                                {`L: -$${Math.abs(settledOpenStats.losses).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

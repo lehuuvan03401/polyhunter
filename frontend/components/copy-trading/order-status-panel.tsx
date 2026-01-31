@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { RefreshCw, Clock, Check, X, AlertCircle, ChevronDown, ChevronUp, ExternalLink, StopCircle, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -32,11 +32,16 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
+    const isSimulationOrder = useCallback((order: Order) => {
+        const orderId = order.orderId?.toLowerCase() || '';
+        return order.isSim || orderId.startsWith('sim-') || orderId.startsWith('adjust-');
+    }, []);
+
     const modeScopedOrders = useMemo(() => {
-        if (modeFilter === 'sim') return orders.filter(order => order.isSim);
-        if (modeFilter === 'live') return orders.filter(order => !order.isSim);
+        if (modeFilter === 'sim') return orders.filter(order => isSimulationOrder(order));
+        if (modeFilter === 'live') return orders.filter(order => !isSimulationOrder(order));
         return orders;
-    }, [orders, modeFilter]);
+    }, [orders, modeFilter, isSimulationOrder]);
 
     const statusCounts = useMemo(() => {
         return modeScopedOrders.reduce(
@@ -415,22 +420,28 @@ function OrderRow({
 }) {
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
+    const isSimulation = order.isSim || (order.orderId?.toLowerCase().startsWith('sim-') ?? false) || (order.orderId?.toLowerCase().startsWith('adjust-') ?? false);
     const leaderShares = order.leaderSize ?? 0;
     const leaderNotional = order.leaderPrice && leaderShares
         ? leaderShares * order.leaderPrice
         : null;
     const copyNotional = order.size;
-    const isSimSettlement = order.isSim && (order.orderId?.startsWith('sim-settle') || order.orderId === 'sim-redeem');
+    const isSimSettlement = isSimulation && (order.orderId?.startsWith('sim-settle') || order.orderId === 'sim-redeem');
     const copyShares = order.price
         ? (copyNotional / order.price)
         : (isSimSettlement ? leaderShares : 0);
     const copyRatio = leaderShares > 0 ? (copyShares / leaderShares) : null;
-    const infoMessage = order.errorMessage && (order.errorMessage.startsWith('Realized Loss') || order.errorMessage.startsWith('Redeemed Profit'));
+    const infoMessage = order.errorMessage && (
+        order.errorMessage.startsWith('Realized Loss') ||
+        order.errorMessage.startsWith('Redeemed Profit') ||
+        order.errorMessage.startsWith('Settlement')
+    );
     const leaderPrefix = isSimSettlement ? 'Pos' : 'L';
     const leaderLabel = isSimSettlement ? 'Position Size' : 'Leader Size';
-    const settlementType = order.isSim && order.orderId
+    const settlementType = isSimulation && order.orderId
         ? (order.orderId.startsWith('sim-redeem') ? 'REDEEM' :
-            order.orderId.startsWith('sim-settle') ? 'SETTLE' : null)
+            order.orderId.startsWith('sim-settle') ? 'SETTLE' :
+                order.orderId.toLowerCase().startsWith('adjust-') ? 'REDEEM' : null)
         : null;
     const displaySide = settlementType || order.side;
     const sideClass = displaySide === 'BUY' || displaySide === 'REDEEM'
@@ -472,7 +483,7 @@ function OrderRow({
                         )}>
                             {displaySide}
                         </span>
-                        {order.isSim && (
+                        {isSimulation && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">
                                 SIM
                             </span>
@@ -590,7 +601,7 @@ function OrderRow({
                             />
                             <DetailItem
                                 label="Mode"
-                                value={order.isSim ? 'Simulation' : 'Live'}
+                                value={isSimulation ? 'Simulation' : 'Live'}
                             />
                             <DetailItem
                                 label={leaderLabel}
