@@ -420,8 +420,24 @@ function OrderRow({
         ? leaderShares * order.leaderPrice
         : null;
     const copyNotional = order.size;
-    const copyShares = order.price ? (copyNotional / order.price) : 0;
+    const isSimSettlement = order.isSim && (order.orderId?.startsWith('sim-settle') || order.orderId === 'sim-redeem');
+    const copyShares = order.price
+        ? (copyNotional / order.price)
+        : (isSimSettlement ? leaderShares : 0);
     const copyRatio = leaderShares > 0 ? (copyShares / leaderShares) : null;
+    const infoMessage = order.errorMessage && (order.errorMessage.startsWith('Realized Loss') || order.errorMessage.startsWith('Redeemed Profit'));
+    const leaderPrefix = isSimSettlement ? 'Pos' : 'L';
+    const leaderLabel = isSimSettlement ? 'Position Size' : 'Leader Size';
+    const settlementType = order.isSim && order.orderId
+        ? (order.orderId.startsWith('sim-redeem') ? 'REDEEM' :
+            order.orderId.startsWith('sim-settle') ? 'SETTLE' : null)
+        : null;
+    const displaySide = settlementType || order.side;
+    const sideClass = displaySide === 'BUY' || displaySide === 'REDEEM'
+        ? 'bg-green-500/10 text-green-400'
+        : displaySide === 'SETTLE'
+            ? 'bg-red-500/10 text-red-400'
+            : 'bg-red-500/10 text-red-400';
 
     return (
         <div className="border-b border-border/30 last:border-b-0">
@@ -452,11 +468,9 @@ function OrderRow({
                     <div className="flex items-center gap-2">
                         <span className={cn(
                             'text-xs font-medium px-1.5 py-0.5 rounded',
-                            order.side === 'BUY'
-                                ? 'bg-green-500/10 text-green-400'
-                                : 'bg-red-500/10 text-red-400'
+                            sideClass
                         )}>
-                            {order.side}
+                            {displaySide}
                         </span>
                         {order.isSim && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">
@@ -469,7 +483,7 @@ function OrderRow({
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                         <span title="Leader vs My Size (shares)" className="font-mono">
-                            L: {leaderShares ? leaderShares.toFixed(2) : '-'} sh • My: {copyShares.toFixed(2)} sh
+                            {leaderPrefix}: {leaderShares ? leaderShares.toFixed(2) : '-'} sh • My: {copyShares.toFixed(2)} sh
                             {copyRatio !== null ? ` (${copyRatio.toFixed(2)}x)` : ''}
                         </span>
                         {order.leaderTxHash && (
@@ -579,7 +593,7 @@ function OrderRow({
                                 value={order.isSim ? 'Simulation' : 'Live'}
                             />
                             <DetailItem
-                                label="Leader Size"
+                                label={leaderLabel}
                                 value={`${leaderShares ? leaderShares.toFixed(2) : 'N/A'} sh`}
                                 subValue={leaderNotional !== null ? `$${leaderNotional.toFixed(2)}` : undefined}
                             />
@@ -618,8 +632,8 @@ function OrderRow({
                     </div>
 
                     {order.errorMessage && (
-                        <div className="p-2 rounded bg-red-500/10 text-red-400 text-xs">
-                            Error: {order.errorMessage}
+                        <div className={cn("p-2 rounded text-xs", infoMessage ? "bg-muted/40 text-muted-foreground" : "bg-red-500/10 text-red-400")}>
+                            {infoMessage ? 'Result' : 'Error'}: {order.errorMessage}
                         </div>
                     )}
 
