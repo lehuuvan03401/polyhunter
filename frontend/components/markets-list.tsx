@@ -8,6 +8,7 @@ import { MarketListItem } from '@/components/market-list-item';
 import { Filter, ArrowDownUp, Loader2, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 
 interface MarketsListProps {
     initialMarkets: GammaMarket[];
@@ -17,6 +18,7 @@ type SortOption = 'volume24hr' | 'liquidity' | 'createdAt';
 type ViewMode = 'grid' | 'list';
 
 export function MarketsList({ initialMarkets }: MarketsListProps) {
+    const t = useTranslations('Markets');
     const [markets, setMarkets] = useState<GammaMarket[]>(initialMarkets);
     const [loading, setLoading] = useState(false);
     const [sort, setSort] = useState<SortOption>('volume24hr');
@@ -99,13 +101,13 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
                 {/* Sort Options */}
                 <div className="flex items-center gap-4 overflow-x-auto">
                     <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mr-2 whitespace-nowrap">
-                        <ArrowDownUp className="h-4 w-4" /> Sort by:
+                        <ArrowDownUp className="h-4 w-4" /> {t('sortBy')}
                     </div>
 
                     {[
-                        { id: 'volume24hr', label: 'Volume (24h)' },
-                        { id: 'liquidity', label: 'Liquidity' },
-                        { id: 'createdAt', label: 'Newest' }
+                        { id: 'volume24hr', label: t('sort.volume24hr') },
+                        { id: 'liquidity', label: t('sort.liquidity') },
+                        { id: 'createdAt', label: t('sort.createdAt') }
                     ].map((option) => (
                         <button
                             key={option.id}
@@ -132,7 +134,7 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
                                 ? "bg-white/10 text-primary"
                                 : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                         )}
-                        title="Grid View"
+                        title={t('gridView')}
                     >
                         <LayoutGrid className="h-4 w-4" />
                     </button>
@@ -144,7 +146,7 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
                                 ? "bg-white/10 text-primary"
                                 : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                         )}
-                        title="List View"
+                        title={t('listView')}
                     >
                         <ListIcon className="h-4 w-4" />
                     </button>
@@ -167,7 +169,7 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
             ) : (
                 !loading && (
                     <div className="flex h-64 items-center justify-center rounded-xl border border-dashed text-muted-foreground">
-                        No markets found.
+                        {t('noMarkets')}
                     </div>
                 )
             )}
@@ -180,11 +182,11 @@ export function MarketsList({ initialMarkets }: MarketsListProps) {
                         onClick={loadMore}
                         className="px-6 py-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm font-medium"
                     >
-                        Load More Markets
+                        {t('loadMore')}
                     </button>
                 )}
                 {!hasMore && markets.length > 0 && (
-                    <div className="text-sm text-muted-foreground">No more markets to load</div>
+                    <div className="text-sm text-muted-foreground">{t('noMore')}</div>
                 )}
             </div>
         </div>

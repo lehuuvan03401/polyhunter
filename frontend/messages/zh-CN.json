@@ -99,5 +99,30 @@
         "connecting": "连接中",
         "total": "总资产",
         "cash": "现金"
+    },
+    "Markets": {
+        "title": "参与市场交易",
+        "subtitle": "探索交易量最大的预测市场。",
+        "connectTitle": "连接钱包查看市场",
+        "connectDesc": "访问 Polymarket 上完整的活跃预测市场列表。查看市场详情、价格，并一键开始交易。",
+        "featureActive": "50+ 活跃市场",
+        "featureActiveDesc": "实时预测市场",
+        "featurePrices": "实时价格",
+        "featurePricesDesc": "实时价格更新",
+        "featureEasy": "轻松交易",
+        "featureEasyDesc": "一键交易",
+        "connectBtn": "连接钱包查看市场",
+        "connecting": "连接中...",
+        "sortBy": "排序：",
+        "sort": {
+            "volume24hr": "交易量 (24h)",
+            "liquidity": "流动性",
+            "createdAt": "最新"
+        },
+        "gridView": "网格视图",
+        "listView": "列表视图",
+        "noMarkets": "未找到市场。",
+        "loadMore": "加载更多市场",
+        "noMore": "没有更多市场了"
     }
 }

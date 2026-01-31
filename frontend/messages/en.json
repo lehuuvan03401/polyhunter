@@ -99,5 +99,30 @@
         "connecting": "Connecting",
         "total": "TOTAL",
         "cash": "CASH"
+    },
+    "Markets": {
+        "title": "Participate in Markets",
+        "subtitle": "Explore the top prediction markets by volume.",
+        "connectTitle": "Connect Your Wallet to View Markets",
+        "connectDesc": "Access the complete list of active prediction markets on Polymarket. View market details, prices, and start trading with a single click.",
+        "featureActive": "50+ Active Markets",
+        "featureActiveDesc": "Live prediction markets",
+        "featurePrices": "Real-time Prices",
+        "featurePricesDesc": "Live price updates",
+        "featureEasy": "Easy Trading",
+        "featureEasyDesc": "One-click trading",
+        "connectBtn": "Connect Wallet to View Markets",
+        "connecting": "Connecting...",
+        "sortBy": "Sort by:",
+        "sort": {
+            "volume24hr": "Volume (24h)",
+            "liquidity": "Liquidity",
+            "createdAt": "Newest"
+        },
+        "gridView": "Grid View",
+        "listView": "List View",
+        "noMarkets": "No markets found.",
+        "loadMore": "Load More Markets",
+        "noMore": "No more markets to load"
     }
 }

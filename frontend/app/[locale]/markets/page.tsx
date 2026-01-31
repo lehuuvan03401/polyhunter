@@ -5,8 +5,10 @@ import { GammaMarket } from '@catalyst-team/poly-sdk';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useState, useEffect } from 'react';
 import { Lock, TrendingUp, BarChart3, Search, Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export function MarketsPage() {
+    const t = useTranslations('Markets');
     const { authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [markets, setMarkets] = useState<GammaMarket[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -41,7 +43,7 @@ export function MarketsPage() {
         return (
             <div className="container py-10">
                 <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary" />
                 </div>
             </div>
         );
@@ -51,9 +53,9 @@ export function MarketsPage() {
         return (
             <div className="container py-10">
                 <div className="mb-8 space-y-4 text-center">
-                    <h1 className="text-4xl font-bold tracking-tight">Participate in Markets</h1>
+                    <h1 className="text-4xl font-bold tracking-tight">{t('title')}</h1>
                     <p className="text-muted-foreground text-lg">
-                        Explore the top prediction markets by volume.
+                        {t('subtitle')}
                     </p>
                 </div>
 
@@ -62,10 +64,9 @@ export function MarketsPage() {
                         <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-blue-500/10 flex items-center justify-center">
                             <Lock className="h-10 w-10 text-blue-400" />
                         </div>
-                        <h2 className="text-2xl font-bold mb-3">Connect Your Wallet to View Markets</h2>
+                        <h2 className="text-2xl font-bold mb-3">{t('connectTitle')}</h2>
                         <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
-                            Access the complete list of active prediction markets on Polymarket.
-                            View market details, prices, and start trading with a single click.
+                            {t('connectDesc')}
                         </p>
 
                         <div className="grid md:grid-cols-3 gap-6 mb-8">
@@ -73,22 +74,22 @@ export function MarketsPage() {
                                 <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-green-500/10 flex items-center justify-center">
                                     <TrendingUp className="h-5 w-5 text-green-400" />
                                 </div>
-                                <h3 className="font-semibold mb-1">50+ Active Markets</h3>
-                                <p className="text-xs text-muted-foreground">Live prediction markets</p>
+                                <h3 className="font-semibold mb-1">{t('featureActive')}</h3>
+                                <p className="text-xs text-muted-foreground">{t('featureActiveDesc')}</p>
                             </div>
                             <div className="p-4 rounded-xl border border-white/5 bg-white/5">
                                 <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-500/10 flex items-center justify-center">
                                     <BarChart3 className="h-5 w-5 text-blue-400" />
                                 </div>
-                                <h3 className="font-semibold mb-1">Real-time Prices</h3>
-                                <p className="text-xs text-muted-foreground">Live price updates</p>
+                                <h3 className="font-semibold mb-1">{t('featurePrices')}</h3>
+                                <p className="text-xs text-muted-foreground">{t('featurePricesDesc')}</p>
                             </div>
                             <div className="p-4 rounded-xl border border-white/5 bg-white/5">
                                 <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-purple-500/10 flex items-center justify-center">
                                     <Search className="h-5 w-5 text-purple-400" />
                                 </div>
-                                <h3 className="font-semibold mb-1">Easy Trading</h3>
-                                <p className="text-xs text-muted-foreground">One-click trading</p>
+                                <h3 className="font-semibold mb-1">{t('featureEasy')}</h3>
+                                <p className="text-xs text-muted-foreground">{t('featureEasyDesc')}</p>
                             </div>
                         </div>
 
@@ -100,11 +101,11 @@ export function MarketsPage() {
                         >
                             {isLoggingIn ? (
                                 <>
-                                    Connecting...
+                                    {t('connecting')}
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                 </>
                             ) : (
-                                <>Connect Wallet to View Markets</>
+                                <>{t('connectBtn')}</>
                             )}
                         </button>
                     </div>
@@ -116,15 +117,15 @@ export function MarketsPage() {
     return (
         <div className="container py-10">
             <div className="mb-8 space-y-4 text-center">
-                <h1 className="text-4xl font-bold tracking-tight">Participate in Markets</h1>
+                <h1 className="text-4xl font-bold tracking-tight">{t('title')}</h1>
                 <p className="text-muted-foreground text-lg">
-                    Explore the top prediction markets by volume.
+                    {t('subtitle')}
                 </p>
             </div>
 
             {isLoading ? (
                 <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-blue-500" />
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary" />
                 </div>
             ) : (
                 <MarketsList initialMarkets={markets} />

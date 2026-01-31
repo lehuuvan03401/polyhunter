@@ -99,5 +99,30 @@
         "connecting": "連接中",
         "total": "總資產",
         "cash": "現金"
+    },
+    "Markets": {
+        "title": "參與市場交易",
+        "subtitle": "探索交易量最大的預測市場。",
+        "connectTitle": "連接錢包查看市場",
+        "connectDesc": "訪問 Polymarket 上完整的活躍預測市場列表。查看市場詳情、價格，並一鍵開始交易。",
+        "featureActive": "50+ 活躍市場",
+        "featureActiveDesc": "實時預測市場",
+        "featurePrices": "實時價格",
+        "featurePricesDesc": "實時價格更新",
+        "featureEasy": "輕鬆交易",
+        "featureEasyDesc": "一鍵交易",
+        "connectBtn": "連接錢包查看市場",
+        "connecting": "連接中...",
+        "sortBy": "排序：",
+        "sort": {
+            "volume24hr": "交易量 (24h)",
+            "liquidity": "流動性",
+            "createdAt": "最新"
+        },
+        "gridView": "網格視圖",
+        "listView": "列表視圖",
+        "noMarkets": "未找到市場。",
+        "loadMore": "加載更多市場",
+        "noMore": "沒有更多市場了"
     }
 }
