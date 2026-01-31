@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-**PolyHunter** 是一个完整的 Polymarket 生态系统项目,包含 TypeScript SDK、前端应用、智能合约和后端服务。该项目为 Polymarket 提供统一的 API 接口、交易工具、智能资金分析和用户界面。
+**Horus** 是一个完整的 Polymarket 生态系统项目,包含 TypeScript SDK、前端应用、智能合约和后端服务。该项目为 Polymarket 提供统一的 API 接口、交易工具、智能资金分析和用户界面。
 
 **当前版本**: v0.3.0  
 **构建者**: [@hex402](https://x.com/hhhx402) | **项目**: [Catalyst.fun](https://x.com/catalystdotfun)

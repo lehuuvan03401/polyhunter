@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
  * Generate the expected signature message for payout verification.
  */
 function getPayoutMessage(walletAddress: string, amount: number, timestamp: number): string {
-    return `Withdraw ${amount.toFixed(2)} USDC from PolyHunter Affiliate Program. Nonce: ${timestamp}`;
+    return `Withdraw ${amount.toFixed(2)} USDC from Horus Affiliate Program. Nonce: ${timestamp}`;
 }
 
 // Request a payout (with signature verification)

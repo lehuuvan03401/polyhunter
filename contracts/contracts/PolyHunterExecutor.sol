@@ -9,7 +9,7 @@ interface IPolyHunterProxy {
 
 /**
  * @title PolyHunterExecutor
- * @notice Central authorization hub for the PolyHunter Wallet Fleet.
+ * @notice Central authorization hub for the Horus Wallet Fleet.
  * @dev Users authorize this contract address on their Proxy. 
  *      This contract then validates that the caller is a whitelisted Worker before passing the call.
  */
@@ -67,7 +67,7 @@ contract PolyHunterExecutor is Ownable {
         address target, 
         bytes calldata data
     ) external payable returns (bytes memory) {
-        require(isWorker[msg.sender], "PolyHunter: Unauthorized Worker");
+        require(isWorker[msg.sender], "Horus: Unauthorized Worker");
 
         // Forward the execution to the Proxy
         // content: Proxy.execute(target, data)

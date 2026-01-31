@@ -340,7 +340,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             <h3 className="text-lg font-bold text-white mb-2">Bot Authorization</h3>
                             {!isExecutorAuthorized && (
                                 <p className="text-gray-400 text-sm animate-in fade-in">
-                                    Authorize the PolyHunter Executor to enable copy trading.
+                                    Authorize the Horus Executor to enable copy trading.
                                 </p>
                             )}
                         </div>
@@ -391,7 +391,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                             <ShieldCheck className="w-6 h-6 text-green-400" />
                                         </div>
                                         <div>
-                                            <h4 className="text-green-400 font-bold text-lg">PolyHunter Execution Bot Active</h4>
+                                            <h4 className="text-green-400 font-bold text-lg">Horus Execution Bot Active</h4>
                                             <p className="text-gray-400 text-sm">
                                                 Your proxy is authorized for automated copy trading.
                                             </p>
@@ -455,7 +455,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                     </div>
                                     <h4 className="text-blue-400 font-semibold mb-2">Enable Copy Trading</h4>
                                     <p className="text-gray-400 text-sm">
-                                        One-click authorization for the PolyHunter Bot.
+                                        One-click authorization for the Horus Bot.
                                     </p>
                                 </div>
 

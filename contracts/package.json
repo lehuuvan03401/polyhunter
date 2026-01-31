@@ -1,7 +1,7 @@
 {
   "name": "polyhunter-contracts",
   "version": "1.0.0",
-  "description": "PolyHunter Smart Contract Proxy System",
+  "description": "Horus Smart Contract Proxy System",
   "main": "index.js",
   "scripts": {
     "compile": "hardhat compile",
@@ -15,7 +15,7 @@
     "trading",
     "proxy"
   ],
-  "author": "PolyHunter",
+  "author": "Horus",
   "license": "MIT",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",

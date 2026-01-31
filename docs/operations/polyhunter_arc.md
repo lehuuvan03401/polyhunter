@@ -1,4 +1,4 @@
-PolyHunter 系统就像一个紧密的“三层汉堡”结构：链下大脑 (Scripts)、链上肌肉 (Contracts)，以及中间的 API 桥梁。
+Horus 系统就像一个紧密的“三层汉堡”结构：链下大脑 (Scripts)、链上肌肉 (Contracts)，以及中间的 API 桥梁。
 
 我为您绘制了一张全景交互图，随后详细解释每个组件的角色。
 
@@ -82,7 +82,7 @@ ProxyA
  的肚子。Worker #3 深藏功与名，归队休息。
 
 ### 4. 极速模式 (Speed Mode) 架构
-为了追求极致速度，PolyHunter 2.0 引入了 "Hosted EOA" 模式。
+为了追求极致速度，Horus 2.0 引入了 "Hosted EOA" 模式。
 
 与传统的 "交易所资金池 (Omnibus)" 模式不同，我们采用了 **隔离托管 (Segregated Custody)** 方案：
 *   **不搞大锅饭**: 系统不通过单一热钱包混合存放所有用户资金。

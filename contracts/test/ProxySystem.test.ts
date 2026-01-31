@@ -3,7 +3,7 @@ import { ethers } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { Treasury, ProxyFactory, PolyHunterProxy, MockERC20 } from "../typechain-types";
 
-describe("PolyHunter Proxy System", function () {
+describe("Horus Proxy System", function () {
     let owner: HardhatEthersSigner;
     let user1: HardhatEthersSigner;
     let user2: HardhatEthersSigner;

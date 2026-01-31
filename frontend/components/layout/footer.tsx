@@ -12,12 +12,12 @@ export function Footer() {
                             <div className="relative h-8 w-8 overflow-hidden rounded-full">
                                 <img
                                     src="/polyhunter.png"
-                                    alt="PolyHunter Logo"
+                                    alt="Horus Logo"
                                     className="object-cover w-full h-full"
                                 />
                             </div>
                             <span className="font-bold text-lg text-white tracking-tight">
-                                PolyHunter
+                                Horus
                             </span>
                         </Link>
                         <p className="leading-relaxed max-w-xs text-muted-foreground">
@@ -89,7 +89,7 @@ export function Footer() {
 
                 {/* Bottom Bar */}
                 <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
-                    <div>© 2026 PolyHunter. All rights reserved.</div>
+                    <div>© 2026 Horus. All rights reserved.</div>
                     <div className="flex gap-6">
                         <Link href="#" className="hover:text-white transition-colors">Terms of Service</Link>
                         <Link href="#" className="hover:text-white transition-colors">Privacy Policy</Link>

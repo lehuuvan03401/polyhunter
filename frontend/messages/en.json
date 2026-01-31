@@ -44,13 +44,13 @@
             "q1": "How do I know which Polymarket traders to follow?",
             "a1": "Look for traders with consistent win rates (above 55%), positive profit over 7-30 days, and multiple followers. Avoid traders who only trade occasionally or have recent losing streaks.",
             "q2": "Can I copy multiple traders at once?",
-            "a2": "Yes! With PolyHunter, you can copy unlimited traders simultaneously. This is actually recommended for diversification — if one trader has a bad week, others may balance it out.",
+            "a2": "Yes! With Horus, you can copy unlimited traders simultaneously. This is actually recommended for diversification — if one trader has a bad week, others may balance it out.",
             "q3": "How much should I allocate per trader?",
             "a3": "We recommend starting with $50-100 per trader and spreading across 3-5 traders. As you learn which traders perform best for your risk tolerance, you can adjust allocations.",
             "q4": "What if a top trader starts losing money?",
             "a4": "You can pause or stop copying any trader instantly. We recommend checking your portfolio weekly and adjusting if a trader has lost more than 20% in a month.",
             "q5": "Are these traders verified?",
-            "a5": "All trader statistics on PolyHunter come directly from on-chain Polymarket data. Win rates, PnL, and trading history are verifiable and cannot be faked."
+            "a5": "All trader statistics on Horus come directly from on-chain Polymarket data. Win rates, PnL, and trading history are verifiable and cannot be faked."
         },
         "footerTitle": "Start Copying Top Traders Today",
         "footerText": "Join thousands of traders already copying Polymarket whales. It's free to start — you only pay when you profit.",

@@ -17,12 +17,12 @@ public class OpenApiConfig {
     public OpenAPI affiliateOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("PolyHunter Affiliate API")
+                        .title("Horus Affiliate API")
                         .description(
                                 "API for affiliate program management - referral tracking, volume attribution, and commission payouts")
                         .version("1.0.0")
                         .contact(new Contact()
-                                .name("PolyHunter Team")
+                                .name("Horus Team")
                                 .url("https://polyhunter.com"))
                         .license(new License()
                                 .name("MIT License")

@@ -15,7 +15,7 @@
     <artifactId>affiliate-service</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>affiliate-service</name>
-    <description>Affiliate System Backend for PolyHunter</description>
+    <description>Affiliate System Backend for Horus</description>
     
     <properties>
         <java.version>17</java.version>

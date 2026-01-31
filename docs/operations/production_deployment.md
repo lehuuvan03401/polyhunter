@@ -1,6 +1,6 @@
-# PolyHunter 生产环境部署手册 (Production Deployment Manual)
+# Horus 生产环境部署手册 (Production Deployment Manual)
 
-本手册详细说明了如何将 PolyHunter 跟单交易系统部署到支持高并发、大流量的 **Polygon Mainnet** 生产环境。
+本手册详细说明了如何将 Horus 跟单交易系统部署到支持高并发、大流量的 **Polygon Mainnet** 生产环境。
 
 ---
 

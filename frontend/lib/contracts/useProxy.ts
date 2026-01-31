@@ -3,7 +3,7 @@
 /**
  * useProxy Hook
  * 
- * React hook for interacting with PolyHunter proxy contracts
+ * React hook for interacting with Horus proxy contracts
  * Uses Privy wallet provider for transaction signing
  */
 

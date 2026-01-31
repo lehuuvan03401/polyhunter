@@ -66,12 +66,12 @@ export function Navbar() {
                     <div className="relative h-8 w-8 overflow-hidden rounded-full">
                         <img
                             src="/polyhunter.png"
-                            alt="PolyHunter Logo"
+                            alt="Horus Logo"
                             className="object-cover w-full h-full"
                         />
                     </div>
                     <span className="font-bold text-lg tracking-tight">
-                        PolyHunter
+                        Horus
                     </span>
                 </Link>
 

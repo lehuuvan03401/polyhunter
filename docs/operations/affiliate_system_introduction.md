@@ -1,4 +1,4 @@
-PolyHunter 综合代理系统详解 (Comprehensive Affiliate System)
+Horus 综合代理系统详解 (Comprehensive Affiliate System)
 这套系统采用了双轨制（Dual-Track）设计，结合了传统的层级直推奖励（Zero Line）和现代的极差分红机制（Sun Line）。旨在平衡早期用户的快速裂变动力与团队领导者的长期管理收益。
 
 以下是系统的核心逻辑与技术实现详解：

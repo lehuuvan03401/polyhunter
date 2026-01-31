@@ -19,13 +19,13 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ---
 
-# PolyHunter 项目指南
+# Horus 项目指南
 
-本文档为 AI 助手提供了 PolyHunter 项目的全面概览、架构指南和开发约定。
+本文档为 AI 助手提供了 Horus 项目的全面概览、架构指南和开发约定。
 
 ## 项目概述
 
-**PolyHunter** 是一个完整的 Polymarket 生态系统项目，包含 TypeScript SDK、前端应用、智能合约和后端服务。该项目为 Polymarket 提供统一的 API 接口、交易工具、智能资金分析和用户界面。
+**Horus** 是一个完整的 Polymarket 生态系统项目，包含 TypeScript SDK、前端应用、智能合约和后端服务。该项目为 Polymarket 提供统一的 API 接口、交易工具、智能资金分析和用户界面。
 
 **当前版本**: v0.3.0  
 **构建者**: [@hhhx402](https://x.com/hhhx402) | **项目**: [Catalyst.fun](https://x.com/catalystdotfun)

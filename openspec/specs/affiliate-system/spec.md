@@ -52,7 +52,7 @@ The system SHALL verify wallet ownership before processing payout requests to pr
 
 #### Scenario: Signature message format
 - **WHEN** requesting a payout
-- **THEN** the signature message SHALL be: `Withdraw ${amount} USDC from PolyHunter Affiliate Program. Nonce: ${timestamp}`
+- **THEN** the signature message SHALL be: `Withdraw ${amount} USDC from Horus Affiliate Program. Nonce: ${timestamp}`
 
 ---
 

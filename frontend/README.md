@@ -1,6 +1,6 @@
-# PolyHunter Frontend
+# Horus Frontend
 
-Frontend application for the PolyHunter copy trading platform.
+Frontend application for the Horus copy trading platform.
 
 ## Prerequisites
 

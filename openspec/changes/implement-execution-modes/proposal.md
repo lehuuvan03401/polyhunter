@@ -1,7 +1,7 @@
 # Proposal: Implement Security vs Speed Execution Modes
 
 ## Problem
-Currently, PolyHunter operates exclusively in **Proxy Mode** (Non-Custodial). While secure, this involves multiple on-chain transactions (Fund Pull -> Trade -> Fund Return) for every execution, which:
+Currently, Horus operates exclusively in **Proxy Mode** (Non-Custodial). While secure, this involves multiple on-chain transactions (Fund Pull -> Trade -> Fund Return) for every execution, which:
 1.  Incurs higher gas costs (Proxy overhead).
 2.  Increases latency (waiting for on-chain block inclusion before/after trading).
 3.  Limits high-frequency capabilities.

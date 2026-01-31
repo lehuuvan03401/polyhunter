@@ -14,7 +14,7 @@ import { ReferralProvider } from '@/components/providers/referral-provider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-    title: 'PolyHunter - Pro-level Polymarket Copy Trading',
+    title: 'Horus - Pro-level Polymarket Copy Trading',
     description: 'Automate your edge. Follow proven traders with verified win rates.',
 };
 
