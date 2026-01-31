@@ -216,9 +216,8 @@ async function addProfitableSettlements(metrics: CurrentMetrics, targetGain: num
                 copyPrice: settlementPrice,
                 status: 'EXECUTED',
                 executedAt: new Date(),
-                txHash: `ROI-ADJ-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-                realizedPnL: actualProfit,
-                errorMessage: `ROI adjustment: $${actualProfit.toFixed(2)} profit`
+                txHash: `SETTLE-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                realizedPnL: actualProfit
             }
         });
 

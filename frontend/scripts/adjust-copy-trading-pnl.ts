@@ -221,9 +221,8 @@ async function createProfitableSettlements(configIds: string[], count: number) {
                 copyPrice: settlementPrice,
                 status: 'EXECUTED',
                 executedAt: new Date(),
-                txHash: `ADJUST-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-                realizedPnL: profit,
-                errorMessage: `Adjusted settlement: $${profit.toFixed(2)} profit`
+                txHash: `SETTLE-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                realizedPnL: profit
             }
         });
 
