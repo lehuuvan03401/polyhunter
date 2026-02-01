@@ -1,11 +1,13 @@
 /**
- * Adjust Copy Trading Data to Target ROI
+ * Adjust Copy Trading Data to Target ROI and Volume
  * 
  * This script adjusts Settlement P&L to achieve a specific ROI based on total trading volume.
+ * It can also increase total volume by injecting synthetic BUY trades.
  * 
  * Usage:
  * export $(grep -v '^#' .env | xargs)
  * npx tsx scripts/adjust-pnl-by-roi.ts --target-roi 8
+ * npx tsx scripts/adjust-pnl-by-roi.ts --target-roi 15 --target-volume 1000
  */
 
 import { fileURLToPath } from 'url';
@@ -127,9 +129,23 @@ async function getCurrentMetrics(): Promise<CurrentMetrics> {
     };
 }
 
-async function adjustToTargetROI(targetROI: number) {
-    const metrics = await getCurrentMetrics();
+async function adjustToTargetROI(targetROI: number, targetVolume?: number) {
+    let metrics = await getCurrentMetrics();
 
+    // Step 1: If target volume is specified and higher than current, inject volume first
+    if (targetVolume && targetVolume > metrics.totalVolume) {
+        const volumeGap = targetVolume - metrics.totalVolume;
+        console.log(`\n📈 Target Volume: $${targetVolume.toFixed(2)}`);
+        console.log(`📊 Current Volume: $${metrics.totalVolume.toFixed(2)}`);
+        console.log(`📈 Volume Gap: +$${volumeGap.toFixed(2)}\n`);
+
+        await injectVolume(metrics, volumeGap);
+
+        // Refresh metrics after volume injection
+        metrics = await getCurrentMetrics();
+    }
+
+    // Step 2: Adjust P&L to hit target ROI
     const targetPnL = metrics.totalVolume * (targetROI / 100);
     const currentPnL = metrics.settlementPnL;
     const gap = targetPnL - currentPnL;
@@ -158,6 +174,68 @@ async function adjustToTargetROI(targetROI: number) {
     // Show final metrics
     console.log('\n✅ Adjustment complete!\n');
     await getCurrentMetrics();
+}
+
+async function injectVolume(metrics: CurrentMetrics, volumeToAdd: number) {
+    const normalizedWallet = FOLLOWER_WALLET.toLowerCase();
+
+    const config = await prisma.copyTradingConfig.findFirst({
+        where: {
+            walletAddress: normalizedWallet,
+            id: { in: metrics.configIds }
+        }
+    });
+
+    if (!config) {
+        console.log('⚠️  No config found');
+        return;
+    }
+
+    console.log(`🔄 Injecting $${volumeToAdd.toFixed(2)} additional trading volume...`);
+
+    // Create multiple synthetic BUY trades to increase volume
+    const numTrades = Math.ceil(volumeToAdd / 50); // ~$50 per trade for realistic look
+    const volumePerTrade = volumeToAdd / numTrades;
+    const avgPrice = 0.65; // Typical entry price
+    const sharesPerTrade = volumePerTrade / avgPrice;
+
+    for (let i = 0; i < numTrades; i++) {
+        const tokenId = `synth-volume-${Date.now()}-${i}`;
+
+        // Create a BUY trade
+        await prisma.copyTrade.create({
+            data: {
+                configId: config.id,
+                originalTrader: config.traderAddress, // Fixed: was targetTrader
+                originalSide: 'BUY',
+                originalSize: sharesPerTrade,
+                originalPrice: avgPrice,
+                marketSlug: 'volume-adjustment-synthetic',
+                conditionId: null,
+                tokenId,
+                outcome: 'Yes',
+                copySize: volumePerTrade,
+                copyPrice: avgPrice,
+                status: 'EXECUTED',
+                executedAt: new Date(Date.now() - Math.random() * 86400000), // Random time in last 24h
+                txHash: `ADJUST-VOL-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                realizedPnL: 0
+            }
+        });
+
+        // Create corresponding position
+        await prisma.userPosition.create({
+            data: {
+                walletAddress: normalizedWallet,
+                tokenId,
+                balance: sharesPerTrade,
+                avgEntryPrice: avgPrice,
+                totalCost: volumePerTrade
+            }
+        });
+    }
+
+    console.log(`  ✅ Injected ${numTrades} synthetic trades totaling $${volumeToAdd.toFixed(2)}\n`);
 }
 
 async function addProfitableSettlements(metrics: CurrentMetrics, targetGain: number) {
@@ -353,11 +431,17 @@ async function main() {
         // Get target ROI from command line args
         const args = process.argv.slice(2);
         const targetROIIndex = args.indexOf('--target-roi');
+        const targetVolumeIndex = args.indexOf('--target-volume');
 
         let targetROI = 8; // Default 8%
+        let targetVolume: number | undefined;
 
         if (targetROIIndex !== -1 && args[targetROIIndex + 1]) {
             targetROI = parseFloat(args[targetROIIndex + 1]);
+        }
+
+        if (targetVolumeIndex !== -1 && args[targetVolumeIndex + 1]) {
+            targetVolume = parseFloat(args[targetVolumeIndex + 1]);
         }
 
         if (isNaN(targetROI)) {
@@ -365,7 +449,12 @@ async function main() {
             process.exit(1);
         }
 
-        await adjustToTargetROI(targetROI);
+        if (targetVolume !== undefined && isNaN(targetVolume)) {
+            console.error('❌ Invalid target volume. Please provide a number.');
+            process.exit(1);
+        }
+
+        await adjustToTargetROI(targetROI, targetVolume);
 
     } catch (error) {
         console.error('❌ Error:', error);

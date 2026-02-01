@@ -150,229 +150,235 @@ export async function GET(request: Request) {
         const cacheKey = `positions:${normalizedWallet}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
 
-        // Fetch local DB positions
-        const positions = await prisma.userPosition.findMany({
-            where: {
-                walletAddress: normalizedWallet,
-                balance: { gt: 0 }
-            },
-            orderBy: { totalCost: 'desc' }
-        });
+            // Fetch local DB positions (filter out synthetic adjustment tokens)
+            const allPositions = await prisma.userPosition.findMany({
+                where: {
+                    walletAddress: normalizedWallet,
+                    balance: { gt: 0 }
+                },
+                orderBy: { totalCost: 'desc' }
+            });
 
-        const tokenIds = positions.map(p => p.tokenId).filter((id): id is string => !!id);
-        const uniqueTokenIds = Array.from(new Set(tokenIds));
+            // Filter out synthetic adjustment positions (from ROI/Volume adjustment scripts)
+            const positions = allPositions.filter(p =>
+                !p.tokenId.startsWith('synth-volume-') &&
+                !p.tokenId.startsWith('synthetic-')
+            );
 
-        // 1. Batch Fetch Metadata
-        const tradeMetadata = await prisma.copyTrade.findMany({
-            where: { tokenId: { in: uniqueTokenIds } },
-            select: { tokenId: true, marketSlug: true, outcome: true, detectedAt: true, conditionId: true },
-            orderBy: { detectedAt: 'desc' }
-        });
+            const tokenIds = positions.map(p => p.tokenId).filter((id): id is string => !!id);
+            const uniqueTokenIds = Array.from(new Set(tokenIds));
 
-        // Map metadata for O(1) lookup
-        const metadataMap = new Map<string, typeof tradeMetadata[0]>();
+            // 1. Batch Fetch Metadata
+            const tradeMetadata = await prisma.copyTrade.findMany({
+                where: { tokenId: { in: uniqueTokenIds } },
+                select: { tokenId: true, marketSlug: true, outcome: true, detectedAt: true, conditionId: true },
+                orderBy: { detectedAt: 'desc' }
+            });
 
-        const tradesByToken: Record<string, typeof tradeMetadata> = {};
-        tradeMetadata.forEach(t => {
-            if (t.tokenId) {
-                if (!tradesByToken[t.tokenId]) tradesByToken[t.tokenId] = [];
-                tradesByToken[t.tokenId].push(t);
-            }
-        });
+            // Map metadata for O(1) lookup
+            const metadataMap = new Map<string, typeof tradeMetadata[0]>();
 
-        uniqueTokenIds.forEach(tokenId => {
-            const trades = tradesByToken[tokenId];
-            if (trades && trades.length > 0) {
-                const withSlug = trades.find(t => t.marketSlug !== null && t.marketSlug !== '');
-                const withOutcome = trades.find(t => t.outcome !== null && t.outcome !== '');
-                const latest = trades[0];
-
-                metadataMap.set(tokenId, {
-                    ...latest,
-                    marketSlug: withSlug?.marketSlug || latest.marketSlug,
-                    outcome: withOutcome?.outcome || latest.outcome,
-                    conditionId: latest.conditionId
-                });
-            }
-        });
-
-        // 2. Batch Fetch Prices (Orderbook)
-        let priceMap = new Map<string, number>();
-        uniqueTokenIds.forEach((tid) => {
-            const cached = orderbookPriceCache.get(tid);
-            if (cached !== undefined) {
-                priceMap.set(tid, cached);
-            }
-        });
-        try {
-            const tokensToFetch = uniqueTokenIds.filter((id) => !priceMap.has(id));
-            if (tokensToFetch.length > 0) {
-                const orderbooks = await polyClient.markets.getTokenOrderbooks(
-                    tokensToFetch.map(id => ({ tokenId: id, side: 'BUY' as const }))
-                );
-
-                orderbooks.forEach((book, tokenId) => {
-                    if (book.bids.length > 0) {
-                        const price = book.bids[0].price;
-                        priceMap.set(tokenId, price);
-                        orderbookPriceCache.set(tokenId, price, PRICE_TTL_MS);
-                    }
-                    // Note: If no bids, we DON'T set to 0. This allows fallback to entry price later.
-                });
-            }
-        } catch (err) {
-            console.error("Failed to batch fetch prices", err);
-        }
-
-        // 3. Batch Fetch Resolution Status (Gamma Direct HTTP)
-        const marketResolutionMap = new Map<string, { resolved: boolean, winner: boolean }>();
-        const gammaPriceMap = new Map<string, number>(); // Secondary price source
-        uniqueTokenIds.forEach((tid) => {
-            const cachedGamma = gammaPriceCache.get(tid);
-            if (cachedGamma !== undefined) {
-                gammaPriceMap.set(tid, cachedGamma);
-            }
-            const cachedResolution = resolutionCache.get(tid);
-            if (cachedResolution) {
-                marketResolutionMap.set(tid, cachedResolution);
-            }
-        });
-        try {
-            // Collect unique slugs and conditionIds to query
-            const jobs = new Map<string, { type: 'slug' | 'condition', value: string }>();
-
-            uniqueTokenIds.forEach(id => {
-                const info = metadataMap.get(id);
-                if (!info) return;
-                const hasGamma = gammaPriceMap.has(id);
-                const hasResolution = marketResolutionMap.has(id);
-                if (hasGamma && hasResolution) return;
-                // Start with slug (preferred for resolution logic alignment with metrics)
-                if (info.marketSlug && !info.marketSlug.includes('unknown')) {
-                    jobs.set(info.marketSlug, { type: 'slug', value: info.marketSlug });
-                }
-                // Fallback to ConditionID if slug is missing/unknown and ConditionID is valid
-                else if (info.conditionId && info.conditionId !== '0x0' && info.conditionId.length > 10) {
-                    jobs.set(info.conditionId, { type: 'condition', value: info.conditionId });
+            const tradesByToken: Record<string, typeof tradeMetadata> = {};
+            tradeMetadata.forEach(t => {
+                if (t.tokenId) {
+                    if (!tradesByToken[t.tokenId]) tradesByToken[t.tokenId] = [];
+                    tradesByToken[t.tokenId].push(t);
                 }
             });
 
-            const tasks = Array.from(jobs.values());
+            uniqueTokenIds.forEach(tokenId => {
+                const trades = tradesByToken[tokenId];
+                if (trades && trades.length > 0) {
+                    const withSlug = trades.find(t => t.marketSlug !== null && t.marketSlug !== '');
+                    const withOutcome = trades.find(t => t.outcome !== null && t.outcome !== '');
+                    const latest = trades[0];
 
-            // Concurrency Control
-            const BATCH_SIZE = 5;
-            for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
-                const batch = tasks.slice(i, i + BATCH_SIZE);
-                await Promise.all(batch.map(async (task) => {
-                    try {
-                        const cacheKey = `${task.type}:${task.value}`;
-                        const cachedMarket = gammaMarketCache.get(cacheKey);
-                        if (cachedMarket) {
-                            applyGammaMarket(cachedMarket, uniqueTokenIds, metadataMap, gammaPriceMap, marketResolutionMap);
-                            return;
-                        }
-
-                        let url = `${GAMMA_API_BASE}/markets?limit=1`;
-                        if (task.type === 'condition') {
-                            url += `&condition_id=${task.value}`;
-                        } else {
-                            url += `&slug=${task.value}`;
-                        }
-
-                        const response = await fetchWithTimeout(url, GAMMA_TIMEOUT_MS);
-                        if (!response.ok) {
-                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
-                            return;
-                        }
-
-                        const data = await response.json();
-                        if (Array.isArray(data) && data.length > 0) {
-                            const market = data[0];
-                            gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
-                            applyGammaMarket(market, uniqueTokenIds, metadataMap, gammaPriceMap, marketResolutionMap);
-                        } else {
-                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
-                        }
-                    } catch (e) {
-                        console.error(`Failed to fetch/parse market ${task.value}`, e);
-                        const cacheKey = `${task.type}:${task.value}`;
-                        gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
-                    }
-                }));
-            }
-
-        } catch (err) {
-            console.error("Failed to fetch resolution status", err);
-        }
-
-        console.log(`Debug: Fetched ${priceMap.size} prices. Resolution Update Count: ${marketResolutionMap.size}`);
-
-        const enrichedPositions = positions.map((pos) => {
-            const tradeInfo = metadataMap.get(pos.tokenId);
-            const rawPrice = priceMap.get(pos.tokenId);
-
-            // Default to avgEntryPrice if no live data
-            let curPrice = rawPrice !== undefined ? rawPrice : pos.avgEntryPrice;
-
-            // OVERRIDE: Check resolution status
-            const resolution = marketResolutionMap.get(pos.tokenId);
-            if (resolution && resolution.resolved) {
-                curPrice = resolution.winner ? 1.0 : 0.0;
-            }
-
-            // Safe PnL calculation
-            let percentPnl = 0;
-            if (pos.avgEntryPrice > 0 && curPrice !== null) {
-                percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
-                if (percentPnl < -1) percentPnl = -1;
-                // if (percentPnl > 10) percentPnl = 10; // Cap visual PnL? Maybe not.
-            }
-
-            const estValue = pos.balance * (curPrice || 0);
-
-            // Determine status
-            let status: 'OPEN' | 'SETTLED_WIN' | 'SETTLED_LOSS' = 'OPEN';
-            if (rawPrice !== undefined) {
-                if (rawPrice >= 0.95) status = 'SETTLED_WIN';
-                else if (rawPrice <= 0.05) status = 'SETTLED_LOSS';
-            }
-            if (resolution && resolution.resolved) {
-                status = resolution.winner ? 'SETTLED_WIN' : 'SETTLED_LOSS';
-            }
-
-            // Fallback: If price is 0 but we have Gamma metadata, try to find current price from metadata map (outcomePrices)
-            // This fixes the issue where Simulation shows Entry Price == Current Price because CLOB failed
-            if ((curPrice === pos.avgEntryPrice || curPrice === 0) && !resolution?.resolved) {
-                const bestGammaPrice = gammaPriceMap.get(pos.tokenId);
-                if (bestGammaPrice !== undefined) {
-                    curPrice = bestGammaPrice;
+                    metadataMap.set(tokenId, {
+                        ...latest,
+                        marketSlug: withSlug?.marketSlug || latest.marketSlug,
+                        outcome: withOutcome?.outcome || latest.outcome,
+                        conditionId: latest.conditionId
+                    });
                 }
+            });
+
+            // 2. Batch Fetch Prices (Orderbook)
+            let priceMap = new Map<string, number>();
+            uniqueTokenIds.forEach((tid) => {
+                const cached = orderbookPriceCache.get(tid);
+                if (cached !== undefined) {
+                    priceMap.set(tid, cached);
+                }
+            });
+            try {
+                const tokensToFetch = uniqueTokenIds.filter((id) => !priceMap.has(id));
+                if (tokensToFetch.length > 0) {
+                    const orderbooks = await polyClient.markets.getTokenOrderbooks(
+                        tokensToFetch.map(id => ({ tokenId: id, side: 'BUY' as const }))
+                    );
+
+                    orderbooks.forEach((book, tokenId) => {
+                        if (book.bids.length > 0) {
+                            const price = book.bids[0].price;
+                            priceMap.set(tokenId, price);
+                            orderbookPriceCache.set(tokenId, price, PRICE_TTL_MS);
+                        }
+                        // Note: If no bids, we DON'T set to 0. This allows fallback to entry price later.
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to batch fetch prices", err);
             }
 
-            // Re-calculate PnL with finalized curPrice
-            if (pos.avgEntryPrice > 0 && curPrice !== null) {
-                percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
-                if (percentPnl < -1) percentPnl = -1;
+            // 3. Batch Fetch Resolution Status (Gamma Direct HTTP)
+            const marketResolutionMap = new Map<string, { resolved: boolean, winner: boolean }>();
+            const gammaPriceMap = new Map<string, number>(); // Secondary price source
+            uniqueTokenIds.forEach((tid) => {
+                const cachedGamma = gammaPriceCache.get(tid);
+                if (cachedGamma !== undefined) {
+                    gammaPriceMap.set(tid, cachedGamma);
+                }
+                const cachedResolution = resolutionCache.get(tid);
+                if (cachedResolution) {
+                    marketResolutionMap.set(tid, cachedResolution);
+                }
+            });
+            try {
+                // Collect unique slugs and conditionIds to query
+                const jobs = new Map<string, { type: 'slug' | 'condition', value: string }>();
+
+                uniqueTokenIds.forEach(id => {
+                    const info = metadataMap.get(id);
+                    if (!info) return;
+                    const hasGamma = gammaPriceMap.has(id);
+                    const hasResolution = marketResolutionMap.has(id);
+                    if (hasGamma && hasResolution) return;
+                    // Start with slug (preferred for resolution logic alignment with metrics)
+                    if (info.marketSlug && !info.marketSlug.includes('unknown')) {
+                        jobs.set(info.marketSlug, { type: 'slug', value: info.marketSlug });
+                    }
+                    // Fallback to ConditionID if slug is missing/unknown and ConditionID is valid
+                    else if (info.conditionId && info.conditionId !== '0x0' && info.conditionId.length > 10) {
+                        jobs.set(info.conditionId, { type: 'condition', value: info.conditionId });
+                    }
+                });
+
+                const tasks = Array.from(jobs.values());
+
+                // Concurrency Control
+                const BATCH_SIZE = 5;
+                for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+                    const batch = tasks.slice(i, i + BATCH_SIZE);
+                    await Promise.all(batch.map(async (task) => {
+                        try {
+                            const cacheKey = `${task.type}:${task.value}`;
+                            const cachedMarket = gammaMarketCache.get(cacheKey);
+                            if (cachedMarket) {
+                                applyGammaMarket(cachedMarket, uniqueTokenIds, metadataMap, gammaPriceMap, marketResolutionMap);
+                                return;
+                            }
+
+                            let url = `${GAMMA_API_BASE}/markets?limit=1`;
+                            if (task.type === 'condition') {
+                                url += `&condition_id=${task.value}`;
+                            } else {
+                                url += `&slug=${task.value}`;
+                            }
+
+                            const response = await fetchWithTimeout(url, GAMMA_TIMEOUT_MS);
+                            if (!response.ok) {
+                                gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                                return;
+                            }
+
+                            const data = await response.json();
+                            if (Array.isArray(data) && data.length > 0) {
+                                const market = data[0];
+                                gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
+                                applyGammaMarket(market, uniqueTokenIds, metadataMap, gammaPriceMap, marketResolutionMap);
+                            } else {
+                                gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                            }
+                        } catch (e) {
+                            console.error(`Failed to fetch/parse market ${task.value}`, e);
+                            const cacheKey = `${task.type}:${task.value}`;
+                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                        }
+                    }));
+                }
+
+            } catch (err) {
+                console.error("Failed to fetch resolution status", err);
             }
 
-            return {
-                tokenId: pos.tokenId,
-                slug: tradeInfo?.marketSlug || null,
-                title: parseMarketSlug(tradeInfo?.marketSlug, pos.tokenId),
-                outcome: parseOutcome(tradeInfo?.outcome),
-                size: pos.balance,
-                avgPrice: pos.avgEntryPrice,
-                curPrice: curPrice,
-                percentPnl: percentPnl,
-                estValue: estValue,
-                totalCost: pos.totalCost,
-                simulated: true,
-                status: status,
-                timestamp: tradeInfo?.detectedAt ? new Date(tradeInfo.detectedAt).getTime() : Date.now()
-            };
-        });
+            console.log(`Debug: Fetched ${priceMap.size} prices. Resolution Update Count: ${marketResolutionMap.size}`);
 
-        return enrichedPositions;
+            const enrichedPositions = positions.map((pos) => {
+                const tradeInfo = metadataMap.get(pos.tokenId);
+                const rawPrice = priceMap.get(pos.tokenId);
+
+                // Default to avgEntryPrice if no live data
+                let curPrice = rawPrice !== undefined ? rawPrice : pos.avgEntryPrice;
+
+                // OVERRIDE: Check resolution status
+                const resolution = marketResolutionMap.get(pos.tokenId);
+                if (resolution && resolution.resolved) {
+                    curPrice = resolution.winner ? 1.0 : 0.0;
+                }
+
+                // Safe PnL calculation
+                let percentPnl = 0;
+                if (pos.avgEntryPrice > 0 && curPrice !== null) {
+                    percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
+                    if (percentPnl < -1) percentPnl = -1;
+                    // if (percentPnl > 10) percentPnl = 10; // Cap visual PnL? Maybe not.
+                }
+
+                const estValue = pos.balance * (curPrice || 0);
+
+                // Determine status
+                let status: 'OPEN' | 'SETTLED_WIN' | 'SETTLED_LOSS' = 'OPEN';
+                if (rawPrice !== undefined) {
+                    if (rawPrice >= 0.95) status = 'SETTLED_WIN';
+                    else if (rawPrice <= 0.05) status = 'SETTLED_LOSS';
+                }
+                if (resolution && resolution.resolved) {
+                    status = resolution.winner ? 'SETTLED_WIN' : 'SETTLED_LOSS';
+                }
+
+                // Fallback: If price is 0 but we have Gamma metadata, try to find current price from metadata map (outcomePrices)
+                // This fixes the issue where Simulation shows Entry Price == Current Price because CLOB failed
+                if ((curPrice === pos.avgEntryPrice || curPrice === 0) && !resolution?.resolved) {
+                    const bestGammaPrice = gammaPriceMap.get(pos.tokenId);
+                    if (bestGammaPrice !== undefined) {
+                        curPrice = bestGammaPrice;
+                    }
+                }
+
+                // Re-calculate PnL with finalized curPrice
+                if (pos.avgEntryPrice > 0 && curPrice !== null) {
+                    percentPnl = (curPrice - pos.avgEntryPrice) / pos.avgEntryPrice;
+                    if (percentPnl < -1) percentPnl = -1;
+                }
+
+                return {
+                    tokenId: pos.tokenId,
+                    slug: tradeInfo?.marketSlug || null,
+                    title: parseMarketSlug(tradeInfo?.marketSlug, pos.tokenId),
+                    outcome: parseOutcome(tradeInfo?.outcome),
+                    size: pos.balance,
+                    avgPrice: pos.avgEntryPrice,
+                    curPrice: curPrice,
+                    percentPnl: percentPnl,
+                    estValue: estValue,
+                    totalCost: pos.totalCost,
+                    simulated: true,
+                    status: status,
+                    timestamp: tradeInfo?.detectedAt ? new Date(tradeInfo.detectedAt).getTime() : Date.now()
+                };
+            });
+
+            return enrichedPositions;
         });
         return NextResponse.json(responsePayload);
 

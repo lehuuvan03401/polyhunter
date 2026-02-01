@@ -43,300 +43,306 @@ export async function GET(request: Request) {
         const cacheKey = `metrics:${normalizedWallet}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
 
-        // 1. Get Open Positions (for Invested Funds & Unrealized PnL)
-        const positions = await prisma.userPosition.findMany({
-            where: {
-                walletAddress: normalizedWallet,
-                balance: { gt: 0 }
-            }
-        });
+            // 1. Get Open Positions (for Invested Funds & Unrealized PnL)
+            const allPositions = await prisma.userPosition.findMany({
+                where: {
+                    walletAddress: normalizedWallet,
+                    balance: { gt: 0 }
+                }
+            });
 
-        // Calculate Invested Funds (Total Cost Basis of open positions)
-        const totalInvested = positions.reduce((sum, pos) => sum + pos.totalCost, 0);
+            // Filter out synthetic adjustment positions (from ROI/Volume adjustment scripts)
+            const positions = allPositions.filter(p =>
+                !p.tokenId.startsWith('synth-volume-') &&
+                !p.tokenId.startsWith('synthetic-')
+            );
 
-        // 2. Fetch Current Prices for Unrealized PnL
-        let unrealizedPnL = 0;
+            // Calculate Invested Funds (Total Cost Basis of open positions)
+            const totalInvested = positions.reduce((sum, pos) => sum + pos.totalCost, 0);
 
-        if (positions.length > 0) {
-            try {
-                // Get unique token IDs
-                const tokenIds = Array.from(new Set(positions.map(p => p.tokenId)));
+            // 2. Fetch Current Prices for Unrealized PnL
+            let unrealizedPnL = 0;
 
-                // Fetch orderbooks to get current mid/best price (CLOB)
-                const clobPriceMap = new Map<string, number>();
-                tokenIds.forEach((tid) => {
-                    const cached = orderbookPriceCache.get(tid);
-                    if (cached !== undefined) {
-                        clobPriceMap.set(tid, cached);
-                    }
-                });
+            if (positions.length > 0) {
+                try {
+                    // Get unique token IDs
+                    const tokenIds = Array.from(new Set(positions.map(p => p.tokenId)));
 
-                const tokensToFetch = tokenIds.filter((tid) => !clobPriceMap.has(tid));
-                if (tokensToFetch.length > 0) {
-                    const orderbooks = await polyClient.markets.getTokenOrderbooks(
-                        tokensToFetch.map(id => ({ tokenId: id, side: 'BUY' }))
-                    );
-
-                    orderbooks.forEach((book, tid) => {
-                        if (book.bids.length > 0) {
-                            const price = Number(book.bids[0].price);
-                            clobPriceMap.set(tid, price);
-                            orderbookPriceCache.set(tid, price, PRICE_TTL_MS);
+                    // Fetch orderbooks to get current mid/best price (CLOB)
+                    const clobPriceMap = new Map<string, number>();
+                    tokenIds.forEach((tid) => {
+                        const cached = orderbookPriceCache.get(tid);
+                        if (cached !== undefined) {
+                            clobPriceMap.set(tid, cached);
                         }
                     });
-                }
 
-                const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid) && gammaPriceCache.get(tid) === undefined);
+                    const tokensToFetch = tokenIds.filter((tid) => !clobPriceMap.has(tid));
+                    if (tokensToFetch.length > 0) {
+                        const orderbooks = await polyClient.markets.getTokenOrderbooks(
+                            tokensToFetch.map(id => ({ tokenId: id, side: 'BUY' }))
+                        );
 
-                // Fallback: Fetch Gamma prices using marketSlug from CopyTrade metadata
-                const tradeMetadata = tokensNeedingGamma.length > 0
-                    ? await prisma.copyTrade.findMany({
-                        where: { tokenId: { in: tokensNeedingGamma } },
-                        select: { tokenId: true, marketSlug: true, outcome: true },
-                        orderBy: { detectedAt: 'desc' },
-                        distinct: ['tokenId']
-                    })
-                    : [];
-
-                const gammaPriceMap = new Map<string, number>();
-                tokenIds.forEach((tid) => {
-                    const cached = gammaPriceCache.get(tid);
-                    if (cached !== undefined) {
-                        gammaPriceMap.set(tid, cached);
+                        orderbooks.forEach((book, tid) => {
+                            if (book.bids.length > 0) {
+                                const price = Number(book.bids[0].price);
+                                clobPriceMap.set(tid, price);
+                                orderbookPriceCache.set(tid, price, PRICE_TTL_MS);
+                            }
+                        });
                     }
-                });
 
-                // Query Gamma by slug for each unique market
-                const slugsToQuery = [...new Set(tradeMetadata.filter(t => t.marketSlug && !t.marketSlug.includes('unknown')).map(t => t.marketSlug!))];
+                    const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid) && gammaPriceCache.get(tid) === undefined);
 
-                const BATCH_SIZE = 5;
-                for (let i = 0; i < slugsToQuery.length; i += BATCH_SIZE) {
-                    const batch = slugsToQuery.slice(i, i + BATCH_SIZE);
-                    await Promise.all(batch.map(async (slug) => {
-                        try {
-                            const cacheKey = `slug:${slug}`;
-                            let market = gammaMarketCache.get(cacheKey);
-                            if (!market) {
-                                const res = await fetchWithTimeout(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`, GAMMA_TIMEOUT_MS);
-                                if (!res.ok) {
-                                    gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
-                                    return;
-                                }
-                                const data = await res.json();
-                                market = data?.[0];
-                                if (market) {
-                                    gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
-                                } else {
-                                    gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
-                                }
-                            }
+                    // Fallback: Fetch Gamma prices using marketSlug from CopyTrade metadata
+                    const tradeMetadata = tokensNeedingGamma.length > 0
+                        ? await prisma.copyTrade.findMany({
+                            where: { tokenId: { in: tokensNeedingGamma } },
+                            select: { tokenId: true, marketSlug: true, outcome: true },
+                            orderBy: { detectedAt: 'desc' },
+                            distinct: ['tokenId']
+                        })
+                        : [];
 
-                            if (market?.outcomePrices && market?.outcomes) {
-                                const outcomePrices = typeof market.outcomePrices === 'string'
-                                    ? JSON.parse(market.outcomePrices).map(Number)
-                                    : market.outcomePrices.map(Number);
-                                const outcomes = typeof market.outcomes === 'string'
-                                    ? JSON.parse(market.outcomes)
-                                    : market.outcomes;
-
-                                // Map prices to tokens
-                                tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
-                                    if (!t.tokenId) return; // Skip if no tokenId
-                                    const idx = outcomes.findIndex((o: string) =>
-                                        o.toLowerCase() === t.outcome?.toLowerCase()
-                                    );
-                                    if (idx >= 0 && outcomePrices[idx] !== undefined) {
-                                        const price = outcomePrices[idx];
-                                        gammaPriceMap.set(t.tokenId, price);
-                                        gammaPriceCache.set(t.tokenId, price, GAMMA_TTL_MS);
-                                    }
-                                });
-                            }
-                        } catch (e) {
-                            console.warn(`Gamma fetch failed for ${slug}:`, e);
-                            const cacheKey = `slug:${slug}`;
-                            gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                    const gammaPriceMap = new Map<string, number>();
+                    tokenIds.forEach((tid) => {
+                        const cached = gammaPriceCache.get(tid);
+                        if (cached !== undefined) {
+                            gammaPriceMap.set(tid, cached);
                         }
-                    }));
+                    });
+
+                    // Query Gamma by slug for each unique market
+                    const slugsToQuery = [...new Set(tradeMetadata.filter(t => t.marketSlug && !t.marketSlug.includes('unknown')).map(t => t.marketSlug!))];
+
+                    const BATCH_SIZE = 5;
+                    for (let i = 0; i < slugsToQuery.length; i += BATCH_SIZE) {
+                        const batch = slugsToQuery.slice(i, i + BATCH_SIZE);
+                        await Promise.all(batch.map(async (slug) => {
+                            try {
+                                const cacheKey = `slug:${slug}`;
+                                let market = gammaMarketCache.get(cacheKey);
+                                if (!market) {
+                                    const res = await fetchWithTimeout(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`, GAMMA_TIMEOUT_MS);
+                                    if (!res.ok) {
+                                        gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                                        return;
+                                    }
+                                    const data = await res.json();
+                                    market = data?.[0];
+                                    if (market) {
+                                        gammaMarketCache.set(cacheKey, market, GAMMA_TTL_MS);
+                                    } else {
+                                        gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                                    }
+                                }
+
+                                if (market?.outcomePrices && market?.outcomes) {
+                                    const outcomePrices = typeof market.outcomePrices === 'string'
+                                        ? JSON.parse(market.outcomePrices).map(Number)
+                                        : market.outcomePrices.map(Number);
+                                    const outcomes = typeof market.outcomes === 'string'
+                                        ? JSON.parse(market.outcomes)
+                                        : market.outcomes;
+
+                                    // Map prices to tokens
+                                    tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
+                                        if (!t.tokenId) return; // Skip if no tokenId
+                                        const idx = outcomes.findIndex((o: string) =>
+                                            o.toLowerCase() === t.outcome?.toLowerCase()
+                                        );
+                                        if (idx >= 0 && outcomePrices[idx] !== undefined) {
+                                            const price = outcomePrices[idx];
+                                            gammaPriceMap.set(t.tokenId, price);
+                                            gammaPriceCache.set(t.tokenId, price, GAMMA_TTL_MS);
+                                        }
+                                    });
+                                }
+                            } catch (e) {
+                                console.warn(`Gamma fetch failed for ${slug}:`, e);
+                                const cacheKey = `slug:${slug}`;
+                                gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
+                            }
+                        }));
+                    }
+
+                    // Calculate PnL per position, prioritizing CLOB, then Gamma, then entry price
+                    positions.forEach(pos => {
+                        let currentPrice = pos.avgEntryPrice; // Default to entry price (neutral PnL)
+
+                        // Priority 1: CLOB price (most accurate for liquid markets)
+                        if (clobPriceMap.has(pos.tokenId)) {
+                            currentPrice = clobPriceMap.get(pos.tokenId)!;
+                        }
+                        // Priority 2: Gamma price (works for simulation/illiquid markets)
+                        else if (gammaPriceMap.has(pos.tokenId)) {
+                            currentPrice = gammaPriceMap.get(pos.tokenId)!;
+                        }
+                        // Priority 3: Entry price (no market data available)
+
+                        // Value diff = (Current price * Balance) - Total Cost
+                        const positionValue = currentPrice * pos.balance;
+                        const profit = positionValue - pos.totalCost;
+                        unrealizedPnL += profit;
+                    });
+                } catch (err) {
+                    console.warn('Failed to calculate unrealized PnL:', err);
+                    // Fallback: don't add to PnL if fetch failed
                 }
-
-                // Calculate PnL per position, prioritizing CLOB, then Gamma, then entry price
-                positions.forEach(pos => {
-                    let currentPrice = pos.avgEntryPrice; // Default to entry price (neutral PnL)
-
-                    // Priority 1: CLOB price (most accurate for liquid markets)
-                    if (clobPriceMap.has(pos.tokenId)) {
-                        currentPrice = clobPriceMap.get(pos.tokenId)!;
-                    }
-                    // Priority 2: Gamma price (works for simulation/illiquid markets)
-                    else if (gammaPriceMap.has(pos.tokenId)) {
-                        currentPrice = gammaPriceMap.get(pos.tokenId)!;
-                    }
-                    // Priority 3: Entry price (no market data available)
-
-                    // Value diff = (Current price * Balance) - Total Cost
-                    const positionValue = currentPrice * pos.balance;
-                    const profit = positionValue - pos.totalCost;
-                    unrealizedPnL += profit;
-                });
-            } catch (err) {
-                console.warn('Failed to calculate unrealized PnL:', err);
-                // Fallback: don't add to PnL if fetch failed
             }
-        }
 
-        // 3. Calculate Realized/Trading PnL from completed trades
-        // This represents the execution slippage (buy price vs sell price for closed positions)
-        let realizedPnL = 0;
-        let tradingPnL = 0; // Separate metric for trading execution cost
-        let realizedWins = 0;
-        let realizedLosses = 0;
-        let settlementWins = 0;
-        let settlementLosses = 0;
-        let cumulativeInvestment = 0;
+            // 3. Calculate Realized/Trading PnL from completed trades
+            // This represents the execution slippage (buy price vs sell price for closed positions)
+            let realizedPnL = 0;
+            let tradingPnL = 0; // Separate metric for trading execution cost
+            let realizedWins = 0;
+            let realizedLosses = 0;
+            let settlementWins = 0;
+            let settlementLosses = 0;
+            let cumulativeInvestment = 0;
 
-        try {
-            // First, get all config IDs for this wallet
-            const configs = await prisma.copyTradingConfig.findMany({
-                where: { walletAddress: normalizedWallet },
-                select: { id: true }
-            });
-            const configIds = configs.map(c => c.id);
-
-            if (configIds.length > 0) {
-                // Sum realizedPnL from ALL trades (Wins and Losses)
-                const winsSum = await prisma.copyTrade.aggregate({
-                    where: {
-                        configId: { in: configIds },
-                        status: 'EXECUTED',
-                        realizedPnL: { gt: 0 }
-                    },
-                    _sum: { realizedPnL: true }
+            try {
+                // First, get all config IDs for this wallet
+                const configs = await prisma.copyTradingConfig.findMany({
+                    where: { walletAddress: normalizedWallet },
+                    select: { id: true }
                 });
+                const configIds = configs.map(c => c.id);
 
-                const lossesSum = await prisma.copyTrade.aggregate({
-                    where: {
-                        configId: { in: configIds },
-                        status: 'EXECUTED',
-                        realizedPnL: { lt: 0 }
-                    },
-                    _sum: { realizedPnL: true }
-                });
+                if (configIds.length > 0) {
+                    // Sum realizedPnL from ALL trades (Wins and Losses)
+                    const winsSum = await prisma.copyTrade.aggregate({
+                        where: {
+                            configId: { in: configIds },
+                            status: 'EXECUTED',
+                            realizedPnL: { gt: 0 }
+                        },
+                        _sum: { realizedPnL: true }
+                    });
 
-                tradingPnL = (winsSum._sum.realizedPnL || 0) + (lossesSum._sum.realizedPnL || 0);
-                realizedWins = winsSum._sum.realizedPnL || 0;
-                realizedLosses = lossesSum._sum.realizedPnL || 0;
+                    const lossesSum = await prisma.copyTrade.aggregate({
+                        where: {
+                            configId: { in: configIds },
+                            status: 'EXECUTED',
+                            realizedPnL: { lt: 0 }
+                        },
+                        _sum: { realizedPnL: true }
+                    });
 
-                // Settlement-only realized PnL (aligns with WON/LOST views)
-                const settlementTrades = await prisma.copyTrade.findMany({
-                    where: {
-                        configId: { in: configIds },
-                        status: 'EXECUTED',
-                        OR: [
-                            { originalSide: 'REDEEM' },
-                            { originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }
-                        ]
-                    },
-                    select: { realizedPnL: true }
-                });
+                    tradingPnL = (winsSum._sum.realizedPnL || 0) + (lossesSum._sum.realizedPnL || 0);
+                    realizedWins = winsSum._sum.realizedPnL || 0;
+                    realizedLosses = lossesSum._sum.realizedPnL || 0;
 
-                settlementTrades.forEach(t => {
-                    const pnl = t.realizedPnL || 0;
-                    if (pnl > 0) settlementWins += pnl;
-                    else if (pnl < 0) settlementLosses += pnl;
-                });
+                    // Settlement-only realized PnL (aligns with WON/LOST views)
+                    const settlementTrades = await prisma.copyTrade.findMany({
+                        where: {
+                            configId: { in: configIds },
+                            status: 'EXECUTED',
+                            OR: [
+                                { originalSide: 'REDEEM' },
+                                { originalTrader: { in: ['POLYMARKET_SETTLEMENT', 'PROTOCOL'] } }
+                            ]
+                        },
+                        select: { realizedPnL: true }
+                    });
 
-                // Calculate Cumulative Investment (Total Buy Volume)
-                const allBuys = await prisma.copyTrade.findMany({
-                    where: {
-                        configId: { in: configIds },
-                        originalSide: 'BUY',
-                        status: 'EXECUTED'
-                    },
-                    select: { copySize: true }
-                });
+                    settlementTrades.forEach(t => {
+                        const pnl = t.realizedPnL || 0;
+                        if (pnl > 0) settlementWins += pnl;
+                        else if (pnl < 0) settlementLosses += pnl;
+                    });
 
-                cumulativeInvestment = allBuys.reduce((sum, t) => sum + (t.copySize || 0), 0);
-
-                // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
-                const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
-                    where: {
-                        configId: { in: configIds },
-                        originalSide: 'SELL',
-                        status: 'EXECUTED',
-                        realizedPnL: null
-                    },
-                    select: { tokenId: true, copySize: true, copyPrice: true, originalPrice: true }
-                });
-
-                if (sellTradesWithoutPnL.length > 0) {
-                    // Get BUY trades for cost basis
-                    const buyTrades = await prisma.copyTrade.findMany({
+                    // Calculate Cumulative Investment (Total Buy Volume)
+                    const allBuys = await prisma.copyTrade.findMany({
                         where: {
                             configId: { in: configIds },
                             originalSide: 'BUY',
                             status: 'EXECUTED'
                         },
+                        select: { copySize: true }
+                    });
+
+                    cumulativeInvestment = allBuys.reduce((sum, t) => sum + (t.copySize || 0), 0);
+
+                    // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
+                    const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
+                        where: {
+                            configId: { in: configIds },
+                            originalSide: 'SELL',
+                            status: 'EXECUTED',
+                            realizedPnL: null
+                        },
                         select: { tokenId: true, copySize: true, copyPrice: true, originalPrice: true }
                     });
 
-                    // Build cost basis map
-                    const costBasisMap = new Map<string, { totalCost: number, totalShares: number }>();
-                    buyTrades.forEach(t => {
-                        if (!t.tokenId) return;
-                        const existing = costBasisMap.get(t.tokenId) || { totalCost: 0, totalShares: 0 };
-                        // copySize is USDC amount. Shares = USDC / Price
-                        const unitPrice = t.copyPrice ?? t.originalPrice ?? 0;
-                        if (unitPrice <= 0) return;
-                        existing.totalCost += t.copySize;
-                        existing.totalShares += t.copySize / unitPrice;
-                        costBasisMap.set(t.tokenId, existing);
-                    });
+                    if (sellTradesWithoutPnL.length > 0) {
+                        // Get BUY trades for cost basis
+                        const buyTrades = await prisma.copyTrade.findMany({
+                            where: {
+                                configId: { in: configIds },
+                                originalSide: 'BUY',
+                                status: 'EXECUTED'
+                            },
+                            select: { tokenId: true, copySize: true, copyPrice: true, originalPrice: true }
+                        });
 
-                    // Calculate PnL for sells without stored value
-                    sellTradesWithoutPnL.forEach(t => {
-                        if (!t.tokenId) return;
-                        const costInfo = costBasisMap.get(t.tokenId);
-                        if (costInfo && costInfo.totalShares > 0) {
-                            const avgBuyPrice = costInfo.totalCost / costInfo.totalShares;
-                            const sellPrice = t.copyPrice ?? t.originalPrice ?? 0;
-                            if (sellPrice <= 0) return;
-                            const shares = t.copySize / sellPrice; // copySize is USDC
-                            const profit = (sellPrice - avgBuyPrice) * shares;
-                            tradingPnL += profit;
+                        // Build cost basis map
+                        const costBasisMap = new Map<string, { totalCost: number, totalShares: number }>();
+                        buyTrades.forEach(t => {
+                            if (!t.tokenId) return;
+                            const existing = costBasisMap.get(t.tokenId) || { totalCost: 0, totalShares: 0 };
+                            // copySize is USDC amount. Shares = USDC / Price
+                            const unitPrice = t.copyPrice ?? t.originalPrice ?? 0;
+                            if (unitPrice <= 0) return;
+                            existing.totalCost += t.copySize;
+                            existing.totalShares += t.copySize / unitPrice;
+                            costBasisMap.set(t.tokenId, existing);
+                        });
 
-                            // Update Breakdown (W/L)
-                            if (profit > 0) realizedWins += profit;
-                            else if (profit < 0) realizedLosses += profit;
-                        }
-                    });
+                        // Calculate PnL for sells without stored value
+                        sellTradesWithoutPnL.forEach(t => {
+                            if (!t.tokenId) return;
+                            const costInfo = costBasisMap.get(t.tokenId);
+                            if (costInfo && costInfo.totalShares > 0) {
+                                const avgBuyPrice = costInfo.totalCost / costInfo.totalShares;
+                                const sellPrice = t.copyPrice ?? t.originalPrice ?? 0;
+                                if (sellPrice <= 0) return;
+                                const shares = t.copySize / sellPrice; // copySize is USDC
+                                const profit = (sellPrice - avgBuyPrice) * shares;
+                                tradingPnL += profit;
+
+                                // Update Breakdown (W/L)
+                                if (profit > 0) realizedWins += profit;
+                                else if (profit < 0) realizedLosses += profit;
+                            }
+                        });
+                    }
+
+                    realizedPnL = tradingPnL;
                 }
-
-                realizedPnL = tradingPnL;
+            } catch (err) {
+                console.warn('Failed to calculate realized PnL:', err);
             }
-        } catch (err) {
-            console.warn('Failed to calculate realized PnL:', err);
-        }
 
-        // Enforce Consistency (Fix Rounding Errors)
-        // realizedWins + realizedLosses MUST equal realizedPnL/tradingPnL
-        realizedPnL = realizedWins + realizedLosses;
-        tradingPnL = realizedWins + realizedLosses;
-        const settlementPnL = settlementWins + settlementLosses;
+            // Enforce Consistency (Fix Rounding Errors)
+            // realizedWins + realizedLosses MUST equal realizedPnL/tradingPnL
+            realizedPnL = realizedWins + realizedLosses;
+            tradingPnL = realizedWins + realizedLosses;
+            const settlementPnL = settlementWins + settlementLosses;
 
             return {
-            totalInvested,
-            activePositions: positions.length,
-            realizedPnL,      // Net realized
-            realizedWins,     // Total Wins PnL
-            realizedLosses,   // Total Losses PnL
-            settlementPnL,
-            settlementWins,
-            settlementLosses,
-            unrealizedPnL,    // From current market prices (settlement value)
-            tradingPnL,       // Same as realized, explicitly named
-            totalPnL: unrealizedPnL, // Use unrealized as the "main" PnL
-            cumulativeInvestment // Total Volume since start
+                totalInvested,
+                activePositions: positions.length,
+                realizedPnL,      // Net realized
+                realizedWins,     // Total Wins PnL
+                realizedLosses,   // Total Losses PnL
+                settlementPnL,
+                settlementWins,
+                settlementLosses,
+                unrealizedPnL,    // From current market prices (settlement value)
+                tradingPnL,       // Same as realized, explicitly named
+                totalPnL: unrealizedPnL, // Use unrealized as the "main" PnL
+                cumulativeInvestment // Total Volume since start
             };
         });
         return NextResponse.json(responsePayload);
