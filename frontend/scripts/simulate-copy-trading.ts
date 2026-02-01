@@ -49,7 +49,8 @@ const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + over
 const COPY_MODE = (process.env.SIM_COPY_MODE || 'LEADER_SHARES').toUpperCase();
 const SIM_ACTIVITY_FILTER = (process.env.SIM_ACTIVITY_FILTER || 'TRADER_ONLY').toUpperCase();
 const SIM_WS_SERVER_FILTER = (process.env.SIM_WS_SERVER_FILTER || 'false').toLowerCase() === 'true';
-// MODE=1 -> Live, MODE=0 (default) -> Simulation
+// MODE=0 (default for simulate-copy-trading) -> Simulation, MODE=1 -> Live
+// This script is for SIMULATION - all orders will be marked as SIM by default
 const IS_LIVE_MODE = process.env.MODE === '1';
 const TX_PREFIX = IS_LIVE_MODE ? 'LIVE-' : 'SIM-';
 
@@ -875,7 +876,7 @@ async function processRedemptions() {
                                     originalPrice: 1.0,
                                     status: 'EXECUTED',
                                     executedAt: new Date(),
-                                    txHash: 'sim-redeem',
+                                    txHash: `${TX_PREFIX}redeem-${Date.now()}`,
                                     errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`,
                                     realizedPnL: profit,
                                     conditionId: pos.conditionId // Important: persist conditionId

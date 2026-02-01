@@ -86,16 +86,16 @@ export function Navbar() {
                     {authenticated ? (
                         // 已登录用户看到的菜单
                         <>
-                            <Link href="/smart-money" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/smart-money") ? "text-foreground" : "text-muted-foreground")}>
+                            <Link key="smart-money" href="/smart-money" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/smart-money") ? "text-foreground" : "text-muted-foreground")}>
                                 {t('smartMoney')}
                             </Link>
-                            <Link href="/arbitrage" className={cn("transition-colors hover:text-foreground/80", pathname === "/arbitrage" ? "text-foreground" : "text-muted-foreground")}>
+                            <Link key="arbitrage" href="/arbitrage" className={cn("transition-colors hover:text-foreground/80", pathname === "/arbitrage" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('arbitrage')}
                             </Link>
-                            <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
+                            <Link key="affiliate" href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('affiliates')}
                             </Link>
-                            <Link href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
+                            <Link key="portfolio" href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('portfolio')}
                             </Link>
 
@@ -103,10 +103,10 @@ export function Navbar() {
                     ) : (
                         // 未登录用户看到的菜单
                         <>
-                            <Link href="/pricing" className={cn("transition-colors hover:text-foreground/80", pathname === "/pricing" ? "text-foreground" : "text-muted-foreground")}>
+                            <Link key="pricing" href="/pricing" className={cn("transition-colors hover:text-foreground/80", pathname === "/pricing" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('pricing')}
                             </Link>
-                            <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
+                            <Link key="affiliate-guest" href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('affiliates')}
                             </Link>
                         </>

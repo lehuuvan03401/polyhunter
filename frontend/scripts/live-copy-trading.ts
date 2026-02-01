@@ -933,7 +933,7 @@ async function processRedemptions() {
                                     originalPrice: 1.0,
                                     status: 'EXECUTED',
                                     executedAt: new Date(),
-                                    txHash: 'sim-redeem',
+                                    txHash: `${TX_PREFIX}redeem-${Date.now()}`,
                                     errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`,
                                     realizedPnL: profit,
                                     conditionId: pos.conditionId // Important: persist conditionId
