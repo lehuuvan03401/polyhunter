@@ -36,6 +36,8 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
 
     const isSimulationOrder = useCallback((order: Order) => {
         const orderId = order.orderId?.toLowerCase() || '';
+        // LIVE- prefix means Live mode, not simulation
+        if (orderId.startsWith('live-')) return false;
         return order.isSim || orderId.startsWith('sim-') || orderId.startsWith('adjust-');
     }, []);
 

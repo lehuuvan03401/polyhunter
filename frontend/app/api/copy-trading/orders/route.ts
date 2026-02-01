@@ -139,6 +139,8 @@ export async function GET(request: NextRequest) {
                 leaderTxHash: trade.originalTxHash,
                 isSim: (() => {
                     const tx = (trade.txHash || '').toLowerCase();
+                    // LIVE- prefix means Live mode, not simulation
+                    if (tx.startsWith('live-')) return false;
                     return tx.startsWith('sim-') || tx.startsWith('adjust-');
                 })(),
             }));

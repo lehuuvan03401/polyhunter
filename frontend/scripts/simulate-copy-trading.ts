@@ -49,6 +49,9 @@ const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + over
 const COPY_MODE = (process.env.SIM_COPY_MODE || 'LEADER_SHARES').toUpperCase();
 const SIM_ACTIVITY_FILTER = (process.env.SIM_ACTIVITY_FILTER || 'TRADER_ONLY').toUpperCase();
 const SIM_WS_SERVER_FILTER = (process.env.SIM_WS_SERVER_FILTER || 'false').toLowerCase() === 'true';
+// MODE=1 -> Live, MODE=0 (default) -> Simulation
+const IS_LIVE_MODE = process.env.MODE === '1';
+const TX_PREFIX = IS_LIVE_MODE ? 'LIVE-' : 'SIM-';
 
 // No validation needed - using local dev.db
 
@@ -61,6 +64,7 @@ console.log(`Duration: ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minute
 console.log(`Fixed Copy Amount: $${FIXED_COPY_AMOUNT}`);
 console.log(`Stategy Profile: ${SIMULATED_PROFILE} (Slippage: ${strategy.maxSlippage * 100}%)`);
 console.log(`Copy Mode: ${COPY_MODE}`);
+console.log(`Order Mode: ${IS_LIVE_MODE ? 'Live' : 'Simulation'}`);
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 // --- PRISMA ---
@@ -397,7 +401,7 @@ async function recordCopyTrade(
             copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
             copyPrice: execPrice,
             status: 'EXECUTED',
-            txHash: trade.transactionHash ? `SIM-${trade.transactionHash}` : `SIM-${Date.now()}`,
+            txHash: trade.transactionHash ? `${TX_PREFIX}${trade.transactionHash}` : `${TX_PREFIX}${Date.now()}`,
             originalTxHash: trade.transactionHash || null,
             executedAt: new Date(),
             realizedPnL: pnl,
@@ -748,7 +752,7 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
                         copyPrice: settlementValue,
                         status: 'EXECUTED',
                         executedAt: new Date(),
-                        txHash: 'sim-settlement',
+                        txHash: IS_LIVE_MODE ? 'live-settlement' : 'sim-settlement',
                         realizedPnL: pnl,
                         errorMessage: `Computed PnL: $${pnl.toFixed(4)}`
                     }
