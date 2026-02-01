@@ -88,10 +88,10 @@
         "copyButton": "AI跟单"
     },
     "Navbar": {
-        "traders": "首页",
+        "traders": "首頁",
         "markets": "市場",
         "smartMoney": "頂尖交易員",
-        "affiliates": "聯盟推廣",
+        "affiliates": "Horus聯盟",
         "portfolio": "投資組合",
         "settings": "設置",
         "pricing": "定價",
@@ -712,7 +712,7 @@
             }
         },
         "zeroLine": {
-            "title": "零線 (直接獎金)",
+            "title": "直接獎金（零號線）",
             "subtitle": "從您團隊最多 5 代的交易中賺取收益",
             "explanation": "當您團隊中的某人進行交易時，平台會收取 0.1% 的費用。您根據他們的代數賺取該費用的一定比例：",
             "generations": {
@@ -732,17 +732,17 @@
             }
         },
         "sunLine": {
-            "title": "太陽線 (團隊級差)",
+            "title": "團隊級差（太陽線）",
             "subtitle": "從您與下線之間的等級差中賺取額外收益",
             "explanation": "當您網絡中的低等級成員進行交易時，您賺取您的等級費率與他們的等級費率之間的<strong className=\"text-white\">差額</strong>。這獎勵建立深層團隊！",
-            "formula": "太陽線 = 費用 × (您的費率 - 他們的費率)",
+            "formula": "團隊級差 = 費用 × (您的費率 - 他們的費率)",
             "example": {
                 "title": "示例：",
                 "you": "您是 <strong className=\"text-purple-400\">精英 (3%)</strong>",
                 "downline": "下線成員是 <strong className=\"text-blue-400\">VIP (2%)</strong>",
                 "fee": "平台費：",
                 "diff": "差額：",
-                "bonus": "您的太陽線獎金："
+                "bonus": "您的團隊級差獎金："
             }
         },
         "faq": {

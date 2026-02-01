@@ -91,7 +91,7 @@
         "traders": "首页",
         "markets": "市场",
         "smartMoney": "顶尖交易员",
-        "affiliates": "联盟推广",
+        "affiliates": "Horus联盟",
         "portfolio": "投资组合",
         "settings": "设置",
         "pricing": "定价",
@@ -712,7 +712,7 @@
             }
         },
         "zeroLine": {
-            "title": "零线 (直接奖金)",
+            "title": "直接奖金（零号线）",
             "subtitle": "从您团队最多 5 代的交易中赚取收益",
             "explanation": "当您团队中的某人进行交易时，平台会收取 0.1% 的费用。您根据他们的代数赚取该费用的一定比例：",
             "generations": {
@@ -732,10 +732,10 @@
             }
         },
         "sunLine": {
-            "title": "太阳线 (团队级差)",
+            "title": "团队级差（太阳线）",
             "subtitle": "从您与下线之间的等级差中赚取额外收益",
             "explanation": "当您网络中的低等级成员进行交易时，您赚取您的等级费率与他们的等级费率之间的<strong className=\"text-white\">差额</strong>。这奖励建立深层团队！",
-            "formula": "太阳线 = 费用 × (您的费率 - 他们的费率)",
+            "formula": "团队级差 = 费用 × (您的费率 - 他们的费率)",
             "example": {
                 "title": "示例：",
                 "you": "您是 <strong className=\"text-purple-400\">精英 (3%)</strong>",
