@@ -73,12 +73,12 @@ function ReferralTracker() {
  */
 export function ReferralProvider({ children }: { children: React.ReactNode }) {
     return (
-        <>
+        <div>
             <Suspense fallback={null}>
                 <ReferralCapture />
             </Suspense>
             <ReferralTracker />
             {children}
-        </>
+        </div>
     );
 }
