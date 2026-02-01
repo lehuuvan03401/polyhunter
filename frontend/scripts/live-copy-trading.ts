@@ -1,7 +1,9 @@
 /**
- * Comprehensive Copy Trading Simulation
+ * Budget-Constrained Live Copy Trading
  * 
  * Real-time tracking of a target trader with:
+ * - Budget cap (default 3000 USDC) to limit total investment
+ * - Proportional scaling to fit trades within budget
  * - Database recording of all copy trades
  * - Position tracking and cost basis calculation
  * - Simulated settlement (using market prices)
@@ -9,7 +11,7 @@
  * 
  * Usage:
  * export $(grep -v '^#' .env | xargs)
- * npx tsx scripts/simulate-copy-trading.ts
+ * MODE=1 npx tsx scripts/live-copy-trading.ts
  */
 
 import { fileURLToPath } from 'url';
@@ -38,7 +40,7 @@ const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df8
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const SIMULATION_DURATION_MS = 120 * 60 * 1000; // 2 hours
 const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
-const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '1'); // Ignored (using Leader Size)
+const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '10'); // Default $10 per trade
 const SIMULATED_PROFILE = StrategyProfile.CONSERVATIVE; // Test CONSERVATIVE profile
 const strategy = getStrategyConfig(SIMULATED_PROFILE);
 // strategy.maxSlippage is decimal (e.g. 0.005 for 0.5%).
@@ -46,25 +48,38 @@ const strategy = getStrategyConfig(SIMULATED_PROFILE);
 // 0.005 * 10000 = 50 BPS.
 const SLIPPAGE_BPS = strategy.maxSlippage * 10000;
 const ESTIMATED_GAS_FEE_USD = 0.05; // $0.05 per transaction (Polygon gas + overhead)
-const COPY_MODE = (process.env.SIM_COPY_MODE || 'LEADER_SHARES').toUpperCase();
+const COPY_MODE = (process.env.SIM_COPY_MODE || 'BUDGET_CONSTRAINED').toUpperCase();
+// Default to TRADER_ONLY for live copy trading
 const SIM_ACTIVITY_FILTER = (process.env.SIM_ACTIVITY_FILTER || 'TRADER_ONLY').toUpperCase();
 const SIM_WS_SERVER_FILTER = (process.env.SIM_WS_SERVER_FILTER || 'false').toLowerCase() === 'true';
-// MODE=1 -> Live, MODE=0 (default) -> Simulation
-const IS_LIVE_MODE = process.env.MODE === '1';
+// MODE=1 (default for live-copy-trading) -> Live, MODE=0 -> Simulation
+const IS_LIVE_MODE = (process.env.MODE || '1') === '1';
 const TX_PREFIX = IS_LIVE_MODE ? 'LIVE-' : 'SIM-';
+
+// --- BUDGET CONSTRAINTS ---
+// Maximum total investment cap (USDC)
+const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET || '3000');
+// Estimated leader's total trading volume (for scaling calculation)
+const ESTIMATED_LEADER_VOLUME = parseFloat(process.env.EST_LEADER_VOLUME || '100000');
+// Scale factor: How much of leader's trade to copy (auto-calculated if BUDGET_CONSTRAINED)
+const SCALE_FACTOR = MAX_BUDGET / ESTIMATED_LEADER_VOLUME; // e.g., 3000/100000 = 0.03 (3%)
+// Maximum trade size per single trade
+const MAX_TRADE_SIZE = parseFloat(process.env.MAX_TRADE_SIZE || '100'); // $100 max per trade
 
 // No validation needed - using local dev.db
 
 console.log('═══════════════════════════════════════════════════════════════');
-console.log('🎮 COMPREHENSIVE COPY TRADING SIMULATION');
+console.log('💰 BUDGET-CONSTRAINED COPY TRADING');
 console.log('═══════════════════════════════════════════════════════════════');
 console.log(`Target Trader: ${TARGET_TRADER}`);
 console.log(`Follower Wallet: ${FOLLOWER_WALLET}`);
 console.log(`Duration: ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes`);
-console.log(`Fixed Copy Amount: $${FIXED_COPY_AMOUNT}`);
-console.log(`Stategy Profile: ${SIMULATED_PROFILE} (Slippage: ${strategy.maxSlippage * 100}%)`);
+console.log(`💵 MAX BUDGET: $${MAX_BUDGET.toLocaleString()} USDC`);
+console.log(`📉 Scale Factor: ${(SCALE_FACTOR * 100).toFixed(2)}% of leader trades`);
+console.log(`📊 Max Trade Size: $${MAX_TRADE_SIZE} per trade`);
+console.log(`Strategy Profile: ${SIMULATED_PROFILE} (Slippage: ${strategy.maxSlippage * 100}%)`);
 console.log(`Copy Mode: ${COPY_MODE}`);
-console.log(`Order Mode: ${IS_LIVE_MODE ? 'Live' : 'Simulation'}`);
+console.log(`Order Mode: ${IS_LIVE_MODE ? '🟢 Live' : '🟡 Simulation'}`);
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 // --- PRISMA ---
@@ -99,6 +114,8 @@ let tradesRecorded = 0;
 let totalBuyVolume = 0;
 let totalSellVolume = 0;
 let realizedPnL = 0;
+let budgetUsed = 0; // Track how much of budget has been used
+let tradesSkippedBudget = 0; // Track trades skipped due to budget
 const startTime = Date.now();
 const seenTrades = new Set<string>();
 
@@ -134,18 +151,20 @@ async function seedConfig() {
         }
     });
 
-    // Create fresh config
+    // Create fresh config with budget-constrained settings
     const config = await prisma.copyTradingConfig.create({
         data: {
             walletAddress: followerLower,
             traderAddress: targetLower,
-            traderName: '0x8dxd (Simulation)',
+            traderName: IS_LIVE_MODE ? '0x8dxd (Live)' : '0x8dxd (Simulation)',
             maxSlippage: 2.0,
             slippageType: 'AUTO',
             autoExecute: false, // Don't let worker pick this up
             channel: 'EVENT_LISTENER',
-            mode: 'FIXED_AMOUNT',
-            fixedAmount: FIXED_COPY_AMOUNT,
+            mode: 'PERCENTAGE', // Use percentage mode for scaling
+            sizeScale: SCALE_FACTOR, // 3% of leader trades
+            fixedAmount: FIXED_COPY_AMOUNT, // Fallback
+            maxSizePerTrade: MAX_TRADE_SIZE, // Cap per trade
             isActive: true,
         }
     });
@@ -535,9 +554,42 @@ async function handleTrade(trade: ActivityTrade) {
 
     let copyShares = 0;
     let copyAmount = 0;
-    if (COPY_MODE === 'LEADER_SHARES') {
+
+    // --- BUDGET-CONSTRAINED COPY SIZING ---
+    if (COPY_MODE === 'BUDGET_CONSTRAINED' || COPY_MODE === 'PERCENTAGE') {
+        // Calculate scaled amount based on leader's trade
+        const leaderNotional = tradeShares * trade.price;
+        let scaledAmount = leaderNotional * SCALE_FACTOR;
+
+        // Apply max trade size cap
+        scaledAmount = Math.min(scaledAmount, MAX_TRADE_SIZE);
+
+        // For BUY trades, check budget constraint
+        if (trade.side === 'BUY') {
+            const remainingBudget = MAX_BUDGET - budgetUsed;
+
+            if (remainingBudget <= 0) {
+                console.log(`\n💸 BUDGET EXHAUSTED! Used: $${budgetUsed.toFixed(2)}/$${MAX_BUDGET}. Skipping BUY...`);
+                tradesSkippedBudget++;
+                return;
+            }
+
+            // Cap to remaining budget
+            if (scaledAmount > remainingBudget) {
+                console.log(`   ⚠️ Reducing trade from $${scaledAmount.toFixed(2)} to $${remainingBudget.toFixed(2)} (budget limit)`);
+                scaledAmount = remainingBudget;
+            }
+        }
+
+        copyAmount = scaledAmount;
+        copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
+
+    } else if (COPY_MODE === 'LEADER_SHARES') {
         copyShares = tradeShares;
         copyAmount = copyShares * execPrice;
+    } else if (COPY_MODE === 'FIXED_AMOUNT') {
+        copyAmount = FIXED_COPY_AMOUNT;
+        copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
     } else {
         copyAmount = calculateCopySize(activeConfig, tradeShares, trade.price);
         if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
@@ -576,6 +628,7 @@ async function handleTrade(trade: ActivityTrade) {
 
         updatePositionOnBuy(trade.asset, copyShares, execPrice, marketSlug, outcome, conditionId || undefined);
         totalBuyVolume += copyAmount;
+        budgetUsed += copyAmount; // Track budget usage
 
         const pos = positions.get(trade.asset)!;
         positionLine = `   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`;
@@ -611,20 +664,25 @@ async function handleTrade(trade: ActivityTrade) {
         seenTrades.add(dedupeKey);
     }
 
-    console.log('\n🎯 ═══════════════════════════════════════════════════════════');
+    // Budget status
+    const budgetRemaining = MAX_BUDGET - budgetUsed;
+    const budgetPercent = ((budgetUsed / MAX_BUDGET) * 100).toFixed(1);
+
+    console.log('\\n🎯 ═══════════════════════════════════════════════════════════');
     console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded})`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
     console.log(`   📊 Leader: ${tradeShares.toFixed(2)} shares ($${tradeNotional.toFixed(2)})`);
     console.log(`   📊 Copy:   ${trade.side} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
     console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
+    console.log(`   💵 Budget: $${budgetUsed.toFixed(2)}/$${MAX_BUDGET} used (${budgetPercent}%) | Remaining: $${budgetRemaining.toFixed(2)}`);
     console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
     console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
     console.log(`   🔗 TX: ${trade.transactionHash?.substring(0, 30)}...`);
     if (positionLine) console.log(positionLine);
     if (pnlLine) console.log(pnlLine);
     if (remainingLine) console.log(remainingLine);
-    console.log('   ═══════════════════════════════════════════════════════════\n');
+    console.log('   ═══════════════════════════════════════════════════════════\\n');
 }
 
 // --- SETTLEMENT HANDLER ---
@@ -1059,21 +1117,32 @@ async function printSummary() {
     });
 
     console.log('\n═══════════════════════════════════════════════════════════════');
-    console.log('📊 SIMULATION SUMMARY');
+    console.log('📊 BUDGET-CONSTRAINED COPY TRADING SUMMARY');
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(`Duration: ${duration.toFixed(1)} minutes`);
-    console.log(`Total Orders Recorded: ${dbTrades.length}`);
-    console.log(`Total Buy Volume: $${totalBuyVolume.toFixed(2)}`);
-    console.log(`Total Sell Volume: $${totalSellVolume.toFixed(2)}`);
+    console.log(`Mode: ${IS_LIVE_MODE ? '🟢 Live' : '🟡 Simulation'}`);
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log(`💵 BUDGET STATUS`);
+    console.log(`  Max Budget: $${MAX_BUDGET.toLocaleString()}`);
+    console.log(`  Budget Used: $${budgetUsed.toFixed(2)} (${((budgetUsed / MAX_BUDGET) * 100).toFixed(1)}%)`);
+    console.log(`  Budget Remaining: $${(MAX_BUDGET - budgetUsed).toFixed(2)}`);
+    console.log(`  Trades Skipped (Budget): ${tradesSkippedBudget}`);
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log(`📊 TRADE STATISTICS`);
+    console.log(`  Total Orders Recorded: ${dbTrades.length}`);
+    console.log(`  Total Buy Volume: $${totalBuyVolume.toFixed(2)}`);
+    console.log(`  Total Sell Volume: $${totalSellVolume.toFixed(2)}`);
     const totalFees = tradesRecorded * ESTIMATED_GAS_FEE_USD;
     const netPnL = realizedPnL - totalFees;
     const totalPnL = netPnL + unrealizedPnL;
 
-    console.log(`Realized P&L (Gross): $${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(4)}`);
-    console.log(`Unrealized P&L:      $${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(4)}`);
-    console.log(`Est. Fees (Gas):      -$${totalFees.toFixed(2)}`);
-    console.log(`Net P&L (Realized):   $${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(4)}`);
-    console.log(`TOTAL P&L (Simulated):$${totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(4)}`);
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log(`💰 P&L SUMMARY`);
+    console.log(`  Realized P&L (Gross): $${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(4)}`);
+    console.log(`  Unrealized P&L:       $${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(4)}`);
+    console.log(`  Est. Fees (Gas):      -$${totalFees.toFixed(2)}`);
+    console.log(`  Net P&L (Realized):   $${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(4)}`);
+    console.log(`  TOTAL P&L:            $${totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(4)}`);
     console.log('═══════════════════════════════════════════════════════════════');
 
     console.log('\n📁 DATABASE RECORDS');
@@ -1096,7 +1165,7 @@ async function printSummary() {
 
     console.log('\n═══════════════════════════════════════════════════════════════');
     if (tradesRecorded > 0) {
-        console.log('✅ SIMULATION COMPLETE - Data saved to database');
+        console.log(`✅ ${IS_LIVE_MODE ? 'LIVE' : 'SIMULATION'} COMPLETE - Data saved to database`);
     } else {
         console.log('⚠️  No trades detected during simulation period');
     }
@@ -1181,7 +1250,7 @@ async function main() {
     const filterLabel = SIM_ACTIVITY_FILTER === 'ALL'
         ? 'ALL activity'
         : (SIM_WS_SERVER_FILTER ? 'TRADER_ONLY (server filter)' : 'TRADER_ONLY (local filter)');
-    console.log(`🎧 Simulation started - tracking ${filterLabel}...`);
+    console.log(`🎧 Live Trading started - tracking ${filterLabel}...`);
     console.log(`   (Will run for ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes)\n`);
 
     // 4. Progress updates

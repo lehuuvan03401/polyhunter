@@ -308,11 +308,11 @@ function StrategyCard({
     showStopButton?: boolean;
 }) {
     const t = useTranslations('Portfolio.activeStrategies');
-    // Mode Display Logic
-    const isFixed = strategy.mode === 'FIXED_AMOUNT' || strategy.fixedAmount !== null;
-    const modeLabel = isFixed
-        ? `${t('risk.fixed')} $${strategy.fixedAmount?.toFixed(2) || '0.00'}`
-        : `${(Number(strategy.sizeScale || 0) * 100).toFixed(0)}% ${t('risk.shares')}`;
+    // Mode Display Logic - prioritize the mode field
+    const isPercentage = strategy.mode === 'PERCENTAGE' && strategy.sizeScale !== null;
+    const modeLabel = isPercentage
+        ? `${(Number(strategy.sizeScale || 0) * 100).toFixed(2)}% ${t('risk.shares')}`
+        : `${t('risk.fixed')} $${strategy.fixedAmount?.toFixed(2) || '0.00'}`;
 
     return (
         <div className="p-4 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/30 transition-colors relative group">
