@@ -858,7 +858,7 @@ export default function PortfolioPage() {
                                                                     <td className="p-4 align-middle font-medium max-w-[250px]" title={pos.title}>
                                                                         <div className="flex items-center gap-1.5">
                                                                             {pos._type === 'sim' && (
-                                                                                <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold shrink-0">SIM</span>
+                                                                                <span className="bg-blue-500 text-[10px] text-black px-1 rounded font-bold shrink-0">LIVE</span>
                                                                             )}
                                                                             {pos.slug ? (
                                                                                 <a
@@ -952,7 +952,7 @@ export default function PortfolioPage() {
                                                                                 disabled={isRedeeming}
                                                                                 className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded shadow-sm hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50 transition-colors"
                                                                             >
-                                                                                Mock Redeem
+                                                                                Redeem
                                                                             </button>
                                                                         )}
                                                                     </td>

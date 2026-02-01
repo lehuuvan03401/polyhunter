@@ -286,13 +286,6 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.winRate')} <span className="text-muted-foreground/50 scale-90 inline-block">{t('stats.allTime')}</span></div>
                             </div>
                             <div>
-                                <div className="text-2xl font-bold text-white mb-0.5">
-                                    {formatTrades(profile?.totalTrades || 0)}
-                                    {(profile?.totalTrades || 0) <= 20 && (profile?.volume || 0) > 10000 && <span className="text-sm text-muted-foreground align-top ml-0.5">+</span>}
-                                </div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.trades')} <span className="text-muted-foreground/50 scale-90 inline-block">{t('stats.allTime')}</span></div>
-                            </div>
-                            <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{profile?.positionCount || positions.length}</div>
                                 <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.positions')}</div>
                             </div>

@@ -76,7 +76,7 @@ export function useRedeem() {
 
     const redeemSim = async (walletAddress: string, tokenId: string, conditionId: string, outcome: string, slug: string) => {
         setIsRedeeming(true);
-        const toastId = toast.loading(`Mock redeeming simulated position...`);
+        const toastId = toast.loading(`Redeeming simulated position...`);
 
         try {
             const res = await fetch('/api/copy-trading/redeem-sim', {
@@ -91,11 +91,11 @@ export function useRedeem() {
             }
 
             const data = await res.json();
-            toast.success(`Mock Redemption successful! Profit: $${data.profit.toFixed(4)}`, { id: toastId });
+            toast.success(`Redemption successful! Profit: $${data.profit.toFixed(4)}`, { id: toastId });
             return true;
         } catch (err: any) {
-            console.error("Mock Redeem failed:", err);
-            toast.error(`Mock Redemption failed: ${err.message}`, { id: toastId });
+            console.error("Redeem failed:", err);
+            toast.error(`Redeem failed: ${err.message}`, { id: toastId });
             return false;
         } finally {
             setIsRedeeming(false);

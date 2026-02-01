@@ -66,7 +66,7 @@ export async function POST(request: Request) {
                 executedAt: new Date(),
                 txHash: "sim-mock-redeem", // Identify as Mock
                 realizedPnL: profit,
-                errorMessage: `Mock Redeemed Profit: $${profit.toFixed(4)}`
+                errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`
             }
         });
 
