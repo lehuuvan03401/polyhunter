@@ -16,6 +16,7 @@ export interface Trade {
     price: number;
     value: number; // size * price in USDC
     pnl?: number;  // realized PnL if closed
+    marketId?: string; // conditionId or tokenId for diversification tracking
 }
 
 export interface TraderMetrics {
@@ -25,9 +26,11 @@ export interface TraderMetrics {
     sharpeRatio: number;
     copyFriendliness: number;
     activityScore: number;
+    diversificationScore: number; // NEW: market diversification
     scientificScore: number;
     dataQuality: 'full' | 'limited' | 'insufficient';
     tradeCount: number;
+    uniqueMarkets: number; // NEW: number of unique markets traded
 }
 
 export interface DailyReturn {
@@ -40,19 +43,21 @@ export interface DailyReturn {
 // ============================================================================
 
 const WEIGHTS = {
-    sharpeRatio: 0.25,
-    profitFactor: 0.20,
-    maxDrawdown: 0.15,
-    winRate: 0.15,
-    activity: 0.10,
-    copyFriendliness: 0.15,
+    sharpeRatio: 0.22,      // Risk-adjusted returns
+    profitFactor: 0.18,     // Win/loss ratio
+    maxDrawdown: 0.15,      // Risk management
+    winRate: 0.12,          // Success rate
+    activity: 0.08,         // Trading frequency
+    copyFriendliness: 0.15, // Execution suitability
+    diversification: 0.10,  // NEW: Market diversification
 };
 
 const MIN_TRADES_FOR_FULL_SCORE = 10;
-const MIN_TRADES_FOR_LIMITED_SCORE = 3;
+const MIN_TRADES_FOR_LIMITED_SCORE = 5;  // Increased from 3 to 5
 const PROFIT_FACTOR_CAP = 10.0;
 const MAX_ORDER_SIZE_PENALTY_THRESHOLD = 50000; // $50k
 const RAPID_EXECUTION_THRESHOLD_MS = 60000; // 1 minute
+const MIN_MARKETS_FOR_FULL_DIVERSIFICATION = 5; // 5+ markets = 100% diversification score
 
 // ============================================================================
 // Metric Calculations
@@ -286,6 +291,36 @@ export function calculateCopyFriendliness(trades: Trade[]): number {
     return Math.max(0, Math.round(score));
 }
 
+/**
+ * Calculate Market Diversification Score (0-100)
+ * Rewards traders who trade across multiple markets to reduce concentration risk
+ */
+export function calculateDiversificationScore(trades: Trade[]): { score: number; uniqueMarkets: number } {
+    if (trades.length === 0) return { score: 0, uniqueMarkets: 0 };
+
+    // Count unique markets from marketId field
+    const uniqueMarketIds = new Set(
+        trades
+            .map(t => t.marketId)
+            .filter((id): id is string => id !== undefined && id !== null && id.length > 0)
+    );
+
+    const uniqueMarkets = uniqueMarketIds.size;
+
+    // If no market IDs available, return neutral score
+    if (uniqueMarkets === 0) return { score: 50, uniqueMarkets: 0 };
+
+    // Score calculation:
+    // 1 market = 20 (high concentration risk)
+    // 2 markets = 40
+    // 3 markets = 60
+    // 4 markets = 80
+    // 5+ markets = 100 (well diversified)
+    const score = Math.min(100, uniqueMarkets * 20);
+
+    return { score, uniqueMarkets };
+}
+
 function calculateVariance(values: number[]): number {
     if (values.length === 0) return 0;
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
@@ -328,6 +363,7 @@ export function calculateScientificScore(
     const sharpeRatio = calculateSharpeRatio(dailyReturns);
     const activityScore = calculateActivityScore(trades, periodDays);
     const copyFriendliness = calculateCopyFriendliness(trades);
+    const { score: diversificationScore, uniqueMarkets } = calculateDiversificationScore(trades);
 
     // Normalize metrics to 0-100 scale for scoring
     const normalizedSharpe = normalizeToScore(sharpeRatio, -1, 2); // -1 to 2 range
@@ -345,7 +381,8 @@ export function calculateScientificScore(
             normalizedDrawdown * WEIGHTS.maxDrawdown +
             normalizedWinRate * WEIGHTS.winRate +
             activityScore * WEIGHTS.activity +
-            copyFriendliness * WEIGHTS.copyFriendliness;
+            copyFriendliness * WEIGHTS.copyFriendliness +
+            diversificationScore * WEIGHTS.diversification;
 
         scientificScore = Math.max(0, Math.min(100, Math.round(scientificScore)));
     }
@@ -357,6 +394,8 @@ export function calculateScientificScore(
         sharpeRatio: Math.round(sharpeRatio * 100) / 100,
         copyFriendliness,
         activityScore,
+        diversificationScore,
+        uniqueMarkets,
         scientificScore,
         dataQuality,
         tradeCount,

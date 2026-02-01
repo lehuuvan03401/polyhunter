@@ -49,6 +49,8 @@ interface ActiveTrader {
     volumeWeightedWinRate: number;
     sharpeRatio: number;
     copyFriendliness: number;
+    diversificationScore: number; // NEW: market diversification
+    uniqueMarkets: number;        // NEW: number of unique markets traded
     dataQuality: 'full' | 'limited' | 'insufficient';
 
     // Scoring
@@ -97,6 +99,7 @@ function convertActivitiesToTrades(activities: any[]): Trade[] {
             price: a.price,
             value: a.usdcSize || (a.size * a.price),
             pnl: undefined,
+            marketId: a.conditionId || a.tokenId || undefined, // Track market for diversification
         }));
 }
 
@@ -217,6 +220,8 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
                     volumeWeightedWinRate: metrics.volumeWeightedWinRate,
                     sharpeRatio: metrics.sharpeRatio,
                     copyFriendliness: metrics.copyFriendliness,
+                    diversificationScore: metrics.diversificationScore,
+                    uniqueMarkets: metrics.uniqueMarkets,
                     dataQuality: metrics.dataQuality,
 
                     copyScore: metrics.scientificScore,
@@ -237,10 +242,13 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
     const enrichedTraders = results;
 
     // Step 3: Filter out failed fetches and inactive traders
+    // Stricter filtering: require minimum trades and positions
+    const MIN_TRADES_FOR_COPY = 3; // At least 3 trades to be considered
     const validTraders = enrichedTraders.filter((t): t is NonNullable<typeof t> =>
         t !== null &&
         t.activePositions > 0 && // Must have current positions
-        (t.recentTrades >= 1 || period === '90d') // Relax trade count for longer periods
+        t.recentTrades >= MIN_TRADES_FOR_COPY && // Require minimum trades
+        t.dataQuality !== 'insufficient' // Must have sufficient data quality
     );
 
     // Step 4: Sort by scientific score and assign ranks
@@ -292,7 +300,7 @@ async function buildResponsePayload(
             };
 
             return {
-                traders: dbTraders,
+                traders: dbTraders as any[], // Cast for compatibility with older cached data
                 cached: true,
                 source: 'database',
                 fresh,
