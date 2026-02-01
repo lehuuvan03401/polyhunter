@@ -91,6 +91,7 @@
         "traders": "Home",
         "markets": "Markets",
         "smartMoney": "Smart Money",
+        "arbitrage": "Arbitrage Bots",
         "affiliates": "Affiliates",
         "portfolio": "Portfolio",
         "settings": "Settings",
@@ -495,6 +496,42 @@
         "recentTrades": {
             "title": "Recent Trades",
             "empty": "No recent trades found for this trader"
+        }
+    },
+    "Arbitrage": {
+        "hero": {
+            "title": "AI Arbitrage Bots",
+            "subtitle": "Leverage advanced AI to capture market inefficiencies across Polymarket.",
+            "cta": "Apply for Beta"
+        },
+        "features": {
+            "latency": {
+                "title": "Low Latency",
+                "desc": "Execute trades in milliseconds using our optimized RPC infrastructure."
+            },
+            "risk": {
+                "title": "Risk Management",
+                "desc": "Automated hedging strategies to minimize exposure."
+            },
+            "analytics": {
+                "title": "Real-time Analytics",
+                "desc": "Monitor performance and arbitrage opportunities live."
+            }
+        },
+        "bots": {
+            "title": "Bot Strategies",
+            "conservative": {
+                "title": "Conservative",
+                "desc": "Low risk, steady returns. Focuses on high-certainty cross-market discrepancies."
+            },
+            "aggressive": {
+                "title": "Aggressive",
+                "desc": "High risk, high reward. Targets volatile markets and news events."
+            }
+        },
+        "technical": {
+            "title": "How It Works",
+            "desc": "Our bots monitor Polymarket order books in real-time. When a price discrepancy is detected between related markets (e.g., 'Yes' vs 'No' pricing mismatch), the bot executes atomic transactions to capture the spread."
         }
     },
     "Affiliate": {

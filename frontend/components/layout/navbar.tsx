@@ -89,6 +89,9 @@ export function Navbar() {
                             <Link href="/smart-money" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/smart-money") ? "text-foreground" : "text-muted-foreground")}>
                                 {t('smartMoney')}
                             </Link>
+                            <Link href="/arbitrage" className={cn("transition-colors hover:text-foreground/80", pathname === "/arbitrage" ? "text-foreground" : "text-muted-foreground")}>
+                                {t('arbitrage')}
+                            </Link>
                             <Link href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('affiliates')}
                             </Link>

@@ -91,6 +91,7 @@
         "traders": "首頁",
         "markets": "市場",
         "smartMoney": "頂尖交易員",
+        "arbitrage": "套利機器人",
         "affiliates": "Horus聯盟",
         "portfolio": "投資組合",
         "settings": "設置",
@@ -495,6 +496,42 @@
         "recentTrades": {
             "title": "近期交易",
             "empty": "該交易員暫無近期交易"
+        }
+    },
+    "Arbitrage": {
+        "hero": {
+            "title": "AI 套利機器人",
+            "subtitle": "利用先進的 AI 技術，捕捉 Polymarket 上的市場低效機會。",
+            "cta": "內測申請"
+        },
+        "features": {
+            "latency": {
+                "title": "低延遲",
+                "desc": "使用我們優化的 RPC 基礎設施，以毫秒級速度執行交易。"
+            },
+            "risk": {
+                "title": "風險管理",
+                "desc": "自動化對沖策略，最小化風險敞口。"
+            },
+            "analytics": {
+                "title": "實時分析",
+                "desc": "實時監控表現和套利機會。"
+            }
+        },
+        "bots": {
+            "title": "機器人策略",
+            "conservative": {
+                "title": "保守型",
+                "desc": "低風險，穩定回報。專注於高確定性的跨市場差異。"
+            },
+            "aggressive": {
+                "title": "激進型",
+                "desc": "高風險，高回報。針對波動市場和新聞事件。"
+            }
+        },
+        "technical": {
+            "title": "工作原理",
+            "desc": "我們的機器人實時監控 Polymarket 訂單簿。當相關市場之間檢測到價格差異（例如 'Yes' 與 'No' 定價不匹配）時，機器人將執行原子交易以捕捉價差。"
         }
     },
     "Affiliate": {

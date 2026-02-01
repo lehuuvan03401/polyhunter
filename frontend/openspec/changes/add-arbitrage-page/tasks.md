@@ -1,0 +1,4 @@
+- [ ] Add "Arbitrage" item to `Navbar` component
+- [ ] Create `Arbitrage` namespace in `en.json`, `zh-CN.json`, `zh-TW.json`
+- [ ] Implement `app/[locale]/arbitrage/page.tsx` with static content
+- [ ] Verify responsive design and navigation links

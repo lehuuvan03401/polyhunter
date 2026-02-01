@@ -91,6 +91,7 @@
         "traders": "首页",
         "markets": "市场",
         "smartMoney": "顶尖交易员",
+        "arbitrage": "套利机器人",
         "affiliates": "Horus联盟",
         "portfolio": "投资组合",
         "settings": "设置",
@@ -495,6 +496,42 @@
         "recentTrades": {
             "title": "近期交易",
             "empty": "该交易员暂无近期交易"
+        }
+    },
+    "Arbitrage": {
+        "hero": {
+            "title": "AI 套利机器人",
+            "subtitle": "利用先进的 AI 技术，捕捉 Polymarket 上的市场低效机会。",
+            "cta": "内测申请"
+        },
+        "features": {
+            "latency": {
+                "title": "低延迟",
+                "desc": "使用我们优化的 RPC 基础设施，以毫秒级速度执行交易。"
+            },
+            "risk": {
+                "title": "风险管理",
+                "desc": "自动化对冲策略，最小化风险敞口。"
+            },
+            "analytics": {
+                "title": "实时分析",
+                "desc": "实时监控表现和套利机会。"
+            }
+        },
+        "bots": {
+            "title": "机器人策略",
+            "conservative": {
+                "title": "保守型",
+                "desc": "低风险，稳定回报。专注于高确定性的跨市场差异。"
+            },
+            "aggressive": {
+                "title": "激进型",
+                "desc": "高风险，高回报。针对波动市场和新闻事件。"
+            }
+        },
+        "technical": {
+            "title": "工作原理",
+            "desc": "我们的机器人实时监控 Polymarket 订单簿。当相关市场之间检测到价格差异（例如 'Yes' 与 'No' 定价不匹配）时，机器人将执行原子交易以捕捉价差。"
         }
     },
     "Affiliate": {
