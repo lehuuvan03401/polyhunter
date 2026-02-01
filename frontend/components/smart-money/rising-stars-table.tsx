@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Info, TrendingUp, Star } from 'lucide-react';
+import { Loader2, Info, TrendingUp, Star, RefreshCcw } from 'lucide-react';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useTranslations } from 'next-intl';
+import useSWR from 'swr';
 
 interface RisingStar {
     address: string;
@@ -43,38 +44,31 @@ interface RisingStarsTableProps {
     initialPeriod?: Period;
 }
 
+const fetcher = (url: string) => fetch(url).then((res) => {
+    if (!res.ok) throw new Error('Failed to fetch');
+    return res.json();
+});
+
 export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingStarsTableProps) {
     const t = useTranslations('SmartMoney.rising');
     const { authenticated, login, isLoggingIn } = usePrivyLogin();
-    const [traders, setTraders] = useState<RisingStar[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [period, setPeriod] = useState<Period>(initialPeriod);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                const response = await fetch(`/api/traders/active?limit=${limit}&period=${period}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setTraders(data.traders || []);
-                } else {
-                    throw new Error('Failed to fetch');
-                }
-            } catch (err) {
-                console.error('Failed to fetch rising stars:', err);
-                setError(t('errorLoad'));
-            } finally {
-                setIsLoading(false);
-            }
-        };
+    // Use SWR for caching and "keepPreviousData" behavior
+    const { data, error, isLoading, mutate } = useSWR(
+        `/api/traders/active?limit=${limit}&period=${period}`,
+        fetcher,
+        {
+            keepPreviousData: true, // Show previous period data while loading new period
+            revalidateOnFocus: false,
+            dedupingInterval: 60000, // 1 minute cache
+        }
+    );
 
-        fetchData();
-    }, [limit, period]);
+    const traders: RisingStar[] = data?.traders || [];
 
-    if (isLoading) {
+    // Show loading spinner only on initial load (no data yet)
+    if (isLoading && !traders.length) {
         return (
             <div className="flex items-center justify-center py-20">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -85,18 +79,18 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
     if (error) {
         return (
             <div className="p-8 text-center text-muted-foreground">
-                <p>{error}</p>
+                <p>{t('errorLoad')}</p>
                 <button
-                    onClick={() => window.location.reload()}
-                    className="mt-4 text-blue-500 hover:text-blue-400"
+                    onClick={() => mutate()}
+                    className="mt-4 text-blue-500 hover:text-blue-400 inline-flex items-center gap-2"
                 >
-                    {t('retry')}
+                    <RefreshCcw className="h-4 w-4" /> {t('retry')}
                 </button>
             </div>
         );
     }
 
-    if (traders.length === 0) {
+    if (!isLoading && traders.length === 0) {
         return (
             <div className="p-8 text-center text-muted-foreground">
                 {t('noActive')}
