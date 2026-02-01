@@ -169,7 +169,7 @@ export const affiliateApi = {
 
 // Helper to generate referral link
 export function generateReferralLink(referralCode: string): string {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://polyhunter.com';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.horus.vip';
     return `${baseUrl}?ref=${referralCode}`;
 }
 
