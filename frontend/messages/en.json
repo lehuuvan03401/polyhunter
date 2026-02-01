@@ -664,5 +664,69 @@
             "SUPER": "Super Partner",
             "SUPER_PARTNER": "Super Partner"
         }
+    },
+    "AffiliateRules": {
+        "title": "Affiliate Program Rules",
+        "backToDashboard": "Back to Dashboard",
+        "tierSystem": {
+            "title": "Tier System",
+            "subtitle": "Progress through 5 ranks to unlock higher commission rates",
+            "yourRank": "YOUR RANK",
+            "table": {
+                "tier": "Tier",
+                "directs": "Direct Referrals",
+                "team": "Team Size",
+                "diff": "Team Diff %"
+            }
+        },
+        "zeroLine": {
+            "title": "Zero Line (Direct Bonus)",
+            "subtitle": "Earn from your team's trades up to 5 generations deep",
+            "explanation": "When anyone in your team executes a trade, a 0.1% platform fee is collected. You earn a percentage of this fee based on their generation:",
+            "generations": {
+                "1": "Direct Referral",
+                "2": "2nd Generation",
+                "3": "3rd Generation",
+                "4": "4th Generation",
+                "5": "5th Generation"
+            },
+            "example": {
+                "title": "Example Calculation",
+                "volume": "Trade Volume:",
+                "fee": "Platform Fee (0.1%):",
+                "gen1": "Your Gen 1 Commission (25%):",
+                "gen2": "Your Gen 2 Commission (10%):",
+                "gen3": "Your Gen 3 Commission (5%):"
+            }
+        },
+        "sunLine": {
+            "title": "Sun Line (Team Differential)",
+            "subtitle": "Earn extra from the tier difference between you and your downline",
+            "explanation": "When a lower-tier member in your network trades, you earn the <strong className=\"text-white\">difference</strong> between your tier rate and their tier rate. This rewards building a deep team!",
+            "formula": "Sun Line = Fee × (Your Rate - Their Rate)",
+            "example": {
+                "title": "Example:",
+                "you": "You are <strong className=\"text-purple-400\">ELITE (3%)</strong>",
+                "downline": "Downline member is <strong className=\"text-blue-400\">VIP (2%)</strong>",
+                "fee": "Platform Fee:",
+                "diff": "Differential:",
+                "bonus": "Your Sun Line Bonus:"
+            }
+        },
+        "faq": {
+            "title": "Frequently Asked Questions",
+            "subtitle": "Common questions about the affiliate program",
+            "q1": "How do I upgrade my tier?",
+            "a1": "Your tier upgrades automatically when you meet the requirements. You need a certain number of direct referrals AND total team members. For example, to reach VIP you need 3 direct referrals and 10 total team members.",
+            "q2": "When do I receive my commissions?",
+            "a2": "Commissions are credited instantly when your team members execute trades. They are added to your \"Pending Payout\" balance and can be withdrawn at any time.",
+            "q3": "What is a \"Sun Line\" / Strong Leg?",
+            "a3": "A Sun Line (Strong Leg) is a direct referral who has built their own active team. Having multiple Sun Lines indicates a healthy, distributed network and is key to maximizing Team Differential earnings.",
+            "q4": "How do I withdraw my earnings?",
+            "a4": "Go to your Affiliate Dashboard, click the \"Withdraw\" button next to Total Earnings, sign the transaction with your wallet, and your USDC will be sent to your wallet address.",
+            "q5": "What is the difference between Zero Line and Sun Line?",
+            "a5": "Zero Line is your direct commission from team trades (25% Gen1, 10% Gen2, etc.). Sun Line (Team Differential) is the bonus you earn from the difference between your tier rate and lower-tier members in your downline."
+        },
+        "returnToDashboard": "Return to Dashboard"
     }
 }

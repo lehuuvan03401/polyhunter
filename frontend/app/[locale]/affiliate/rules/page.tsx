@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -73,35 +74,12 @@ const TIERS = [
     },
 ];
 
-const ZERO_LINE_RATES = [
-    { gen: 1, rate: 25, label: 'Direct Referral' },
-    { gen: 2, rate: 10, label: '2nd Generation' },
-    { gen: 3, rate: 5, label: '3rd Generation' },
-    { gen: 4, rate: 3, label: '4th Generation' },
-    { gen: 5, rate: 2, label: '5th Generation' },
-];
-
-const FAQ_ITEMS = [
-    {
-        question: 'How do I upgrade my tier?',
-        answer: 'Your tier upgrades automatically when you meet the requirements. You need a certain number of direct referrals AND total team members. For example, to reach VIP you need 3 direct referrals and 10 total team members.'
-    },
-    {
-        question: 'When do I receive my commissions?',
-        answer: 'Commissions are credited instantly when your team members execute trades. They are added to your "Pending Payout" balance and can be withdrawn at any time.'
-    },
-    {
-        question: 'What is a "Sun Line" / Strong Leg?',
-        answer: 'A Sun Line (Strong Leg) is a direct referral who has built their own active team. Having multiple Sun Lines indicates a healthy, distributed network and is key to maximizing Team Differential earnings.'
-    },
-    {
-        question: 'How do I withdraw my earnings?',
-        answer: 'Go to your Affiliate Dashboard, click the "Withdraw" button next to Total Earnings, sign the transaction with your wallet, and your USDC will be sent to your wallet address.'
-    },
-    {
-        question: 'What is the difference between Zero Line and Sun Line?',
-        answer: 'Zero Line is your direct commission from team trades (25% Gen1, 10% Gen2, etc.). Sun Line (Team Differential) is the bonus you earn from the difference between your tier rate and lower-tier members in your downline.'
-    },
+const ZERO_LINE_RATES_DATA = [
+    { gen: 1, rate: 25 },
+    { gen: 2, rate: 10 },
+    { gen: 3, rate: 5 },
+    { gen: 4, rate: 3 },
+    { gen: 5, rate: 2 },
 ];
 
 function FAQItem({ question, answer }: { question: string; answer: string }) {
@@ -131,6 +109,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
 
 export default function AffiliateRulesPage() {
     const { user } = usePrivy();
+    const t = useTranslations('AffiliateRules');
     const [currentTier, setCurrentTier] = useState<string>('ORDINARY');
 
     // Fetch user's current tier
@@ -155,11 +134,11 @@ export default function AffiliateRulesPage() {
                         className="flex items-center gap-2 text-muted-foreground hover:text-white transition-colors"
                     >
                         <ArrowLeft className="h-4 w-4" />
-                        <span>Back to Dashboard</span>
+                        <span>{t('backToDashboard')}</span>
                     </Link>
                     <h1 className="text-lg font-semibold flex items-center gap-2">
                         <HelpCircle className="h-5 w-5 text-blue-400" />
-                        Affiliate Program Rules
+                        {t('title')}
                     </h1>
                 </div>
             </div>
@@ -173,8 +152,8 @@ export default function AffiliateRulesPage() {
                             <Trophy className="h-5 w-5 text-yellow-400" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold">Tier System</h2>
-                            <p className="text-sm text-muted-foreground">Progress through 5 ranks to unlock higher commission rates</p>
+                            <h2 className="text-xl font-bold">{t('tierSystem.title')}</h2>
+                            <p className="text-sm text-muted-foreground">{t('tierSystem.subtitle')}</p>
                         </div>
                     </div>
 
@@ -203,7 +182,7 @@ export default function AffiliateRulesPage() {
                                         </span>
                                         {isCurrent && (
                                             <span className="text-[10px] text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
-                                                YOUR RANK
+                                                {t('tierSystem.yourRank')}
                                             </span>
                                         )}
                                     </div>
@@ -223,10 +202,10 @@ export default function AffiliateRulesPage() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-white/10 text-muted-foreground">
-                                    <th className="text-left py-3 px-4 font-medium">Tier</th>
-                                    <th className="text-center py-3 px-4 font-medium">Direct Referrals</th>
-                                    <th className="text-center py-3 px-4 font-medium">Team Size</th>
-                                    <th className="text-center py-3 px-4 font-medium text-yellow-400">Team Diff %</th>
+                                    <th className="text-left py-3 px-4 font-medium">{t('tierSystem.table.tier')}</th>
+                                    <th className="text-center py-3 px-4 font-medium">{t('tierSystem.table.directs')}</th>
+                                    <th className="text-center py-3 px-4 font-medium">{t('tierSystem.table.team')}</th>
+                                    <th className="text-center py-3 px-4 font-medium text-yellow-400">{t('tierSystem.table.diff')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -267,8 +246,8 @@ export default function AffiliateRulesPage() {
                             <Zap className="h-5 w-5 text-green-400" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold">Zero Line (Direct Bonus)</h2>
-                            <p className="text-sm text-muted-foreground">Earn from your team&apos;s trades up to 5 generations deep</p>
+                            <h2 className="text-xl font-bold">{t('zeroLine.title')}</h2>
+                            <p className="text-sm text-muted-foreground">{t('zeroLine.subtitle')}</p>
                         </div>
                     </div>
 
@@ -276,10 +255,9 @@ export default function AffiliateRulesPage() {
                         {/* Rate Table */}
                         <div className="space-y-3">
                             <p className="text-sm text-muted-foreground mb-4">
-                                When anyone in your team executes a trade, a 0.1% platform fee is collected.
-                                You earn a percentage of this fee based on their generation:
+                                {t('zeroLine.explanation')}
                             </p>
-                            {ZERO_LINE_RATES.map((item) => (
+                            {ZERO_LINE_RATES_DATA.map((item) => (
                                 <div
                                     key={item.gen}
                                     className="flex items-center justify-between p-3 bg-white/5 rounded-lg"
@@ -288,7 +266,7 @@ export default function AffiliateRulesPage() {
                                         <div className="h-8 w-8 rounded-full bg-green-500/10 flex items-center justify-center text-green-400 font-bold text-sm">
                                             G{item.gen}
                                         </div>
-                                        <span className="text-sm">{item.label}</span>
+                                        <span className="text-sm">{t(`zeroLine.generations.${item.gen}`)}</span>
                                     </div>
                                     <span className="text-green-400 font-mono font-bold">{item.rate}%</span>
                                 </div>
@@ -299,28 +277,28 @@ export default function AffiliateRulesPage() {
                         <div className="bg-gradient-to-br from-green-500/5 to-green-500/0 border border-green-500/20 rounded-xl p-5">
                             <h3 className="font-semibold text-green-400 mb-4 flex items-center gap-2">
                                 <TrendingUp className="h-4 w-4" />
-                                Example Calculation
+                                {t('zeroLine.example.title')}
                             </h3>
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Trade Volume:</span>
+                                    <span className="text-muted-foreground">{t('zeroLine.example.volume')}</span>
                                     <span className="font-mono">$10,000</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Platform Fee (0.1%):</span>
+                                    <span className="text-muted-foreground">{t('zeroLine.example.fee')}</span>
                                     <span className="font-mono">$10.00</span>
                                 </div>
                                 <div className="h-px bg-white/10 my-2" />
                                 <div className="flex justify-between text-green-400">
-                                    <span>Your Gen 1 Commission (25%):</span>
+                                    <span>{t('zeroLine.example.gen1')}</span>
                                     <span className="font-mono font-bold">$2.50</span>
                                 </div>
                                 <div className="flex justify-between text-green-400/70">
-                                    <span>Your Gen 2 Commission (10%):</span>
+                                    <span>{t('zeroLine.example.gen2')}</span>
                                     <span className="font-mono">$1.00</span>
                                 </div>
                                 <div className="flex justify-between text-green-400/50">
-                                    <span>Your Gen 3 Commission (5%):</span>
+                                    <span>{t('zeroLine.example.gen3')}</span>
                                     <span className="font-mono">$0.50</span>
                                 </div>
                             </div>
@@ -335,46 +313,43 @@ export default function AffiliateRulesPage() {
                             <Sun className="h-5 w-5 text-yellow-400" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold">Sun Line (Team Differential)</h2>
-                            <p className="text-sm text-muted-foreground">Earn extra from the tier difference between you and your downline</p>
+                            <h2 className="text-xl font-bold">{t('sunLine.title')}</h2>
+                            <p className="text-sm text-muted-foreground">{t('sunLine.subtitle')}</p>
                         </div>
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-6">
                         <div className="space-y-4">
-                            <p className="text-sm text-muted-foreground">
-                                When a lower-tier member in your network trades, you earn the <strong className="text-white">difference</strong> between
-                                your tier rate and their tier rate. This rewards building a deep team!
-                            </p>
+                            <p className="text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: t.raw('sunLine.explanation') }} />
 
                             <div className="bg-white/5 rounded-lg p-4 space-y-2">
                                 <div className="text-sm font-medium text-yellow-400">Formula:</div>
                                 <code className="block bg-black/50 rounded px-3 py-2 text-sm font-mono">
-                                    Sun Line = Fee × (Your Rate - Their Rate)
+                                    {t('sunLine.formula')}
                                 </code>
                             </div>
                         </div>
 
                         <div className="bg-gradient-to-br from-yellow-500/5 to-yellow-500/0 border border-yellow-500/20 rounded-xl p-5">
-                            <h3 className="font-semibold text-yellow-400 mb-4">Example:</h3>
+                            <h3 className="font-semibold text-yellow-400 mb-4">{t('sunLine.example.title')}</h3>
                             <div className="space-y-2 text-sm">
                                 <div className="flex items-center gap-2">
                                     <Crown className="h-4 w-4 text-purple-400" />
-                                    <span>You are <strong className="text-purple-400">ELITE (3%)</strong></span>
+                                    <span dangerouslySetInnerHTML={{ __html: t.raw('sunLine.example.you') }} />
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <Star className="h-4 w-4 text-blue-400" />
-                                    <span>Downline member is <strong className="text-blue-400">VIP (2%)</strong></span>
+                                    <span dangerouslySetInnerHTML={{ __html: t.raw('sunLine.example.downline') }} />
                                 </div>
                                 <div className="h-px bg-white/10 my-3" />
                                 <div className="text-muted-foreground">
-                                    Platform Fee: <span className="font-mono">$10</span>
+                                    {t('sunLine.example.fee')} <span className="font-mono">$10</span>
                                 </div>
                                 <div className="text-muted-foreground">
-                                    Differential: <span className="font-mono">3% - 2% = 1%</span>
+                                    {t('sunLine.example.diff')} <span className="font-mono">3% - 2% = 1%</span>
                                 </div>
                                 <div className="text-yellow-400 font-semibold mt-2">
-                                    Your Sun Line Bonus: <span className="font-mono">$10 × 1% = $0.10</span>
+                                    {t('sunLine.example.bonus')} <span className="font-mono">$10 × 1% = $0.10</span>
                                 </div>
                             </div>
                         </div>
@@ -388,14 +363,18 @@ export default function AffiliateRulesPage() {
                             <HelpCircle className="h-5 w-5 text-blue-400" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold">Frequently Asked Questions</h2>
-                            <p className="text-sm text-muted-foreground">Common questions about the affiliate program</p>
+                            <h2 className="text-xl font-bold">{t('faq.title')}</h2>
+                            <p className="text-sm text-muted-foreground">{t('faq.subtitle')}</p>
                         </div>
                     </div>
 
                     <div className="space-y-3">
-                        {FAQ_ITEMS.map((item, idx) => (
-                            <FAQItem key={idx} question={item.question} answer={item.answer} />
+                        {[1, 2, 3, 4, 5].map((i) => (
+                            <FAQItem
+                                key={i}
+                                question={t(`faq.q${i}`)}
+                                answer={t(`faq.a${i}`)}
+                            />
                         ))}
                     </div>
                 </section>
@@ -407,7 +386,7 @@ export default function AffiliateRulesPage() {
                         className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-medium transition-colors"
                     >
                         <ArrowLeft className="h-4 w-4" />
-                        Return to Dashboard
+                        {t('returnToDashboard')}
                     </Link>
                 </div>
             </div>
