@@ -164,16 +164,6 @@ async function addProfitableSettlements(metrics: CurrentMetrics, targetGain: num
     const normalizedWallet = FOLLOWER_WALLET.toLowerCase();
     const positions = metrics.positions.filter(p => p.balance > 0);
 
-    if (positions.length === 0) {
-        console.log('⚠️  No positions available to settle');
-        return;
-    }
-
-    const numSettlements = Math.min(Math.ceil(targetGain / 500), positions.length, 10);
-    const profitPerSettlement = targetGain / numSettlements;
-
-    console.log(`🔄 Creating ${numSettlements} profitable settlement records...`);
-
     const config = await prisma.copyTradingConfig.findFirst({
         where: {
             walletAddress: normalizedWallet,
@@ -181,57 +171,133 @@ async function addProfitableSettlements(metrics: CurrentMetrics, targetGain: num
         }
     });
 
-    if (!config) return;
+    if (!config) {
+        console.log('⚠️  No config found');
+        return;
+    }
 
-    for (let i = 0; i < numSettlements && i < positions.length; i++) {
-        const pos = positions[i];
+    let totalProfitAdded = 0;
+    const remainingTarget = targetGain;
 
-        // Get metadata for this token
-        const trade = await prisma.copyTrade.findFirst({
-            where: { tokenId: pos.tokenId },
-            orderBy: { detectedAt: 'desc' }
-        });
+    // Strategy 1: Settle existing positions at profit (with partial settlement support)
+    if (positions.length > 0) {
+        console.log(`🔄 Creating profitable settlement records from ${positions.length} positions...`);
 
-        // Calculate shares needed to achieve target profit
-        const settlementPrice = 1.0;
-        const requiredProceeds = profitPerSettlement + (pos.avgEntryPrice * profitPerSettlement / (settlementPrice - pos.avgEntryPrice));
-        const sharesToSettle = Math.min(requiredProceeds / settlementPrice, pos.balance * 0.5);
+        // Sort positions by potential profit (highest first for efficiency)
+        const sortedPositions = positions
+            .map(pos => ({
+                ...pos,
+                potentialProfit: pos.balance - pos.totalCost // profit if settled at $1
+            }))
+            .filter(p => p.potentialProfit > 0) // Only profitable positions
+            .sort((a, b) => b.potentialProfit - a.potentialProfit);
 
-        const proceeds = sharesToSettle * settlementPrice;
-        const costBasis = sharesToSettle * pos.avgEntryPrice;
-        const actualProfit = proceeds - costBasis;
+        for (const pos of sortedPositions) {
+            const remainingGap = remainingTarget - totalProfitAdded;
+            if (remainingGap <= 5) break; // Close enough to target
+
+            // Get metadata for this token
+            const trade = await prisma.copyTrade.findFirst({
+                where: { tokenId: pos.tokenId },
+                orderBy: { detectedAt: 'desc' }
+            });
+
+            // Calculate profit per share = 1.0 - avgEntryPrice
+            const settlementPrice = 1.0;
+            const profitPerShare = settlementPrice - pos.avgEntryPrice;
+
+            if (profitPerShare <= 0) {
+                console.log(`  ⏭️  Skipping ${trade?.marketSlug || pos.tokenId.substring(0, 20)} (no profit margin)`);
+                continue;
+            }
+
+            // Calculate how many shares to settle to exactly hit the remaining gap
+            const fullProfit = pos.balance * profitPerShare;
+
+            let sharesToSettle: number;
+            let actualProfit: number;
+
+            if (fullProfit <= remainingGap) {
+                // Settle all shares - won't overshoot
+                sharesToSettle = pos.balance;
+                actualProfit = fullProfit;
+            } else {
+                // Partial settlement to hit target exactly
+                sharesToSettle = remainingGap / profitPerShare;
+                actualProfit = remainingGap;
+                console.log(`  📐 Partial settlement: ${sharesToSettle.toFixed(4)} of ${pos.balance.toFixed(4)} shares`);
+            }
+
+            const proceeds = sharesToSettle * settlementPrice;
+            const costBasis = sharesToSettle * pos.avgEntryPrice;
+
+            await prisma.copyTrade.create({
+                data: {
+                    configId: config.id,
+                    originalTrader: 'POLYMARKET_SETTLEMENT',
+                    originalSide: 'REDEEM',
+                    originalSize: sharesToSettle,
+                    originalPrice: settlementPrice,
+                    marketSlug: trade?.marketSlug || 'roi-adjusted-settlement',
+                    conditionId: trade?.conditionId,
+                    tokenId: pos.tokenId,
+                    outcome: trade?.outcome || 'Yes',
+                    copySize: proceeds,
+                    copyPrice: settlementPrice,
+                    status: 'EXECUTED',
+                    executedAt: new Date(),
+                    txHash: `ADJUST-SETTLE-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                    realizedPnL: actualProfit
+                }
+            });
+
+            // Update position (partial or full)
+            await prisma.userPosition.update({
+                where: { id: pos.id },
+                data: {
+                    balance: pos.balance - sharesToSettle,
+                    totalCost: pos.totalCost - costBasis
+                }
+            });
+
+            totalProfitAdded += actualProfit;
+            console.log(`  ✅ Settled ${trade?.marketSlug || pos.tokenId.substring(0, 20)} - Profit: $${actualProfit.toFixed(2)}`);
+        }
+    }
+
+    // Strategy 2: If still not enough, inject direct profit settlements
+    const remainingGap = targetGain - totalProfitAdded;
+    if (remainingGap > 5) {
+        console.log(`\n🔄 Injecting direct profit of $${remainingGap.toFixed(2)} (positions insufficient)...`);
+
+        // Create a synthetic profitable settlement
+        const syntheticProfit = remainingGap;
 
         await prisma.copyTrade.create({
             data: {
                 configId: config.id,
                 originalTrader: 'POLYMARKET_SETTLEMENT',
                 originalSide: 'REDEEM',
-                originalSize: sharesToSettle,
-                originalPrice: settlementPrice,
-                marketSlug: trade?.marketSlug || 'roi-adjusted-settlement',
-                conditionId: trade?.conditionId,
-                tokenId: pos.tokenId,
-                outcome: trade?.outcome || 'Yes',
-                copySize: proceeds,
-                copyPrice: settlementPrice,
+                originalSize: syntheticProfit,
+                originalPrice: 1.0,
+                marketSlug: 'roi-adjustment-synthetic',
+                conditionId: null,
+                tokenId: `synthetic-${Date.now()}`,
+                outcome: 'Yes',
+                copySize: syntheticProfit,
+                copyPrice: 1.0,
                 status: 'EXECUTED',
                 executedAt: new Date(),
-                txHash: `SETTLE-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-                realizedPnL: actualProfit
+                txHash: `ADJUST-SYNTH-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                realizedPnL: syntheticProfit
             }
         });
 
-        // Update position
-        await prisma.userPosition.update({
-            where: { id: pos.id },
-            data: {
-                balance: pos.balance - sharesToSettle,
-                totalCost: pos.totalCost - costBasis
-            }
-        });
-
-        console.log(`  ✅ Created settlement for ${trade?.marketSlug || pos.tokenId.substring(0, 20)} - Profit: $${actualProfit.toFixed(2)}`);
+        totalProfitAdded += syntheticProfit;
+        console.log(`  ✅ Injected synthetic profit: $${syntheticProfit.toFixed(2)}`);
     }
+
+    console.log(`\n📊 Total profit added: $${totalProfitAdded.toFixed(2)}`);
 }
 
 async function reducePnL(metrics: CurrentMetrics, targetReduction: number) {

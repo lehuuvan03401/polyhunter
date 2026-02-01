@@ -975,7 +975,7 @@ async function processRedemptions() {
                                     originalPrice: 0.0,
                                     status: 'EXECUTED',
                                     executedAt: new Date(),
-                                    txHash: 'sim-settle-loss',
+                                    txHash: `${TX_PREFIX}settle-loss-${Date.now()}`,
                                     realizedPnL: profit,
                                     errorMessage: `Realized Loss: $${Math.abs(profit).toFixed(4)}`
                                 }

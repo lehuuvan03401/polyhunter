@@ -425,34 +425,40 @@ function OrderRow({
     const t = useTranslations('Portfolio.orderStatus');
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
+    const normalizedOrderId = order.orderId?.toLowerCase() || '';
     const isSimulation = (() => {
-        const orderId = order.orderId?.toLowerCase() || '';
         // LIVE- prefix means Real mode, not simulation
-        if (orderId.startsWith('live-')) return false;
-        return order.isSim || orderId.startsWith('sim-') || orderId.startsWith('adjust-');
+        if (normalizedOrderId.startsWith('live-')) return false;
+        return order.isSim || normalizedOrderId.startsWith('sim-') || normalizedOrderId.startsWith('adjust-');
     })();
+    const isSettlementOrder = normalizedOrderId.includes('settlement-')
+        || normalizedOrderId.includes('redeem')
+        || normalizedOrderId.includes('settle-loss')
+        || normalizedOrderId.startsWith('adjust-')
+        || order.side === 'REDEEM';
     const leaderShares = order.leaderSize ?? 0;
     const leaderNotional = order.leaderPrice && leaderShares
         ? leaderShares * order.leaderPrice
         : null;
     const copyNotional = order.size;
-    const isSimSettlement = isSimulation && (order.orderId?.startsWith('sim-settle') || order.orderId === 'sim-redeem');
     const copyShares = order.price
         ? (copyNotional / order.price)
-        : (isSimSettlement ? leaderShares : 0);
-    const copyRatio = leaderShares > 0 ? (copyShares / leaderShares) : null;
+        : (isSettlementOrder ? leaderShares : 0);
+    const copyRatio = !isSettlementOrder && leaderShares > 0 ? (copyShares / leaderShares) : null;
     const infoMessage = order.errorMessage && (
         order.errorMessage.startsWith('Realized Loss') ||
         order.errorMessage.startsWith('Redeemed Profit') ||
         order.errorMessage.startsWith('Settlement')
     );
-    const leaderPrefix = isSimSettlement ? 'Pos' : 'L';
-    const leaderLabel = isSimSettlement ? t('details.posSize') : t('details.leaderSize');
-    const settlementType = isSimulation && order.orderId
-        ? (order.orderId.startsWith('sim-redeem') ? 'REDEEM' :
-            order.orderId.startsWith('sim-settle') ? 'SETTLE' :
-                order.orderId.toLowerCase().startsWith('adjust-') ? 'REDEEM' : null)
-        : null;
+    const leaderPrefix = isSettlementOrder ? 'Pos' : 'L';
+    const leaderLabel = isSettlementOrder ? t('details.posSize') : t('details.leaderSize');
+    const settlementType = (() => {
+        if (!isSettlementOrder) return null;
+        if (normalizedOrderId.includes('redeem') || normalizedOrderId.startsWith('adjust-') || order.side === 'REDEEM') {
+            return 'REDEEM';
+        }
+        return 'SETTLE';
+    })();
     const displaySide = settlementType || order.side;
     const sideClass = displaySide === 'BUY' || displaySide === 'REDEEM'
         ? 'bg-green-500/10 text-green-400'
