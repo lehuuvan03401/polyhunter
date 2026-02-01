@@ -472,6 +472,31 @@
             }
         }
     },
+    "TraderProfile": {
+        "backToDiscovery": "返回发现页",
+        "errorTitle": "加载资料错误",
+        "errorDesc": "加载交易员资料失败。请重试。",
+        "copyTrader": "跟单交易员",
+        "copyAddress": "复制格式化地址",
+        "viewOnPolymarket": "在 Polymarket 查看",
+        "stats": {
+            "pnl": "总盈亏",
+            "volume": "交易量",
+            "winRate": "胜率",
+            "trades": "交易次数",
+            "positions": "持仓",
+            "allTime": "(历史累计)"
+        },
+        "shareEarn": "分享赚钱",
+        "activePositions": {
+            "title": "当前持仓",
+            "empty": "该交易员暂无持仓"
+        },
+        "recentTrades": {
+            "title": "近期交易",
+            "empty": "该交易员暂无近期交易"
+        }
+    },
     "Affiliate": {
         "guest": {
             "hero": {

@@ -472,6 +472,31 @@
             }
         }
     },
+    "TraderProfile": {
+        "backToDiscovery": "返回發現頁",
+        "errorTitle": "載入資料錯誤",
+        "errorDesc": "載入交易員資料失敗。請重試。",
+        "copyTrader": "跟單交易員",
+        "copyAddress": "複製格式化地址",
+        "viewOnPolymarket": "在 Polymarket 查看",
+        "stats": {
+            "pnl": "總盈虧",
+            "volume": "交易量",
+            "winRate": "勝率",
+            "trades": "交易次數",
+            "positions": "持倉",
+            "allTime": "(歷史累計)"
+        },
+        "shareEarn": "分享賺錢",
+        "activePositions": {
+            "title": "當前持倉",
+            "empty": "該交易員暫無持倉"
+        },
+        "recentTrades": {
+            "title": "近期交易",
+            "empty": "該交易員暫無近期交易"
+        }
+    },
     "Affiliate": {
         "guest": {
             "hero": {

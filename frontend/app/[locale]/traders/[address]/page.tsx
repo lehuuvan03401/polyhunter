@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 
 // Type definitions for profile data
 interface Position {
@@ -57,6 +58,7 @@ import { CopyTraderModal } from '@/components/copy-trading/copy-trader-modal';
 export default function TraderProfilePage({ params }: { params: Promise<{ address: string }> }) {
     // Unwrap params for Next.js 15+ dynamic routes
     const { address } = React.use(params);
+    const t = useTranslations('TraderProfile');
     const [isCopyModalOpen, setIsCopyModalOpen] = React.useState(false);
 
     // State for dynamic data
@@ -145,7 +147,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
             <div className="min-h-screen bg-background pt-24 pb-20">
                 <div className="container max-w-5xl mx-auto px-4">
                     <Link href="/smart-money" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-white mb-8 transition-colors">
-                        <ChevronLeft className="h-4 w-4" /> Back to Discovery
+                        <ChevronLeft className="h-4 w-4" /> {t('backToDiscovery')}
                     </Link>
 
                     {/* Header Skeleton */}
@@ -208,8 +210,9 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
             <div className="container max-w-5xl mx-auto px-4">
 
                 {/* Back Navigation */}
+                {/* Back Navigation */}
                 <Link href="/smart-money" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-white mb-8 transition-colors">
-                    <ChevronLeft className="h-4 w-4" /> Back to Discovery
+                    <ChevronLeft className="h-4 w-4" /> {t('backToDiscovery')}
                 </Link>
 
                 {/* Error State */}
@@ -217,8 +220,8 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 mb-8 flex items-center gap-4">
                         <AlertCircle className="h-6 w-6 text-red-400" />
                         <div>
-                            <div className="font-medium text-red-400">Error Loading Profile</div>
-                            <div className="text-sm text-muted-foreground">{error}</div>
+                            <div className="font-medium text-red-400">{t('errorTitle')}</div>
+                            <div className="text-sm text-muted-foreground">{t('errorDesc')}</div>
                         </div>
                     </div>
                 )}
@@ -238,7 +241,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                                     <button
                                         onClick={() => navigator.clipboard.writeText(address)}
                                         className="text-muted-foreground hover:text-white transition-colors p-1"
-                                        title="Copy formatted address"
+                                        title={t('copyAddress')}
                                     >
                                         <Copy className="h-4 w-4" />
                                     </button>
@@ -250,7 +253,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                                         rel="noopener noreferrer"
                                         className="flex items-center gap-1 hover:text-blue-400 cursor-pointer transition-colors bg-white/5 px-2 py-1 rounded w-fit"
                                     >
-                                        <ExternalLink className="h-3 w-3" /> View on Polymarket
+                                        <ExternalLink className="h-3 w-3" /> {t('viewOnPolymarket')}
                                     </a>
                                     <span className="font-mono bg-white/5 px-2 py-1 rounded truncate">
                                         {address}
@@ -262,7 +265,7 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                             onClick={() => setIsCopyModalOpen(true)}
                             className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20 whitespace-nowrap flex-shrink-0"
                         >
-                            <Copy className="h-4 w-4" /> Copy Trader
+                            <Copy className="h-4 w-4" /> {t('copyTrader')}
                         </button>
                     </div>
 
@@ -272,31 +275,31 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
                                 <div className={`text-2xl font-bold mb-0.5 ${(profile?.pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                     {(profile?.pnl || 0) >= 0 ? '+' : ''}{formatPnL(profile?.pnl || 0)}
                                 </div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Total PnL <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.pnl')} <span className="text-muted-foreground/50 scale-90 inline-block">{t('stats.allTime')}</span></div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{formatVolume(profile?.volume || 0)}</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Volume <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.volume')} <span className="text-muted-foreground/50 scale-90 inline-block">{t('stats.allTime')}</span></div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{profile?.winRate || 0}%</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Win Rate <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.winRate')} <span className="text-muted-foreground/50 scale-90 inline-block">{t('stats.allTime')}</span></div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">
                                     {formatTrades(profile?.totalTrades || 0)}
                                     {(profile?.totalTrades || 0) <= 20 && (profile?.volume || 0) > 10000 && <span className="text-sm text-muted-foreground align-top ml-0.5">+</span>}
                                 </div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Trades <span className="text-muted-foreground/50 scale-90 inline-block">(All Time)</span></div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.trades')} <span className="text-muted-foreground/50 scale-90 inline-block">{t('stats.allTime')}</span></div>
                             </div>
                             <div>
                                 <div className="text-2xl font-bold text-white mb-0.5">{profile?.positionCount || positions.length}</div>
-                                <div className="text-xs text-muted-foreground uppercase tracking-wider">Positions</div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-wider">{t('stats.positions')}</div>
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
                             <button className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white transition-colors">
-                                <Share2 className="h-3.5 w-3.5" /> Share & Earn
+                                <Share2 className="h-3.5 w-3.5" /> {t('shareEarn')}
                             </button>
                         </div>
                     </div>
@@ -304,11 +307,11 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
 
                 {/* Active Positions */}
                 <div className="mb-10">
-                    <h2 className="text-lg font-bold text-muted-foreground mb-4">Active Positions</h2>
+                    <h2 className="text-lg font-bold text-muted-foreground mb-4">{t('activePositions.title')}</h2>
                     {positions.length === 0 ? (
                         <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-8 text-center">
                             <Wallet className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                            <div className="text-sm text-muted-foreground">No active positions found for this trader</div>
+                            <div className="text-sm text-muted-foreground">{t('activePositions.empty')}</div>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -331,11 +334,11 @@ export default function TraderProfilePage({ params }: { params: Promise<{ addres
 
                 {/* Recent Trades */}
                 <div>
-                    <h2 className="text-lg font-bold text-muted-foreground mb-4">Recent Trades</h2>
+                    <h2 className="text-lg font-bold text-muted-foreground mb-4">{t('recentTrades.title')}</h2>
                     {trades.length === 0 ? (
                         <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl p-8 text-center">
                             <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                            <div className="text-sm text-muted-foreground">No recent trades found for this trader</div>
+                            <div className="text-sm text-muted-foreground">{t('recentTrades.empty')}</div>
                         </div>
                     ) : (
                         <div className="space-y-3">

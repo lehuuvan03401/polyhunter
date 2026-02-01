@@ -472,6 +472,31 @@
             }
         }
     },
+    "TraderProfile": {
+        "backToDiscovery": "Back to Discovery",
+        "errorTitle": "Error Loading Profile",
+        "errorDesc": "Failed to load trader profile. Please try again.",
+        "copyTrader": "Copy Trader",
+        "copyAddress": "Copy formatted address",
+        "viewOnPolymarket": "View on Polymarket",
+        "stats": {
+            "pnl": "Total PnL",
+            "volume": "Volume",
+            "winRate": "Win Rate",
+            "trades": "Trades",
+            "positions": "Positions",
+            "allTime": "(All Time)"
+        },
+        "shareEarn": "Share & Earn",
+        "activePositions": {
+            "title": "Active Positions",
+            "empty": "No active positions found for this trader"
+        },
+        "recentTrades": {
+            "title": "Recent Trades",
+            "empty": "No recent trades found for this trader"
+        }
+    },
     "Affiliate": {
         "guest": {
             "hero": {
