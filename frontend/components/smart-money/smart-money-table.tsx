@@ -1,30 +1,21 @@
 'use client';
 
-import { polyClient } from '@/lib/polymarket';
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import Link from 'next/link';
 import { AlertCircle, RefreshCcw, Wallet, Loader2 } from 'lucide-react';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { TableSkeleton } from './table-skeleton';
 import { useTranslations } from 'next-intl';
+import useSWR from 'swr';
 
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 5;
 
-async function fetchSmartMoneyData(page: number): Promise<{ data: SmartMoneyWallet[] | null; error: string | null }> {
-    try {
-        const response = await fetch(`/api/traders/smart-money?page=${page}&limit=${ITEMS_PER_PAGE}`);
-        if (!response.ok) throw new Error('Failed to fetch');
-
-        const result = await response.json();
-        return { data: result.traders, error: null };
-    } catch (e) {
-        console.error("Smart Money fetch failed", e);
-        return { data: null, error: "Failed to load trader data. Please try again." };
-    }
-}
+const fetcher = (url: string) => fetch(url).then((res) => {
+    if (!res.ok) throw new Error('Failed to fetch');
+    return res.json();
+});
 
 interface SmartMoneyTableProps {
     currentPage: number;
@@ -34,26 +25,24 @@ interface SmartMoneyTableProps {
 export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTableProps) {
     const t = useTranslations('SmartMoney.table');
     const { authenticated, login, ready, isLoggingIn } = usePrivyLogin();
-    const [data, setData] = useState<SmartMoneyWallet[] | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
-        const loadData = async () => {
-            setIsLoading(true);
-            const result = await fetchSmartMoneyData(currentPage);
-            setData(result.data);
-            setError(result.error);
-            setIsLoading(false);
-        };
-        loadData();
-    }, [currentPage]);
+    // Use SWR for caching and "keepPreviousData" behavior
+    const { data: result, error, isLoading, mutate } = useSWR(
+        `/api/traders/smart-money?page=${currentPage}&limit=${ITEMS_PER_PAGE}`,
+        fetcher,
+        {
+            keepPreviousData: true, // Show previous page data while loading new page
+            revalidateOnFocus: false, // Don't revalidate aggressively on window focus
+            dedupingInterval: 60000, // Cache for 1 minute
+        }
+    );
 
-    if (isLoading) {
+    const smartMoneyList: SmartMoneyWallet[] | undefined = result?.traders;
+
+    // Show skeleton only on initial load (no data yet)
+    if (isLoading && !smartMoneyList) {
         return <TableSkeleton />;
     }
-
-    const smartMoneyList = data;
 
     // Pagination logic
     const hasNextPage = (smartMoneyList?.length || 0) === ITEMS_PER_PAGE && currentPage < MAX_PAGES;
@@ -70,7 +59,7 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                     <p className="text-muted-foreground text-sm max-w-md">{t('errorDesc')}</p>
                 </div>
                 <button
-                    onClick={() => { setIsLoading(true); setError(null); }} // Simple retry logic
+                    onClick={() => mutate()} // Retry by re-triggering SWR
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors"
                 >
                     <RefreshCcw className="h-4 w-4" /> {t('retry')}
@@ -80,6 +69,8 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
     }
 
     if (!smartMoneyList || smartMoneyList.length === 0) {
+        if (isLoading) return <TableSkeleton />; // Fallback if somehow loading but no data
+
         return (
             <div className="flex flex-col items-center justify-center py-16 text-center">
                 <p className="text-muted-foreground">{t('noTraders')}</p>
