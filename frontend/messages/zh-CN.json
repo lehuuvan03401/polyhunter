@@ -228,6 +228,14 @@
         "createDesc": "创建一个专用的智能钱包以启用跟单交易。",
         "createBtn": "创建智能钱包",
         "profit": "利润：",
+        "deposit": {
+            "title": "存入 USDC",
+            "desc": "将 USDC 从您的钱包转移到您的交易代理"
+        },
+        "withdraw": {
+            "title": "提取 USDC",
+            "desc": "将资金从您的代理提取回您的钱包"
+        },
         "tabs": {
             "deposit": "存款",
             "withdraw": "提款",
@@ -243,7 +251,60 @@
         "withdrawBtn": "提取资金",
         "botAuth": "机器人授权",
         "botAuthDesc": "授权平台机器人代表您执行交易。",
-        "authBtn": "授权机器人"
+        "authBtn": "授权机器人",
+        "lowBalance": {
+            "title": "钱包余额不足",
+            "desc": "您的钱包中没有足够的 USDC 来完成此存款。",
+            "buy": "购买 USDC"
+        },
+        "settings": {
+            "title": "机器人授权",
+            "revoke": {
+                "title": "撤销授权？",
+                "activeWarning": "检测到活跃交易",
+                "activeDesc": "您有 {count} 个活跃的跟单交易。撤销访问权限将立即<strong>停止所有未来的交易</strong>。",
+                "confirm": "您确定吗？稍后可以使用下方的开关重新启用。",
+                "cancel": "取消",
+                "action": "撤销访问权限"
+            },
+            "authorized": {
+                "title": "Horus 执行机器人已激活",
+                "desc": "您的代理已授权进行自动跟单交易。",
+                "nonCustodial": "非托管",
+                "nonCustodialDesc": "机器人只能代表您执行交易。它<strong>不能</strong>提取资金或转移资产。",
+                "highSpeed": "高速",
+                "highSpeedDesc": "在目标交易者交易后 <50ms 内执行跟单交易，确保您获得最佳入场价格。",
+                "fullControl": "完全控制",
+                "fullControlDesc": "您可以随时撤销授权。您拥有资金和密钥的 100% 所有权。",
+                "revoke": "撤销授权",
+                "advanced": "高级设置",
+                "hideAdvanced": "隐藏高级设置"
+            },
+            "unauthorized": {
+                "title": "启用跟单交易",
+                "desc": "一键授权 Horus 机器人。"
+            },
+            "strategies": {
+                "title": "策略配置文件",
+                "badge": "适用于所有活跃机器人",
+                "empty": "开始跟随交易者以配置策略参数。"
+            },
+            "executor": {
+                "label": "执行者地址",
+                "useDefault": "使用默认",
+                "custom": "自定义地址"
+            },
+            "authAction": {
+                "authorize": "授权机器人",
+                "update": "更新授权",
+                "processing": "处理中..."
+            }
+        },
+        "pendingFees": {
+            "title": "待处理费用",
+            "desc": "准备结算的绩效费用",
+            "action": "结算待处理费用"
+        }
     },
     "Portfolio": {
         "page": {
@@ -797,5 +858,58 @@
             "a5": "零线是您从团队交易中获得的直接佣金（第 1 代 25%，第 2 代 10% 等）。太阳线（团队级差）是您从您的等级费率与下线低等级成员之间的差额中赚取的奖金。"
         },
         "returnToDashboard": "返回仪表板"
+    },
+    "ProxyDashboard": {
+        "title": "交易代理",
+        "subtitle": "您的非托管交易钱包，盈利时自动扣除费用。",
+        "tiers": {
+            "STARTER": "入门版",
+            "PRO": "专业版",
+            "WHALE": "巨鲸版"
+        },
+        "status": {
+            "pending": "交易处理中...",
+            "confirm": "请在钱包中确认...",
+            "checkWallet": "请查看 MetaMask 弹窗并签署交易。",
+            "viewExplorer": "在 PolygonScan 查看 (或本地日志)"
+        },
+        "error": {
+            "dismiss": "忽略"
+        },
+        "create": {
+            "title": "创建您的交易代理",
+            "desc": "交易代理是一个智能合约钱包，当您在 Polymarket 上进行盈利交易时，它会自动处理费用收取。",
+            "howItWorks": "它是如何工作的：",
+            "steps": {
+                "1": "将 USDC 存入您的代理钱包",
+                "2": "通过您的代理在 Polymarket 上交易",
+                "3": "提现时，仅从利润中扣除费用"
+            },
+            "button": "创建交易代理",
+            "creating": "创建中..."
+        },
+        "dashboard": {
+            "yourProxy": "您的交易代理",
+            "copy": "地址已复制到剪贴板",
+            "viewExplorer": "在浏览器查看"
+        },
+        "stats": {
+            "balance": "代理余额",
+            "profit": "总利润",
+            "fees": "已付费用",
+            "wallet": "钱包 USDC"
+        },
+        "upgrade": {
+            "title": "升级您的等级",
+            "desc": "将您的费用降低至 {fee} ({tier})",
+            "button": "查看计划"
+        },
+        "history": {
+            "title": "交易历史"
+        },
+        "connect": {
+            "title": "连接钱包",
+            "desc": "请连接您的钱包以访问代理仪表板。"
+        }
     }
 }

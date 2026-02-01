@@ -18,7 +18,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Hardhat default account #0 as fallback
-const DEFAULT_WALLET = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'.toLowerCase();
+const DEFAULT_WALLET = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'.toLowerCase();
 
 // Get wallet from command line arg or use default
 const args = process.argv.slice(2);

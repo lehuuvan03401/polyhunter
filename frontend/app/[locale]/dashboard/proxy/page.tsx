@@ -6,18 +6,13 @@ import Link from 'next/link';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { ProxyActionCenter } from '@/components/proxy/proxy-action-center';
 import { TransactionHistoryTable } from '@/components/proxy/transaction-history-table';
-import { FundingStatusPanel } from '@/components/copy-trading/funding-status-panel';
 import { Copy, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-
-const TIER_INFO = {
-    STARTER: { name: 'Starter', fee: '10%', color: 'text-gray-400', bgColor: 'bg-gray-800' },
-    PRO: { name: 'Pro', fee: '5%', color: 'text-blue-400', bgColor: 'bg-blue-900/30' },
-    WHALE: { name: 'Whale', fee: '2%', color: 'text-purple-400', bgColor: 'bg-purple-900/30' },
-};
+import { useTranslations } from 'next-intl';
 
 export default function ProxyDashboardPage() {
-    const { authenticated, ready, user } = usePrivy();
+    const t = useTranslations('ProxyDashboard');
+    const { authenticated, ready } = usePrivy();
     const {
         proxyAddress,
         hasProxy,
@@ -37,6 +32,12 @@ export default function ProxyDashboardPage() {
     const handleActionSuccess = async () => {
         await refreshStats();
         setRefreshTrigger(prev => prev + 1);
+    };
+
+    const TIER_INFO = {
+        STARTER: { name: t('tiers.STARTER'), fee: '10%', color: 'text-gray-400', bgColor: 'bg-gray-800' },
+        PRO: { name: t('tiers.PRO'), fee: '5%', color: 'text-blue-400', bgColor: 'bg-blue-900/30' },
+        WHALE: { name: t('tiers.WHALE'), fee: '2%', color: 'text-purple-400', bgColor: 'bg-purple-900/30' },
     };
 
     // Determine tier from fee percent
@@ -70,8 +71,8 @@ export default function ProxyDashboardPage() {
         return (
             <div className="min-h-screen bg-gray-950 flex items-center justify-center">
                 <div className="text-center">
-                    <h2 className="text-2xl font-bold text-white mb-4">Connect Wallet</h2>
-                    <p className="text-gray-400">Please connect your wallet to access the proxy dashboard.</p>
+                    <h2 className="text-2xl font-bold text-white mb-4">{t('connect.title')}</h2>
+                    <p className="text-gray-400">{t('connect.desc')}</p>
                 </div>
             </div>
         );
@@ -82,9 +83,9 @@ export default function ProxyDashboardPage() {
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-white mb-2">Trading Proxy</h1>
+                    <h1 className="text-3xl font-bold text-white mb-2">{t('title')}</h1>
                     <p className="text-gray-400">
-                        Your non-custodial trading wallet with automatic fee collection on profits.
+                        {t('subtitle')}
                     </p>
                 </div>
 
@@ -94,11 +95,11 @@ export default function ProxyDashboardPage() {
                         <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-blue-500" />
                         <div>
                             <p className="text-blue-400 font-medium">
-                                {txHash ? 'Transaction Pending...' : 'Please confirm in your wallet...'}
+                                {txHash ? t('status.pending') : t('status.confirm')}
                             </p>
                             {!txHash && (
                                 <p className="text-blue-300/70 text-sm">
-                                    Check your MetaMask popup to sign the transaction.
+                                    {t('status.checkWallet')}
                                 </p>
                             )}
                             {txHash && (
@@ -108,7 +109,7 @@ export default function ProxyDashboardPage() {
                                     rel="noopener noreferrer"
                                     className="text-blue-300 text-sm hover:underline"
                                 >
-                                    View on PolygonScan (or Localhost logs)
+                                    {t('status.viewExplorer')}
                                 </a>
                             )}
                         </div>
@@ -123,7 +124,7 @@ export default function ProxyDashboardPage() {
                             onClick={() => setActionError(null)}
                             className="mt-2 text-sm text-red-300 hover:text-red-200 underline"
                         >
-                            Dismiss
+                            {t('error.dismiss')}
                         </button>
                     </div>
                 )}
@@ -140,23 +141,22 @@ export default function ProxyDashboardPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                             </svg>
                         </div>
-                        <h2 className="text-xl font-bold text-white mb-3">Create Your Trading Proxy</h2>
+                        <h2 className="text-xl font-bold text-white mb-3">{t('create.title')}</h2>
                         <p className="text-gray-400 mb-6 max-w-md mx-auto">
-                            A trading proxy is a smart contract wallet that automatically handles fee collection
-                            when you make profitable trades on Polymarket.
+                            {t('create.desc')}
                         </p>
 
                         <div className="bg-gray-800/50 rounded-lg p-4 mb-6 max-w-md mx-auto text-left">
-                            <h3 className="text-sm font-semibold text-white mb-2">How it works:</h3>
+                            <h3 className="text-sm font-semibold text-white mb-2">{t('create.howItWorks')}</h3>
                             <ul className="text-sm text-gray-400 space-y-2">
                                 <li className="flex items-start gap-2">
-                                    <span className="text-green-400">1.</span> Deposit USDC into your proxy wallet
+                                    <span className="text-green-400">1.</span> {t('create.steps.1')}
                                 </li>
                                 <li className="flex items-start gap-2">
-                                    <span className="text-green-400">2.</span> Trade on Polymarket through your proxy
+                                    <span className="text-green-400">2.</span> {t('create.steps.2')}
                                 </li>
                                 <li className="flex items-start gap-2">
-                                    <span className="text-green-400">3.</span> On withdrawal, fee is deducted from profits only
+                                    <span className="text-green-400">3.</span> {t('create.steps.3')}
                                 </li>
                             </ul>
                         </div>
@@ -177,10 +177,10 @@ export default function ProxyDashboardPage() {
                             {txPending ? (
                                 <span className="flex items-center gap-2">
                                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white" />
-                                    Creating...
+                                    {t('create.creating')}
                                 </span>
                             ) : (
-                                'Create Trading Proxy'
+                                t('create.button')
                             )}
                         </button>
                     </div>
@@ -191,7 +191,7 @@ export default function ProxyDashboardPage() {
                         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <div>
-                                    <h2 className="text-xl font-bold text-white">Your Trading Proxy</h2>
+                                    <h2 className="text-xl font-bold text-white">{t('dashboard.yourProxy')}</h2>
                                     <div className="flex items-center gap-2 mt-1">
                                         <p className="text-gray-400 text-sm font-mono bg-gray-950/50 px-2 py-1 rounded select-all">
                                             {proxyAddress}
@@ -200,7 +200,7 @@ export default function ProxyDashboardPage() {
                                             onClick={() => {
                                                 if (proxyAddress) {
                                                     navigator.clipboard.writeText(proxyAddress);
-                                                    toast.success('Address copied to clipboard');
+                                                    toast.success(t('dashboard.copy'));
                                                 }
                                             }}
                                             className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-500 hover:text-white transition-colors"
@@ -213,7 +213,7 @@ export default function ProxyDashboardPage() {
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-500 hover:text-white transition-colors"
-                                            title="View on Explorer"
+                                            title={t('dashboard.viewExplorer')}
                                         >
                                             <ExternalLink className="w-4 h-4" />
                                         </a>
@@ -229,25 +229,25 @@ export default function ProxyDashboardPage() {
                             {/* Stats Grid */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div className="bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-gray-400 text-sm mb-1">Proxy Balance</p>
+                                    <p className="text-gray-400 text-sm mb-1">{t('stats.balance')}</p>
                                     <p className="text-xl font-bold text-white">
                                         ${stats?.balance.toLocaleString() || '0'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-gray-400 text-sm mb-1">Total Profit</p>
+                                    <p className="text-gray-400 text-sm mb-1">{t('stats.profit')}</p>
                                     <p className={`text-xl font-bold ${(stats?.profit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                         ${stats?.profit.toLocaleString() || '0'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-gray-400 text-sm mb-1">Fees Paid</p>
+                                    <p className="text-gray-400 text-sm mb-1">{t('stats.fees')}</p>
                                     <p className="text-xl font-bold text-yellow-400">
                                         ${stats?.feesPaid.toLocaleString() || '0'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-800/50 rounded-lg p-4">
-                                    <p className="text-gray-400 text-sm mb-1">Wallet USDC</p>
+                                    <p className="text-gray-400 text-sm mb-1">{t('stats.wallet')}</p>
                                     <p className="text-xl font-bold text-white">
                                         ${usdcBalance.toLocaleString()}
                                     </p>
@@ -255,29 +255,25 @@ export default function ProxyDashboardPage() {
                             </div>
                         </div>
 
-                        {/* Funding Status Panel - Temporarily Hidden */}
-                        {/* {user?.wallet?.address && (
-                            <div className="w-full max-w-2xl">
-                                <FundingStatusPanel walletAddress={user.wallet.address} />
-                            </div>
-                        )} */}
-
                         <ProxyActionCenter onSuccess={handleActionSuccess} />
 
                         {/* Upgrade CTA */}
                         {currentTier !== 'WHALE' && (
                             <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-xl p-6 flex items-center justify-between">
                                 <div>
-                                    <h3 className="text-lg font-bold text-white mb-1">Upgrade Your Tier</h3>
+                                    <h3 className="text-lg font-bold text-white mb-1">{t('upgrade.title')}</h3>
                                     <p className="text-gray-400 text-sm">
-                                        Reduce your fee to {currentTier === 'STARTER' ? '5% (Pro)' : '2% (Whale)'}
+                                        {t('upgrade.desc', {
+                                            fee: currentTier === 'STARTER' ? '5%' : '2%',
+                                            tier: currentTier === 'STARTER' ? 'Pro' : 'Whale'
+                                        })}
                                     </p>
                                 </div>
                                 <Link
                                     href="/pricing"
                                     className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
                                 >
-                                    View Plans
+                                    {t('upgrade.button')}
                                 </Link>
                             </div>
                         )}
@@ -285,7 +281,7 @@ export default function ProxyDashboardPage() {
 
                         {/* Transaction History */}
                         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-                            <h3 className="text-xl font-bold text-white mb-4">Transaction History</h3>
+                            <h3 className="text-xl font-bold text-white mb-4">{t('history.title')}</h3>
                             <TransactionHistoryTable refreshTrigger={refreshTrigger} />
                         </div>
                     </div>

@@ -228,6 +228,14 @@
         "createDesc": "Create a dedicated smart wallet to enable Copy Trading.",
         "createBtn": "Create Smart Wallet",
         "profit": "Profit:",
+        "deposit": {
+            "title": "Deposit USDC",
+            "desc": "Transfer USDC from your wallet to your trading proxy"
+        },
+        "withdraw": {
+            "title": "Withdraw USDC",
+            "desc": "Withdraw funds from your proxy back to your wallet"
+        },
         "tabs": {
             "deposit": "Deposit",
             "withdraw": "Withdraw",
@@ -243,7 +251,60 @@
         "withdrawBtn": "Withdraw Funds",
         "botAuth": "Bot Authorization",
         "botAuthDesc": "Authorize the platform bot to execute trades on your behalf.",
-        "authBtn": "Authorize Bot"
+        "authBtn": "Authorize Bot",
+        "lowBalance": {
+            "title": "Low Wallet Balance",
+            "desc": "You don't have enough USDC in your wallet to complete this deposit.",
+            "buy": "Buy USDC"
+        },
+        "settings": {
+            "title": "Bot Authorization",
+            "revoke": {
+                "title": "Revoke Authorization?",
+                "activeWarning": "Active Trades Detected",
+                "activeDesc": "You have {count} active copy trade(s). Revoking access will <strong>stop all future trades</strong> immediately.",
+                "confirm": "Are you sure? Use the toggle below to re-enable it later.",
+                "cancel": "Cancel",
+                "action": "Revoke Access"
+            },
+            "authorized": {
+                "title": "Horus Execution Bot Active",
+                "desc": "Your proxy is authorized for automated copy trading.",
+                "nonCustodial": "Non-Custodial",
+                "nonCustodialDesc": "The bot can only execute trades on your behalf. It <strong>cannot</strong> withdraw funds or transfer assets.",
+                "highSpeed": "High Speed",
+                "highSpeedDesc": "Executes copy trades in <50ms after the target trader, ensuring you get the best possible entry price.",
+                "fullControl": "Full Control",
+                "fullControlDesc": "You can revoke authorization at any time. You maintain 100% ownership of your funds and keys.",
+                "revoke": "Revoke Authorization",
+                "advanced": "Advanced Settings",
+                "hideAdvanced": "Hide Advanced Settings"
+            },
+            "unauthorized": {
+                "title": "Enable Copy Trading",
+                "desc": "One-click authorization for the Horus Bot."
+            },
+            "strategies": {
+                "title": "Strategy Profile",
+                "badge": "Applies to all active bots",
+                "empty": "Start copying a trader to configure strategy parameters."
+            },
+            "executor": {
+                "label": "Executor Address",
+                "useDefault": "Use Default",
+                "custom": "Custom Address"
+            },
+            "authAction": {
+                "authorize": "Authorize Bot",
+                "update": "Update Authorization",
+                "processing": "Processing..."
+            }
+        },
+        "pendingFees": {
+            "title": "Pending Fees",
+            "desc": "Performance fees ready to be settled",
+            "action": "Settle Pending Fees"
+        }
     },
     "Portfolio": {
         "page": {
@@ -796,5 +857,58 @@
             "a5": "Zero Line is your direct commission from team trades (25% Gen1, 10% Gen2, etc.). Sun Line (Team Differential) is the bonus you earn from the difference between your tier rate and lower-tier members in your downline."
         },
         "returnToDashboard": "Return to Dashboard"
+    },
+    "ProxyDashboard": {
+        "title": "Trading Proxy",
+        "subtitle": "Your non-custodial trading wallet with automatic fee collection on profits.",
+        "tiers": {
+            "STARTER": "Starter",
+            "PRO": "Pro",
+            "WHALE": "Whale"
+        },
+        "status": {
+            "pending": "Transaction Pending...",
+            "confirm": "Please confirm in your wallet...",
+            "checkWallet": "Check your MetaMask popup to sign the transaction.",
+            "viewExplorer": "View on PolygonScan (or Localhost logs)"
+        },
+        "error": {
+            "dismiss": "Dismiss"
+        },
+        "create": {
+            "title": "Create Your Trading Proxy",
+            "desc": "A trading proxy is a smart contract wallet that automatically handles fee collection when you make profitable trades on Polymarket.",
+            "howItWorks": "How it works:",
+            "steps": {
+                "1": "Deposit USDC into your proxy wallet",
+                "2": "Trade on Polymarket through your proxy",
+                "3": "On withdrawal, fee is deducted from profits only"
+            },
+            "button": "Create Trading Proxy",
+            "creating": "Creating..."
+        },
+        "dashboard": {
+            "yourProxy": "Your Trading Proxy",
+            "copy": "Address copied to clipboard",
+            "viewExplorer": "View on Explorer"
+        },
+        "stats": {
+            "balance": "Proxy Balance",
+            "profit": "Total Profit",
+            "fees": "Fees Paid",
+            "wallet": "Wallet USDC"
+        },
+        "upgrade": {
+            "title": "Upgrade Your Tier",
+            "desc": "Reduce your fee to {fee} ({tier})",
+            "button": "View Plans"
+        },
+        "history": {
+            "title": "Transaction History"
+        },
+        "connect": {
+            "title": "Connect Wallet",
+            "desc": "Please connect your wallet to access the proxy dashboard."
+        }
     }
 }

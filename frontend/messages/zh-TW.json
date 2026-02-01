@@ -226,8 +226,16 @@
         },
         "title": "智能錢包",
         "createDesc": "創建一個專用的智能錢包以啟用跟單交易。",
-        "createBtn": "創建智能錢包",
+        "createBtn": "建立智能錢包",
         "profit": "利潤：",
+        "deposit": {
+            "title": "存入 USDC",
+            "desc": "將 USDC 從您的錢包轉移到您的交易代理"
+        },
+        "withdraw": {
+            "title": "提取 USDC",
+            "desc": "將資金從您的代理提取回您的錢包"
+        },
         "tabs": {
             "deposit": "存款",
             "withdraw": "提款",
@@ -243,7 +251,60 @@
         "withdrawBtn": "提取資金",
         "botAuth": "機器人授權",
         "botAuthDesc": "授權平台機器人代表您執行交易。",
-        "authBtn": "授權機器人"
+        "authBtn": "授權機器人",
+        "lowBalance": {
+            "title": "錢包餘額不足",
+            "desc": "您的錢包中沒有足夠的 USDC 來完成此存款。",
+            "buy": "購買 USDC"
+        },
+        "settings": {
+            "title": "機器人授權",
+            "revoke": {
+                "title": "撤銷授權？",
+                "activeWarning": "檢測到活躍交易",
+                "activeDesc": "您有 {count} 個活躍的跟單交易。撤銷訪問權限將立即<strong>停止所有未來的交易</strong>。",
+                "confirm": "您確定嗎？稍後可以使用下方的開關重新啟用。",
+                "cancel": "取消",
+                "action": "撤銷訪問權限"
+            },
+            "authorized": {
+                "title": "Horus 執行機器人已激活",
+                "desc": "您的代理已授權進行自動跟單交易。",
+                "nonCustodial": "非託管",
+                "nonCustodialDesc": "機器人只能代表您執行交易。它<strong>不能</strong>提取資金或轉移資產。",
+                "highSpeed": "高速",
+                "highSpeedDesc": "在這目標交易者交易後 <50ms 內執行跟單交易，確保您獲得最佳入場價格。",
+                "fullControl": "完全控制",
+                "fullControlDesc": "您可以隨時撤銷授權。您擁有資金和密鑰的 100% 所有權。",
+                "revoke": "撤銷授權",
+                "advanced": "高級設置",
+                "hideAdvanced": "隱藏高級設置"
+            },
+            "unauthorized": {
+                "title": "啟用跟單交易",
+                "desc": "一鍵授權 Horus 機器人。"
+            },
+            "strategies": {
+                "title": "策略配置文件",
+                "badge": "適用於所有活躍機器人",
+                "empty": "開始跟隨交易者以配置策略參數。"
+            },
+            "executor": {
+                "label": "執行者地址",
+                "useDefault": "使用默認",
+                "custom": "自定義地址"
+            },
+            "authAction": {
+                "authorize": "授權機器人",
+                "update": "更新授權",
+                "processing": "處理中..."
+            }
+        },
+        "pendingFees": {
+            "title": "待處理費用",
+            "desc": "準備結算的績效費用",
+            "action": "結算待處理費用"
+        }
     },
     "Portfolio": {
         "page": {
@@ -797,5 +858,58 @@
             "a5": "零線是您從團隊交易中獲得的直接佣金（第 1 代 25%，第 2 代 10% 等）。太陽線（團隊級差）是您從您的等級費率與下線低等級成員之間的差額中賺取的獎金。"
         },
         "returnToDashboard": "返回儀表板"
+    },
+    "ProxyDashboard": {
+        "title": "交易代理",
+        "subtitle": "您的非託管交易錢包，盈利時自動扣除費用。",
+        "tiers": {
+            "STARTER": "入門版",
+            "PRO": "專業版",
+            "WHALE": "巨鯨版"
+        },
+        "status": {
+            "pending": "交易處理中...",
+            "confirm": "請在錢包中確認...",
+            "checkWallet": "請查看 MetaMask 彈窗並簽署交易。",
+            "viewExplorer": "在 PolygonScan 查看 (或本地日誌)"
+        },
+        "error": {
+            "dismiss": "忽略"
+        },
+        "create": {
+            "title": "創建您的交易代理",
+            "desc": "交易代理是一個智能合約錢包，當您在 Polymarket 上進行盈利交易時，它會自動處理費用收取。",
+            "howItWorks": "它是如何運作的：",
+            "steps": {
+                "1": "將 USDC 存入您的代理錢包",
+                "2": "通過您的代理在 Polymarket 上交易",
+                "3": "提現時，僅從利潤中扣除費用"
+            },
+            "button": "創建交易代理",
+            "creating": "創建中..."
+        },
+        "dashboard": {
+            "yourProxy": "您的交易代理",
+            "copy": "地址已複製到剪貼板",
+            "viewExplorer": "在瀏覽器查看"
+        },
+        "stats": {
+            "balance": "代理餘額",
+            "profit": "總利潤",
+            "fees": "已付費用",
+            "wallet": "錢包 USDC"
+        },
+        "upgrade": {
+            "title": "升級您的等級",
+            "desc": "將您的費用降低至 {fee} ({tier})",
+            "button": "查看計劃"
+        },
+        "history": {
+            "title": "交易歷史"
+        },
+        "connect": {
+            "title": "連接錢包",
+            "desc": "請連接您的錢包以訪問代理儀表板。"
+        }
     }
 }

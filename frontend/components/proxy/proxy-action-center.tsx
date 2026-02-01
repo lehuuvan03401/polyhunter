@@ -5,12 +5,14 @@ import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle } from
 import { toast } from 'sonner';
 import { useCopyTradingStore } from '@/lib/copy-trading-store';
 import { StrategySelector } from './strategy-selector';
+import { useTranslations } from 'next-intl';
 
 interface ProxyActionCenterProps {
     onSuccess?: () => void;
 }
 
 export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
+    const t = useTranslations('ProxyWallet');
     const { user } = usePrivy();
     const {
         stats,
@@ -44,14 +46,14 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
 
     const getStatusText = (status: typeof txStatus) => {
         switch (status) {
-            case 'APPROVING': return 'Approving USDC...';
-            case 'DEPOSITING': return 'Sign Deposit Tx...';
-            case 'WITHDRAWING': return 'Withdrawing...';
-            case 'AUTHORIZING': return 'Authorizing...';
-            case 'EXECUTING': return 'Executing...';
-            case 'CONFIRMING': return 'Confirming...';
-            case 'CREATING': return 'Creating Proxy...';
-            default: return 'Processing...';
+            case 'APPROVING': return t('status.approving');
+            case 'DEPOSITING': return t('status.depositing');
+            case 'WITHDRAWING': return t('status.withdrawing');
+            case 'AUTHORIZING': return t('status.authorizing');
+            case 'EXECUTING': return t('status.executing');
+            case 'CONFIRMING': return t('status.confirming');
+            case 'CREATING': return t('status.creating');
+            default: return t('status.processing');
         }
     };
 
@@ -59,12 +61,12 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         if (!amount || isNaN(Number(amount))) return;
         const success = await deposit(Number(amount));
         if (success) {
-            toast.success('Deposit successful!');
+            toast.success(t('toast.depositSuccess'));
             setAmount('');
             onSuccess?.();
             await refreshStats();
         } else {
-            toast.error(error || 'Deposit failed');
+            toast.error(error || t('toast.depositFail'));
         }
     };
 
@@ -72,12 +74,12 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         if (!amount || isNaN(Number(amount))) return;
         const success = await withdraw(Number(amount));
         if (success) {
-            toast.success('Withdrawal successful!');
+            toast.success(t('toast.withdrawSuccess'));
             setAmount('');
             onSuccess?.();
             await refreshStats();
         } else {
-            toast.error(error || 'Withdrawal failed');
+            toast.error(error || t('toast.withdrawFail'));
         }
     };
 
@@ -86,19 +88,19 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         const targetOp = operatorAddress.trim() || defaultExecutor;
 
         if (!targetOp || !targetOp.startsWith('0x')) {
-            toast.error('Invalid operator address');
+            toast.error(t('toast.invalidOp'));
             return;
         }
 
         const result = await authorizeOperator(targetOp, true);
         if (result.success) {
             setOptimisticAuth(true); // Immediate feedback
-            toast.success('Operator authorized successfully!');
+            toast.success(t('toast.authSuccess'));
             setOperatorAddress('');
             onSuccess?.();
             await refreshStats(); // Ensure chain state matches
         } else {
-            toast.error(result.error || 'Authorization failed');
+            toast.error(result.error || t('toast.authFail'));
         }
     };
 
@@ -174,7 +176,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                 >
                     <div className="flex items-center justify-center gap-2">
                         <ArrowDownLeft className="h-4 w-4" />
-                        Deposit
+                        {t('tabs.deposit')}
                     </div>
                 </button>
                 <button
@@ -186,7 +188,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                 >
                     <div className="flex items-center justify-center gap-2">
                         <ArrowUpRight className="h-4 w-4" />
-                        Withdraw
+                        {t('tabs.withdraw')}
                     </div>
                 </button>
                 <button
@@ -198,7 +200,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                 >
                     <div className="flex items-center justify-center gap-2">
                         <ShieldCheck className="h-4 w-4" />
-                        Settings
+                        {t('tabs.settings')}
                     </div>
                 </button>
             </div>
@@ -207,12 +209,12 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                 {activeTab === 'deposit' && (
                     <div className="space-y-6 max-w-xl mx-auto">
                         <div className="text-center mb-6">
-                            <h3 className="text-lg font-bold text-white mb-2">Deposit USDC</h3>
-                            <p className="text-gray-400 text-sm">Transfer USDC from your wallet to your trading proxy</p>
+                            <h3 className="text-lg font-bold text-white mb-2">{t('tabs.deposit')} USDC</h3>
+                            <p className="text-gray-400 text-sm">{t('deposit.desc')}</p>
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-400">Amount (USDC)</label>
+                            <label className="text-sm font-medium text-gray-400">{t('amount')}</label>
                             <div className="relative">
                                 <input
                                     type="number"
@@ -226,15 +228,15 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                     onClick={() => setAmount(usdcBalance.toString())}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-blue-500 hover:text-blue-400"
                                 >
-                                    MAX
+                                    {t('max')}
                                 </button>
                             </div>
                             <div className="flex justify-between items-center text-xs">
                                 <p className={!isNaN(Number(amount)) && Number(amount) > usdcBalance ? 'text-red-400 font-medium' : 'text-gray-500'}>
-                                    {!isNaN(Number(amount)) && Number(amount) > usdcBalance ? 'Insufficient Balance' : ''}
+                                    {!isNaN(Number(amount)) && Number(amount) > usdcBalance ? t('insufficient') : ''}
                                 </p>
                                 <p className="text-gray-500 text-right">
-                                    Wallet Balance: ${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {t('balance')} ${usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                             </div>
                         </div>
@@ -249,9 +251,9 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                         </svg>
                                     </div>
                                     <div>
-                                        <h4 className="text-sm font-semibold text-red-200 mb-1">Low Wallet Balance</h4>
+                                        <h4 className="text-sm font-semibold text-red-200 mb-1">{t('lowBalance.title')}</h4>
                                         <p className="text-xs text-red-300/80 mb-3">
-                                            You don't have enough USDC in your wallet to complete this deposit.
+                                            {t('lowBalance.desc')}
                                         </p>
                                         <a
                                             href="https://app.uniswap.org/swap?chain=polygon&outputCurrency=0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
@@ -259,7 +261,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                             rel="noopener noreferrer"
                                             className="text-xs font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-2 rounded-md inline-flex items-center gap-1 transition-colors"
                                         >
-                                            Buy USDC
+                                            {t('lowBalance.buy')}
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                             </svg>
@@ -282,14 +284,14 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             ) : (
                                 <>
                                     <ArrowDownLeft className="h-4 w-4" />
-                                    <span>Deposit Funds</span>
+                                    <span>{t('depositBtn')}</span>
                                 </>
                             )}
                         </button>
 
                         {txPending && (txStatus === 'APPROVING' || txStatus === 'DEPOSITING') && (
                             <p className="text-xs text-center text-blue-400 animate-pulse">
-                                Please sign the transaction in your wallet
+                                {t('signTx')}
                             </p>
                         )}
                     </div>
@@ -298,12 +300,12 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                 {activeTab === 'withdraw' && (
                     <div className="space-y-6 max-w-xl mx-auto">
                         <div className="text-center mb-6">
-                            <h3 className="text-lg font-bold text-white mb-2">Withdraw USDC</h3>
-                            <p className="text-gray-400 text-sm">Withdraw funds from your proxy back to your wallet</p>
+                            <h3 className="text-lg font-bold text-white mb-2">{t('tabs.withdraw')} USDC</h3>
+                            <p className="text-gray-400 text-sm">{t('withdraw.desc')}</p>
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-400">Amount (USDC)</label>
+                            <label className="text-sm font-medium text-gray-400">{t('amount')}</label>
                             <div className="relative">
                                 <input
                                     type="number"
@@ -316,7 +318,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                     onClick={() => setAmount(stats?.balance.toString() || '')}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-blue-500 hover:text-blue-400"
                                 >
-                                    MAX
+                                    {t('max')}
                                 </button>
                             </div>
                             <p className="text-xs text-gray-500 text-right">
@@ -329,7 +331,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             className="w-full py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                             {txPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}
-                            Withdraw Funds
+                            {t('withdrawBtn')}
                         </button>
                     </div>
                 )}
@@ -337,10 +339,10 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                 {activeTab === 'settings' && (
                     <div className="space-y-6 max-w-xl mx-auto">
                         <div className="text-center mb-6">
-                            <h3 className="text-lg font-bold text-white mb-2">Bot Authorization</h3>
+                            <h3 className="text-lg font-bold text-white mb-2">{t('settings.title')}</h3>
                             {!isExecutorAuthorized && (
                                 <p className="text-gray-400 text-sm animate-in fade-in">
-                                    Authorize the Horus Executor to enable copy trading.
+                                    {t('settings.unauthorized.desc')}
                                 </p>
                             )}
                         </div>
@@ -350,18 +352,21 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                 <div className="mx-auto w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
                                     <AlertTriangle className="w-6 h-6 text-red-500" />
                                 </div>
-                                <h4 className="text-red-400 font-bold mb-2">Revoke Authorization?</h4>
+                                <h4 className="text-red-400 font-bold mb-2">{t('settings.revoke.title')}</h4>
 
                                 {hasActiveTrades ? (
                                     <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-                                        <p className="text-red-300 font-semibold mb-1">⚠️ Active Trades Detected</p>
+                                        <p className="text-red-300 font-semibold mb-1">⚠️ {t('settings.revoke.activeWarning')}</p>
                                         <p className="text-red-300/80 text-sm">
-                                            You have {activeConfigs.length} active copy trade(s). Revoking access will <strong>stop all future trades</strong> immediately.
+                                            {t.rich('settings.revoke.activeDesc', {
+                                                count: activeConfigs.length,
+                                                strong: (chunks: any) => <strong>{chunks}</strong>
+                                            })}
                                         </p>
                                     </div>
                                 ) : (
                                     <p className="text-gray-400 text-sm mb-6">
-                                        Are you sure? Use the toggle below to re-enable it later.
+                                        {t('settings.revoke.confirm')}
                                     </p>
                                 )}
 
@@ -370,7 +375,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                         onClick={() => setShowRevokeConfirm(false)}
                                         className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg"
                                     >
-                                        Cancel
+                                        {t('settings.revoke.cancel')}
                                     </button>
                                     <button
                                         onClick={handleRevoke}
@@ -378,7 +383,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                         className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2"
                                     >
                                         {txPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                                        Revoke Access
+                                        {t('settings.revoke.action')}
                                     </button>
                                 </div>
                             </div>
@@ -391,9 +396,9 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                             <ShieldCheck className="w-6 h-6 text-green-400" />
                                         </div>
                                         <div>
-                                            <h4 className="text-green-400 font-bold text-lg">Horus Execution Bot Active</h4>
+                                            <h4 className="text-green-400 font-bold text-lg">{t('settings.authorized.title')}</h4>
                                             <p className="text-gray-400 text-sm">
-                                                Your proxy is authorized for automated copy trading.
+                                                {t('settings.authorized.desc')}
                                             </p>
                                         </div>
                                     </div>
@@ -404,28 +409,30 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                     <div className="space-y-2">
                                         <h5 className="font-semibold text-white flex items-center gap-2">
                                             <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                            Non-Custodial
+                                            {t('settings.authorized.nonCustodial')}
                                         </h5>
                                         <p className="text-xs text-gray-400 leading-relaxed">
-                                            The bot can only execute trades on your behalf. It <strong>cannot</strong> withdraw funds or transfer assets.
+                                            {t.rich('settings.authorized.nonCustodialDesc', {
+                                                strong: (chunks) => <strong>{chunks}</strong>
+                                            })}
                                         </p>
                                     </div>
                                     <div className="space-y-2">
                                         <h5 className="font-semibold text-white flex items-center gap-2">
                                             <div className="w-2 h-2 rounded-full bg-purple-500" />
-                                            High Speed
+                                            {t('settings.authorized.highSpeed')}
                                         </h5>
                                         <p className="text-xs text-gray-400 leading-relaxed">
-                                            Executes copy trades in &lt;50ms after the target trader, ensuring you get the best possible entry price.
+                                            {t('settings.authorized.highSpeedDesc')}
                                         </p>
                                     </div>
                                     <div className="space-y-2">
                                         <h5 className="font-semibold text-white flex items-center gap-2">
                                             <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                                            Full Control
+                                            {t('settings.authorized.fullControl')}
                                         </h5>
                                         <p className="text-xs text-gray-400 leading-relaxed">
-                                            You can revoke authorization at any time. You maintain 100% ownership of your funds and keys.
+                                            {t('settings.authorized.fullControlDesc')}
                                         </p>
                                     </div>
                                 </div>
@@ -436,14 +443,14 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                         onClick={() => setShowRevokeConfirm(true)}
                                         className="text-xs font-semibold text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
                                     >
-                                        Revoke Authorization
+                                        {t('settings.authorized.revoke')}
                                     </button>
 
                                     <button
                                         onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
                                         className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                                     >
-                                        {userWantsAdvanced ? 'Hide Advanced Settings' : 'Advanced Settings'}
+                                        {userWantsAdvanced ? t('settings.authorized.hideAdvanced') : t('settings.authorized.advanced')}
                                     </button>
                                 </div>
                             </div>
@@ -453,16 +460,43 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                     <div className="mx-auto w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
                                         <ShieldCheck className="w-6 h-6 text-blue-400" />
                                     </div>
-                                    <h4 className="text-blue-400 font-semibold mb-2">Enable Copy Trading</h4>
+                                    <h4 className="text-blue-400 font-semibold mb-2">{t('settings.unauthorized.title')}</h4>
                                     <p className="text-gray-400 text-sm">
-                                        One-click authorization for the Horus Bot.
+                                        {t('settings.unauthorized.desc')}
                                     </p>
                                 </div>
 
                                 {/* Info Grid (Same as authorized state) */}
                                 <div className="p-6 grid gap-6 md:grid-cols-3 bg-gray-900/30">
-                                    {/* ... content ... */}
-                                    {/* Omit reuse to avoid large chunk replacement error */}
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                            {t('settings.authorized.nonCustodial')}
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            {t.rich('settings.authorized.nonCustodialDesc', {
+                                                strong: (chunks) => <strong>{chunks}</strong>
+                                            })}
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                            {t('settings.authorized.highSpeed')}
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            {t('settings.authorized.highSpeedDesc')}
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h5 className="font-semibold text-white flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                                            {t('settings.authorized.fullControl')}
+                                        </h5>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            {t('settings.authorized.fullControlDesc')}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -471,9 +505,9 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                         {isExecutorAuthorized && (
                             <div className="space-y-3 animate-in fade-in delay-100">
                                 <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
-                                    Strategy Profile
+                                    {t('settings.strategies.title')}
                                     <span className="text-xs font-normal text-gray-500 bg-gray-800 px-2 py-0.5 rounded">
-                                        Applies to all active bots
+                                        {t('settings.strategies.badge')}
                                     </span>
                                 </h4>
                                 <StrategySelector
@@ -483,7 +517,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                 />
                                 {activeConfigs.length === 0 && (
                                     <p className="text-xs text-center text-gray-500">
-                                        Start copying a trader to configure strategy parameters.
+                                        {t('settings.strategies.empty')}
                                     </p>
                                 )}
                             </div>
@@ -493,13 +527,13 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-gray-400 flex justify-between">
-                                        <span>Executor Address</span>
+                                        <span>{t('settings.executor.label')}</span>
                                         {!isExecutorAuthorized && (
                                             <button
                                                 onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
                                                 className="text-xs text-blue-400 hover:text-blue-300"
                                             >
-                                                {userWantsAdvanced ? 'Use Default' : 'Custom Address'}
+                                                {userWantsAdvanced ? t('settings.executor.useDefault') : t('settings.executor.custom')}
                                             </button>
                                         )}
                                     </label>
@@ -532,7 +566,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                 ) : (
                                     <ShieldCheck className="h-4 w-4" />
                                 )}
-                                {txPending ? 'Processing...' : (isExecutorAuthorized ? 'Update Authorization' : 'Authorize Bot')}
+                                {txPending ? t('settings.authAction.processing') : (isExecutorAuthorized ? t('settings.authAction.update') : t('settings.authAction.authorize'))}
                             </button>
                         )}
                     </div>
@@ -542,8 +576,8 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                     <div className="mt-6 pt-6 border-t border-gray-800">
                         <div className="flex justify-between items-center bg-yellow-900/20 p-4 rounded-lg border border-yellow-900/50 mb-4">
                             <div>
-                                <h4 className="text-yellow-500 font-semibold text-sm">Pending Fees</h4>
-                                <p className="text-yellow-600/80 text-xs">Performance fees ready to be settled</p>
+                                <h4 className="text-yellow-500 font-semibold text-sm">{t('pendingFees.title')}</h4>
+                                <p className="text-yellow-600/80 text-xs">{t('pendingFees.desc')}</p>
                             </div>
                             <div className="text-right">
                                 <div className="text-xl font-bold text-yellow-500">${stats.pendingFee}</div>
@@ -556,7 +590,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             }}
                             className="w-full py-2 bg-yellow-900/40 hover:bg-yellow-900/60 border border-yellow-700/50 text-yellow-200 text-sm font-semibold rounded-lg transition-colors"
                         >
-                            Settle Pending Fees
+                            {t('pendingFees.action')}
                         </button>
                     </div>
                 )}
