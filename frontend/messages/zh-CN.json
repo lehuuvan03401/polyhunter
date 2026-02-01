@@ -167,6 +167,7 @@
             "volume": "交易量",
             "profit": "利润",
             "score": "评分",
+            "scoreDesc": "基于风险调整指标的科学跟单评分",
             "action": "操作",
             "copyTrader": "跟随交易员",
             "connectToCopy": "连接跟随",
@@ -189,12 +190,16 @@
             "follow": "关注",
             "connect": "连接",
             "connecting": "连接中...",
+            "pf": "盈亏比",
+            "dd": "最大回撤",
+            "wr": "胜率",
             "tooltips": {
                 "pf": "盈亏比：总盈利 / 总亏损。>2 为优秀",
                 "dd": "最大回撤：峰值到谷底的最大跌幅",
                 "wr": "加权胜率",
                 "score": "基于风险调整指标的科学跟单评分"
-            }
+            },
+            "score": "评分"
         }
     },
     "ProxyWallet": {

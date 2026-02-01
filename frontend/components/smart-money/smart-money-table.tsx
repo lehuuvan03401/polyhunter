@@ -2,12 +2,25 @@
 
 import { SmartMoneyWallet } from '@catalyst-team/poly-sdk';
 import Link from 'next/link';
-import { AlertCircle, RefreshCcw, Wallet, Loader2 } from 'lucide-react';
+import { AlertCircle, RefreshCcw, Wallet, Loader2, Info } from 'lucide-react';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { toast } from 'sonner';
 import { TableSkeleton } from './table-skeleton';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
+
+// Tooltip component for metric explanations
+function MetricTooltip({ label, description }: { label: string; description: string }) {
+    return (
+        <div className="group relative inline-flex items-center gap-1 cursor-help normal-case">
+            <span>{label}</span>
+            <Info className="h-3 w-3 text-muted-foreground" />
+            <div className="text-left absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover border rounded text-xs text-popover-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                {description}
+            </div>
+        </div>
+    );
+}
 
 const ITEMS_PER_PAGE = 20;
 const MAX_PAGES = 5;
@@ -33,7 +46,7 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
         {
             keepPreviousData: true, // Show previous page data while loading new page
             revalidateOnFocus: false, // Don't revalidate aggressively on window focus
-            dedupingInterval: 60000, // Cache for 1 minute
+            dedupingInterval: 3600000, // Cache for 1 hour
         }
     );
 
@@ -96,7 +109,9 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                             <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">{t('trader')}</th>
                             <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('volume')}</th>
                             <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('profit')}</th>
-                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('score')}</th>
+                            <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
+                                <MetricTooltip label={t('score')} description={t('scoreDesc')} />
+                            </th>
                             <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('action')}</th>
                         </tr>
                     </thead>

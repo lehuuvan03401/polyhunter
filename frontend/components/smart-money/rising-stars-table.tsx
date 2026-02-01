@@ -27,10 +27,10 @@ interface RisingStar {
 // Tooltip component for metric explanations
 function MetricTooltip({ label, description }: { label: string; description: string }) {
     return (
-        <div className="group relative inline-flex items-center gap-1 cursor-help">
+        <div className="group relative inline-flex items-center gap-1 cursor-help normal-case">
             <span>{label}</span>
             <Info className="h-3 w-3 text-muted-foreground" />
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover border rounded text-xs text-popover-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+            <div className="text-left absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover border rounded text-xs text-popover-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                 {description}
             </div>
         </div>
@@ -122,16 +122,16 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">{t('trader')}</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{period.toUpperCase()} {t('pnl')}</th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="PF" description={t('tooltips.pf')} />
+                            <MetricTooltip label={t('pf')} description={t('tooltips.pf')} />
                         </th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="DD" description={t('tooltips.dd')} />
+                            <MetricTooltip label={t('dd')} description={t('tooltips.dd')} />
                         </th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="WR" description={t('tooltips.wr')} />
+                            <MetricTooltip label={t('wr')} description={t('tooltips.wr')} />
                         </th>
                         <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">
-                            <MetricTooltip label="Score" description={t('tooltips.score')} />
+                            <MetricTooltip label={t('score')} description={t('tooltips.score')} />
                         </th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">{t('action')}</th>
                     </tr>

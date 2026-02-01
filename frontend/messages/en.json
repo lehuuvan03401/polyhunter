@@ -167,6 +167,7 @@
             "volume": "Volume",
             "profit": "Profit",
             "score": "Score",
+            "scoreDesc": "Scientific copy score based on risk-adjusted metrics",
             "action": "Action",
             "copyTrader": "Copy Trader",
             "connectToCopy": "Connect to Copy",
@@ -189,12 +190,16 @@
             "follow": "Follow",
             "connect": "Connect",
             "connecting": "Connecting...",
+            "pf": "PF",
+            "dd": "DD",
+            "wr": "WR",
             "tooltips": {
                 "pf": "Profit Factor: Total gains / Total losses. >2 is excellent",
                 "dd": "Max Drawdown: Largest peak-to-trough decline",
                 "wr": "Volume-Weighted Win Rate",
                 "score": "Scientific copy score based on risk-adjusted metrics"
-            }
+            },
+            "score": "Score"
         }
     },
     "ProxyWallet": {
