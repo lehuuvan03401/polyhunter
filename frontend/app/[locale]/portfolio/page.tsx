@@ -37,6 +37,7 @@ import { useSimulatedHistory } from '@/lib/hooks/useSimulatedHistory';
 import { useCopyTradingMetrics } from '@/lib/hooks/useCopyTradingMetrics';
 import { useSimulatedPositions } from '@/lib/hooks/useSimulatedPositions';
 import { useRedeem } from '@/lib/hooks/useRedeem';
+import { useProxy } from '@/lib/contracts/useProxy';
 
 // USDC.e contract on Polygon (used by Polymarket)
 const USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
@@ -78,6 +79,12 @@ export default function PortfolioPage() {
     const { positions: simPositions } = useSimulatedPositions(user?.wallet?.address || '');
     const { redeem, redeemSim, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
+    const { proxyAddress, stats: proxyStats } = useProxy();
+
+    // Calculate proxy available balance (proxy balance - invested funds for simulation)
+    const proxyBalance = proxyStats?.balance || 0;
+    const investedFunds = ctMetrics?.totalInvested || 0;
+    const availableBalance = Math.max(0, proxyBalance - investedFunds);
 
     const calcPositionPnL = (pos: any): number => {
         const shares = pos.size || 0;
@@ -474,7 +481,7 @@ export default function PortfolioPage() {
             {/* Top Cards Grid */}
             <div className="grid gap-6 md:grid-cols-3 mb-8">
 
-                {/* Wallet Card - Now with real USDC balance */}
+                {/* Wallet Card - Proxy Wallet Available Balance */}
                 <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col justify-between h-full min-h-[220px]">
                     <div>
                         <div className="flex items-center gap-2 text-sm font-medium text-blue-400 mb-4">
@@ -482,13 +489,19 @@ export default function PortfolioPage() {
                             <span>{t('walletCard.title')}</span>
                         </div>
                         <div className="text-3xl font-bold tracking-tight mb-1">
-                            {usdcBalance !== null
-                                ? `$${usdcBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                : '--'}
+                            ${availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             <span className="text-lg text-muted-foreground font-normal ml-1">USDC</span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono bg-muted/50 w-fit px-2 py-1 rounded group cursor-pointer" onClick={() => navigator.clipboard.writeText(userAddress)}>
-                            <span>{formatAddress(userAddress)}</span>
+                        <div
+                            className="flex items-center gap-2 text-xs text-muted-foreground font-mono bg-muted/50 w-fit px-2 py-1 rounded group cursor-pointer"
+                            onClick={() => {
+                                if (proxyAddress) {
+                                    navigator.clipboard.writeText(proxyAddress);
+                                    toast.success('Proxy address copied');
+                                }
+                            }}
+                        >
+                            <span>{proxyAddress ? formatAddress(proxyAddress) : 'No Proxy'}</span>
                             <Copy className="h-3 w-3 group-hover:text-white transition-colors" />
                         </div>
                     </div>

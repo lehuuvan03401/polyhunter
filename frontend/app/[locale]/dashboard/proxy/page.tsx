@@ -255,12 +255,12 @@ export default function ProxyDashboardPage() {
                             </div>
                         </div>
 
-                        {/* Unified Action Center (Replaces Buttons & Modals) */}
-                        {user?.wallet?.address && (
+                        {/* Funding Status Panel - Temporarily Hidden */}
+                        {/* {user?.wallet?.address && (
                             <div className="w-full max-w-2xl">
                                 <FundingStatusPanel walletAddress={user.wallet.address} />
                             </div>
-                        )}
+                        )} */}
 
                         <ProxyActionCenter onSuccess={handleActionSuccess} />
 
