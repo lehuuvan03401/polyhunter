@@ -58,8 +58,8 @@
         "viewPricing": "查看定价"
     },
     "ImportTrader": {
-        "title": "同步 Alpha。掌握市场。",
-        "subtitle": "专业级 Polymarket AI跟单交易，让每个人都能轻松上手。",
+        "title": "同步Alpha。主宰市场。",
+        "subtitle": "专业级预测市场AI跟单交易，让每个人都能轻松上手。",
         "placeholder": "粘贴钱包地址 (0x...)",
         "button": "导入交易员",
         "loading": "加载中...",

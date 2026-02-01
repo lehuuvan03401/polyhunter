@@ -11,7 +11,7 @@ export function Footer() {
                         <Link href="/" className="flex items-center space-x-2 mb-4">
                             <div className="relative h-8 w-8 overflow-hidden rounded-full">
                                 <img
-                                    src="/polyhunter.png"
+                                    src="/horus.png"
                                     alt="Horus Logo"
                                     className="object-cover w-full h-full"
                                 />

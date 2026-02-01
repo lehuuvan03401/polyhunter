@@ -93,7 +93,7 @@ export function Home() {
           <div className="grid grid-cols-3 gap-8 pt-12 max-w-3xl mx-auto border-t border-white/10 mt-12">
             <div>
               <div className="text-2xl md:text-3xl font-bold text-yellow-500">
-                {homeStats.traderCount !== null ? `${homeStats.traderCount.toLocaleString()}+` : '500+'}
+                {homeStats.traderCount !== null ? `${homeStats.traderCount.toLocaleString()}+` : '147+'}
               </div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">{t('statsVerification')}</div>
             </div>
