@@ -81,10 +81,12 @@ export default function PortfolioPage() {
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
     const { proxyAddress, stats: proxyStats } = useProxy();
 
-    // Calculate proxy available balance (proxy balance - invested funds for simulation)
+    // Calculate proxy available balance
+    // totalInvested = cost of current OPEN positions (sells return funds to wallet)
+    // So: Available = Proxy Balance - Open Position Cost
     const proxyBalance = proxyStats?.balance || 0;
-    const investedFunds = ctMetrics?.totalInvested || 0;
-    const availableBalance = Math.max(0, proxyBalance - investedFunds);
+    const openPositionCost = ctMetrics?.totalInvested || 0;
+    const availableBalance = Math.max(0, proxyBalance - openPositionCost);
 
     const calcPositionPnL = (pos: any): number => {
         const shares = pos.size || 0;

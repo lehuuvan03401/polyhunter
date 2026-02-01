@@ -425,7 +425,12 @@ function OrderRow({
     const t = useTranslations('Portfolio.orderStatus');
     const statusColor = getOrderStatusColor(order.status);
     const statusIcon = getOrderStatusIcon(order.status);
-    const isSimulation = order.isSim || (order.orderId?.toLowerCase().startsWith('sim-') ?? false) || (order.orderId?.toLowerCase().startsWith('adjust-') ?? false);
+    const isSimulation = (() => {
+        const orderId = order.orderId?.toLowerCase() || '';
+        // LIVE- prefix means Real mode, not simulation
+        if (orderId.startsWith('live-')) return false;
+        return order.isSim || orderId.startsWith('sim-') || orderId.startsWith('adjust-');
+    })();
     const leaderShares = order.leaderSize ?? 0;
     const leaderNotional = order.leaderPrice && leaderShares
         ? leaderShares * order.leaderPrice

@@ -321,7 +321,7 @@
                 "connecting": "連接中..."
             },
             "walletCard": {
-                "title": "您的錢包",
+                "title": "您的代理錢包",
                 "deposit": "充值",
                 "withdraw": "提現"
             },

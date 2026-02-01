@@ -321,7 +321,7 @@
                 "connecting": "Connecting..."
             },
             "walletCard": {
-                "title": "Your Wallet",
+                "title": "Your Proxy Wallet",
                 "deposit": "Deposit",
                 "withdraw": "Withdraw"
             },

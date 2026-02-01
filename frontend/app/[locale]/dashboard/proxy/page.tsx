@@ -10,6 +10,11 @@ import { Copy, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 
+// Helper to abbreviate address: 0x1234...5678
+const formatAddress = (address: string) => address.length > 12
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : address;
+
 export default function ProxyDashboardPage() {
     const t = useTranslations('ProxyDashboard');
     const { authenticated, ready } = usePrivy();
@@ -193,8 +198,8 @@ export default function ProxyDashboardPage() {
                                 <div>
                                     <h2 className="text-xl font-bold text-white">{t('dashboard.yourProxy')}</h2>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <p className="text-gray-400 text-sm font-mono bg-gray-950/50 px-2 py-1 rounded select-all">
-                                            {proxyAddress}
+                                        <p className="text-gray-400 text-sm font-mono bg-gray-950/50 px-2 py-1 rounded select-all" title={proxyAddress || ''}>
+                                            {proxyAddress ? formatAddress(proxyAddress) : ''}
                                         </p>
                                         <button
                                             onClick={() => {
