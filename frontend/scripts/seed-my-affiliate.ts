@@ -9,6 +9,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import dotenv from 'dotenv';
 import path from 'path';
 
+dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const connectionString = `${process.env.DATABASE_URL}`;
@@ -16,8 +17,12 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-// Your wallet address (Hardhat default account #0)
-const MY_WALLET = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'.toLowerCase();
+// Hardhat default account #0 as fallback
+const DEFAULT_WALLET = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'.toLowerCase();
+
+// Get wallet from command line arg or use default
+const args = process.argv.slice(2);
+const MY_WALLET = (args[0] || DEFAULT_WALLET).toLowerCase();
 
 function randomWallet(): string {
     const hex = '0123456789abcdef';
@@ -38,6 +43,11 @@ function randomCode(length = 6): string {
 }
 
 async function main() {
+    if (!args[0]) {
+        console.log('ℹ️  No wallet address provided, using default hardhat account.');
+        console.log('👉 Usage: npx tsx scripts/seed-my-affiliate.ts <YOUR_WALLET_ADDRESS>\n');
+    }
+
     console.log('🎯 Creating Affiliate Data for YOUR Wallet...\n');
     console.log(`📍 Wallet: ${MY_WALLET}\n`);
 
