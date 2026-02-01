@@ -234,7 +234,11 @@
         },
         "withdraw": {
             "title": "Withdraw USDC",
-            "desc": "Withdraw funds from your proxy back to your wallet"
+            "desc": "Withdraw funds from your proxy back to your wallet",
+            "available": "Available: {amount}",
+            "locked": "Locked in Orders: {amount}",
+            "activeStrategyWarning": "Warning: You have active copy trading strategies. Withdrawing funds may cause trade failures.",
+            "openOrdersWarning": "You have {amount} USDC locked in open orders. Cancel orders to withdraw."
         },
         "tabs": {
             "deposit": "Deposit",

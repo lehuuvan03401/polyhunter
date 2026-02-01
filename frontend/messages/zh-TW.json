@@ -234,7 +234,11 @@
         },
         "withdraw": {
             "title": "提取 USDC",
-            "desc": "將資金從您的代理提取回您的錢包"
+            "desc": "將資金從您的代理提取回您的錢包",
+            "available": "可用：{amount}",
+            "locked": "訂單鎖定：{amount}",
+            "activeStrategyWarning": "警告：您有活躍的跟單策略。提取資金可能會導致交易失敗。",
+            "openOrdersWarning": "您有 {amount} USDC 鎖定在未結訂單中。請取消訂單以提取。"
         },
         "tabs": {
             "deposit": "存款",

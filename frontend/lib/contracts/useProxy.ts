@@ -22,6 +22,8 @@ import {
     type TierName,
 } from './abis';
 
+export { TIERS, type TierName };
+
 // Network to use
 const rawNetwork = process.env.NEXT_PUBLIC_NETWORK || 'amoy';
 const NETWORK = (rawNetwork === 'polygon' || rawNetwork === 'localhost') ? rawNetwork : 'amoy';

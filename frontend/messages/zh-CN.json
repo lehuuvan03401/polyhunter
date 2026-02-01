@@ -234,7 +234,11 @@
         },
         "withdraw": {
             "title": "提取 USDC",
-            "desc": "将资金从您的代理提取回您的钱包"
+            "desc": "将资金从您的代理提取回您的钱包",
+            "available": "可用：{amount}",
+            "locked": "订单锁定：{amount}",
+            "activeStrategyWarning": "警告：您有活跃的跟单策略。提取资金可能会导致交易失败。",
+            "openOrdersWarning": "您有 {amount} USDC 锁定在未结订单中。请取消订单以提取。"
         },
         "tabs": {
             "deposit": "存款",

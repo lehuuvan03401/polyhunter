@@ -61,7 +61,16 @@ export async function GET(request: NextRequest) {
             }
 
             if (status) {
-                where.status = status.toUpperCase();
+                const statusUpper = status.toUpperCase();
+                // Map 'OPEN' (client term) to 'PENDING' (DB term)
+                // Use explicit mapping or raw enum check to avoid crash
+                if (statusUpper === 'OPEN') {
+                    where.status = 'PENDING';
+                } else if (['PENDING', 'EXECUTED', 'SETTLEMENT_PENDING', 'FAILED', 'SKIPPED', 'EXPIRED'].includes(statusUpper)) {
+                    where.status = statusUpper;
+                }
+                // If invalid status, ignore filter or return specific error?
+                // Ignoring prevents 500 crash on invalid enum
             }
 
             // Get copy trades with order info

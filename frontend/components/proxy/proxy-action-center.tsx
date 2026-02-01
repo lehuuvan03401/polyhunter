@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useProxy } from '@/lib/contracts/useProxy';
-import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { useProxy, TIERS, type TierName } from '@/lib/contracts/useProxy';
+import { useOpenOrders } from '@/lib/hooks/useOpenOrders';
+import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle, Settings, Wallet, Shield, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCopyTradingStore } from '@/lib/copy-trading-store';
 import { StrategySelector } from './strategy-selector';
@@ -19,14 +20,35 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         usdcBalance,
         deposit,
         withdraw,
-        authorizeOperator,
         txPending,
         txStatus,
         error,
         isExecutorAuthorized: isAuthFromChain,
+        authorizeOperator,
         settleFees,
         refreshStats
     } = useProxy();
+
+    // Authorization state for UI
+    const [localIsAuthorized, setLocalIsAuthorized] = useState(false);
+
+    // Copy Trading & Locked Funds Logic
+    const { getActiveConfigs } = useCopyTradingStore();
+    const activeConfigs = getActiveConfigs();
+    const hasActiveStrategies = activeConfigs.length > 0;
+
+    const { proxyAddress } = useProxy();
+    // Orders are linked to the user's EOA wallet address in the DB
+    const { lockedFunds, isLoading: isLoadingOrders } = useOpenOrders(user?.wallet?.address);
+
+    // Calculate Available Balance
+    const balanceNum = stats && typeof stats.balance === 'number' ? stats.balance : 0;
+    const availableBalance = Math.max(0, balanceNum - lockedFunds);
+
+    // Sync local state when stats update
+    useEffect(() => {
+        setLocalIsAuthorized(isAuthFromChain);
+    }, [isAuthFromChain]);
 
     const [amount, setAmount] = useState('');
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
@@ -36,8 +58,8 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
 
     // Copy Trading Store for safety check
     const configs = useCopyTradingStore((state) => state.configs);
-    const activeConfigs = configs.filter(c => c.isActive);
-    const hasActiveTrades = activeConfigs.length > 0;
+    const activeConfigsForSafetyCheck = configs.filter(c => c.isActive);
+    const hasActiveTrades = activeConfigsForSafetyCheck.length > 0;
 
     // Optimistic UI state
     const [optimisticAuth, setOptimisticAuth] = useState<boolean | null>(null);
@@ -123,19 +145,19 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
 
     // Strategy Profile Management
     // Default to first active config's profile or MODERATE
-    const firstProfile = activeConfigs[0]?.strategyProfile || 'MODERATE';
+    const firstProfile = activeConfigsForSafetyCheck[0]?.strategyProfile || 'MODERATE';
     const [strategyProfile, setStrategyProfile] = useState<'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE'>(firstProfile);
     const updateStoreConfig = useCopyTradingStore(state => state.updateConfig);
 
     const handleStrategyChange = async (newProfile: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE') => {
         setStrategyProfile(newProfile); // Optimistic UI
 
-        if (activeConfigs.length === 0) return;
+        if (activeConfigsForSafetyCheck.length === 0) return;
 
         toast.promise(
             async () => {
                 // Update all active configs
-                const promises = activeConfigs.map(async (config) => {
+                const promises = activeConfigsForSafetyCheck.map(async (config) => {
                     // 1. API Update
                     await fetch('/api/copy-trading/config', {
                         method: 'PATCH',
@@ -315,20 +337,49 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [appearance:textfield]"
                                 />
                                 <button
-                                    onClick={() => setAmount(stats?.balance.toString() || '')}
+                                    onClick={() => setAmount(availableBalance.toString())}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-blue-500 hover:text-blue-400"
                                 >
-                                    {t('max')}
+                                    {t('max')} {availableBalance.toFixed(2)}
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-500 text-right">
-                                Available: ${stats?.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
+
+                            {/* Warnings & Info */}
+                            <div className="flex flex-col gap-2 mt-2">
+                                <div className="flex justify-between text-xs text-gray-400">
+                                    <span>{t('withdraw.available', { amount: `$${availableBalance.toFixed(2)}` })}</span>
+                                    {lockedFunds > 0 && (
+                                        <span className="flex items-center gap-1 text-orange-400">
+                                            <Lock className="h-3 w-3" />
+                                            {t('withdraw.locked', { amount: `$${lockedFunds.toFixed(2)}` })}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {hasActiveStrategies && (
+                                    <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
+                                        <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                                        <p className="text-xs text-yellow-200">
+                                            {t('withdraw.activeStrategyWarning')}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {lockedFunds > 0 && (
+                                    <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-md">
+                                        <Lock className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                                        <p className="text-xs text-red-200">
+                                            {t('withdraw.openOrdersWarning', { amount: lockedFunds.toFixed(2) })}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
+
                         <button
                             onClick={handleWithdraw}
-                            disabled={txPending}
-                            className="w-full py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                            disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance || txPending}
+                            className="w-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                             {txPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}
                             {t('withdrawBtn')}
@@ -413,7 +464,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                         </h5>
                                         <p className="text-xs text-gray-400 leading-relaxed">
                                             {t.rich('settings.authorized.nonCustodialDesc', {
-                                                strong: (chunks) => <strong>{chunks}</strong>
+                                                strong: (chunks: any) => <strong>{chunks}</strong>
                                             })}
                                         </p>
                                     </div>
@@ -475,7 +526,7 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                                         </h5>
                                         <p className="text-xs text-gray-400 leading-relaxed">
                                             {t.rich('settings.authorized.nonCustodialDesc', {
-                                                strong: (chunks) => <strong>{chunks}</strong>
+                                                strong: (chunks: any) => <strong>{chunks}</strong>
                                             })}
                                         </p>
                                     </div>
