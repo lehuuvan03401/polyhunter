@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { ProxyWalletCard } from '@/components/proxy/proxy-wallet-card';
 import { SmartMoneyTable } from '@/components/smart-money/smart-money-table';
@@ -8,14 +8,28 @@ import { RisingStarsTable } from '@/components/smart-money/rising-stars-table';
 import { TableSkeleton } from '@/components/smart-money/table-skeleton';
 import { Shield, Users, TrendingUp, Lock, ArrowRight, Crown, Star, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { preload } from 'swr';
 
 type Tab = 'performers' | 'rising';
+
+// Fetcher for SWR preload
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export function SmartMoneyPage() {
     const t = useTranslations('SmartMoney');
     const { authenticated, ready, login, isLoggingIn } = usePrivyLogin();
     const [page, setPage] = useState(1);
     const [activeTab, setActiveTab] = useState<Tab>('performers');
+
+    // Pre-fetch data for both tabs on mount for instant switching
+    useEffect(() => {
+        // Pre-fetch SmartMoney page 1
+        preload('/api/traders/smart-money?page=1&limit=20', fetcher);
+        // Pre-fetch Rising Stars for all periods
+        ['7d', '15d', '30d', '90d'].forEach((period) => {
+            preload(`/api/traders/active?limit=20&period=${period}`, fetcher);
+        });
+    }, []);
 
     if (!ready) {
         return (

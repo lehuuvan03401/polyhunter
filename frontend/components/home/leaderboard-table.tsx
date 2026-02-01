@@ -31,7 +31,7 @@ const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 const REFRESH_COOLDOWN = 5 * 60 * 1000; // 5 minutes - rate limit for manual refresh
 let lastManualRefresh = 0;
 
-function getCachedData(period: string): ActiveTrader[] | null {
+export function getCachedData(period: string): ActiveTrader[] | null {
     const cached = traderCache.get(period);
     if (cached) {
         return cached.data;
@@ -39,8 +39,13 @@ function getCachedData(period: string): ActiveTrader[] | null {
     return null;
 }
 
-function setCachedData(period: string, data: ActiveTrader[]) {
+export function setCachedData(period: string, data: ActiveTrader[]) {
     traderCache.set(period, { data, timestamp: Date.now() });
+}
+
+// Alias for external use (pre-populating cache from LeaderboardSection)
+export function populateCache(period: string, data: ActiveTrader[]) {
+    setCachedData(period, data);
 }
 
 function isCacheStale(period: string): boolean {

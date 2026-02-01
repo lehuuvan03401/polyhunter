@@ -61,7 +61,7 @@ export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingSt
         {
             keepPreviousData: true, // Show previous period data while loading new period
             revalidateOnFocus: false,
-            dedupingInterval: 60000, // 1 minute cache
+            dedupingInterval: 300000, // 5 minutes cache for better performance
         }
     );
 
