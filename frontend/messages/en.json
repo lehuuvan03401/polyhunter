@@ -581,7 +581,8 @@
             },
             "referralLink": {
                 "label": "Your Recruitment Link",
-                "desc": "Build your team. You earn overrides on 15 generations of referrals."
+                "desc": "Build your team. You earn overrides on 15 generations of referrals.",
+                "copied": "Link copied to clipboard"
             },
             "payoutHistory": {
                 "title": "Payout History",
