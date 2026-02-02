@@ -611,6 +611,7 @@
             },
             "benefits": {
                 "title": "Why Join Our Affiliate Program?",
+                "subtitle": "Turn your network into income.",
                 "items": {
                     "commission": {
                         "title": "25% Commission",
@@ -913,6 +914,115 @@
         "connect": {
             "title": "Connect Wallet",
             "desc": "Please connect your wallet to access the proxy dashboard."
+        }
+    },
+    "Pricing": {
+        "Authenticated": {
+            "title": "Your Plan & Tier Status",
+            "loading": "Loading your stats...",
+            "volume": "Your total volume: {volume}",
+            "proxy": {
+                "title": "🚀 Trading Proxy Wallet",
+                "desc": "Create your proxy wallet for automatic fee collection. Only pay fees on profits, never on losses.",
+                "button": "Manage Proxy Wallet"
+            },
+            "tiers": {
+                "executionSpeed": "Execution Speed",
+                "shareOfProfits": "Your share of profits",
+                "youKeep": "You keep",
+                "fee": "Fee",
+                "onRealizedProfits": "on realized profits",
+                "volumeProgress": "Volume progress",
+                "unlock": "{amount} to unlock",
+                "current": "Your Current Tier",
+                "speeds": {
+                    "standard": "Standard",
+                    "fast": "Fast",
+                    "instant": "Instant"
+                },
+                "starter": {
+                    "name": "Starter",
+                    "desc": "Everyone starts here",
+                    "fee": "10% fee",
+                    "button": "Starter Tier"
+                },
+                "pro": {
+                    "name": "Pro",
+                    "desc": "$25k volume traded",
+                    "fee": "5% fee",
+                    "button": "Pro Tier"
+                },
+                "whale": {
+                    "badge": "Max Gains",
+                    "name": "Whale",
+                    "desc": "$250k volume traded",
+                    "fee": "2% fee",
+                    "button": "Whale Tier"
+                }
+            }
+        },
+        "Public": {
+            "hero": {
+                "badge": "Simple, transparent pricing",
+                "title": "Trade More, Pay Less",
+                "subtitle": "Volume-based pricing that rewards your growth. No upfront costs."
+            },
+            "howItWorks": {
+                "title": "How Profit Sharing Works",
+                "step1": {
+                    "title": "You copy trades",
+                    "desc": "Select top traders to follow automatically."
+                },
+                "step2": {
+                    "title": "You make profit",
+                    "desc": "Trades are executed directly in your wallet."
+                },
+                "step3": {
+                    "title": "Small fee on profits",
+                    "desc": "We only earn when you win. High water mark applies."
+                },
+                "footer": "No profit = No fee. We only win when you win."
+            },
+            "tiers": {
+                "executionSpeed": "Execution Speed",
+                "starter": {
+                    "name": "Starter",
+                    "desc": "Everyone starts here",
+                    "fee": "10% fee",
+                    "details": "on realized profits"
+                },
+                "pro": {
+                    "name": "Pro",
+                    "desc": "$25k volume traded",
+                    "fee": "5% fee",
+                    "details": "on realized profits"
+                },
+                "whale": {
+                    "badge": "MAX GAINS",
+                    "name": "Whale",
+                    "desc": "$250k volume traded",
+                    "fee": "2% fee",
+                    "details": "on realized profits"
+                },
+                "button": {
+                    "start": "Start Copying",
+                    "connecting": "Connecting..."
+                }
+            },
+            "features": {
+                "title": "All Plans Include",
+                "list": {
+                    "unlimited": "Copy unlimited traders",
+                    "gas": "Gas fees sponsored",
+                    "realTime": "Real-time execution",
+                    "noFees": "No monthly fees"
+                }
+            },
+            "footer": {
+                "title": "Ready to Mirror the Alpha?",
+                "subtitle": "Start copying the best traders on Polymarket today.",
+                "button": "Explore Leaderboard"
+            }
         }
     }
 }
