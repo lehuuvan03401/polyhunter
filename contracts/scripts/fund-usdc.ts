@@ -3,15 +3,14 @@ import { ethers } from 'hardhat';
 
 async function main() {
     // Target Address: Hardhat #0 (Default) or passed as argument
-    const targetAddress = process.env.TARGET_ADDRESS || '0x90F79bf6EB2c4f870365E785982E1f101E93b906';
+    const targetAddress = process.env.TARGET_FUND_ADDRESS || '0x90F79bf6EB2c4f870365E785982E1f101E93b906';
 
     // USDC Address on Polygon
     const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
     // A Known Whale on Polygon (Binance Hot Wallet)
     const WHALE_ADDRESS = '0xe7804c37c13166fF0b37F5aE0BB07A3aEbb6e245';
-    const AMOUNT = ethers.parseUnits('3500', 6); // 3500 USDC
-    yu
-    console.log(`🚀 Funding ${targetAddress} with 3500 USDC...`);
+    const AMOUNT = ethers.parseUnits('155000', 6); // 155000 USDC
+    console.log(`🚀 Funding ${targetAddress} with 155000 USDC...`);
 
     // 1. Impersonate Whale
     await ethers.provider.send("hardhat_impersonateAccount", [WHALE_ADDRESS]);

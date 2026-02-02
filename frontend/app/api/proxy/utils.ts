@@ -47,20 +47,54 @@ export async function getUserProxy(walletAddress: string) {
 }
 
 /**
- * Create a new user proxy record
+ * Create a new user proxy record (or return existing)
  */
 export async function createUserProxy(
     walletAddress: string,
     proxyAddress: string,
     tier: SubscriptionTier = 'STARTER'
 ) {
-    return prisma.userProxy.create({
-        data: {
-            walletAddress: walletAddress.toLowerCase(),
-            proxyAddress: proxyAddress.toLowerCase(),
-            tier,
-        },
+    const normalizedWallet = walletAddress.toLowerCase();
+    const normalizedProxy = proxyAddress.toLowerCase();
+
+    // Check if record already exists by wallet or proxy
+    const existing = await prisma.userProxy.findFirst({
+        where: {
+            OR: [
+                { walletAddress: normalizedWallet },
+                { proxyAddress: normalizedProxy }
+            ]
+        }
     });
+
+    if (existing) {
+        return existing;
+    }
+
+    // Create new record
+    try {
+        return await prisma.userProxy.create({
+            data: {
+                walletAddress: normalizedWallet,
+                proxyAddress: normalizedProxy,
+                tier,
+            },
+        });
+    } catch (err: any) {
+        // Handle race condition
+        if (err?.code === 'P2002') {
+            const fallback = await prisma.userProxy.findFirst({
+                where: {
+                    OR: [
+                        { walletAddress: normalizedWallet },
+                        { proxyAddress: normalizedProxy }
+                    ]
+                }
+            });
+            if (fallback) return fallback;
+        }
+        throw err;
+    }
 }
 
 /**

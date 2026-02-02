@@ -24,19 +24,58 @@ export async function POST(request: NextRequest) {
                 // Auto-register if we have the proxy address
                 const normalizedProxy = normalizeAddress(proxyAddress);
                 try {
-                    userProxy = await prisma.userProxy.create({
-                        data: {
-                            walletAddress: normalized,
-                            proxyAddress: normalizedProxy,
-                            tier: 'STARTER', // Default
-                        }
+                    // First check if a record already exists with this proxyAddress
+                    const existingByProxy = await prisma.userProxy.findUnique({
+                        where: { proxyAddress: normalizedProxy },
                     });
-                } catch (createErr) {
-                    console.error('Failed to auto-create proxy record:', createErr);
-                    return errorResponse('Failed to register proxy record', 500);
+
+                    if (existingByProxy) {
+                        // If proxy exists but for different wallet, use existing record
+                        // (This handles re-mapping scenarios)
+                        userProxy = existingByProxy;
+                    } else {
+                        // Create new record
+                        userProxy = await prisma.userProxy.create({
+                            data: {
+                                walletAddress: normalized,
+                                proxyAddress: normalizedProxy,
+                                tier: 'STARTER',
+                            }
+                        });
+                    }
+                } catch (createErr: any) {
+                    // Handle race condition - record might have been created between checks
+                    if (createErr?.code === 'P2002') {
+                        userProxy = await prisma.userProxy.findFirst({
+                            where: {
+                                OR: [
+                                    { walletAddress: normalized },
+                                    { proxyAddress: normalizeAddress(proxyAddress) }
+                                ]
+                            }
+                        });
+                        if (!userProxy) {
+                            console.error('Failed to find existing proxy record after P2002:', createErr);
+                            return errorResponse('Failed to register proxy record', 500);
+                        }
+                    } else {
+                        console.error('Failed to auto-create proxy record:', createErr);
+                        return errorResponse('Failed to register proxy record', 500);
+                    }
                 }
             } else {
                 return errorResponse('User proxy not found in DB and no proxyAddress provided', 400);
+            }
+        }
+
+        // Check for duplicate txHash to prevent double logging
+        if (txHash) {
+            const existing = await prisma.proxyTransaction.findFirst({
+                where: { txHash: txHash }
+            });
+            if (existing) {
+                console.log('Skipping duplicate transaction:', txHash);
+                return NextResponse.json({ success: true, data: existing, duplicate: true });
             }
         }
 
@@ -78,16 +117,29 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
     try {
         const walletAddress = request.nextUrl.searchParams.get('walletAddress');
+        const proxyAddress = request.nextUrl.searchParams.get('proxyAddress');
 
-        if (!walletAddress) {
-            return errorResponse('Wallet address is required');
+        if (!walletAddress && !proxyAddress) {
+            return errorResponse('Wallet address or proxy address is required');
         }
 
-        const normalized = normalizeAddress(walletAddress);
+        let userProxy = null;
 
-        const userProxy = await prisma.userProxy.findUnique({
-            where: { walletAddress: normalized },
-        });
+        // Try to find by walletAddress first
+        if (walletAddress) {
+            const normalized = normalizeAddress(walletAddress);
+            userProxy = await prisma.userProxy.findUnique({
+                where: { walletAddress: normalized },
+            });
+        }
+
+        // If not found and proxyAddress provided, try that
+        if (!userProxy && proxyAddress) {
+            const normalizedProxy = normalizeAddress(proxyAddress);
+            userProxy = await prisma.userProxy.findUnique({
+                where: { proxyAddress: normalizedProxy },
+            });
+        }
 
         if (!userProxy) {
             return NextResponse.json({ success: true, data: [] }); // No proxy means no history
@@ -103,6 +155,74 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
         console.error('Fetch transactions error:', error);
+        return errorResponse('Internal server error', 500);
+    }
+}
+
+// Delete old transactions, keeping only the latest one
+export async function DELETE(request: NextRequest) {
+    try {
+        const walletAddress = request.nextUrl.searchParams.get('walletAddress');
+        const proxyAddress = request.nextUrl.searchParams.get('proxyAddress');
+        const keepLatest = request.nextUrl.searchParams.get('keepLatest') === 'true';
+
+        if (!walletAddress && !proxyAddress) {
+            return errorResponse('Wallet address or proxy address is required');
+        }
+
+        let userProxy = null;
+
+        if (walletAddress) {
+            const normalized = normalizeAddress(walletAddress);
+            userProxy = await prisma.userProxy.findUnique({
+                where: { walletAddress: normalized },
+            });
+        }
+
+        if (!userProxy && proxyAddress) {
+            const normalizedProxy = normalizeAddress(proxyAddress);
+            userProxy = await prisma.userProxy.findUnique({
+                where: { proxyAddress: normalizedProxy },
+            });
+        }
+
+        if (!userProxy) {
+            return NextResponse.json({ success: true, deleted: 0, message: 'No user proxy found' });
+        }
+
+        if (keepLatest) {
+            // Get all transactions ordered by date
+            const transactions = await prisma.proxyTransaction.findMany({
+                where: { userProxyId: userProxy.id },
+                orderBy: { createdAt: 'desc' },
+            });
+
+            if (transactions.length <= 1) {
+                return NextResponse.json({ success: true, deleted: 0, message: 'Nothing to delete' });
+            }
+
+            // Delete all except the latest
+            const toDelete = transactions.slice(1).map(t => t.id);
+            const result = await prisma.proxyTransaction.deleteMany({
+                where: { id: { in: toDelete } }
+            });
+
+            return NextResponse.json({
+                success: true,
+                deleted: result.count,
+                kept: transactions[0]
+            });
+        } else {
+            // Delete all transactions
+            const result = await prisma.proxyTransaction.deleteMany({
+                where: { userProxyId: userProxy.id }
+            });
+
+            return NextResponse.json({ success: true, deleted: result.count });
+        }
+
+    } catch (error) {
+        console.error('Delete transactions error:', error);
         return errorResponse('Internal server error', 500);
     }
 }

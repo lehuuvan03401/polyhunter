@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useProxy } from '@/lib/contracts/useProxy';
 import { Loader2, ArrowUpRight, ArrowDownLeft, ExternalLink } from 'lucide-react';
 import { formatUSD } from '@/lib/utils';
 import { useTranslations, useFormatter } from 'next-intl';
@@ -22,6 +23,7 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
     const t = useTranslations('Portfolio.transactionHistory');
     const format = useFormatter();
     const { user, authenticated } = usePrivy();
+    const { proxyAddress } = useProxy();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -30,7 +32,12 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
 
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`/api/proxy/transactions?walletAddress=${user.wallet?.address}`);
+                // Include both walletAddress and proxyAddress for better matching
+                let url = `/api/proxy/transactions?walletAddress=${user.wallet?.address}`;
+                if (proxyAddress) {
+                    url += `&proxyAddress=${proxyAddress}`;
+                }
+                const res = await fetch(url);
                 const data = await res.json();
                 if (data.success) {
                     setTransactions(data.data);
@@ -43,7 +50,7 @@ export function TransactionHistoryTable({ refreshTrigger = 0 }: TransactionHisto
         };
 
         fetchHistory();
-    }, [authenticated, user?.wallet?.address, refreshTrigger]);
+    }, [authenticated, user?.wallet?.address, proxyAddress, refreshTrigger]);
 
     if (!authenticated) return null;
 

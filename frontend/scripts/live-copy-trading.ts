@@ -38,7 +38,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-const SIMULATION_DURATION_MS = 120 * 60 * 1000; // 2 hours
+const SIMULATION_DURATION_MS = 240 * 60 * 1000; // 4 hours
 const BUY_WINDOW_MS = SIMULATION_DURATION_MS; // No separate window limit (buy for full duration)
 const FIXED_COPY_AMOUNT = parseFloat(process.env.FIXED_COPY_AMOUNT || '10'); // Default $10 per trade
 const SIMULATED_PROFILE = StrategyProfile.CONSERVATIVE; // Test CONSERVATIVE profile
@@ -53,7 +53,7 @@ const COPY_MODE = (process.env.SIM_COPY_MODE || 'BUDGET_CONSTRAINED').toUpperCas
 const SIM_ACTIVITY_FILTER = (process.env.SIM_ACTIVITY_FILTER || 'TRADER_ONLY').toUpperCase();
 const SIM_WS_SERVER_FILTER = (process.env.SIM_WS_SERVER_FILTER || 'false').toLowerCase() === 'true';
 // MODE=1 (default for live-copy-trading) -> Live, MODE=0 -> Simulation
-const IS_LIVE_MODE = (process.env.MODE || '1') === '1';
+const IS_LIVE_MODE = (process.env.COPY_MODE || '1') === '1';
 const TX_PREFIX = IS_LIVE_MODE ? 'LIVE-' : 'SIM-';
 
 // --- BUDGET CONSTRAINTS ---
@@ -208,7 +208,7 @@ async function seedConfig() {
             autoExecute: false, // Don't let worker pick this up
             channel: 'EVENT_LISTENER',
             mode: 'PERCENTAGE', // Use percentage mode for scaling
-            sizeScale: SCALE_FACTOR, // 3% of leader trades
+            sizeScale: SCALE_FACTOR, // 100% of leader trades
             fixedAmount: FIXED_COPY_AMOUNT, // Fallback
             maxSizePerTrade: MAX_TRADE_SIZE, // Cap per trade
             isActive: true,
