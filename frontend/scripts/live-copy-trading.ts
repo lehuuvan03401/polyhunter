@@ -603,12 +603,16 @@ async function handleTrade(trade: ActivityTrade) {
 
     // --- BUDGET-CONSTRAINED COPY SIZING ---
     if (COPY_MODE === 'BUDGET_CONSTRAINED' || COPY_MODE === 'PERCENTAGE') {
-        // Calculate scaled amount based on leader's trade
-        const leaderNotional = tradeShares * trade.price;
-        let scaledAmount = leaderNotional * SCALE_FACTOR;
+        // Calculate target shares based on Leader's shares directly
+        // This ensures stricter 1:1 share copying (or X% scaling) rather than matching Notionals which vary by price
+        let targetShares = tradeShares * SCALE_FACTOR;
+        let estimatedCost = targetShares * execPrice;
 
-        // Apply max trade size cap
-        scaledAmount = Math.min(scaledAmount, MAX_TRADE_SIZE);
+        // Apply max trade size cap (reduce shares if cost is too high)
+        if (estimatedCost > MAX_TRADE_SIZE) {
+            targetShares = MAX_TRADE_SIZE / execPrice;
+            estimatedCost = targetShares * execPrice;
+        }
 
         // For BUY trades, check budget constraint
         if (trade.side === 'BUY') {
@@ -621,14 +625,15 @@ async function handleTrade(trade: ActivityTrade) {
             }
 
             // Cap to remaining budget
-            if (scaledAmount > remainingBudget) {
-                console.log(`   ⚠️ Reducing trade from $${scaledAmount.toFixed(2)} to $${remainingBudget.toFixed(2)} (budget limit)`);
-                scaledAmount = remainingBudget;
+            if (estimatedCost > remainingBudget) {
+                console.log(`   ⚠️ Reducing trade from $${estimatedCost.toFixed(2)} to $${remainingBudget.toFixed(2)} (budget limit)`);
+                targetShares = remainingBudget / execPrice;
+                estimatedCost = remainingBudget;
             }
         }
 
-        copyAmount = scaledAmount;
-        copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
+        copyShares = targetShares;
+        copyAmount = estimatedCost;
 
     } else if (COPY_MODE === 'LEADER_SHARES') {
         copyShares = tradeShares;
