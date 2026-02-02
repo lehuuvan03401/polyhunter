@@ -332,7 +332,7 @@
                 "settled": "已结算 (未赎回)"
             },
             "investedCard": {
-                "title": "投资资金",
+                "title": "持仓资金",
                 "activePositions": "跨越 {count} 个活跃仓位",
                 "totalVolume": "总交易量：${amount}",
                 "currentPlan": "当前计划",

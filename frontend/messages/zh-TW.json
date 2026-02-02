@@ -332,7 +332,7 @@
                 "settled": "已結算 (未贖回)"
             },
             "investedCard": {
-                "title": "投資資金",
+                "title": "持倉資金",
                 "activePositions": "跨越 {count} 個活躍倉位",
                 "totalVolume": "總交易量：${amount}",
                 "currentPlan": "當前計劃",
