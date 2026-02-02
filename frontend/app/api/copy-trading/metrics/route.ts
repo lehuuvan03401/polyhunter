@@ -99,9 +99,15 @@ export async function GET(request: Request) {
                     // For resolution check, we need metadata for ALL positions, not just ones needing Gamma prices
                     const tradeMetadata = await prisma.copyTrade.findMany({
                         where: { tokenId: { in: tokenIds } },
-                        select: { tokenId: true, marketSlug: true, outcome: true },
+                        select: { tokenId: true, marketSlug: true, outcome: true, conditionId: true },
                         orderBy: { detectedAt: 'desc' },
                         distinct: ['tokenId']
+                    });
+
+                    // Build metadata map for quick lookup
+                    const metadataMap = new Map<string, typeof tradeMetadata[0]>();
+                    tradeMetadata.forEach(t => {
+                        if (t.tokenId) metadataMap.set(t.tokenId, t);
                     });
 
                     const gammaPriceMap = new Map<string, number>();
@@ -113,18 +119,35 @@ export async function GET(request: Request) {
                         }
                     });
 
-                    // Query Gamma by slug for each unique market
-                    const slugsToQuery = [...new Set(tradeMetadata.filter(t => t.marketSlug && !t.marketSlug.includes('unknown')).map(t => t.marketSlug!))];
+                    // Collect unique slugs AND conditionIds to query (matching positions API logic)
+                    const jobs = new Map<string, { type: 'slug' | 'condition', value: string }>();
+                    tokenIds.forEach(tid => {
+                        const info = metadataMap.get(tid);
+                        if (!info) return;
+                        // Prefer slug, fallback to conditionId
+                        if (info.marketSlug && !info.marketSlug.includes('unknown')) {
+                            jobs.set(info.marketSlug, { type: 'slug', value: info.marketSlug });
+                        } else if (info.conditionId && info.conditionId !== '0x0' && info.conditionId.length > 10) {
+                            jobs.set(info.conditionId, { type: 'condition', value: info.conditionId });
+                        }
+                    });
+                    const tasks = Array.from(jobs.values());
 
                     const BATCH_SIZE = 5;
-                    for (let i = 0; i < slugsToQuery.length; i += BATCH_SIZE) {
-                        const batch = slugsToQuery.slice(i, i + BATCH_SIZE);
-                        await Promise.all(batch.map(async (slug) => {
+                    for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+                        const batch = tasks.slice(i, i + BATCH_SIZE);
+                        await Promise.all(batch.map(async (task) => {
                             try {
-                                const cacheKey = `slug:${slug}`;
+                                const cacheKey = `${task.type}:${task.value}`;
                                 let market = gammaMarketCache.get(cacheKey);
                                 if (!market) {
-                                    const res = await fetchWithTimeout(`https://gamma-api.polymarket.com/markets?slug=${slug}&limit=1`, GAMMA_TIMEOUT_MS);
+                                    let url = `https://gamma-api.polymarket.com/markets?limit=1`;
+                                    if (task.type === 'condition') {
+                                        url += `&condition_id=${task.value}`;
+                                    } else {
+                                        url += `&slug=${task.value}`;
+                                    }
+                                    const res = await fetchWithTimeout(url, GAMMA_TIMEOUT_MS);
                                     if (!res.ok) {
                                         gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
                                         return;
@@ -146,9 +169,13 @@ export async function GET(request: Request) {
                                         ? JSON.parse(market.outcomes)
                                         : market.outcomes;
 
-                                    // Map prices to tokens
-                                    tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
-                                        if (!t.tokenId) return; // Skip if no tokenId
+                                    // Map prices to tokens (for tokens matching this market)
+                                    tradeMetadata.forEach(t => {
+                                        if (!t.tokenId) return;
+                                        const matchesSlug = task.type === 'slug' && t.marketSlug === task.value;
+                                        const matchesCondition = task.type === 'condition' && t.conditionId === task.value;
+                                        if (!matchesSlug && !matchesCondition) return;
+
                                         const idx = outcomes.findIndex((o: string) =>
                                             o.toLowerCase() === t.outcome?.toLowerCase()
                                         );
@@ -160,22 +187,31 @@ export async function GET(request: Request) {
                                     });
                                 }
 
-                                // Check if market is resolved/closed
-                                const isMarketClosed = market?.closed === true;
-                                if (isMarketClosed && market?.outcomePrices) {
+                                // Check if market is resolved/closed (same logic as positions API)
+                                // Resolved if: market.closed = true OR any outcome price is at extremes
+                                if (market?.outcomePrices) {
                                     const outcomePrices = typeof market.outcomePrices === 'string'
                                         ? JSON.parse(market.outcomePrices).map(Number)
                                         : market.outcomePrices.map(Number);
-                                    // Mark all tokens from this market as resolved
-                                    tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
-                                        if (t.tokenId) {
-                                            marketResolutionMap.set(t.tokenId, true);
-                                        }
-                                    });
+
+                                    const isResolvedState = market?.closed === true ||
+                                        outcomePrices.some((p: number) => p >= 0.95 || p <= 0.05);
+
+                                    if (isResolvedState) {
+                                        // Mark all tokens from this market as resolved
+                                        tradeMetadata.forEach(t => {
+                                            if (!t.tokenId) return;
+                                            const matchesSlug = task.type === 'slug' && t.marketSlug === task.value;
+                                            const matchesCondition = task.type === 'condition' && t.conditionId === task.value;
+                                            if (matchesSlug || matchesCondition) {
+                                                marketResolutionMap.set(t.tokenId, true);
+                                            }
+                                        });
+                                    }
                                 }
                             } catch (e) {
-                                console.warn(`Gamma fetch failed for ${slug}:`, e);
-                                const cacheKey = `slug:${slug}`;
+                                console.warn(`Gamma fetch failed for ${task.type}:${task.value}:`, e);
+                                const cacheKey = `${task.type}:${task.value}`;
                                 gammaMarketCache.set(cacheKey, null, GAMMA_FAILURE_TTL_MS);
                             }
                         }));
@@ -207,7 +243,10 @@ export async function GET(request: Request) {
                     });
 
                     // Calculate totalInvested for OPEN positions only
-                    // Settled: price >= 0.95 (WIN) or <= 0.05 (LOSS) OR market.closed = true
+                    // Settled: price >= 0.95 (WIN) or <= 0.05 (LOSS) OR market resolved via Gamma
+                    let openCount = 0;
+                    let settledByPrice = 0;
+                    let settledByResolution = 0;
                     positions.forEach(pos => {
                         const price = positionPriceMap.get(pos.tokenId) ?? pos.avgEntryPrice;
                         const priceSettled = price >= 0.95 || price <= 0.05;
@@ -216,8 +255,13 @@ export async function GET(request: Request) {
                         if (!isSettled) {
                             totalInvested += pos.totalCost;
                             activePositions += 1;
+                            openCount++;
+                        } else {
+                            if (priceSettled) settledByPrice++;
+                            if (marketResolved) settledByResolution++;
                         }
                     });
+                    console.log(`[Metrics] Total positions: ${positions.length}, Open: ${openCount}, Settled by price: ${settledByPrice}, Settled by resolution: ${settledByResolution}`);
                 } catch (err) {
                     console.warn('Failed to calculate unrealized PnL:', err);
                     // Fallback: count all positions as active if price fetch failed
@@ -371,7 +415,7 @@ export async function GET(request: Request) {
 
             return {
                 totalInvested,
-                activePositions: positions.length,
+                activePositions,
                 realizedPnL,      // Net realized
                 realizedWins,     // Total Wins PnL
                 realizedLosses,   // Total Losses PnL
