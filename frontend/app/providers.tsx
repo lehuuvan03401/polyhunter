@@ -17,7 +17,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
                 } as any,
             }}
         >
-            <div style={{ display: 'contents' }}>{children}</div>
+            {children}
         </PrivyProvider>
     );
 }
