@@ -122,12 +122,12 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     walletAddress: walletAddress.toLowerCase(),
                     traderAddress,
                     traderName: traderName || `Trader ${traderAddress.slice(0, 6)}`,
-                    // Mode settings
-                    mode: !isAdvancedMode ? 'fixed_amount' : (copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage'),
-                    sizeScale: !isAdvancedMode ? undefined : ((copyMode === '% Shares' || copyMode === 'Range') ? Number(sharePercent) / 100 : undefined),
-                    fixedAmount: !isAdvancedMode ? Number(fixedAmount) : (copyMode === 'Fixed $' ? Number(fixedAmount) : undefined),
-                    maxSizePerTrade: !isAdvancedMode ? (Number(fixedAmount) || 100) : (copyMode === 'Range' ? Number(rangeMax) : (Number(maxPerTrade) || 100)),
-                    minSizePerTrade: !isAdvancedMode ? undefined : (copyMode === 'Range' ? Number(rangeMin) : undefined),
+                    // Mode settings - Simple Mode now uses Range (percentage with min/max caps)
+                    mode: !isAdvancedMode ? 'percentage' : (copyMode === 'Fixed $' ? 'fixed_amount' : 'percentage'),
+                    sizeScale: !isAdvancedMode ? Number(sharePercent) / 100 : ((copyMode === '% Shares' || copyMode === 'Range') ? Number(sharePercent) / 100 : undefined),
+                    fixedAmount: !isAdvancedMode ? undefined : (copyMode === 'Fixed $' ? Number(fixedAmount) : undefined),
+                    maxSizePerTrade: !isAdvancedMode ? (Number(maxPerTrade) || 100) : (copyMode === 'Range' ? Number(rangeMax) : (Number(maxPerTrade) || 100)),
+                    minSizePerTrade: !isAdvancedMode ? 0.1 : (copyMode === 'Range' ? Number(rangeMin) : undefined),
                     // Advanced mode settings
                     infiniteMode: !isAdvancedMode ? true : infiniteMode,
                     takeProfit: takeProfit ? Number(takeProfit) : undefined,
@@ -317,37 +317,82 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     {/* Simple Mode Content */}
                     {!isAdvancedMode && (
                         <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                            {/* Simple Form: Fixed Amount Only */}
-                            <div className="p-4 rounded-xl border border-green-500/20 bg-green-500/5 space-y-3">
+                            {/* Simple Form: Range Mode (Proportional with Max Cap) */}
+                            <div className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-4">
+                                {/* Preset Buttons */}
                                 <div>
-                                    <div className="text-xs font-bold text-white mb-1.5">Amount per Trade</div>
-                                    <div className="relative">
-                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={fixedAmount}
-                                            onChange={(e) => setFixedAmount(e.target.value)}
-                                            className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg pl-6 pr-3 py-3 text-lg font-mono text-white focus:outline-none focus:border-green-500 transition-colors"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="text-xs text-muted-foreground min-h-[32px] flex items-center">
-                                    You will buy exactly ${fixedAmount} worth of shares every time this trader buys.
-                                </div>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {['1', '5', '10', '25', '50', '100'].map((amount) => (
+                                    <div className="text-xs font-bold text-white mb-2">Risk Profile</div>
+                                    <div className="grid grid-cols-3 gap-2">
                                         <button
-                                            key={amount}
-                                            onClick={() => setFixedAmount(amount)}
+                                            onClick={() => { setSharePercent('5'); setMaxPerTrade('50'); }}
                                             className={cn(
-                                                "h-9 w-full rounded-lg text-sm font-medium transition-colors flex items-center justify-center",
-                                                fixedAmount === amount ? "bg-green-600 text-white" : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
+                                                "py-2 rounded-lg text-xs font-bold transition-colors",
+                                                sharePercent === '5' && maxPerTrade === '50'
+                                                    ? "bg-green-600 text-white"
+                                                    : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
                                         >
-                                            ${amount}
+                                            🛡️ Conservative
                                         </button>
-                                    ))}
+                                        <button
+                                            onClick={() => { setSharePercent('10'); setMaxPerTrade('100'); }}
+                                            className={cn(
+                                                "py-2 rounded-lg text-xs font-bold transition-colors",
+                                                sharePercent === '10' && maxPerTrade === '100'
+                                                    ? "bg-blue-600 text-white"
+                                                    : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
+                                            )}
+                                        >
+                                            ⚖️ Moderate
+                                        </button>
+                                        <button
+                                            onClick={() => { setSharePercent('20'); setMaxPerTrade('200'); }}
+                                            className={cn(
+                                                "py-2 rounded-lg text-xs font-bold transition-colors",
+                                                sharePercent === '20' && maxPerTrade === '200'
+                                                    ? "bg-orange-600 text-white"
+                                                    : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
+                                            )}
+                                        >
+                                            🚀 Aggressive
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Two Column Inputs */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <div className="text-xs font-bold text-white mb-1.5">Copy % of Trader</div>
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={sharePercent}
+                                                onChange={(e) => setSharePercent(e.target.value)}
+                                                className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-lg font-mono text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-white mb-1.5">Max per Trade</div>
+                                        <div className="relative">
+                                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
+                                            <input
+                                                type="number"
+                                                min="5"
+                                                value={maxPerTrade}
+                                                onChange={(e) => setMaxPerTrade(e.target.value)}
+                                                className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg pl-6 pr-3 py-2.5 text-lg font-mono text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Explanation */}
+                                <div className="text-xs text-muted-foreground bg-white/5 p-2.5 rounded-lg leading-relaxed">
+                                    Copy <strong className="text-white">{sharePercent}%</strong> of what the trader invests, up to <strong className="text-white">${maxPerTrade}</strong> max per trade. Min $0.1 per trade.
                                 </div>
                             </div>
 
@@ -417,20 +462,20 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 space-y-3">
                                 <div className="flex items-center gap-2 text-white font-bold text-sm">
                                     <ShieldCheck className="h-4 w-4 text-green-500" />
-                                    Risk Protection Active
+                                    Smart Proportional Copying
                                 </div>
                                 <div className="space-y-2 text-xs text-muted-foreground">
                                     <div className="flex items-start gap-2">
                                         <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
-                                        <span>We only copy reliable trades (Min Liquidity &gt; $1000).</span>
+                                        <span>Copies <b>proportionally</b> based on trader&apos;s conviction level.</span>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
+                                        <span>Your max per trade <b>protects</b> you from oversized positions.</span>
                                     </div>
                                     <div className="flex items-start gap-2">
                                         <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
                                         <span>If the trader sells, we <b>sell everything</b> instantly.</span>
-                                    </div>
-                                    <div className="flex items-start gap-2">
-                                        <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
-                                        <span>Smart Slippage protection is <b>Auto-Enabled</b>.</span>
                                     </div>
                                 </div>
                             </div>
@@ -454,7 +499,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             {/* Trade Preview */}
                             <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3">
                                 <div className="text-xs text-blue-300">
-                                    💡 <strong>Preview:</strong> If the trader buys $1,000 worth, you will spend <strong>${fixedAmount || '50'}</strong>
+                                    💡 <strong>Preview:</strong> If trader buys $1,000 → you copy <strong>${Math.min(Number(sharePercent) * 10, Number(maxPerTrade) || 100)}</strong> | If trader buys $500 → you copy <strong>${Math.min(Number(sharePercent) * 5, Number(maxPerTrade) || 100)}</strong>
                                 </div>
                             </div>
                         </div>
