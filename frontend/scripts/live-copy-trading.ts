@@ -123,7 +123,7 @@ const seenTrades = new Set<string>();
 async function fetchWithRetry(
     url: string,
     options: RequestInit = {},
-    maxRetries = 3,
+    maxRetries = 5,
     baseDelayMs = 1000
 ): Promise<Response> {
     let lastError: Error | undefined;
@@ -1037,8 +1037,14 @@ async function processRedemptions() {
                     }
                 }
             }
-        } catch (e) {
-            console.error(`   ❌ Redemption check failed for ${tokenId}:`, e);
+        } catch (e: any) {
+            // Silent skip for network errors - these are common and will be retried next cycle
+            const isNetworkError = e?.code === 'ECONNRESET' ||
+                e?.cause?.code === 'ECONNRESET' ||
+                e?.message?.includes('fetch failed');
+            if (!isNetworkError) {
+                console.error(`   ❌ Redemption check failed for ${tokenId}:`, e);
+            }
             finishSettlement(tokenId, false);
         }
     }
