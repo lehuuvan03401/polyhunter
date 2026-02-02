@@ -119,6 +119,52 @@ let tradesSkippedBudget = 0; // Track trades skipped due to budget
 const startTime = Date.now();
 const seenTrades = new Set<string>();
 
+// --- RETRY FETCH HELPER ---
+async function fetchWithRetry(
+    url: string,
+    options: RequestInit = {},
+    maxRetries = 3,
+    baseDelayMs = 1000
+): Promise<Response> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
+            });
+
+            clearTimeout(timeout);
+            return response;
+        } catch (error: any) {
+            lastError = error;
+
+            // Check if it's a retryable error
+            const isRetryable =
+                error.code === 'ECONNRESET' ||
+                error.code === 'ETIMEDOUT' ||
+                error.code === 'ENOTFOUND' ||
+                error.cause?.code === 'ECONNRESET' ||
+                error.message?.includes('fetch failed') ||
+                error.name === 'AbortError';
+
+            if (!isRetryable || attempt === maxRetries - 1) {
+                throw error;
+            }
+
+            // Exponential backoff with jitter
+            const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+
+    throw lastError;
+}
+
 // --- SEED CONFIG ---
 async function seedConfig() {
     console.log('📝 Setting up copy trading config...');
@@ -850,14 +896,12 @@ async function processRedemptions() {
 
         try {
             // Check if market is resolved and we WON
-            // Check if market is resolved and we WON
-            // Check if market is resolved and we WON
             if (pos.marketSlug) {
                 // Use /events endpoint which is more reliable than /markets
                 const url = `${GAMMA_API_URL}/events?slug=${pos.marketSlug}`;
 
                 // console.log(`   [Debug] Checking settlement for ${pos.marketSlug} ...`);
-                const resp = await fetch(url);
+                const resp = await fetchWithRetry(url);
                 if (resp.ok) {
                     const data = await resp.json();
                     // Gamma returns Event or Event[]
