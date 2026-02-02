@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         const cacheKey = `metrics:${normalizedWallet}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
 
-            // 1. Get Open Positions (for Invested Funds & Unrealized PnL)
+            // 1. Get All Positions (for Invested Funds & Unrealized PnL)
             const allPositions = await prisma.userPosition.findMany({
                 where: {
                     walletAddress: normalizedWallet,
@@ -57,10 +57,11 @@ export async function GET(request: Request) {
                 !p.tokenId.startsWith('synthetic-')
             );
 
-            // Calculate Invested Funds (Total Cost Basis of open positions)
-            const totalInvested = positions.reduce((sum, pos) => sum + pos.totalCost, 0);
+            // Note: totalInvested will be calculated AFTER fetching prices to filter out settled positions
+            let totalInvested = 0;
+            let activePositions = 0;
 
-            // 2. Fetch Current Prices for Unrealized PnL
+            // 2. Fetch Current Prices for Unrealized PnL and Status Detection
             let unrealizedPnL = 0;
 
             if (positions.length > 0) {
@@ -94,17 +95,17 @@ export async function GET(request: Request) {
 
                     const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid) && gammaPriceCache.get(tid) === undefined);
 
-                    // Fallback: Fetch Gamma prices using marketSlug from CopyTrade metadata
-                    const tradeMetadata = tokensNeedingGamma.length > 0
-                        ? await prisma.copyTrade.findMany({
-                            where: { tokenId: { in: tokensNeedingGamma } },
-                            select: { tokenId: true, marketSlug: true, outcome: true },
-                            orderBy: { detectedAt: 'desc' },
-                            distinct: ['tokenId']
-                        })
-                        : [];
+                    // Fallback: Fetch Gamma prices AND market resolution using marketSlug from CopyTrade metadata
+                    // For resolution check, we need metadata for ALL positions, not just ones needing Gamma prices
+                    const tradeMetadata = await prisma.copyTrade.findMany({
+                        where: { tokenId: { in: tokenIds } },
+                        select: { tokenId: true, marketSlug: true, outcome: true },
+                        orderBy: { detectedAt: 'desc' },
+                        distinct: ['tokenId']
+                    });
 
                     const gammaPriceMap = new Map<string, number>();
+                    const marketResolutionMap = new Map<string, boolean>(); // tokenId -> isResolved
                     tokenIds.forEach((tid) => {
                         const cached = gammaPriceCache.get(tid);
                         if (cached !== undefined) {
@@ -158,6 +159,20 @@ export async function GET(request: Request) {
                                         }
                                     });
                                 }
+
+                                // Check if market is resolved/closed
+                                const isMarketClosed = market?.closed === true;
+                                if (isMarketClosed && market?.outcomePrices) {
+                                    const outcomePrices = typeof market.outcomePrices === 'string'
+                                        ? JSON.parse(market.outcomePrices).map(Number)
+                                        : market.outcomePrices.map(Number);
+                                    // Mark all tokens from this market as resolved
+                                    tradeMetadata.filter(t => t.marketSlug === slug).forEach(t => {
+                                        if (t.tokenId) {
+                                            marketResolutionMap.set(t.tokenId, true);
+                                        }
+                                    });
+                                }
                             } catch (e) {
                                 console.warn(`Gamma fetch failed for ${slug}:`, e);
                                 const cacheKey = `slug:${slug}`;
@@ -165,6 +180,9 @@ export async function GET(request: Request) {
                             }
                         }));
                     }
+
+                    // Build a price map for all positions for status detection
+                    const positionPriceMap = new Map<string, number>();
 
                     // Calculate PnL per position, prioritizing CLOB, then Gamma, then entry price
                     positions.forEach(pos => {
@@ -180,15 +198,36 @@ export async function GET(request: Request) {
                         }
                         // Priority 3: Entry price (no market data available)
 
+                        positionPriceMap.set(pos.tokenId, currentPrice);
+
                         // Value diff = (Current price * Balance) - Total Cost
                         const positionValue = currentPrice * pos.balance;
                         const profit = positionValue - pos.totalCost;
                         unrealizedPnL += profit;
                     });
+
+                    // Calculate totalInvested for OPEN positions only
+                    // Settled: price >= 0.95 (WIN) or <= 0.05 (LOSS) OR market.closed = true
+                    positions.forEach(pos => {
+                        const price = positionPriceMap.get(pos.tokenId) ?? pos.avgEntryPrice;
+                        const priceSettled = price >= 0.95 || price <= 0.05;
+                        const marketResolved = marketResolutionMap.get(pos.tokenId) === true;
+                        const isSettled = priceSettled || marketResolved;
+                        if (!isSettled) {
+                            totalInvested += pos.totalCost;
+                            activePositions += 1;
+                        }
+                    });
                 } catch (err) {
                     console.warn('Failed to calculate unrealized PnL:', err);
-                    // Fallback: don't add to PnL if fetch failed
+                    // Fallback: count all positions as active if price fetch failed
+                    totalInvested = positions.reduce((sum, pos) => sum + pos.totalCost, 0);
+                    activePositions = positions.length;
                 }
+            } else {
+                // No positions at all
+                totalInvested = 0;
+                activePositions = 0;
             }
 
             // 3. Calculate Realized/Trading PnL from completed trades
