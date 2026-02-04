@@ -83,6 +83,19 @@ export class CopyTradingExecutionService {
         return overrideSigner || this.defaultSigner;
     }
 
+    private getProxyMutexKey(proxyAddress: string): string {
+        return `proxy:${proxyAddress.toLowerCase()}`;
+    }
+
+    private async runWithProxyMutex<T>(proxyAddress: string, label: string, task: () => Promise<T>): Promise<T> {
+        const key = this.getProxyMutexKey(proxyAddress);
+        const queueDepth = scopedTxMutex.getQueueDepth(key);
+        if (queueDepth > 0) {
+            console.log(`[CopyExec] ⏳ Waiting on proxy mutex ${proxyAddress.slice(0, 6)} (${label}) queue=${queueDepth}`);
+        }
+        return scopedTxMutex.getMutex(key).run(task);
+    }
+
     private getChainAddresses() {
         return (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337)
             ? CONTRACT_ADDRESSES.polygon
@@ -445,45 +458,49 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] 🔒 Entering Mutex for ${proxyAddress}`);
 
-            // 2. Fund Management
+            // 2. Fund Management (Proxy-scoped)
             let useProxyFunds = false;
             let fundTransferTxHash: string | undefined;
             let tokenPullTxHash: string | undefined;
             let usedBotFloat = false;
 
             try {
-                if (side === 'BUY') {
-                    // FLOAT STRATEGY
-                    if (botBalance >= amount) {
-                        console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
-                        usedBotFloat = true;
-                    } else {
+                await this.runWithProxyMutex(proxyAddress, 'funds', async () => {
+                    if (side === 'BUY') {
+                        // FLOAT STRATEGY
+                        if (botBalance >= amount) {
+                            console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
+                            usedBotFloat = true;
+                            return;
+                        }
+
                         // STANDARD PULL
                         console.log(`[CopyExec] 🐢 Standard BUY: Pulling from Proxy...`);
                         const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
                         if (proxyBalance < amount) {
-                            return { success: false, error: `Insufficient Proxy funds`, proxyAddress, usedBotFloat };
+                            throw new Error('Insufficient Proxy funds');
                         }
 
                         const transferResult = await this.transferFromProxy(proxyAddress, amount, signer, effectiveOverrides);
                         if (!transferResult.success) {
-                            return { success: false, error: transferResult.error, usedBotFloat };
+                            throw new Error(transferResult.error || 'Proxy pull failed');
                         }
                         useProxyFunds = true;
                         fundTransferTxHash = transferResult.txHash;
+                        return;
                     }
 
-                } else { // SELL
+                    // SELL
                     const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, amount / price, signer, effectiveOverrides);
                     if (!pullResult.success) {
-                        return { success: false, error: `Proxy token pull failed: ${pullResult.error}`, usedBotFloat };
+                        throw new Error(`Proxy token pull failed: ${pullResult.error}`);
                     }
                     useProxyFunds = true;
                     tokenPullTxHash = pullResult.txHash;
-                }
+                });
 
             } catch (e: any) {
-                return { success: false, error: `Proxy prep failed: ${e.message}`, usedBotFloat };
+                return { success: false, error: `Proxy prep failed: ${e.message}`, usedBotFloat, proxyAddress };
             }
 
 
@@ -519,24 +536,28 @@ export class CopyTradingExecutionService {
                 // START RECOVERY (Refund)
                 if (useProxyFunds) {
                     console.log(`[CopyExec] ⚠️ Order Failed. refunding...`);
-                    if (side === 'BUY') {
-                        await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer, params.overrides);
-                    } else { // SELL
-                        const sharesToReturn = amount / price;
-                        await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, signer, params.overrides);
-                    }
+                    await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
+                        if (side === 'BUY') {
+                            await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer, params.overrides);
+                        } else { // SELL
+                            const sharesToReturn = amount / price;
+                            await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, signer, params.overrides);
+                        }
+                    });
                 }
                 return { success: false, error: err.message || 'Execution error', useProxyFunds, usedBotFloat };
             }
 
             if (!orderResult.success) {
                 if (useProxyFunds) {
-                    if (side === 'BUY') {
-                        await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer);
-                    } else {
-                        const sharesToReturn = amount / price;
-                        await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, signer);
-                    }
+                    await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
+                        if (side === 'BUY') {
+                            await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer);
+                        } else {
+                            const sharesToReturn = amount / price;
+                            await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, signer);
+                        }
+                    });
                 }
                 return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat, usedBotFloat };
             }
@@ -545,22 +566,25 @@ export class CopyTradingExecutionService {
             let returnTransferTxHash: string | undefined;
             let tokenPushTxHash: string | undefined;
 
-            if (usedBotFloat && side === 'BUY') {
-                // Push Tokens
-                const sharesBought = amount / price;
-                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
-                if (pushResult.success) tokenPushTxHash = pushResult.txHash;
+            await this.runWithProxyMutex(proxyAddress, 'settlement', async () => {
+                if (usedBotFloat && side === 'BUY') {
+                    // Push Tokens
+                    const sharesBought = amount / price;
+                    const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
+                    if (pushResult.success) tokenPushTxHash = pushResult.txHash;
 
-                // Reimburse Bot (Smart Buffer Strategy)
-                // 策略优化：如果 Bot 余额还很充裕 (Buffer > 50 USDC)，暂不发起链上报销。
-                // 这能节省 50% 的 On-Chain TX，极大提升连续下单速度。
-                // 只有当 Bot "钱包瘪了" 时才触发报销补货。
-                const MIN_BOT_BUFFER = 50;
-                const projectedBalance = (Number(botBalance) || 0) - amount;
+                    // Reimburse Bot (Smart Buffer Strategy)
+                    // 策略优化：如果 Bot 余额还很充裕 (Buffer > 50 USDC)，暂不发起链上报销。
+                    // 这能节省 50% 的 On-Chain TX，极大提升连续下单速度。
+                    // 只有当 Bot "钱包瘪了" 时才触发报销补货。
+                    const MIN_BOT_BUFFER = 50;
+                    const projectedBalance = (Number(botBalance) || 0) - amount;
 
-                if (projectedBalance > MIN_BOT_BUFFER) {
-                    console.log(`[CopyExec] ⚡️ SmartBuffer: Deferring reimbursement. Bot has $${projectedBalance.toFixed(2)} (>$${MIN_BOT_BUFFER}). Saving 1 TX.`);
-                } else {
+                    if (projectedBalance > MIN_BOT_BUFFER) {
+                        console.log(`[CopyExec] ⚡️ SmartBuffer: Deferring reimbursement. Bot has $${projectedBalance.toFixed(2)} (>$${MIN_BOT_BUFFER}). Saving 1 TX.`);
+                        return;
+                    }
+
                     console.log(`[CopyExec] 📉 Low Buffer ($${projectedBalance.toFixed(2)}). Triggering Reimbursement...`);
                     const reimbursement = await this.transferFromProxy(proxyAddress, amount, signer);
                     if (reimbursement.success) {
@@ -578,19 +602,21 @@ export class CopyTradingExecutionService {
                             });
                         }
                     }
+                    return;
                 }
 
-            } else if (useProxyFunds) {
-                if (side === 'BUY') {
-                    const sharesBought = amount / price;
-                    const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
-                    if (pushResult.success) tokenPushTxHash = pushResult.txHash;
-                } else {
-                    const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-                    const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
-                    if (returnResult.success) returnTransferTxHash = returnResult.txHash;
+                if (useProxyFunds) {
+                    if (side === 'BUY') {
+                        const sharesBought = amount / price;
+                        const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
+                        if (pushResult.success) tokenPushTxHash = pushResult.txHash;
+                    } else {
+                        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
+                        if (returnResult.success) returnTransferTxHash = returnResult.txHash;
+                    }
                 }
-            }
+            });
 
             return {
                 success: true,
@@ -629,7 +655,9 @@ export class CopyTradingExecutionService {
 
                 // 1. Push Tokens
                 console.log(`[CopyExec] 🚑 Retry Push Tokens...`);
-                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
+                const pushResult = await this.runWithProxyMutex(proxyAddress, 'recovery-push', async () => {
+                    return this.transferTokensToProxy(proxyAddress, tokenId, sharesBought);
+                });
                 if (!pushResult.success) {
                     return { success: false, error: `Retry Push Failed: ${pushResult.error}` };
                 }
@@ -637,7 +665,9 @@ export class CopyTradingExecutionService {
                 // 2. Reimburse (if float)
                 if (usedBotFloat) {
                     console.log(`[CopyExec] 🚑 Retry Reimbursement...`);
-                    const reimbursement = await this.transferFromProxy(proxyAddress, amount);
+                    const reimbursement = await this.runWithProxyMutex(proxyAddress, 'recovery-reimburse', async () => {
+                        return this.transferFromProxy(proxyAddress, amount);
+                    });
                     if (!reimbursement.success) {
                         // Critical but less critical than holding tokens.
                         console.error(`[CopyExec] 🚨 Reimbursement still failed: ${reimbursement.error}`);
@@ -651,7 +681,9 @@ export class CopyTradingExecutionService {
                 // We sold. Need to Push USDC to Proxy.
                 console.log(`[CopyExec] 🚑 Retry Push USDC...`);
                 const addresses = this.getChainAddresses();
-                const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount);
+                const returnResult = await this.runWithProxyMutex(proxyAddress, 'recovery-return', async () => {
+                    return this.transferToProxy(proxyAddress, addresses.usdc, amount);
+                });
                 if (!returnResult.success) {
                     return { success: false, error: `Retry Push USDC Failed: ${returnResult.error}` };
                 }
@@ -694,13 +726,15 @@ export class CopyTradingExecutionService {
                 indexSets
             ]);
 
-            // Execute on Proxy
-            const tx = await executor.executeOnProxy(
-                proxyAddress,
-                CONTRACT_ADDRESSES.ctf,
-                cancelData,
-                overrides || {}
-            );
+            // Execute on Proxy (proxy-scoped)
+            const tx = await this.runWithProxyMutex(proxyAddress, 'redeem', async () => {
+                return executor.executeOnProxy(
+                    proxyAddress,
+                    CONTRACT_ADDRESSES.ctf,
+                    cancelData,
+                    overrides || {}
+                );
+            });
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] ✅ Redemption Complete: ${receipt.transactionHash}`);

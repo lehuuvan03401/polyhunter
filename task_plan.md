@@ -40,6 +40,11 @@ Phase 4 (testing)
 - [x] Add verification notes for cache behavior
 - **Status:** complete
 
+### Phase 3: Implementation (Proxy Execution Queue)
+- [x] Implement proxy-scoped mutex for fund/settlement
+- [x] Add verification notes for proxy queue
+- **Status:** complete
+
 ### Phase 4: Testing & Verification
 - [ ] Run relevant tests / targeted verification
 - [ ] Document results in progress.md
@@ -62,6 +67,7 @@ Phase 4 (testing)
 | Change id: `add-copy-trade-prewrite` | Targets orphan-execution risk without duplicating existing changes |
 | Next change id: `add-scoped-tx-mutex` | Enables parallel execution across distinct signers |
 | Next change id: `add-orderbook-quote-cache` | Reduces redundant orderbook fetches under burst load |
+| Next change id: `add-proxy-execution-queue` | Serializes fund operations per proxy to avoid overlap |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

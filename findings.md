@@ -33,6 +33,8 @@
 | Documented debt recovery verification | Provides manual steps for ops validation |
 | Created change `add-orderbook-quote-cache` | Adds price quote caching + in-flight dedupe |
 | Quote cache TTL capped at 5s | Enforces spec max TTL regardless of env override |
+| Created change `add-proxy-execution-queue` | Plan for per-proxy serialization of fund ops |
+| Implemented proxy-scoped mutex in execution service | Serializes fund/settlement per proxy |
 
 ## Issues Encountered
 | Issue | Resolution |
