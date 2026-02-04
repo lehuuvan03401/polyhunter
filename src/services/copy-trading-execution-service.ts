@@ -537,21 +537,32 @@ export class CopyTradingExecutionService {
                 const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
                 if (pushResult.success) tokenPushTxHash = pushResult.txHash;
 
-                // Reimburse Bot
-                const reimbursement = await this.transferFromProxy(proxyAddress, amount, signer);
-                if (reimbursement.success) {
-                    returnTransferTxHash = reimbursement.txHash;
+                // Reimburse Bot (Smart Buffer Strategy)
+                // 策略优化：如果 Bot 余额还很充裕 (Buffer > 50 USDC)，暂不发起链上报销。
+                // 这能节省 50% 的 On-Chain TX，极大提升连续下单速度。
+                // 只有当 Bot "钱包瘪了" 时才触发报销补货。
+                const MIN_BOT_BUFFER = 50;
+                const projectedBalance = (Number(botBalance) || 0) - amount;
+
+                if (projectedBalance > MIN_BOT_BUFFER) {
+                    console.log(`[CopyExec] ⚡️ SmartBuffer: Deferring reimbursement. Bot has $${projectedBalance.toFixed(2)} (>$${MIN_BOT_BUFFER}). Saving 1 TX.`);
                 } else {
-                    console.error(`[CopyExec] 🚨 REIMBURSEMENT FAILED!`);
-                    if (this.debtLogger) {
-                        const botAddr = await signer!.getAddress();
-                        this.debtLogger.logDebt({
-                            proxyAddress,
-                            botAddress: botAddr,
-                            amount,
-                            currency: 'USDC',
-                            error: reimbursement.error || 'Transfer Failed'
-                        });
+                    console.log(`[CopyExec] 📉 Low Buffer ($${projectedBalance.toFixed(2)}). Triggering Reimbursement...`);
+                    const reimbursement = await this.transferFromProxy(proxyAddress, amount, signer);
+                    if (reimbursement.success) {
+                        returnTransferTxHash = reimbursement.txHash;
+                    } else {
+                        console.error(`[CopyExec] 🚨 REIMBURSEMENT FAILED!`);
+                        if (this.debtLogger) {
+                            const botAddr = await signer!.getAddress();
+                            this.debtLogger.logDebt({
+                                proxyAddress,
+                                botAddress: botAddr,
+                                amount,
+                                currency: 'USDC',
+                                error: reimbursement.error || 'Transfer Failed'
+                            });
+                        }
                     }
                 }
 
