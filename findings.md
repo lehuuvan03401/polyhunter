@@ -41,6 +41,8 @@
 | Implemented price fallback | Uses trade price when orderbook unavailable, with TTL guard |
 | Created change `add-execution-tx-monitor` | Plan to wire TxMonitor for stuck tx replacement |
 | Implemented execution tx monitor | Tracks on-chain txs and replaces stuck ones |
+| Created change `add-cache-eviction` | Plan to bound worker caches with eviction |
+| Implemented cache eviction | Bounds quote/preflight caches and prunes on metrics interval |
 
 ## Issues Encountered
 | Issue | Resolution |

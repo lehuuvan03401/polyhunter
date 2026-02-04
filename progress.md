@@ -34,6 +34,7 @@
 | Preflight cache verification | openspec/changes/add-preflight-balance-cache/verification.md | Steps documented | Not run | ☐ |
 | Price fallback verification | openspec/changes/add-price-fallback/verification.md | Steps documented | Not run | ☐ |
 | Tx monitor verification | openspec/changes/add-execution-tx-monitor/verification.md | Steps documented | Not run | ☐ |
+| Cache eviction verification | openspec/changes/add-cache-eviction/verification.md | Steps documented | Not run | ☐ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -50,7 +51,7 @@
 | Where am I going? | Phase 5 delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented tx monitor integration, price fallback, preflight cache, and prior safety changes |
+| What have I done? | Implemented cache eviction, tx monitor, price fallback, and preflight cache |
 
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
@@ -105,6 +106,16 @@
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
 - Actions taken:
+  - Created and validated change proposal `add-cache-eviction`.
+- Files created/modified:
+  - openspec/changes/add-cache-eviction/proposal.md (created)
+  - openspec/changes/add-cache-eviction/tasks.md (created)
+  - openspec/changes/add-cache-eviction/design.md (created)
+  - openspec/changes/add-cache-eviction/specs/copy-trading/spec.md (created)
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
   - Created and validated change proposal `add-price-fallback`.
 - Files created/modified:
   - openspec/changes/add-price-fallback/proposal.md (created)
@@ -135,6 +146,8 @@
   - Added verification notes for price fallback.
   - Implemented tx monitor integration for execution transactions.
   - Added verification notes for tx monitor.
+  - Implemented cache eviction + prune for worker caches.
+  - Added verification notes for cache eviction.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
@@ -148,3 +161,4 @@
   - openspec/changes/add-preflight-balance-cache/verification.md (created)
   - openspec/changes/add-price-fallback/verification.md (created)
   - openspec/changes/add-execution-tx-monitor/verification.md (created)
+  - openspec/changes/add-cache-eviction/verification.md (created)

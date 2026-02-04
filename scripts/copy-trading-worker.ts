@@ -37,6 +37,8 @@
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  * - COPY_TRADING_PREFLIGHT_CACHE_TTL_MS: Max age for preflight balance/allowance cache (default: 2000)
+ * - COPY_TRADING_QUOTE_CACHE_MAX_ENTRIES: Max entries for quote cache (default: 500)
+ * - COPY_TRADING_PREFLIGHT_CACHE_MAX_ENTRIES: Max entries for preflight cache (default: 1000)
  * - COPY_TRADING_RPC_URLS: Comma-separated RPC list for failover (optional)
  * - COPY_TRADING_WORKER_KEYS: Comma-separated private keys for worker pool (optional)
  * - COPY_TRADING_WORKER_INDEX: Index into worker pool for this process (optional)
@@ -113,6 +115,8 @@ const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 const DEBT_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
 const QUOTE_CACHE_TTL_MS = Math.min(PRICE_TTL_MS, 5000);
 const PREFLIGHT_CACHE_TTL_MS = Math.min(parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_TTL_MS || '2000', 10), 2000);
+const QUOTE_CACHE_MAX_ENTRIES = parseInt(process.env.COPY_TRADING_QUOTE_CACHE_MAX_ENTRIES || '500', 10);
+const PREFLIGHT_CACHE_MAX_ENTRIES = parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_MAX_ENTRIES || '1000', 10);
 
 // EIP-1559 Aggressive Gas Settings for Polygon (To avoid stuck copy trades)
 const GAS_SETTINGS = {
@@ -158,6 +162,9 @@ if (PRICE_TTL_MS > 5000) {
 }
 if (PREFLIGHT_CACHE_TTL_MS < parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_TTL_MS || '2000', 10)) {
     console.warn(`[Worker] COPY_TRADING_PREFLIGHT_CACHE_TTL_MS capped to 2000ms.`);
+}
+if (QUOTE_CACHE_MAX_ENTRIES <= 0 || PREFLIGHT_CACHE_MAX_ENTRIES <= 0) {
+    console.warn('[Worker] Cache max entries must be > 0; falling back to defaults.');
 }
 
 // ============================================================================
@@ -483,6 +490,30 @@ function buildPreflightKey(parts: string[]): string {
     return parts.map((p) => p.toLowerCase()).join('|');
 }
 
+function evictOldest<T>(cache: Map<string, T>, maxEntries: number): number {
+    if (cache.size <= maxEntries) return 0;
+    const removeCount = cache.size - maxEntries;
+    let removed = 0;
+    for (const key of cache.keys()) {
+        cache.delete(key);
+        removed++;
+        if (removed >= removeCount) break;
+    }
+    return removed;
+}
+
+function pruneExpired(cache: Map<string, { fetchedAt: number }>, ttlMs: number): number {
+    const now = Date.now();
+    let removed = 0;
+    for (const [key, entry] of cache.entries()) {
+        if (now - entry.fetchedAt > ttlMs) {
+            cache.delete(key);
+            removed++;
+        }
+    }
+    return removed;
+}
+
 async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
     const cached = preflightCache.get(key);
     if (cached && Date.now() - cached.fetchedAt <= PREFLIGHT_CACHE_TTL_MS) {
@@ -502,6 +533,7 @@ async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Pr
             const value = await fetcher();
             if (value !== undefined && value !== null) {
                 preflightCache.set(key, { value, fetchedAt: Date.now() });
+                evictOldest(preflightCache, PREFLIGHT_CACHE_MAX_ENTRIES);
             }
             return value;
         } finally {
@@ -568,6 +600,7 @@ async function fetchFreshPrice(
 
             const quote = { price, fetchedAt, source: 'orderbook' };
             quoteCache.set(cacheKey, quote);
+            evictOldest(quoteCache, QUOTE_CACHE_MAX_ENTRIES);
             priceSourceStats.orderbook++;
             return quote;
         } catch (error) {
@@ -2169,6 +2202,14 @@ async function start(): Promise<void> {
         displayStats();
         logMetricsSummary();
         void checkBalanceAlerts();
+        const prunedQuote = pruneExpired(quoteCache, QUOTE_CACHE_TTL_MS);
+        const prunedPreflight = pruneExpired(preflightCache, PREFLIGHT_CACHE_TTL_MS);
+        const evictedQuote = evictOldest(quoteCache, QUOTE_CACHE_MAX_ENTRIES);
+        const evictedPreflight = evictOldest(preflightCache, PREFLIGHT_CACHE_MAX_ENTRIES);
+        if (prunedQuote + prunedPreflight + evictedQuote + evictedPreflight > 0) {
+            console.log(`   Cache prune: quote -${prunedQuote} evict -${evictedQuote}, preflight -${prunedPreflight} evict -${evictedPreflight}`);
+            console.log(`   Cache sizes: quote=${quoteCache.size}, preflight=${preflightCache.size}`);
+        }
     }, METRICS_INTERVAL_MS);
 
     // Set up periodic RECOVERY task

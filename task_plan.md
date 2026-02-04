@@ -63,6 +63,12 @@ Phase 4 (testing)
 - [x] Add verification notes for stuck tx handling
 - **Status:** complete
 
+### Phase 3: Implementation (Cache Eviction)
+- [x] Add size limits and eviction for caches
+- [x] Add periodic prune for expired entries
+- [x] Add verification notes for cache eviction
+- **Status:** complete
+
 ### Phase 4: Testing & Verification
 - [ ] Run relevant tests / targeted verification
 - [ ] Document results in progress.md
@@ -89,6 +95,7 @@ Phase 4 (testing)
 | Next change id: `add-preflight-balance-cache` | Caches preflight reads to reduce RPC load |
 | Next change id: `add-price-fallback` | Adds fallback price source when orderbook unavailable |
 | Next change id: `add-execution-tx-monitor` | Wires TxMonitor for stuck tx replacement |
+| Next change id: `add-cache-eviction` | Bounds worker caches to prevent memory growth |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
