@@ -51,6 +51,12 @@ Phase 4 (testing)
 - [x] Add verification notes for cache behavior
 - **Status:** complete
 
+### Phase 3: Implementation (Price Fallback)
+- [x] Implement fallback price selection
+- [x] Log price source and fallback usage
+- [x] Add verification notes for fallback behavior
+- **Status:** complete
+
 ### Phase 4: Testing & Verification
 - [ ] Run relevant tests / targeted verification
 - [ ] Document results in progress.md
@@ -75,6 +81,7 @@ Phase 4 (testing)
 | Next change id: `add-orderbook-quote-cache` | Reduces redundant orderbook fetches under burst load |
 | Next change id: `add-proxy-execution-queue` | Serializes fund operations per proxy to avoid overlap |
 | Next change id: `add-preflight-balance-cache` | Caches preflight reads to reduce RPC load |
+| Next change id: `add-price-fallback` | Adds fallback price source when orderbook unavailable |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

@@ -32,6 +32,7 @@
 | Debt recovery verification | docs/operations/debt-recovery-verification.md | Steps documented | Not run | ☐ |
 | Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Steps documented | Not run | ☐ |
 | Preflight cache verification | openspec/changes/add-preflight-balance-cache/verification.md | Steps documented | Not run | ☐ |
+| Price fallback verification | openspec/changes/add-price-fallback/verification.md | Steps documented | Not run | ☐ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -48,7 +49,7 @@
 | Where am I going? | Phase 5 delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented preflight cache + dedupe, plus prior safety changes |
+| What have I done? | Implemented price fallback, preflight cache, and prior safety changes |
 
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
@@ -90,6 +91,16 @@
   - openspec/changes/add-preflight-balance-cache/design.md (created)
   - openspec/changes/add-preflight-balance-cache/specs/copy-trading/spec.md (created)
 
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-price-fallback`.
+- Files created/modified:
+  - openspec/changes/add-price-fallback/proposal.md (created)
+  - openspec/changes/add-price-fallback/tasks.md (created)
+  - openspec/changes/add-price-fallback/design.md (created)
+  - openspec/changes/add-price-fallback/specs/copy-trading/spec.md (created)
+
 ### Phase 3: Implementation
 - **Status:** complete
 - Actions taken:
@@ -109,6 +120,8 @@
   - Added verification notes for proxy execution queue.
   - Implemented preflight balance/allowance cache with in-flight dedupe and metrics.
   - Added verification notes for preflight cache.
+  - Implemented price fallback with source logging and TTL guard.
+  - Added verification notes for price fallback.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
@@ -120,3 +133,4 @@
   - openspec/changes/add-orderbook-quote-cache/verification.md (created)
   - openspec/changes/add-proxy-execution-queue/verification.md (created)
   - openspec/changes/add-preflight-balance-cache/verification.md (created)
+  - openspec/changes/add-price-fallback/verification.md (created)

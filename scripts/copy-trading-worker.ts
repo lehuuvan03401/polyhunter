@@ -36,6 +36,7 @@
  * - COPY_TRADING_DRY_RUN: Dry-run mode (optional)
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
+ * - COPY_TRADING_PREFLIGHT_CACHE_TTL_MS: Max age for preflight balance/allowance cache (default: 2000)
  * - COPY_TRADING_RPC_URLS: Comma-separated RPC list for failover (optional)
  * - COPY_TRADING_WORKER_KEYS: Comma-separated private keys for worker pool (optional)
  * - COPY_TRADING_WORKER_INDEX: Index into worker pool for this process (optional)
@@ -139,6 +140,10 @@ const quoteStats = {
     hits: 0,
     misses: 0,
     inflightHits: 0,
+};
+const priceSourceStats = {
+    orderbook: 0,
+    fallback: 0,
 };
 const preflightCache = new Map<string, { value: any; fetchedAt: number }>();
 const preflightInFlight = new Map<string, Promise<any>>();
@@ -508,20 +513,39 @@ async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Pr
     return promise;
 }
 
-async function fetchFreshPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<{ price: number; fetchedAt: number; source: string } | null> {
+async function fetchFreshPrice(
+    tokenId: string,
+    side: 'BUY' | 'SELL',
+    fallback?: { price?: number; timestampMs?: number; source?: string }
+): Promise<{ price: number; fetchedAt: number; source: string } | null> {
     if (!tradingService) return null;
 
     const cacheKey = buildQuoteKey(tokenId, side);
     const cached = quoteCache.get(cacheKey);
     if (cached && Date.now() - cached.fetchedAt <= QUOTE_CACHE_TTL_MS) {
         quoteStats.hits++;
+        priceSourceStats.orderbook++;
         return cached;
     }
 
     const inflight = quoteInFlight.get(cacheKey);
     if (inflight) {
         quoteStats.inflightHits++;
-        return inflight;
+        const inflightResult = await inflight;
+        if (inflightResult) {
+            priceSourceStats.orderbook++;
+            return inflightResult;
+        }
+        if (fallback?.price && fallback.price > 0) {
+            const fallbackFetchedAt = fallback.timestampMs || Date.now();
+            if (Date.now() - fallbackFetchedAt <= PRICE_TTL_MS) {
+                priceSourceStats.fallback++;
+                const fallbackSource = fallback.source || 'fallback';
+                console.log(`[Worker] ⚠️ Orderbook unavailable, using fallback price (${fallbackSource}) for ${tokenId}.`);
+                return { price: fallback.price, fetchedAt: fallbackFetchedAt, source: fallbackSource };
+            }
+        }
+        return null;
     }
 
     quoteStats.misses++;
@@ -544,6 +568,7 @@ async function fetchFreshPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<{
 
             const quote = { price, fetchedAt, source: 'orderbook' };
             quoteCache.set(cacheKey, quote);
+            priceSourceStats.orderbook++;
             return quote;
         } catch (error) {
             console.warn(`[Worker] Failed to fetch orderbook price for ${tokenId}:`, error);
@@ -554,7 +579,20 @@ async function fetchFreshPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<{
     })();
 
     quoteInFlight.set(cacheKey, fetchPromise);
-    return fetchPromise;
+    const orderbookQuote = await fetchPromise;
+    if (orderbookQuote) return orderbookQuote;
+
+    if (fallback?.price && fallback.price > 0) {
+        const fallbackFetchedAt = fallback.timestampMs || Date.now();
+        if (Date.now() - fallbackFetchedAt <= PRICE_TTL_MS) {
+            priceSourceStats.fallback++;
+            const fallbackSource = fallback.source || 'fallback';
+            console.log(`[Worker] ⚠️ Orderbook unavailable, using fallback price (${fallbackSource}) for ${tokenId}.`);
+            return { price: fallback.price, fetchedAt: fallbackFetchedAt, source: fallbackSource };
+        }
+    }
+
+    return null;
 }
 
 async function getExecutedTotalSince(since: Date, walletAddress?: string): Promise<number> {
@@ -1025,7 +1063,12 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 // OPTIMIZATION: Parallelize Preflight Checks
                 if (canAttemptExecution && trade.asset) {
                     // 1. Price Check
-                    const quotePromise = fetchFreshPrice(trade.asset, copySide as 'BUY' | 'SELL');
+                    const tradeTimestampMs = trade.timestamp ? trade.timestamp * 1000 : undefined;
+                    const quotePromise = fetchFreshPrice(trade.asset, copySide as 'BUY' | 'SELL', {
+                        price: trade.price,
+                        timestampMs: tradeTimestampMs,
+                        source: 'trade',
+                    });
 
                     // 2. Proxy Resolution
                     const proxyPromise = executionService!.resolveProxyAddress(config.walletAddress, executionSigner!).catch(() => null);
@@ -1961,6 +2004,7 @@ function logMetricsSummary(): void {
     console.log(`   Avg Latency: ${avgLatency.toFixed(0)}ms`);
     console.log(`   Quote Cache: hits=${quoteStats.hits}, inflight=${quoteStats.inflightHits}, misses=${quoteStats.misses}`);
     console.log(`   Preflight Cache: hits=${preflightStats.hits}, inflight=${preflightStats.inflightHits}, misses=${preflightStats.misses}`);
+    console.log(`   Price Source: orderbook=${priceSourceStats.orderbook}, fallback=${priceSourceStats.fallback}`);
 
     if (metrics.failureReasons.size > 0) {
         const topReasons = Array.from(metrics.failureReasons.entries())
@@ -1983,6 +2027,8 @@ function logMetricsSummary(): void {
     preflightStats.hits = 0;
     preflightStats.inflightHits = 0;
     preflightStats.misses = 0;
+    priceSourceStats.orderbook = 0;
+    priceSourceStats.fallback = 0;
 }
 
 async function checkBalanceAlerts(): Promise<void> {

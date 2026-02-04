@@ -37,6 +37,8 @@
 | Implemented proxy-scoped mutex in execution service | Serializes fund/settlement per proxy |
 | Created change `add-preflight-balance-cache` | Plan to cache preflight balance/allowance reads |
 | Implemented preflight cache in worker | Short TTL cache reduces RPC load for preflight checks |
+| Created change `add-price-fallback` | Plan to add fallback price source when orderbook is missing |
+| Implemented price fallback | Uses trade price when orderbook unavailable, with TTL guard |
 
 ## Issues Encountered
 | Issue | Resolution |
