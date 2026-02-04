@@ -52,6 +52,7 @@
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
 import type { ActivityTrade, MarketEvent, Subscription } from '../src/services/realtime-service-v2.js';
 import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService, GammaApiClient } from '../src/index.js';
+import type { DebtLogger } from '../src/services/copy-trading-execution-service.js';
 import { ethers } from 'ethers';
 import { createHash } from 'crypto';
 import { CTF_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '../src/core/contracts.js';
@@ -108,6 +109,7 @@ const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '6000
 const PRICE_TTL_MS = parseInt(process.env.COPY_TRADING_PRICE_TTL_MS || '5000', 10);
 const IDEMPOTENCY_BUCKET_MS = parseInt(process.env.COPY_TRADING_IDEMPOTENCY_BUCKET_MS || '5000', 10);
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
+const DEBT_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
 
 // EIP-1559 Aggressive Gas Settings for Polygon (To avoid stuck copy trades)
 const GAS_SETTINGS = {
@@ -210,6 +212,38 @@ let activitySubscription: Subscription | null = null;
 let activityHandlers: { onTrade: (trade: ActivityTrade) => void; onError?: (error: Error) => void } | null = null;
 let lastSubscriptionKey = '';
 let lastSubscriptionMode: 'filtered' | 'all' | null = null;
+
+class PrismaDebtLogger implements DebtLogger {
+    private prisma: any;
+
+    constructor(prismaClient: any) {
+        this.prisma = prismaClient;
+    }
+
+    async logDebt(debt: {
+        proxyAddress: string;
+        botAddress: string;
+        amount: number;
+        currency: string;
+        error: string;
+    }): Promise<void> {
+        if (!this.prisma) return;
+        try {
+            await this.prisma.debtRecord.create({
+                data: {
+                    proxyAddress: debt.proxyAddress,
+                    botAddress: debt.botAddress,
+                    amount: debt.amount,
+                    currency: debt.currency,
+                    status: 'PENDING',
+                    errorLog: debt.error
+                }
+            });
+        } catch (e) {
+            console.error('[PrismaDebtLogger] Failed to persist debt record:', e);
+        }
+    }
+}
 
 // Stats
 const stats = {
@@ -943,45 +977,33 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     continue;
                 }
 
-                // OPTIMIZATION: Fire Execution IMMEDIATELY if safe
-                // 优化：如果检查通过，立即触发执行，不等待数据库操作
-                // 这是一个 "Fire-and-Forget" 模式，为了抢时间 (Latency Sensitive)
-                // 我们会在 parallel/after 阶段创建数据库记录
-                let executionPromise: Promise<any> | null = null;
-                let fastTracked = false;
-
-                if (canAttemptExecution && !priceGuardError && proxyAddress && ENABLE_REAL_TRADING) {
-                    // Rate Limit Check (频次限制检查)
-                    if (limiter.allow()) {
-                        fastTracked = true;
-                        const execStart = Date.now();
-                        console.log(`   🚀 [FastTrack] Executing via Service for ${config.walletAddress}...`);
-
-                        // 核心调用：执行跟单 (使用优化后的 ExecutionService)
-                        executionPromise = executionService!.executeOrderWithProxy({
-                            tradeId: "pending-db-creation", // Placeholder, will update later if needed or not use tradeId in service layer strictly
-                            walletAddress: config.walletAddress,
-                            tokenId: trade.asset!,
-                            side: copySide as 'BUY' | 'SELL',
-                            amount: adjustedCopySize,
-                            price: basePrice,
-                            overrides: GAS_SETTINGS,
-                            proxyAddress: proxyAddress || undefined,
-                            slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
-                            maxSlippage: config.maxSlippage,
-                            slippageMode: config.slippageType as 'FIXED' | 'AUTO',
-                            orderType: 'market',
-                        }).then(res => ({ ...res, execStart }));
-                    } else {
-                        console.log(`   ⏳ Rate limit hit, skipping execution.`);
-                    }
+                let guardrailReason: string | undefined;
+                let guardrailAllowed = true;
+                if (canAttemptExecution && !priceGuardError && proxyAddress) {
+                    const guardrail = await checkExecutionGuardrails(config.walletAddress, adjustedCopySize, {
+                        marketSlug: trade.marketSlug || undefined,
+                        tokenId: trade.asset || undefined,
+                    });
+                    guardrailAllowed = guardrail.allowed;
+                    guardrailReason = guardrail.reason;
                 }
 
-                // ========================================
-                // Create PENDING CopyTrade Record (Async)
-                // ========================================
-                // We await this now, but the execution request is already IN FLIGHT (if fastTracked)
+                // Prewrite BEFORE execution to avoid orphan orders.
+                let executionPromise: Promise<any> | null = null;
+                let fastTracked = false;
+                let rateLimited = false;
+                const shouldExecuteCandidate = Boolean(canAttemptExecution && !priceGuardError && proxyAddress && guardrailAllowed);
+                const initialSkipReason = shouldExecuteCandidate
+                    ? null
+                    : (guardrailReason
+                        || priceGuardError
+                        || (!ENABLE_REAL_TRADING ? 'REAL_TRADING_DISABLED' : undefined)
+                        || (!proxyAddress ? 'NO_PROXY' : undefined)
+                        || 'CHECKS_FAILED');
 
+                // ========================================
+                // Create PENDING CopyTrade Record (Prewrite)
+                // ========================================
                 let copyTrade;
                 try {
                     copyTrade = await prisma.copyTrade.create({
@@ -1000,24 +1022,50 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             originalTxHash: trade.transactionHash || null,
                             copySize: adjustedCopySize,
                             copyPrice: execPrice,
-                            status: fastTracked ? 'PENDING' : 'SKIPPED', // If not fast tracked, likely skipped or failed checks
-                            errorMessage: fastTracked ? null : (priceGuardError || 'Checks failed'),
+                            status: shouldExecuteCandidate ? 'PENDING' : 'SKIPPED',
+                            errorMessage: shouldExecuteCandidate ? null : (initialSkipReason || 'Checks failed'),
                             expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
                         },
                     });
                     stats.tradesCreated++;
                 } catch (error: any) {
-                    // If DB fails, we might have an orphan order in flight. 
-                    // This is a risk of optimistic execution. 
-                    // But generally DB constraint violations are handled before execution in previous logic.
                     if (error?.code === 'P2002') {
-                        console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (unique constraint) during creation.`);
+                        console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (unique constraint) during prewrite.`);
                         stats.tradesSkipped++;
-                        // If we fired execution, we can't easily cancel it here. 
-                        // Ideally we'd log this anomaly.
+                    } else {
+                        console.error(`   ❌ Prewrite failed for config ${config.id}:`, error);
                     }
-                    // Continue to next config
                     continue;
+                }
+
+                if (shouldExecuteCandidate) {
+                    if (!limiter.allow()) {
+                        console.log(`   ⏳ Rate limit hit, skipping execution.`);
+                        rateLimited = true;
+                        await prisma.copyTrade.update({
+                            where: { id: copyTrade.id },
+                            data: { status: 'SKIPPED', errorMessage: 'RATE_LIMIT' },
+                        });
+                    } else {
+                        fastTracked = true;
+                        const execStart = Date.now();
+                        console.log(`   🚀 [FastTrack] Executing via Service for ${config.walletAddress}...`);
+
+                        executionPromise = executionService!.executeOrderWithProxy({
+                            tradeId: copyTrade.id,
+                            walletAddress: config.walletAddress,
+                            tokenId: trade.asset!,
+                            side: copySide as 'BUY' | 'SELL',
+                            amount: adjustedCopySize,
+                            price: basePrice,
+                            overrides: GAS_SETTINGS,
+                            proxyAddress: proxyAddress || undefined,
+                            slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
+                            maxSlippage: config.maxSlippage,
+                            slippageMode: config.slippageType as 'FIXED' | 'AUTO',
+                            orderType: 'market',
+                        }).then(res => ({ ...res, execStart }));
+                    }
                 }
 
                 // ========================================
@@ -1093,6 +1141,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     if (!ENABLE_REAL_TRADING) console.log(`   ⛔ Real trading disabled.`);
                     if (priceGuardError) console.log(`   ⛔ Price guard: ${priceGuardError}`);
                     if (!proxyAddress) console.log(`   ⛔ No proxy found.`);
+                    if (rateLimited) console.log(`   ⛔ Rate limit hit.`);
                 }
 
             } catch (error) {
@@ -1184,6 +1233,85 @@ async function recoverPendingTrades(): Promise<void> {
 
     } catch (e) {
         console.error('[Recovery] Error scanning pending trades:', e);
+    }
+}
+
+async function expireStalePendingTrades(): Promise<void> {
+    if (!prisma) return;
+    try {
+        const now = new Date();
+        const staleTrades = await prisma.copyTrade.findMany({
+            where: {
+                status: 'PENDING',
+                expiresAt: { lt: now },
+            },
+            take: 25,
+        });
+
+        if (staleTrades.length === 0) return;
+
+        console.log(`\n⏳ [Recovery] Expiring ${staleTrades.length} stale PENDING trades...`);
+
+        for (const trade of staleTrades) {
+            await prisma.copyTrade.update({
+                where: { id: trade.id },
+                data: {
+                    status: 'FAILED',
+                    errorMessage: 'PENDING_EXPIRED',
+                },
+            });
+        }
+    } catch (e) {
+        console.error('[Recovery] Error expiring stale PENDING trades:', e);
+    }
+}
+
+async function recoverPendingDebts(): Promise<void> {
+    if (!executionService || !executionSigner || !activeWorkerAddress || !prisma) return;
+
+    try {
+        const debts = await prisma.debtRecord.findMany({
+            where: {
+                status: 'PENDING',
+                botAddress: activeWorkerAddress,
+            },
+            take: 10,
+        });
+
+        if (debts.length === 0) return;
+
+        console.log(`\n🩺 [Debt] Found ${debts.length} pending debts for ${activeWorkerAddress.slice(0, 8)}...`);
+
+        for (const debt of debts) {
+            if (debt.currency && debt.currency !== 'USDC') {
+                continue;
+            }
+
+            const proxyBalance = await executionService.getProxyUsdcBalance(debt.proxyAddress, executionSigner).catch(() => 0);
+            if (proxyBalance < debt.amount) continue;
+
+            const result = await executionService.transferFromProxy(debt.proxyAddress, debt.amount, executionSigner);
+            if (result.success) {
+                await prisma.debtRecord.update({
+                    where: { id: debt.id },
+                    data: {
+                        status: 'REPAID',
+                        repaidAt: new Date(),
+                    },
+                });
+                console.log(`[Debt] ✅ Recovered $${debt.amount} from ${debt.proxyAddress.slice(0, 8)}...`);
+            } else {
+                await prisma.debtRecord.update({
+                    where: { id: debt.id },
+                    data: {
+                        errorLog: result.error || 'Recovery failed',
+                    },
+                });
+                console.warn(`[Debt] ❌ Recovery failed: ${result.error}`);
+            }
+        }
+    } catch (e) {
+        console.error('[Debt] Recovery scan failed:', e);
     }
 }
 
@@ -1845,13 +1973,16 @@ async function start(): Promise<void> {
             const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
             const signer = new ethers.Wallet(workerSelection.privateKey, provider);
             executionSigner = signer;
-            executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
+            const debtLogger = new PrismaDebtLogger(prisma);
+            executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID, debtLogger);
             activeWorkerKey = workerSelection.privateKey;
             activeWorkerAddress = await signer.getAddress();
 
             console.log(`   Trading Wallet: ${tradingService.getAddress()}`);
             console.log(`   Execution Worker: ${activeWorkerAddress}`);
             console.log(`   Execution Service: Ready ✅`);
+
+            await recoverPendingDebts();
         } catch (error) {
             console.error('   ⚠️ Failed to initialize TradingService:', error);
             tradingService = null;
@@ -1881,7 +2012,9 @@ async function start(): Promise<void> {
 
     // Set up periodic RECOVERY task
     setInterval(async () => {
-        if (isRunning && executionService) {
+        if (!isRunning) return;
+        await expireStalePendingTrades();
+        if (executionService) {
             await recoverPendingTrades();
         }
     }, 2 * 60 * 1000); // Every 2 minutes
@@ -1892,6 +2025,12 @@ async function start(): Promise<void> {
             await retryFailedTrades();
         }
     }, RETRY_INTERVAL_MS);
+
+    // Set up periodic debt recovery task
+    setInterval(async () => {
+        if (!isRunning) return;
+        await recoverPendingDebts();
+    }, DEBT_RECOVERY_INTERVAL_MS);
 
     // Periodic settlement reconciliation (in case WS missed or redemption failed)
     setInterval(async () => {
