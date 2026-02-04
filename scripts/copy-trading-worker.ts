@@ -944,17 +944,20 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 }
 
                 // OPTIMIZATION: Fire Execution IMMEDIATELY if safe
-                // We create the DB record in parallel/after
+                // 优化：如果检查通过，立即触发执行，不等待数据库操作
+                // 这是一个 "Fire-and-Forget" 模式，为了抢时间 (Latency Sensitive)
+                // 我们会在 parallel/after 阶段创建数据库记录
                 let executionPromise: Promise<any> | null = null;
                 let fastTracked = false;
 
                 if (canAttemptExecution && !priceGuardError && proxyAddress && ENABLE_REAL_TRADING) {
-                    // Rate Limit Check
+                    // Rate Limit Check (频次限制检查)
                     if (limiter.allow()) {
                         fastTracked = true;
                         const execStart = Date.now();
                         console.log(`   🚀 [FastTrack] Executing via Service for ${config.walletAddress}...`);
 
+                        // 核心调用：执行跟单 (使用优化后的 ExecutionService)
                         executionPromise = executionService!.executeOrderWithProxy({
                             tradeId: "pending-db-creation", // Placeholder, will update later if needed or not use tradeId in service layer strictly
                             walletAddress: config.walletAddress,

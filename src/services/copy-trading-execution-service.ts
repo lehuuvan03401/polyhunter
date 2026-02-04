@@ -338,8 +338,12 @@ export class CopyTradingExecutionService {
 
         console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches (No Mutex)...`);
 
+
+
         // ==================================================================
         // 1. Parallel Fetch (Non-Blocking, No Mutex)
+        // 1. 并行预检 (非阻塞，无锁)
+        // 此阶段同时进行所有不需要 "写操作" 的数据查询，节省约 200-500ms
         // ==================================================================
         const fetchStart = Date.now();
 
@@ -363,6 +367,8 @@ export class CopyTradingExecutionService {
         });
 
         // E. Optimistic Allowance Check (Read-Only)
+        // 乐观授权检查：只有当余额确实不足时，才会在后续的 Mutex 锁中进行 Approve
+        // 绝大多数情况下，Bot 已经有授权，这里并行检查可以避免无谓的串行等待
         // Check if we ALREADY have allowance so we can skip the Mutex-locked approval step
         const allowancePromise = (async () => {
             try {
@@ -407,6 +413,8 @@ export class CopyTradingExecutionService {
 
         // ==================================================================
         // 2. Execution Critical Section (Mutex Locked)
+        // 2. 核心执行区 (互斥锁)
+        // 进入临界区，防止 Nonce 冲突和并发资金操作
         // ==================================================================
         return globalTxMutex.run(async () => {
             // 0. Conditionally Approve (Save time if already approved)
@@ -481,6 +489,10 @@ export class CopyTradingExecutionService {
 
                 console.log(`[CopyExec] Placing MARKET FOK order. Size: ${orderAmount.toFixed(4)}, Price: ${executionPrice}`);
 
+                // 下单关键点：
+                // 1. 使用 Market Order 确保立即执行
+                // 2. 传入 price 作为保护 (Slippage Cap)
+                // 3. 强制 FOK (Fill-Or-Kill)：要么全部成交，要么完全失败。不留残单 (Partial Fill Risk)。
                 orderResult = await execService.createMarketOrder({
                     tokenId,
                     side,
