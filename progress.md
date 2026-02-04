@@ -42,12 +42,11 @@
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 3 (implementation) |
 | Where am I? | Phase 4 (testing) |
 | Where am I going? | Phase 5 delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented scoped tx mutex, debt recovery verification notes, and prior safety changes |
+| What have I done? | Implemented orderbook quote cache + dedupe, plus prior safety changes |
 
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
@@ -58,6 +57,16 @@
   - openspec/changes/add-scoped-tx-mutex/tasks.md (created)
   - openspec/changes/add-scoped-tx-mutex/design.md (created)
   - openspec/changes/add-scoped-tx-mutex/specs/copy-execution/spec.md (created)
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-orderbook-quote-cache`.
+- Files created/modified:
+  - openspec/changes/add-orderbook-quote-cache/proposal.md (created)
+  - openspec/changes/add-orderbook-quote-cache/tasks.md (created)
+  - openspec/changes/add-orderbook-quote-cache/design.md (created)
+  - openspec/changes/add-orderbook-quote-cache/specs/copy-trading/spec.md (created)
 
 ### Phase 3: Implementation
 - **Status:** complete
@@ -72,6 +81,8 @@
   - Documented debt recovery verification steps.
   - Implemented scoped signer mutex for execution serialization.
   - Added verification notes for scoped mutex.
+  - Implemented orderbook quote cache with in-flight dedupe and metrics.
+  - Added verification notes for orderbook quote cache.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
@@ -80,3 +91,4 @@
   - src/core/tx-mutex.ts (modified)
   - src/services/copy-trading-execution-service.ts (modified)
   - openspec/changes/add-scoped-tx-mutex/verification.md (created)
+  - openspec/changes/add-orderbook-quote-cache/verification.md (created)

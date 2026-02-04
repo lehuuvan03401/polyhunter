@@ -33,6 +33,12 @@ Phase 4 (testing)
 - [x] Implement scoped tx mutex for per-signer serialization
 - [x] Add verification notes for scoped mutex
 - **Status:** complete
+ 
+### Phase 3: Implementation (Orderbook Quote Cache)
+- [x] Implement quote cache + in-flight dedupe
+- [x] Add logging/metrics for cache hits/misses
+- [x] Add verification notes for cache behavior
+- **Status:** complete
 
 ### Phase 4: Testing & Verification
 - [ ] Run relevant tests / targeted verification
@@ -55,6 +61,7 @@ Phase 4 (testing)
 | Use sequential OpenSpec proposals | Safer rollout, clearer approvals, smaller blast radius |
 | Change id: `add-copy-trade-prewrite` | Targets orphan-execution risk without duplicating existing changes |
 | Next change id: `add-scoped-tx-mutex` | Enables parallel execution across distinct signers |
+| Next change id: `add-orderbook-quote-cache` | Reduces redundant orderbook fetches under burst load |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

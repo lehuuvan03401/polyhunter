@@ -31,6 +31,8 @@
 | Wire debt logging + recovery in worker | Meet copy-execution debt recovery requirements |
 | Created change `add-scoped-tx-mutex` | Plan to scope tx serialization per signer |
 | Documented debt recovery verification | Provides manual steps for ops validation |
+| Created change `add-orderbook-quote-cache` | Adds price quote caching + in-flight dedupe |
+| Quote cache TTL capped at 5s | Enforces spec max TTL regardless of env override |
 
 ## Issues Encountered
 | Issue | Resolution |

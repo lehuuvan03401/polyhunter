@@ -110,6 +110,7 @@ const PRICE_TTL_MS = parseInt(process.env.COPY_TRADING_PRICE_TTL_MS || '5000', 1
 const IDEMPOTENCY_BUCKET_MS = parseInt(process.env.COPY_TRADING_IDEMPOTENCY_BUCKET_MS || '5000', 10);
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 const DEBT_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
+const QUOTE_CACHE_TTL_MS = Math.min(PRICE_TTL_MS, 5000);
 
 // EIP-1559 Aggressive Gas Settings for Polygon (To avoid stuck copy trades)
 const GAS_SETTINGS = {
@@ -129,6 +130,18 @@ if (MARKET_CAPS_RAW) {
                 MARKET_CAPS.set(slug.toLowerCase(), capValue);
             }
         });
+}
+
+const quoteCache = new Map<string, { price: number; fetchedAt: number; source: string }>();
+const quoteInFlight = new Map<string, Promise<{ price: number; fetchedAt: number; source: string } | null>>();
+const quoteStats = {
+    hits: 0,
+    misses: 0,
+    inflightHits: 0,
+};
+
+if (PRICE_TTL_MS > 5000) {
+    console.warn(`[Worker] COPY_TRADING_PRICE_TTL_MS capped to 5000ms (was ${PRICE_TTL_MS}).`);
 }
 
 // ============================================================================
@@ -446,28 +459,57 @@ function buildIdempotencyKey(configId: string, trade: ActivityTrade, side: strin
     return createHash('sha256').update(raw).digest('hex');
 }
 
+function buildQuoteKey(tokenId: string, side: 'BUY' | 'SELL'): string {
+    return `${tokenId.toLowerCase()}:${side}`;
+}
+
 async function fetchFreshPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<{ price: number; fetchedAt: number; source: string } | null> {
     if (!tradingService) return null;
 
-    try {
-        const fetchedAt = Date.now();
-        const orderbook = await tradingService.getOrderBook(tokenId);
-
-        const bestAsk = Number(orderbook.asks?.[0]?.price || 0);
-        const bestBid = Number(orderbook.bids?.[0]?.price || 0);
-
-        let price = side === 'BUY' ? bestAsk : bestBid;
-        if (!price && bestAsk && bestBid) {
-            price = (bestAsk + bestBid) / 2;
-        }
-        if (!price) price = bestAsk || bestBid;
-
-        if (!price || !Number.isFinite(price)) return null;
-        return { price, fetchedAt, source: 'orderbook' };
-    } catch (error) {
-        console.warn(`[Worker] Failed to fetch orderbook price for ${tokenId}:`, error);
-        return null;
+    const cacheKey = buildQuoteKey(tokenId, side);
+    const cached = quoteCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt <= QUOTE_CACHE_TTL_MS) {
+        quoteStats.hits++;
+        return cached;
     }
+
+    const inflight = quoteInFlight.get(cacheKey);
+    if (inflight) {
+        quoteStats.inflightHits++;
+        return inflight;
+    }
+
+    quoteStats.misses++;
+
+    const fetchPromise = (async () => {
+        try {
+            const fetchedAt = Date.now();
+            const orderbook = await tradingService.getOrderBook(tokenId);
+
+            const bestAsk = Number(orderbook.asks?.[0]?.price || 0);
+            const bestBid = Number(orderbook.bids?.[0]?.price || 0);
+
+            let price = side === 'BUY' ? bestAsk : bestBid;
+            if (!price && bestAsk && bestBid) {
+                price = (bestAsk + bestBid) / 2;
+            }
+            if (!price) price = bestAsk || bestBid;
+
+            if (!price || !Number.isFinite(price)) return null;
+
+            const quote = { price, fetchedAt, source: 'orderbook' };
+            quoteCache.set(cacheKey, quote);
+            return quote;
+        } catch (error) {
+            console.warn(`[Worker] Failed to fetch orderbook price for ${tokenId}:`, error);
+            return null;
+        } finally {
+            quoteInFlight.delete(cacheKey);
+        }
+    })();
+
+    quoteInFlight.set(cacheKey, fetchPromise);
+    return fetchPromise;
 }
 
 async function getExecutedTotalSince(since: Date, walletAddress?: string): Promise<number> {
@@ -1852,6 +1894,7 @@ function logMetricsSummary(): void {
     console.log(`   Executions: ${metrics.executions}`);
     console.log(`   Success Rate: ${successRate.toFixed(2)}%`);
     console.log(`   Avg Latency: ${avgLatency.toFixed(0)}ms`);
+    console.log(`   Quote Cache: hits=${quoteStats.hits}, inflight=${quoteStats.inflightHits}, misses=${quoteStats.misses}`);
 
     if (metrics.failureReasons.size > 0) {
         const topReasons = Array.from(metrics.failureReasons.entries())
@@ -1868,6 +1911,9 @@ function logMetricsSummary(): void {
     metrics.failures = 0;
     metrics.totalLatencyMs = 0;
     metrics.failureReasons.clear();
+    quoteStats.hits = 0;
+    quoteStats.inflightHits = 0;
+    quoteStats.misses = 0;
 }
 
 async function checkBalanceAlerts(): Promise<void> {
