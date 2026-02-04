@@ -1,64 +1,70 @@
-# Copy Trading Best Practices & Optimization Guide
+# Copy Trading 最佳实践与优化指南 (Best Practices Guide)
 
-This document outlines the recommended settings for configuring real-world copy trading sessions and provides technical suggestions for optimizing the `poly-hunter` execution flow.
+> **Last Updated**: 2026-02-05  
+> **Applicable Version**: PolyHunter v2.1
 
-## I. Parameter Configuration Best Practices
-
-In a live trading environment, the core objective is to **"precisely replicate profitable strategies with minimal slippage while strictly controlling risk."**
-
-### 1. Funding & Mode (`Mode` Tab)
-
-| Parameter | Recommendation | Rationale |
-| :--- | :--- | :--- |
-| **Copy Amount** | **% of Trader's Shares** | **Alignment**: Keeps your position sizing relative to the trader's conviction. If they go heavy, you go heavy (proportionally); if they test the waters, you do the same. <br> **Start Small**: Begin with **10-20%** to validate performance. |
-| **Infinite Mode** | **ON** | **Continuity**: Prevents copy trading from stopping abruptly if a single order drains the "allocated" amount. Ensures you don't miss sell signals due to "stopped" status. **Must be paired with `Max Per Market` limit.** |
-| **Slippage** | **Auto (Dynamic)** or **1-3%** | **Volatility Handling**: Polymarket liquidity varies wildly. "Auto" helps avoid getting stuck on fast-moving markets, while a 3% cap prevents getting wrecked on illiquid ones. |
-
-### 2. Filters & Risk Management (`Filters` Tab)
-
-| Parameter | Recommendation | Rationale |
-| :--- | :--- | :--- |
-| **Min Liquidity / Volume** | **REQUIRED** (e.g., >$5k) | **The #1 Rule**: Never copy into "ghost markets." Low liquidity = massive slippage on entry and inability to exit. |
-| **Max Odds** | **80% - 90%** | **Risk/Reward**: Avoid copying "picking pennies in front of a steamroller" trades (e.g., buying YES at 98¢). A single black swan event here wipes out months of small gains. |
-| **Max Per Market** | **10% - 20% of Total** | **Diversification**: Hard cap on how much capital can be exposed to a single event outcome. Prevents account blow-up from one bad prediction. |
-
-### 3. Exit Strategy (`Sells` Tab)
-
-| Parameter | Recommendation | Rationale |
-| :--- | :--- | :--- |
-| **Sell Mode** | **Same % as Trader** | **Sync**: The most accurate way to mirror strategy. If the trader sells 50% to take profit, you should do the same to lock in gains. |
+本文档概述了在真实生产环境中配置跟单交易的推荐设置，并提供了针对 `poly-hunter` 执行流的技术优化建议。
 
 ---
 
-## II. System Optimization Suggestions
+## 1. 参数配置最佳实践 (Parameter Configuration)
 
-Based on the analysis of `TradingService` and `CopyTradingExecutionService`, here are advanced technical optimizations for the platform:
+在实盘环境中，核心目标是 **"以最小的滑点精确复制盈利策略，同时严格控制风险。"**
 
-### 1. Capital Efficiency: Bot Float Rebalancing
-*   **Current State**: ✅ **IMPLEMENTED** - The "Bot Float" strategy includes automatic debt recovery.
-*   **Features**:
-    *   Debt logging on reimbursement failure (`DebtLogger.logDebt()`)
-    *   Startup debt recovery (`debtManager.recoverPendingDebts()`)
-    *   Periodic recovery every 2 minutes
+### 1. 资金与模式 (`Mode` Tab)
 
-### 2. Execution Speed: Optimistic Execution
-*   **Current State**: Sequential processing (Event -> Config Check -> Balance Check -> Tx).
-*   **Optimization**: **Optimistic Execution** for high-reputation traders.
-    *   **Logic**: Upon receiving a signal from a "Whale" trader, immediately broadcast a small "scout" transaction while simultaneously validating configs.
-    *   **Benefit**: Captures better odds in high-frequency scenarios.
+| 参数 | 推荐设置 | 理由 (Rationale) |
+| :--- | :--- | :--- |
+| **跟单金额 (Copy Amount)** | **按比例 (Percentage)** | **对齐信念**: 保持你的仓位大小与交易员的信念挂钩。如果他们重仓，你也重仓（按比例）；如果他们试水，你也试水。<br> **从小额开始**: 建议先用 **10-20%** 的资金验证其表现。 |
+| **无限模式 (Infinite Mode)** | **开启 (ON)** | **连续性**: 防止因为单笔订单耗尽了“分配额度”而导致跟单突然停止。确保不会因为“已停止”状态而错过卖出信号。<br>**注意**: 必须配合 `Max Per Market` 设置使用。 |
+| **滑点 (Slippage)** | **Auto** 或 **1-3%** | **应对波动**: Polymarket 的流动性差异巨大。"Auto" 模式有助于避免在快速波动的市场中踏空，而 3% 的上限则防止在低流动性市场被收割。 |
 
-### 3. Resilience: Smart Slippage Retry
-*   **Current State**: Fails if slippage exceeds limit.
-*   **Optimization**: **Adaptive Retry**.
-    *   **Logic**: If an order fails due to `Slippage Exceeded`, but the price deviation is minor (e.g., target 0.50, executed 0.505, limit 0.502), automatically slightly widen the slippage tolerance (e.g., to 0.505) and retry immediately *once*.
-    *   **Benefit**: Prevents missing highly profitable moves due to minor noise.
+### 2. 过滤器与风控 (`Filters` Tab)
 
-### 4. Safety: Independent Watcher (Force Exit)
-*   **Current State**: Relies on Trader's sell signal.
-*   **Optimization**: **Global Stop-Loss Watcher**.
-    *   **Logic**: A standalone process that monitors all open positions. If any position hits a user-defined hard stop (e.g., -30% ROI), it triggers a sell **locally**, ignoring the trader.
-    *   **Benefit**: Protects against traders who "hold to zero" or refuse to cut losses.
+| 参数 | 推荐设置 | 理由 (Rationale) |
+| :--- | :--- | :--- |
+| **最小流动性 (Min Liquidity)** | **必须开启** (如 >$5k) | **第一原则**: 永远不要在“鬼市”跟单。低流动性 = 入场巨额滑点 + 无法离场。 |
+| **最大赔率 (Max Odds)** | **80% - 90%** | **盈亏比**: 避免“推土机前捡硬币”的交易（例如以 98美分买入 YES）。只要发生一次黑天鹅事件，就会抹平几个月的微利。 |
+| **单市场上限 (Max Per Market)** | **总资金的 10-20%** | **分散投资**: 对单个事件的风险敞口进行硬性封顶。防止因一次错误的预测导致账户爆仓。 |
 
-### 5. MEV Protection
-*   **Optimization**: Integrate **Flashbots** or private RPC endpoints for Polygon.
-*   **Reason**: Prevents front-running and sandwich attacks on large copy trade orders.
+### 3. 退出策略 (`Sells` Tab)
+
+| 参数 | 推荐设置 | 理由 (Rationale) |
+| :--- | :--- | :--- |
+| **卖出模式 (Sell Mode)** | **跟随比例 (Same %)** | **同步**: 最准确的策略镜像。如果交易员卖出 50% 止盈，你也应该卖出 50% 以锁定利润。 |
+
+---
+
+## 2. 系统优化建议 (System Optimization)
+
+基于对 `TradingService` 和 `CopyTradingExecutionService` 的分析，以下是针对平台的高级技术优化方案：
+
+### 1. 资金效率: Bot Float Rebalancing
+*   **当前状态**: ✅ **已实现 (IMPLEMENTED)** - 包含自动债务恢复的 "Bot Float" 策略。
+*   **功能**:
+    *   报销失败时的债务记录 (`DebtLogger.logDebt()`)
+    *   启动时债务恢复 (`debtManager.recoverPendingDebts()`)
+    *   周期性扫描恢复 (每 2 分钟)
+
+### 2. 执行速度: 极速通道 (FastTrack Execution)
+*   **当前状态**: ✅ **已实现 (IMPLEMENTED)** (2026-02)
+*   **逻辑**:
+    *   **并行预检**: 余额/授权检查与询价并行进行。
+    *   **即发即忘 (Fire-and-Forget)**: 交易请求在 DB 持久化完成前发出。
+    *   **Smart Buffer**: 如果 Bot 有余额，直接跳过链上充值步骤 (将 3 笔 TX 减少为 1 笔)。
+
+### 3. 韧性: 智能滑点重试 (Adaptive Retry)
+*   **当前状态**: 超过滑点限制则失败。
+*   **优化建议**: **自适应重试**。
+    *   **逻辑**: 如果订单因为 `Slippage Exceeded` 失败，但价格偏差很小 (如目标 0.50，实际 0.505，限价 0.502)，自动稍微放宽滑点 (如至 0.505) 并立即重试一次。
+    *   **收益**: 防止因微小的市场噪音而错过高盈利机会。
+
+### 4. 安全: 独立风控哨兵 (Watcher)
+*   **当前状态**: 依赖交易员的卖出信号。
+*   **优化建议**: **全局止损哨兵 (Global Stop-Loss)**。
+    *   **逻辑**: 一个独立的后台进程监控所有持仓。如果任何持仓触发用户定义的硬止损 (如 ROI -30%)，忽略交易员信号，**强制本地卖出**。
+    *   **收益**: 保护用户免受“归零信仰者”或拒绝止损的交易员的影响。
+
+### 5. MEV 保护
+*   **优化建议**: 集成 **Flashbots** 或 Polygon 私有节点。
+*   **理由**: 防止大额跟单被三明治攻击 (Sandwich Attacks) 或抢跑。

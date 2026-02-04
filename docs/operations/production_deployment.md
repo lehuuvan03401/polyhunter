@@ -213,6 +213,13 @@ NEXTAUTH_SECRET="请生成一个复杂的随机字符串"
 - `COPY_TRADING_MIN_WALLET_MATIC`（readiness 面板提示用）
 - `COPY_TRADING_MIN_PROXY_USDC`（readiness 面板提示用）
 
+### 性能调优参数 (Performance Tuning - New 2026.02)
+- `COPY_TRADING_PRICE_TTL_MS="5000"` (Quote Cache TTL)
+- `COPY_TRADING_PREFLIGHT_CACHE_TTL_MS="2000"` (Balance/Allowance Cache TTL)
+- `COPY_TRADING_QUOTE_CACHE_MAX_ENTRIES="500"`
+- `COPY_TRADING_PREFLIGHT_CACHE_MAX_ENTRIES="1000"`
+- `COPY_TRADING_RPC_URLS="wss://...,wss://..."` (多节点故障转移)
+
 资金/授权 Readiness 面板会轮询 `/api/copy-trading/readiness`，展示：
 - 钱包 MATIC / USDC.e 余额
 - Proxy USDC.e 余额

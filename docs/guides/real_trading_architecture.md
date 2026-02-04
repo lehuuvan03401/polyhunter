@@ -37,7 +37,9 @@
 *   **流程**:
     1.  **并行预检 (Parallel Fetches)**: 同时请求 Gas Price (Gas Station)、Proxy 余额、Polymarket 盘口深度。
     2.  **乐观授权 (Optimistic Allowance)**: 除非余额不足，否则跳过上链授权步骤。
-    3.  **资金调度**: 如果 Proxy 余额不足而 Bot 余额充足，通过 `transferFromProxy` 将资金从金库拉取到 Bot 钱包 (On-Chain TX)。
+    3.  **资金调度**:
+        *   **Standard Mode**: 如果 Proxy 余额不足，通过 `transferFromProxy` 拉取。
+        *   **Smart Buffer (New)**: 如果 Bot 定义了 Buffer 且余额充足 (> $50)，**跳过**链上拉取，直接垫资。
     4.  **原子下单**: 调用 Polymarket CLOB API 下达 **Market Order** 并带有 **FOK (Fill-Or-Kill)** 标志。
         *   要么全部成交，要么全部失败。不留残单。
 
@@ -69,14 +71,17 @@
 ### 3. 跟单交易 (Real Trading - "The Flash Transfer")
 客户无感，后台自动完成的“闪电中转”：
 
-1.  **提款 (Pull)**: Bot 发现交易机会，但自己是个穷光蛋。
-    *   流向: `Proxy Contract` -> `Bot Wallet` (10 USDC)。
-    *   原理: Bot 利用 Operator 权限发起 `transferFromProxy`。
-2.  **交易 (Trade)**: Bot 拿着借来的钱去交易所买货。
+1.  **提款 (Pull)**: Bot 发现交易机会。
+    *   **Standard**: `Proxy Contract` -> `Bot Wallet` (10 USDC)。
+    *   **High Performance**: **跳过此步**。Bot 使用自有资金垫付。
+2.  **交易 (Trade)**: Bot 拿着钱去交易所买货。
     *   流向: `Bot Wallet` -> `Polymarket Exchange` -> `Bot Wallet` (获得 Token)。
 3.  **归仓 (Push)**: 交易完成瞬间，Bot 将 Token 存回金库。
     *   流向: `Bot Wallet` -> `Proxy Contract` (Positions)。
-*   **结果**: 用户的 Proxy 账户现在持有头寸。Bot 账户瞬间回归初始状态（或仅剩少量 Gas）。
+    *   **报销 check**: 如果 Bot 垫付了资金：
+        *   若 Bot 余额充足: **暂不报销** (Proxy 欠 Bot 10 USDC)。
+        *   若 Bot 余额不足: 立即发起 `transferFromProxy` 报销。
+*   **结果**: 用户的 Proxy 账户持有头寸。在高性能模式下，用户资金 (USDC) 可能暂时未动，这就解释了由 Smart Buffer 带来的 **"无感交易"** 体验。
 
 ### 4. 结算 (Settlement)
 *   **触发**: 市场决议 (Resolution)。

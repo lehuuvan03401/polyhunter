@@ -62,36 +62,29 @@ ProxyFactory.sol
 数量: 全局 1 个。
 角色: 生产 Proxy。
 交互: 用户点击“创建账户” -> Factory Clone 出一个新的 Proxy 合约。
-### 3. 一个完整的交互剧本
+### 3. 一个完整的交互剧本 (Smart Buffer Mode)
 当大户买入 Trump 胜选 Token 时，脚本与合约是这样“接力”的：
 
-侦查: mempool-detector.ts 听到风吹草动。
-调度: Supervisor 从 
-WalletManager
- 借出 Worker #3。
-执行 (脚本层): 
-execution-service.ts
- 计算出要买 1000 股。
-上链 (脚本->合约): Worker #3 向 Executor 发送交易：executeOnProxy(ProxyA, "buy 1000")。
-鉴权 (合约层): Executor 检查 Worker #3 是自己人，放行。
-动作 (合约层): 
-ProxyA
- 拿着 1000 USDC 去 CTF 市场买了 Token。
-结果: Token 进入 
-ProxyA
- 的肚子。Worker #3 深藏功与名，归队休息。
+1.  **侦查**: `mempool-detector.ts` 听到风吹草动。
+2.  **调度**: Worker #3 抢到任务。
+3.  **执行 (FastTrack)**: 
+    *   Worker #3 检查自己兜里有 > 50 USDC。
+    *   **直接下单**: Worker #3 向 Polymarket 买入 1000 股 (FOK订单)。
+4.  **归仓 (Push)**: 
+    *   Worker #3 发起 `Executor.executeOnProxy(PushToken + Reimburse)`.
+    *   合约将 Token 从 Worker 转移到 Proxy。
+    *   合约判断是否还钱给 Worker (如果 Worker 钱不够)。
+5.  **结果**: 用户 Proxy 持有头寸，Worker 完成垫资代买。延迟更低，滑点更小。
 
-### 4. 极速模式 (Speed Mode) 架构
-为了追求极致速度，Horus 2.0 引入了 "Hosted EOA" 模式。
+### 4. 为什么比传统 Proxy 快？ (Why Faster?)
 
-与传统的 "交易所资金池 (Omnibus)" 模式不同，我们采用了 **隔离托管 (Segregated Custody)** 方案：
-*   **不搞大锅饭**: 系统不通过单一热钱包混合存放所有用户资金。
-*   **一人一私钥**: 每个用户提供（或生成）独立的 EOA 私钥。
-*   **资金在链上**: 用户的钱直接存在该私钥对应的链上地址里。
-*   **无需内部记账**: 链上余额即真理。不需要复杂的 "银行级 Ledger" 来记账，因为资金从未混合。
+Horus 2.0 引入了 **"Smart Buffer"** 混合模式。
 
-**流程 comparison:**
-*   **Security Mode (Proxy)**: 资金在 Proxy合约 -> Worker借钱 -> 交易 -> 还钱。(安全，但慢)
-*   **Speed Mode (EOA)**: 资金在 User EOA -> Supervisor 用 User Key 签名 -> 直接交易。(极速，但需托管私钥)
+*   **传统 Proxy**: 资金必须先从 Proxy 拉出来 (tx1) -> 买入 (tx2) -> 还回去 (tx3)。链路太长，容易 miss 机会。
+*   **Smart Buffer**: 
+    *   Worker 自己持有少量 "Buffer" 资金 (如 $100)。
+    *   遇到机会，**Worker 直接垫资买入** (1步完成)。
+    *   事后异步结算。
+    *   **效果**: 交易延迟从 ~6秒 (3个区块) 降低到 ~2秒 (1个区块)，几乎等同于 EOA 直连的速度，但保留了 Proxy 的资金归集优势。
 
-> **风险提示**: Speed Mode 的风险在于 "私钥保管" (Database Breach)，而不是 "资金混淆" (Accounting Error)。我们通过 AES 加密存储私钥来降低此风险。
+> **注意**: 这要求 Worker 钱包里不仅有 MATIC (Gas)，还要常备少量 USDC (Buffer)。

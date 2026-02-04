@@ -5,10 +5,9 @@
 准备钱包与资金
 在 Polymarket 上注册/登录并创建钱包（或用你自己的 EOA）
 充值 USDC.e 到 Polygon（不是原生 USDC）
-建议先充 
-5
-–
-5–20 做验证
+建议先充 5–20 USDC 做验证
+
+**[High Performance Optional]**: 如果你想启用 **Smart Buffer** 策略（极速模式），请也往 **Worker Bot (TRADING_MNEMONIC)** 对应的地址充值 50-100 USDC。这样 Bot 可以直接垫资买入，无需等待 Proxy 转账，由于减少了 50% 的链上交互，速度会有显著提升。
 本地环境变量（frontend/.env）
 至少要有：
 TRADING_PRIVATE_KEY=你的私钥（小额测试专用）
@@ -63,8 +62,9 @@ EOA 模式：直接用你的私钥下单，链路更短，但安全隔离弱。
 性能/速度差别大吗？
 
 差别不大，最终都走同一 RPC、同一 CLOB 下单流程。
-Proxy 会多一步合约调用（gas/链上步骤略多），但总体速度瓶颈通常在 RPC 和 CLOB，不是这一步。
-如果你目标是“极速”，RPC 质量和mempool provider影响远大于 Proxy/EOA。
+Proxy 模式现在已升级为 **"Smart Buffer"** 混合模式。
+*   如果不充 Bot Buffer: 走标准流程 (Pull -> Trade -> Push)，比 EOA 慢 1 个区块。
+*   **如果充 Bot Buffer**: 走极速流程 (Trade -> Push -> Reimburse)，速度与 EOA 持平，且资金最终仍归集在 Proxy，兼顾速度与安全。
 
 滑点方面有没有考虑？
 有，项目里已经做了两层控制：

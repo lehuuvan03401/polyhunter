@@ -8,7 +8,7 @@
 
 第一阶段：基础设施层优化（性价比最高）
 - [x] 多节点负载均衡 (Round-Robin RPCs): 建议在 ethers.JsonRpcProvider 层面配置多个 RPC 节点轮询。
-- [ ] Gas 费率动态调整 (EIP-1559 Aggression): 可以在 ExecutionService 中实施。
+- [x] Gas 费率动态调整 (EIP-1559 Aggression): 已通过 `TxMonitor` 自动加速 (Auto-Bump) 实现。
 - [x] 自动加油站 (Auto-Refuel Script): 已在 WalletManager 中集成 Multicall 批量查询与自动充值逻辑。
 
 第二阶段：架构层优化（为了扩展性）
@@ -26,4 +26,5 @@
 保持当前的 
 copy-trading-supervisor.ts
 。
-关键建议：重点优化 稳定性和容错。例如，如果一个 Worker 发出交易后一直没确认（Stuck），系统能否自动检测并用更高的 Gas “加速”覆盖它？
+关键建议：重点优化 稳定性和容错。
+- [x] **TxMonitor Implemented**: 系统已集成交易监控，自动检测 Stuck 交易并以 1.2x Gas 覆盖加速。

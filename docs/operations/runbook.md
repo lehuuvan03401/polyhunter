@@ -63,7 +63,9 @@ npx tsx scripts/impersonate-mainnet-trade.ts
 终端 3 (Supervisor) 显示：
 🚨 SIGNAL DETECTED
 Dispatching 1 jobs...
-CopyExec 日志流畅输出：Funds Check -> Place Order -> Settlement。
+CopyExec 日志流畅输出：
+*   **Standard**: `Pull Funds` -> `Place Order` -> `Push`
+*   **Smart Buffer**: `Check Buffer` -> `Place Order` -> `Push` -> `Reimburse` (并行/异步)
 最后显示 ✅ Job Complete。
 如果不报错，恭喜您！这套系统已经准备好上战场了。
 
