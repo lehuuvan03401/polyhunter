@@ -8,7 +8,7 @@
 Create and execute OpenSpec change proposals and implement real copy-trading optimizations one item at a time, prioritizing safety and performance.
 
 ## Current Phase
-Phase 3 (implementation)
+Phase 4 (testing)
 
 ## Phases
 
@@ -29,10 +29,10 @@ Phase 3 (implementation)
 - [x] Add/update tests as needed
 - [x] Update tasks checklist to complete
 - [x] Wire debt logging + recovery into worker execution path
-- [ ] Document or verify debt recovery behavior
+- [x] Document or verify debt recovery behavior
 - [x] Implement scoped tx mutex for per-signer serialization
 - [x] Add verification notes for scoped mutex
-- **Status:** in_progress
+- **Status:** complete
 
 ### Phase 4: Testing & Verification
 - [ ] Run relevant tests / targeted verification

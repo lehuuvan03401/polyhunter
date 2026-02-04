@@ -30,6 +30,7 @@
 | Enforce guardrail checks before realtime execution | Aligns worker behavior with guardrail spec |
 | Wire debt logging + recovery in worker | Meet copy-execution debt recovery requirements |
 | Created change `add-scoped-tx-mutex` | Plan to scope tx serialization per signer |
+| Documented debt recovery verification | Provides manual steps for ops validation |
 
 ## Issues Encountered
 | Issue | Resolution |

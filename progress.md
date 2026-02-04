@@ -29,6 +29,7 @@
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | Copy-trade prewrite verify | `npx tsx scripts/verify/copy-trade-prewrite.ts` | Reports stale PENDING count | Failed: @prisma/client missing | ✗ |
+| Debt recovery verification | docs/operations/debt-recovery-verification.md | Steps documented | Not run | ☐ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -42,10 +43,11 @@
 | Question | Answer |
 |----------|--------|
 | Where am I? | Phase 3 (implementation) |
-| Where am I going? | Phase 4 testing, then delivery |
+| Where am I? | Phase 4 (testing) |
+| Where am I going? | Phase 5 delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented scoped tx mutex and verification notes, plus prior safety changes |
+| What have I done? | Implemented scoped tx mutex, debt recovery verification notes, and prior safety changes |
 
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
@@ -58,7 +60,7 @@
   - openspec/changes/add-scoped-tx-mutex/specs/copy-execution/spec.md (created)
 
 ### Phase 3: Implementation
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - Moved CopyTrade prewrite before execution to prevent orphan orders.
   - Added stale PENDING expiry handling and periodic cleanup.
@@ -67,12 +69,14 @@
   - Added verification script `scripts/verify/copy-trade-prewrite.ts`.
   - Enforced guardrail checks before realtime execution/prewrite.
   - Added Prisma-backed debt logging + recovery loop in worker.
+  - Documented debt recovery verification steps.
   - Implemented scoped signer mutex for execution serialization.
   - Added verification notes for scoped mutex.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
   - scripts/verify/README.md (modified)
+  - docs/operations/debt-recovery-verification.md (created)
   - src/core/tx-mutex.ts (modified)
   - src/services/copy-trading-execution-service.ts (modified)
   - openspec/changes/add-scoped-tx-mutex/verification.md (created)
