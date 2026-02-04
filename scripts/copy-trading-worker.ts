@@ -111,6 +111,7 @@ const IDEMPOTENCY_BUCKET_MS = parseInt(process.env.COPY_TRADING_IDEMPOTENCY_BUCK
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 const DEBT_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
 const QUOTE_CACHE_TTL_MS = Math.min(PRICE_TTL_MS, 5000);
+const PREFLIGHT_CACHE_TTL_MS = Math.min(parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_TTL_MS || '2000', 10), 2000);
 
 // EIP-1559 Aggressive Gas Settings for Polygon (To avoid stuck copy trades)
 const GAS_SETTINGS = {
@@ -139,9 +140,19 @@ const quoteStats = {
     misses: 0,
     inflightHits: 0,
 };
+const preflightCache = new Map<string, { value: any; fetchedAt: number }>();
+const preflightInFlight = new Map<string, Promise<any>>();
+const preflightStats = {
+    hits: 0,
+    misses: 0,
+    inflightHits: 0,
+};
 
 if (PRICE_TTL_MS > 5000) {
     console.warn(`[Worker] COPY_TRADING_PRICE_TTL_MS capped to 5000ms (was ${PRICE_TTL_MS}).`);
+}
+if (PREFLIGHT_CACHE_TTL_MS < parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_TTL_MS || '2000', 10)) {
+    console.warn(`[Worker] COPY_TRADING_PREFLIGHT_CACHE_TTL_MS capped to 2000ms.`);
 }
 
 // ============================================================================
@@ -463,6 +474,40 @@ function buildQuoteKey(tokenId: string, side: 'BUY' | 'SELL'): string {
     return `${tokenId.toLowerCase()}:${side}`;
 }
 
+function buildPreflightKey(parts: string[]): string {
+    return parts.map((p) => p.toLowerCase()).join('|');
+}
+
+async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    const cached = preflightCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt <= PREFLIGHT_CACHE_TTL_MS) {
+        preflightStats.hits++;
+        return cached.value as T;
+    }
+
+    const inflight = preflightInFlight.get(key);
+    if (inflight) {
+        preflightStats.inflightHits++;
+        return inflight as Promise<T>;
+    }
+
+    preflightStats.misses++;
+    const promise = (async () => {
+        try {
+            const value = await fetcher();
+            if (value !== undefined && value !== null) {
+                preflightCache.set(key, { value, fetchedAt: Date.now() });
+            }
+            return value;
+        } finally {
+            preflightInFlight.delete(key);
+        }
+    })();
+
+    preflightInFlight.set(key, promise);
+    return promise;
+}
+
 async function fetchFreshPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<{ price: number; fetchedAt: number; source: string } | null> {
     if (!tradingService) return null;
 
@@ -693,13 +738,23 @@ async function preflightExecution(
         return { allowed: false, reason: 'INVALID_PRICE', adjustedCopySize: copySize, adjustedCopyShares: 0 };
     }
 
-    const allowanceCheck = await executionService.checkProxyAllowance({
+    const allowanceKey = buildPreflightKey([
+        'allowance',
         proxyAddress,
         side,
         tokenId,
-        amount: copySize,
-        signer: executionSigner,
-    });
+        normalizeNumber(copySize, 6),
+    ]);
+    const allowanceCheck = await getPreflightCached(
+        allowanceKey,
+        () => executionService.checkProxyAllowance({
+            proxyAddress,
+            side,
+            tokenId,
+            amount: copySize,
+            signer: executionSigner,
+        })
+    ).catch(() => ({ allowed: false, reason: 'ALLOWANCE_CHECK_FAILED' as const }));
     if (!allowanceCheck.allowed) {
         return {
             allowed: false,
@@ -710,9 +765,16 @@ async function preflightExecution(
     }
 
     if (side === 'BUY') {
+        const botAddress = activeWorkerAddress || await executionSigner.getAddress();
         const [proxyBalance, botBalance] = await Promise.all([
-            executionService.getProxyUsdcBalance(proxyAddress, executionSigner).catch(() => 0),
-            executionService.getBotUsdcBalance(executionSigner).catch(() => 0),
+            getPreflightCached<number>(
+                buildPreflightKey(['proxy-usdc', proxyAddress]),
+                () => executionService.getProxyUsdcBalance(proxyAddress, executionSigner)
+            ).catch(() => 0),
+            getPreflightCached<number>(
+                buildPreflightKey(['bot-usdc', botAddress]),
+                () => executionService.getBotUsdcBalance(executionSigner)
+            ).catch(() => 0),
         ]);
 
         if (proxyBalance < copySize && botBalance < copySize) {
@@ -732,7 +794,10 @@ async function preflightExecution(
     }
 
     const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
-    const balanceRaw = await ctf.balanceOf(proxyAddress, tokenId);
+    const balanceRaw = await getPreflightCached(
+        buildPreflightKey(['ctf-balance', proxyAddress, tokenId]),
+        () => ctf.balanceOf(proxyAddress, tokenId)
+    ).catch(() => ethers.BigNumber.from(0));
     const actualShares = Number(ethers.utils.formatUnits(balanceRaw, USDC_DECIMALS));
 
     const requestedShares = copySize / price;
@@ -1895,6 +1960,7 @@ function logMetricsSummary(): void {
     console.log(`   Success Rate: ${successRate.toFixed(2)}%`);
     console.log(`   Avg Latency: ${avgLatency.toFixed(0)}ms`);
     console.log(`   Quote Cache: hits=${quoteStats.hits}, inflight=${quoteStats.inflightHits}, misses=${quoteStats.misses}`);
+    console.log(`   Preflight Cache: hits=${preflightStats.hits}, inflight=${preflightStats.inflightHits}, misses=${preflightStats.misses}`);
 
     if (metrics.failureReasons.size > 0) {
         const topReasons = Array.from(metrics.failureReasons.entries())
@@ -1914,6 +1980,9 @@ function logMetricsSummary(): void {
     quoteStats.hits = 0;
     quoteStats.inflightHits = 0;
     quoteStats.misses = 0;
+    preflightStats.hits = 0;
+    preflightStats.inflightHits = 0;
+    preflightStats.misses = 0;
 }
 
 async function checkBalanceAlerts(): Promise<void> {

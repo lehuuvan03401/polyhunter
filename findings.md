@@ -35,6 +35,8 @@
 | Quote cache TTL capped at 5s | Enforces spec max TTL regardless of env override |
 | Created change `add-proxy-execution-queue` | Plan for per-proxy serialization of fund ops |
 | Implemented proxy-scoped mutex in execution service | Serializes fund/settlement per proxy |
+| Created change `add-preflight-balance-cache` | Plan to cache preflight balance/allowance reads |
+| Implemented preflight cache in worker | Short TTL cache reduces RPC load for preflight checks |
 
 ## Issues Encountered
 | Issue | Resolution |

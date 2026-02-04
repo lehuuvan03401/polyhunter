@@ -31,6 +31,7 @@
 | Copy-trade prewrite verify | `npx tsx scripts/verify/copy-trade-prewrite.ts` | Reports stale PENDING count | Failed: @prisma/client missing | ✗ |
 | Debt recovery verification | docs/operations/debt-recovery-verification.md | Steps documented | Not run | ☐ |
 | Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Steps documented | Not run | ☐ |
+| Preflight cache verification | openspec/changes/add-preflight-balance-cache/verification.md | Steps documented | Not run | ☐ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -47,7 +48,7 @@
 | Where am I going? | Phase 5 delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented proxy-scoped execution queue + verification notes, plus prior safety changes |
+| What have I done? | Implemented preflight cache + dedupe, plus prior safety changes |
 
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
@@ -79,6 +80,16 @@
   - openspec/changes/add-proxy-execution-queue/design.md (created)
   - openspec/changes/add-proxy-execution-queue/specs/copy-execution/spec.md (created)
 
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-preflight-balance-cache`.
+- Files created/modified:
+  - openspec/changes/add-preflight-balance-cache/proposal.md (created)
+  - openspec/changes/add-preflight-balance-cache/tasks.md (created)
+  - openspec/changes/add-preflight-balance-cache/design.md (created)
+  - openspec/changes/add-preflight-balance-cache/specs/copy-trading/spec.md (created)
+
 ### Phase 3: Implementation
 - **Status:** complete
 - Actions taken:
@@ -96,6 +107,8 @@
   - Added verification notes for orderbook quote cache.
   - Implemented proxy-scoped execution queue for fund/settlement operations.
   - Added verification notes for proxy execution queue.
+  - Implemented preflight balance/allowance cache with in-flight dedupe and metrics.
+  - Added verification notes for preflight cache.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
@@ -106,3 +119,4 @@
   - openspec/changes/add-scoped-tx-mutex/verification.md (created)
   - openspec/changes/add-orderbook-quote-cache/verification.md (created)
   - openspec/changes/add-proxy-execution-queue/verification.md (created)
+  - openspec/changes/add-preflight-balance-cache/verification.md (created)

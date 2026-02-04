@@ -45,6 +45,12 @@ Phase 4 (testing)
 - [x] Add verification notes for proxy queue
 - **Status:** complete
 
+### Phase 3: Implementation (Preflight Balance Cache)
+- [x] Implement preflight cache + in-flight dedupe
+- [x] Add logging/metrics for cache hits/misses
+- [x] Add verification notes for cache behavior
+- **Status:** complete
+
 ### Phase 4: Testing & Verification
 - [ ] Run relevant tests / targeted verification
 - [ ] Document results in progress.md
@@ -68,6 +74,7 @@ Phase 4 (testing)
 | Next change id: `add-scoped-tx-mutex` | Enables parallel execution across distinct signers |
 | Next change id: `add-orderbook-quote-cache` | Reduces redundant orderbook fetches under burst load |
 | Next change id: `add-proxy-execution-queue` | Serializes fund operations per proxy to avoid overlap |
+| Next change id: `add-preflight-balance-cache` | Caches preflight reads to reduce RPC load |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
