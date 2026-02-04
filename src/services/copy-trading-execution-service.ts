@@ -11,6 +11,7 @@ import {
     USDC_DECIMALS
 } from '../core/contracts.js';
 import { scopedTxMutex } from '../core/tx-mutex.js';
+import { TxMonitor, TrackedTx } from '../core/tx-monitor.js';
 
 export interface ExecutionParams {
     tradeId: string;
@@ -66,6 +67,8 @@ export class CopyTradingExecutionService {
     private chainId: number;
     private debtLogger?: DebtLogger;
     private proxyCache = new Map<string, string>(); // Optimization: Cache user -> proxy mapping
+    private txMonitor?: TxMonitor;
+    private txSignerByHash = new Map<string, ethers.Signer>();
 
     constructor(
         tradingService: TradingService,
@@ -77,10 +80,70 @@ export class CopyTradingExecutionService {
         this.defaultSigner = defaultSigner; // Bot signer (Default Operator)
         this.chainId = chainId;
         this.debtLogger = debtLogger;
+
+        const provider = this.defaultSigner.provider;
+        if (provider) {
+            this.txMonitor = new TxMonitor(provider);
+            this.txMonitor.start((tx, newGas) => this.replaceStuckTx(tx, newGas));
+        } else {
+            console.warn('[CopyExec] ⚠️ No provider on signer. TxMonitor disabled.');
+        }
     }
 
     private getSigner(overrideSigner?: ethers.Signer): ethers.Signer {
         return overrideSigner || this.defaultSigner;
+    }
+
+    private async trackTx(tx: ethers.providers.TransactionResponse, signer: ethers.Signer): Promise<void> {
+        if (!this.txMonitor) return;
+        this.txSignerByHash.set(tx.hash, signer);
+
+        const tracked: TrackedTx = {
+            hash: tx.hash,
+            submittedAt: Date.now(),
+            nonce: tx.nonce,
+            workerIndex: 0,
+            replaced: false,
+            data: tx.data || '0x',
+            to: tx.to || ethers.constants.AddressZero,
+            value: tx.value ?? ethers.constants.Zero,
+            gasLimit: tx.gasLimit ?? ethers.constants.Zero,
+            maxFeePerGas: tx.maxFeePerGas ?? undefined,
+            maxPriorityFeePerGas: tx.maxPriorityFeePerGas ?? undefined,
+        };
+
+        this.txMonitor.track(tracked);
+    }
+
+    private async replaceStuckTx(
+        tx: TrackedTx,
+        newGas: { maxPriorityFeePerGas: ethers.BigNumber }
+    ): Promise<string | null> {
+        const signer = this.txSignerByHash.get(tx.hash) || this.defaultSigner;
+        if (!signer) return null;
+
+        try {
+            const bumpedMaxFee = tx.maxFeePerGas
+                ? tx.maxFeePerGas.mul(120).div(100)
+                : undefined;
+
+            const replacement = await signer.sendTransaction({
+                to: tx.to,
+                data: tx.data,
+                value: tx.value,
+                gasLimit: tx.gasLimit,
+                nonce: tx.nonce,
+                maxPriorityFeePerGas: newGas.maxPriorityFeePerGas,
+                maxFeePerGas: bumpedMaxFee,
+            });
+
+            this.txSignerByHash.delete(tx.hash);
+            this.txSignerByHash.set(replacement.hash, signer);
+            return replacement.hash;
+        } catch (error: any) {
+            console.error('[CopyExec] ❌ Tx replacement failed:', error?.message || error);
+            return null;
+        }
     }
 
     private getProxyMutexKey(proxyAddress: string): string {
@@ -198,6 +261,7 @@ export class CopyTradingExecutionService {
                 transferData,
                 overrides || {} // Apply overrides here
             );
+            await this.trackTx(tx, executionSigner);
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Proxy Push (USDC) complete: ${receipt.transactionHash}`);
@@ -219,6 +283,7 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Returning funds to Proxy...`);
             const tx = await token.transfer(proxyAddress, amountWei, overrides || {});
+            await this.trackTx(tx, executionSigner);
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Return transfer complete: ${receipt.transactionHash}`);
@@ -263,6 +328,7 @@ export class CopyTradingExecutionService {
                 transferData,
                 overrides || {} // Apply overrides here
             );
+            await this.trackTx(tx, executionSigner);
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Token Pull complete: ${receipt.transactionHash}`);
@@ -296,6 +362,7 @@ export class CopyTradingExecutionService {
                 "0x",
                 overrides || {}
             );
+            await this.trackTx(tx, executionSigner);
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] Token Push complete: ${receipt.transactionHash}`);
@@ -735,6 +802,7 @@ export class CopyTradingExecutionService {
                     overrides || {}
                 );
             });
+            await this.trackTx(tx, executionSigner);
             const receipt = await tx.wait();
 
             console.log(`[CopyExec] ✅ Redemption Complete: ${receipt.transactionHash}`);

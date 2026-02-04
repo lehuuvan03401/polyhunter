@@ -33,6 +33,7 @@
 | Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Steps documented | Not run | ☐ |
 | Preflight cache verification | openspec/changes/add-preflight-balance-cache/verification.md | Steps documented | Not run | ☐ |
 | Price fallback verification | openspec/changes/add-price-fallback/verification.md | Steps documented | Not run | ☐ |
+| Tx monitor verification | openspec/changes/add-execution-tx-monitor/verification.md | Steps documented | Not run | ☐ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -49,7 +50,7 @@
 | Where am I going? | Phase 5 delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented price fallback, preflight cache, and prior safety changes |
+| What have I done? | Implemented tx monitor integration, price fallback, preflight cache, and prior safety changes |
 
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
@@ -94,6 +95,16 @@
 ### Phase 2 (Next Item): Planning & Structure
 - **Status:** complete
 - Actions taken:
+  - Created and validated change proposal `add-execution-tx-monitor`.
+- Files created/modified:
+  - openspec/changes/add-execution-tx-monitor/proposal.md (created)
+  - openspec/changes/add-execution-tx-monitor/tasks.md (created)
+  - openspec/changes/add-execution-tx-monitor/design.md (created)
+  - openspec/changes/add-execution-tx-monitor/specs/copy-trading/spec.md (created)
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
   - Created and validated change proposal `add-price-fallback`.
 - Files created/modified:
   - openspec/changes/add-price-fallback/proposal.md (created)
@@ -122,6 +133,8 @@
   - Added verification notes for preflight cache.
   - Implemented price fallback with source logging and TTL guard.
   - Added verification notes for price fallback.
+  - Implemented tx monitor integration for execution transactions.
+  - Added verification notes for tx monitor.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
@@ -134,3 +147,4 @@
   - openspec/changes/add-proxy-execution-queue/verification.md (created)
   - openspec/changes/add-preflight-balance-cache/verification.md (created)
   - openspec/changes/add-price-fallback/verification.md (created)
+  - openspec/changes/add-execution-tx-monitor/verification.md (created)

@@ -39,6 +39,8 @@
 | Implemented preflight cache in worker | Short TTL cache reduces RPC load for preflight checks |
 | Created change `add-price-fallback` | Plan to add fallback price source when orderbook is missing |
 | Implemented price fallback | Uses trade price when orderbook unavailable, with TTL guard |
+| Created change `add-execution-tx-monitor` | Plan to wire TxMonitor for stuck tx replacement |
+| Implemented execution tx monitor | Tracks on-chain txs and replaces stuck ones |
 
 ## Issues Encountered
 | Issue | Resolution |
