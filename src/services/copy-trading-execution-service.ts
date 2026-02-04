@@ -10,7 +10,7 @@ import {
     CONTRACT_ADDRESSES,
     USDC_DECIMALS
 } from '../core/contracts.js';
-import { globalTxMutex } from '../core/tx-mutex.js';
+import { scopedTxMutex } from '../core/tx-mutex.js';
 
 export interface ExecutionParams {
     tradeId: string;
@@ -423,7 +423,14 @@ export class CopyTradingExecutionService {
         // 2. 核心执行区 (互斥锁)
         // 进入临界区，防止 Nonce 冲突和并发资金操作
         // ==================================================================
-        return globalTxMutex.run(async () => {
+        const mutexSigner = this.getSigner(signer);
+        const mutexAddress = await mutexSigner.getAddress();
+        const queueDepth = scopedTxMutex.getQueueDepth(mutexAddress);
+        if (queueDepth > 0) {
+            console.log(`[CopyExec] ⏳ Waiting on signer mutex ${mutexAddress.slice(0, 6)} queue=${queueDepth}`);
+        }
+
+        return scopedTxMutex.getMutex(mutexAddress).run(async () => {
             // 0. Conditionally Approve (Save time if already approved)
             if (!allowanceStatus.ok) {
                 console.log(`[CopyExec] 🛡️ Validating Allowance (Mutex Locked)...`);

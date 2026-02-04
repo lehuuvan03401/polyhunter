@@ -28,8 +28,10 @@ Phase 3 (implementation)
 - [x] Implement approved proposal tasks
 - [x] Add/update tests as needed
 - [x] Update tasks checklist to complete
-- [ ] Wire debt logging + recovery into worker execution path
+- [x] Wire debt logging + recovery into worker execution path
 - [ ] Document or verify debt recovery behavior
+- [x] Implement scoped tx mutex for per-signer serialization
+- [x] Add verification notes for scoped mutex
 - **Status:** in_progress
 
 ### Phase 4: Testing & Verification
@@ -52,6 +54,7 @@ Phase 3 (implementation)
 |----------|-----------|
 | Use sequential OpenSpec proposals | Safer rollout, clearer approvals, smaller blast radius |
 | Change id: `add-copy-trade-prewrite` | Targets orphan-execution risk without duplicating existing changes |
+| Next change id: `add-scoped-tx-mutex` | Enables parallel execution across distinct signers |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

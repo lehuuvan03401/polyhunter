@@ -29,6 +29,7 @@
 | Confirmed `PENDING_EXPIRY_MINUTES = 10` | TTL accepted for stale PENDING expiry |
 | Enforce guardrail checks before realtime execution | Aligns worker behavior with guardrail spec |
 | Wire debt logging + recovery in worker | Meet copy-execution debt recovery requirements |
+| Created change `add-scoped-tx-mutex` | Plan to scope tx serialization per signer |
 
 ## Issues Encountered
 | Issue | Resolution |

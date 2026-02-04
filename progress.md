@@ -45,7 +45,17 @@
 | Where am I going? | Phase 4 testing, then delivery |
 | What's the goal? | Sequential OpenSpec proposals and safe/perf optimizations |
 | What have I learned? | See findings.md |
-| What have I done? | Implemented prewrite-before-execute, stale PENDING expiry, guardrails, and debt logging/recovery |
+| What have I done? | Implemented scoped tx mutex and verification notes, plus prior safety changes |
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-scoped-tx-mutex`.
+- Files created/modified:
+  - openspec/changes/add-scoped-tx-mutex/proposal.md (created)
+  - openspec/changes/add-scoped-tx-mutex/tasks.md (created)
+  - openspec/changes/add-scoped-tx-mutex/design.md (created)
+  - openspec/changes/add-scoped-tx-mutex/specs/copy-execution/spec.md (created)
 
 ### Phase 3: Implementation
 - **Status:** in_progress
@@ -57,7 +67,12 @@
   - Added verification script `scripts/verify/copy-trade-prewrite.ts`.
   - Enforced guardrail checks before realtime execution/prewrite.
   - Added Prisma-backed debt logging + recovery loop in worker.
+  - Implemented scoped signer mutex for execution serialization.
+  - Added verification notes for scoped mutex.
 - Files created/modified:
   - scripts/copy-trading-worker.ts (modified)
   - scripts/verify/copy-trade-prewrite.ts (created)
   - scripts/verify/README.md (modified)
+  - src/core/tx-mutex.ts (modified)
+  - src/services/copy-trading-execution-service.ts (modified)
+  - openspec/changes/add-scoped-tx-mutex/verification.md (created)
