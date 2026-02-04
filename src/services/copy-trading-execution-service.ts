@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { gasStation } from './gas-station.js';
 import { TradingService, Orderbook } from './trading-service.js'; // Use .js extension for imports in this project
 import {
     PROXY_FACTORY_ABI,
@@ -325,129 +326,133 @@ export class CopyTradingExecutionService {
 
     /**
      * Execute Copy Trade
-     * 1. Check/Resolve Proxy
-     * 2. Fund Management (Float Check or Standard Pull)
-     * 3. Execute Order (Immediate/Market)
-     * 4. Return Assets (Settlement)
+     * 1. Check/Resolve Proxy (Parallel, No Mutex)
+     * 2. Fetches & Checks (Parallel, No Mutex)
+     * 3. Fund Management (Mutex - TX)
+     * 4. Execute Order
+     * 5. Return Assets (Mutex - TX)
      */
     async executeOrderWithProxy(params: ExecutionParams): Promise<ExecutionResult> {
-        // 🔒 MUTEX WRAPPER: Serialize all copy trade executions
+        const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02, signer, tradingService } = params;
+        const execService = tradingService || this.tradingService;
+
+        console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches (No Mutex)...`);
+
+        // ==================================================================
+        // 1. Parallel Fetch (Non-Blocking, No Mutex)
+        // ==================================================================
+        const fetchStart = Date.now();
+
+        // A. Resolve Proxy
+        const proxyPromise = params.proxyAddress
+            ? Promise.resolve(params.proxyAddress)
+            : this.resolveProxyAddress(walletAddress, signer);
+
+        // B. Check Bot Balance (Float Strategy)
+        const botBalancePromise = side === 'BUY' ? this.getBotUsdcBalance(signer) : Promise.resolve(0);
+
+        // C. Fetch Orderbook (Auto Slippage)
+        const orderBookPromise = params.slippageMode === 'AUTO'
+            ? execService.getOrderBook(tokenId).catch(() => null)
+            : Promise.resolve(null);
+
+        // D. Gas Fees
+        const gasPromise = gasStation.getGasFees().catch(err => {
+            console.warn('[CopyExec] Gas fetch failed, using defaults', err);
+            return {} as ethers.Overrides;
+        });
+
+        // E. Optimistic Allowance Check (Read-Only)
+        // Check if we ALREADY have allowance so we can skip the Mutex-locked approval step
+        const allowancePromise = (async () => {
+            try {
+                if (side === 'BUY') {
+                    const { allowance } = await execService.getBalanceAllowance('COLLATERAL');
+                    return { ok: Number(allowance) >= 1000000 }; // Check for ample allowance
+                } else {
+                    const { allowance } = await execService.getBalanceAllowance('CONDITIONAL', tokenId);
+                    // For Conditional tokens, allowance is usually for ALL if approved for CTF exchange
+                    // But getBalanceAllowance returns specific token allowance?
+                    // Polymarket CTF usually isApprovedForAll. 
+                    // Let's assume strict check:
+                    return { ok: Number(allowance) > 0 };
+                }
+            } catch (e) {
+                return { ok: false }; // Fail safe -> force check inside mutex
+            }
+        })();
+
+        const [proxyAddress, botBalance, orderbook, gasOverrides, allowanceStatus] = await Promise.all([
+            proxyPromise,
+            botBalancePromise,
+            orderBookPromise,
+            gasPromise,
+            allowancePromise
+        ]);
+
+        console.log(`[CopyExec] ⚡️ Fetches complete in ${Date.now() - fetchStart}ms. Gas: ${gasOverrides.maxFeePerGas ? 'Dynamic' : 'Default'}. Allowance OK? ${allowanceStatus.ok}`);
+
+        if (!proxyAddress) {
+            return { success: false, error: "No Proxy wallet found for user", useProxyFunds: false, usedBotFloat: false };
+        }
+
+        // Merge Gas Overrides with params.overrides (params take precedence if set manually)
+        const effectiveOverrides = { ...gasOverrides, ...params.overrides };
+
+        // --- MOCK TOKEN BYPASS (Localhost) ---
+        if (this.chainId === 1337 && tokenId.length > 15 && !tokenId.startsWith("0x")) {
+            console.log(`[CopyExec] ⚠️ Mock Token Detected. Skipping.`);
+            return { success: true, orderId: "mock", transactionHashes: [], useProxyFunds: false, usedBotFloat: false, proxyAddress };
+        }
+
+        // ==================================================================
+        // 2. Execution Critical Section (Mutex Locked)
+        // ==================================================================
         return globalTxMutex.run(async () => {
-            const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02 } = params;
-
-            console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches...`);
-
-            // 0. PRE-FLIGHT: Approve Exchange
-            const execService = params.tradingService || this.tradingService;
-            if (side === 'BUY') {
-                await execService.verifyAndApproveAllowance('COLLATERAL');
+            // 0. Conditionally Approve (Save time if already approved)
+            if (!allowanceStatus.ok) {
+                console.log(`[CopyExec] 🛡️ Validating Allowance (Mutex Locked)...`);
+                if (side === 'BUY') {
+                    await execService.verifyAndApproveAllowance('COLLATERAL', undefined, 1000000);
+                } else {
+                    await execService.verifyAndApproveAllowance('CONDITIONAL', tokenId);
+                }
             } else {
-                await execService.verifyAndApproveAllowance('CONDITIONAL', tokenId);
+                // console.log(`[CopyExec] ⏩ Skipping Approval (Pre-check passed)`);
             }
 
-            // 1. Parallel Fetch: Proxy Address + Bot Balance + OrderBook (if Auto Slippage)
-            const fetchStart = Date.now();
-
-            const proxyPromise = params.proxyAddress
-                ? Promise.resolve(params.proxyAddress)
-                : this.resolveProxyAddress(walletAddress, params.signer);
-
-            const botBalancePromise = side === 'BUY' ? this.getBotUsdcBalance(params.signer) : Promise.resolve(0);
-
-            // Optimistic OrderBook fetch if AUTO slippage
-            const orderBookPromise = params.slippageMode === 'AUTO'
-                ? (params.tradingService || this.tradingService).getOrderBook(tokenId).catch(e => null) // Catch error to not block
-                : Promise.resolve(null);
-
-            const [proxyAddress, botBalance, orderbook] = await Promise.all([
-                proxyPromise,
-                botBalancePromise,
-                orderBookPromise
-            ]);
-
-            console.log(`[CopyExec] ⚡️ Fetches complete in ${Date.now() - fetchStart}ms`);
-
-            if (!proxyAddress) {
-                return { success: false, error: "No Proxy wallet found for user", useProxyFunds: false, usedBotFloat: false };
-            }
-
-            // --- MOCK TOKEN BYPASS (Localhost) ---
-            // If Token ID is obviously fake (numeric large string) and we are on Localhost, 
-            // we might fail contract calls if addresses aren't mapped.
-            // For '2153435423452342345', this is clearly a mock ID.
-            // We should skip real execution and return success for verification purposes.
-            if (this.chainId === 1337 && tokenId.length > 15 && !tokenId.startsWith("0x")) {
-                console.log(`[CopyExec] ⚠️ Mock Token Detected: ${tokenId}. Skipping real execution.`);
-                // Simulate success
-                return {
-                    success: true,
-                    orderId: "mock-order-id",
-                    transactionHashes: ["0xmocktxhash"],
-                    fundTransferTxHash: "0xmocktransfer",
-                    useProxyFunds: false,
-                    usedBotFloat: false,
-                    proxyAddress
-                };
-            }
-
-            console.log(`[CopyExec] Executing via Proxy ${proxyAddress}`);
+            console.log(`[CopyExec] 🔒 Entering Mutex for ${proxyAddress}`);
 
             // 2. Fund Management
-            let useProxyFunds = false; // Indicates if we did a Standard Pull (pre-trade)
+            let useProxyFunds = false;
             let fundTransferTxHash: string | undefined;
             let tokenPullTxHash: string | undefined;
-
-            let usedBotFloat = false; // NEW: Indicates Optimized Float Strategy
+            let usedBotFloat = false;
 
             try {
                 if (side === 'BUY') {
-                    // FLOAT STRATEGY: Check Bot's USDC Balance first
-                    // used botBalance from parallel fetch
-
+                    // FLOAT STRATEGY
                     if (botBalance >= amount) {
-                        // OPTIMIZED PATH: Use Bot's funds directly
                         console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
                         usedBotFloat = true;
-                        // No transfer needed yet.
                     } else {
-                        // FALLBACK PATH: Check Proxy USDC Balance
-                        console.log(`[CopyExec] 🐢 Standard BUY: Bot low funds ($${botBalance}), checking Proxy...`);
-                        const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, params.signer);
+                        // STANDARD PULL
+                        console.log(`[CopyExec] 🐢 Standard BUY: Pulling from Proxy...`);
+                        const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
                         if (proxyBalance < amount) {
-                            return { success: false, error: `Insufficient Proxy funds: $${proxyBalance} < $${amount}`, proxyAddress, usedBotFloat };
+                            return { success: false, error: `Insufficient Proxy funds`, proxyAddress, usedBotFloat };
                         }
 
-                        // Transfer USDC from Proxy
-                        const transferResult = await this.transferFromProxy(proxyAddress, amount, params.signer, params.overrides);
+                        const transferResult = await this.transferFromProxy(proxyAddress, amount, signer, effectiveOverrides);
                         if (!transferResult.success) {
-                            return { success: false, error: `Proxy fund transfer failed: ${transferResult.error}`, usedBotFloat };
+                            return { success: false, error: transferResult.error, usedBotFloat };
                         }
                         useProxyFunds = true;
                         fundTransferTxHash = transferResult.txHash;
                     }
 
                 } else { // SELL
-                    // Query actual token balance before SELL to prevent failed transactions
-                    const addresses = this.getChainAddresses();
-                    const executionSigner = this.getSigner(params.signer);
-                    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
-
-                    const actualBalanceRaw = await ctf.balanceOf(proxyAddress, tokenId);
-                    const actualShares = Number(ethers.utils.formatUnits(actualBalanceRaw, USDC_DECIMALS));
-
-                    const requestedSharesToSell = amount / price;
-                    const sharesToSell = Math.min(requestedSharesToSell, actualShares);
-
-                    if (sharesToSell <= 0) {
-                        console.log(`[CopyExec] ⚠️ No tokens to sell in Proxy for Token ${tokenId}`);
-                        return { success: false, error: 'No tokens available to sell in Proxy', proxyAddress, usedBotFloat };
-                    }
-
-                    if (sharesToSell < requestedSharesToSell) {
-                        console.log(`[CopyExec] ⚠️ Capping sell: requested ${requestedSharesToSell.toFixed(2)}, available ${actualShares.toFixed(2)}`);
-                    }
-
-                    const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, sharesToSell, params.signer, params.overrides);
+                    const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, amount / price, signer, effectiveOverrides);
                     if (!pullResult.success) {
                         return { success: false, error: `Proxy token pull failed: ${pullResult.error}`, usedBotFloat };
                     }
@@ -459,31 +464,23 @@ export class CopyTradingExecutionService {
                 return { success: false, error: `Proxy prep failed: ${e.message}`, usedBotFloat };
             }
 
-            // 3. Execute Order
+
+
+            // 3. Execute Order (CLOB)
             let orderResult;
             try {
-                const amountUSDC = amount;
-                const orderAmount = side === 'BUY' ? amountUSDC : amountUSDC / price;
-                const sharesForLog = side === 'BUY' ? (amountUSDC / price) : orderAmount;
-
-                // Calculate Dynamic Slippage if AUTO
-                let finalSlippage = slippage || 0.02;
+                // ... Slippage logic ...
+                let finalSlippage = slippage;
                 if (params.slippageMode === 'AUTO') {
-                    // Pass orderbook if we fetched it
-                    const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, amountUSDC, price, orderbook);
-                    // Assuming maxSlippage passed as percentage (e.g. 2.0 for 2%) -> convert to decimal
-                    // Default to 5% max if not specified
-                    const maxAllowed = params.maxSlippage ? (params.maxSlippage / 100) : 0.05;
-                    finalSlippage = Math.min(calculatedSlippage, maxAllowed);
-                    console.log(`[CopyExec] 🌊 Auto Slippage: ${(finalSlippage * 100).toFixed(2)}% (Calc: ${(calculatedSlippage * 100).toFixed(2)}%, Max: ${(maxAllowed * 100).toFixed(2)}%)`);
+                    const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, amount, price, orderbook);
+                    finalSlippage = Math.min(calculatedSlippage, params.maxSlippage ? (params.maxSlippage / 100) : 0.05);
                 }
 
-                // FORCE Market Order (FOK)
                 const executionPrice = side === 'BUY' ? price * (1 + finalSlippage) : price * (1 - finalSlippage);
+                const orderAmount = side === 'BUY' ? amount : amount / price;
 
-                console.log(`[CopyExec] Placing MARKET FOK order. Size: ${sharesForLog.toFixed(2)} shares, WorstPrice: ${executionPrice}`);
+                console.log(`[CopyExec] Placing MARKET FOK order. Size: ${orderAmount.toFixed(4)}, Price: ${executionPrice}`);
 
-                const execService = params.tradingService || this.tradingService;
                 orderResult = await execService.createMarketOrder({
                     tokenId,
                     side,
@@ -491,40 +488,28 @@ export class CopyTradingExecutionService {
                     price: executionPrice,
                     orderType: 'FOK',
                 });
-                // NOTE: TradingService still uses the GLOBAL signer initialized in its constructor for CLOB orders.
-                // PROD FIX: TradingService needs to accept a signer override too for the CLOB signature.
-                // For now, only the ON-CHAIN parts (transfer, proxy execute) use the dynamic signer.
-                // CLOB keys are API keys + L2 signer. The L2 signer usually must match the API key owner.
-                // If using separate wallets, each wallet needs its own API keys and CLOB client.
-                // TODO: Refactor TradingService to support multi-account CLOB interaction.
-                // For MVP: We assume the same API key can place orders? No, different addresses = different users.
-                // ACTUALLY: The "Operator" places the trade on behalf of themselves (Bot).
-                // So if we switch Bot Wallet, we need a new CLOB Client for that Bot Wallet.
 
             } catch (err: any) {
                 // START RECOVERY (Refund)
                 if (useProxyFunds) {
+                    console.log(`[CopyExec] ⚠️ Order Failed. refunding...`);
                     if (side === 'BUY') {
-                        // Refund USDC (Standard Path)
-                        await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, params.signer, params.overrides);
+                        await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer, params.overrides);
                     } else { // SELL
-                        // Refund Tokens (Standard Path)
                         const sharesToReturn = amount / price;
-                        await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer, params.overrides);
+                        await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, signer, params.overrides);
                     }
                 }
-                // NOTE: If usedBotFloat, we just spent nothing (failed before trade), so nothing to refund.
                 return { success: false, error: err.message || 'Execution error', useProxyFunds, usedBotFloat };
             }
 
             if (!orderResult.success) {
-                // Failed (Kill part of FOK), refund.
                 if (useProxyFunds) {
                     if (side === 'BUY') {
-                        await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, params.signer);
-                    } else { // SELL
+                        await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer);
+                    } else {
                         const sharesToReturn = amount / price;
-                        await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, params.signer);
+                        await this.transferTokensToProxy(proxyAddress, tokenId, sharesToReturn, signer);
                     }
                 }
                 return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat, usedBotFloat };
@@ -535,76 +520,38 @@ export class CopyTradingExecutionService {
             let tokenPushTxHash: string | undefined;
 
             if (usedBotFloat && side === 'BUY') {
-                // OPTIMIZED SETTLEMENT
-                // 1. Push Tokens to Proxy
+                // Push Tokens
                 const sharesBought = amount / price;
-                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, params.signer);
-                if (pushResult.success) {
-                    tokenPushTxHash = pushResult.txHash;
-                }
+                const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
+                if (pushResult.success) tokenPushTxHash = pushResult.txHash;
 
-                // 2. Reimburse Bot (Pull USDC from Proxy)
-                console.log(`[CopyExec] 💰 Reimbursing Bot Float...`);
-                // We use `transferFromProxy` but logic is same: Proxy -> Bot
-                // Note: This relies on Proxy having funds. If this fails, Bot is out of pocket (Risk).
-                // A robust system would have a retry queue. For MVP, we log error.
-                try {
-                    const reimbursement = await this.transferFromProxy(proxyAddress, amount, params.signer);
-                    if (reimbursement.success) {
-                        returnTransferTxHash = reimbursement.txHash; // Re-use field for simplicity or add new one
-                    } else {
-                        console.error(`[CopyExec] 🚨 REIMBURSEMENT FAILED! Bot paid but Proxy didn't pay back: ${reimbursement.error}`);
-
-                        // DEBT RECORDING
-                        if (this.debtLogger) {
-                            const botAddr = await params.signer!.getAddress();
-                            this.debtLogger.logDebt({
-                                proxyAddress,
-                                botAddress: botAddr,
-                                amount,
-                                currency: 'USDC',
-                                error: reimbursement.error || 'Transfer Failed'
-                            }).then(() => console.log(`[CopyExec] 📝 Debt recorded for ${proxyAddress}`))
-                                .catch(e => console.error(`[CopyExec] ❌ Failed to record debt:`, e));
-                        }
-                    }
-                } catch (err: any) {
-                    console.error(`[CopyExec] 🚨 REIMBURSEMENT CRITICAL ERROR!`, err);
-
-                    // DEBT RECORDING
+                // Reimburse Bot
+                const reimbursement = await this.transferFromProxy(proxyAddress, amount, signer);
+                if (reimbursement.success) {
+                    returnTransferTxHash = reimbursement.txHash;
+                } else {
+                    console.error(`[CopyExec] 🚨 REIMBURSEMENT FAILED!`);
                     if (this.debtLogger) {
-                        try {
-                            await this.debtLogger.logDebt({
-                                proxyAddress,
-                                botAddress: await params.signer!.getAddress(),
-                                amount,
-                                currency: 'USDC',
-                                error: err.message || 'Unknown Reimbursement Error'
-                            });
-                            console.log(`[CopyExec] 📝 Debt recorded for ${proxyAddress}`);
-                        } catch (logErr) {
-                            console.error(`[CopyExec] ❌ Failed to record debt:`, logErr);
-                        }
+                        const botAddr = await signer!.getAddress();
+                        this.debtLogger.logDebt({
+                            proxyAddress,
+                            botAddress: botAddr,
+                            amount,
+                            currency: 'USDC',
+                            error: reimbursement.error || 'Transfer Failed'
+                        });
                     }
                 }
 
             } else if (useProxyFunds) {
-                // STANDARD SETTLEMENT
-                const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-
                 if (side === 'BUY') {
-                    // Return tokens to Proxy.
-                    const sharesBought = amount / price; // Approx.
-                    const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, params.signer);
-                    if (pushResult.success) {
-                        tokenPushTxHash = pushResult.txHash;
-                    }
+                    const sharesBought = amount / price;
+                    const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
+                    if (pushResult.success) tokenPushTxHash = pushResult.txHash;
                 } else {
-                    // Return USDC to Proxy.
-                    const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, params.signer);
-                    if (returnResult.success) {
-                        returnTransferTxHash = returnResult.txHash;
-                    }
+                    const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                    const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
+                    if (returnResult.success) returnTransferTxHash = returnResult.txHash;
                 }
             }
 
@@ -620,7 +567,8 @@ export class CopyTradingExecutionService {
                 usedBotFloat,
                 proxyAddress
             };
-        }); // End Mutex
+
+        });
     }
     /**
      * Recover Failed Settlement

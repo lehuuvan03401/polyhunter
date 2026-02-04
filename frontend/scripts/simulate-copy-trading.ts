@@ -15,7 +15,7 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, CopyTradeStatus } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { RealtimeServiceV2 } from '../../src/services/realtime-service-v2.ts';
@@ -401,7 +401,7 @@ async function recordCopyTrade(
             outcome: enriched.outcome,
             copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
             copyPrice: execPrice,
-            status: 'EXECUTED',
+            status: CopyTradeStatus.EXECUTED,
             txHash: trade.transactionHash ? `${TX_PREFIX}${trade.transactionHash}` : `${TX_PREFIX}${Date.now()}`,
             originalTxHash: trade.transactionHash || null,
             executedAt: new Date(),
@@ -751,7 +751,7 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
                         outcome: outcomeName,
                         copySize: proceeds,
                         copyPrice: settlementValue,
-                        status: 'EXECUTED',
+                        status: CopyTradeStatus.EXECUTED,
                         executedAt: new Date(),
                         txHash: `${TX_PREFIX}settlement-${Date.now()}`,
                         realizedPnL: pnl,

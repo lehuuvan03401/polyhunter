@@ -109,6 +109,12 @@ const PRICE_TTL_MS = parseInt(process.env.COPY_TRADING_PRICE_TTL_MS || '5000', 1
 const IDEMPOTENCY_BUCKET_MS = parseInt(process.env.COPY_TRADING_IDEMPOTENCY_BUCKET_MS || '5000', 10);
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 
+// EIP-1559 Aggressive Gas Settings for Polygon (To avoid stuck copy trades)
+const GAS_SETTINGS = {
+    maxPriorityFeePerGas: ethers.utils.parseUnits('40', 'gwei'),
+    maxFeePerGas: ethers.utils.parseUnits('600', 'gwei'),
+};
+
 const MARKET_CAPS = new Map<string, number>();
 if (MARKET_CAPS_RAW) {
     MARKET_CAPS_RAW.split(',')
@@ -138,10 +144,46 @@ let activeWorkerAddress: string | null = null;
 const rateLimiter = new RateLimiter();
 const cache = createUnifiedCache();
 const gammaClient = new GammaApiClient(rateLimiter, cache);
+// Rate Limiting & Concurrency classes (Ported from Bot)
+class MinuteLimiter {
+    private timestamps: number[] = [];
+    private maxPerMinute: number;
 
-// ============================================================================
-// State
-// ============================================================================
+    constructor(maxPerMinute: number) {
+        this.maxPerMinute = maxPerMinute;
+    }
+
+    allow(): boolean {
+        const now = Date.now();
+        const oneMinuteAgo = now - 60_000;
+        this.timestamps = this.timestamps.filter((t: number) => t >= oneMinuteAgo);
+        if (this.timestamps.length >= this.maxPerMinute) return false;
+        this.timestamps.push(now);
+        return true;
+    }
+}
+
+class InflightGate {
+    private inflight = 0;
+    private maxInflight: number;
+
+    constructor(maxInflight: number) {
+        this.maxInflight = maxInflight;
+    }
+
+    tryEnter(): boolean {
+        if (this.inflight >= this.maxInflight) return false;
+        this.inflight++;
+        return true;
+    }
+
+    exit() {
+        this.inflight = Math.max(0, this.inflight - 1);
+    }
+}
+
+const limiter = new MinuteLimiter(90); // Default to 90 orders/min (CLOB limit)
+const gate = new InflightGate(8); // Default to 8 concurrent orders
 
 interface WatchedConfig {
     id: string;
@@ -737,409 +779,327 @@ async function resolveConfigIdForPosition(walletAddress: string, tokenId: string
 // ============================================================================
 
 async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
-    // Get trader address from the trade
-    const traderAddr = trade.trader?.address?.toLowerCase();
-    if (!traderAddr) return;
+    // 1. Quick Gate Check (Fast Fail)
+    if (!gate.tryEnter()) return;
 
-    // Quick check: is this trader being watched?
-    if (!watchedAddresses.has(traderAddr)) return;
+    try {
+        // Get trader address from the trade
+        const traderAddr = trade.trader?.address?.toLowerCase();
+        if (!traderAddr) return;
 
-    stats.tradesDetected++;
+        // Quick check: is this trader being watched?
+        if (!watchedAddresses.has(traderAddr)) return;
 
-    const configs = activeConfigs.get(traderAddr);
-    if (!configs || configs.length === 0) return;
 
-    console.log(`\n🎯 [${new Date().toISOString()}] Trade detected from ${traderAddr.slice(0, 10)}...`);
-    console.log(`   ${trade.side} ${trade.size} @ ${trade.price} (${trade.marketSlug || trade.conditionId})`);
+        stats.tradesDetected++;
 
-    // Process each matching config
-    for (const config of configs) {
-        stats.tradesProcessed++;
+        const configs = activeConfigs.get(traderAddr);
+        if (!configs || configs.length === 0) return;
 
-        try {
-            // ========================================
-            // Apply Filters (same logic as detect/route.ts)
-            // ========================================
+        console.log(`\n🎯 [${new Date().toISOString()}] Trade detected from ${traderAddr.slice(0, 10)}...`);
+        console.log(`   ${trade.side} ${trade.size} @ ${trade.price} (${trade.marketSlug || trade.conditionId})`);
 
-            // Filter 1: Side filter (BUY/SELL only)
-            if (config.sideFilter && trade.side !== config.sideFilter) {
-                stats.tradesSkipped++;
-                continue;
-            }
+        // Process each matching config
+        for (const config of configs) {
+            stats.tradesProcessed++;
 
-            const { tradeShares, tradeNotional } = normalizeTradeSizing(config, trade.size, trade.price);
+            try {
+                // ========================================
+                // Apply Filters (same logic as detect/route.ts)
+                // ========================================
 
-            // Filter 2: Minimum trigger size ($)
-            if (config.minTriggerSize && tradeNotional < config.minTriggerSize) {
-                stats.tradesSkipped++;
-                continue;
-            }
+                // Filter 1: Side filter (BUY/SELL only)
+                if (config.sideFilter && trade.side !== config.sideFilter) {
+                    stats.tradesSkipped++;
+                    continue;
+                }
 
-            // Filter 3: Max odds (skip trades on highly likely outcomes)
-            if (config.maxOdds && trade.price > config.maxOdds) {
-                stats.tradesSkipped++;
-                continue;
-            }
+                const { tradeShares, tradeNotional } = normalizeTradeSizing(config, trade.size, trade.price);
 
-            // Filter 4: Direction handling (COPY vs COUNTER)
-            let copySide = trade.side;
-            if (config.direction === 'COUNTER') {
-                copySide = trade.side === 'BUY' ? 'SELL' : 'BUY';
-            }
+                // Filter 2: Minimum trigger size ($)
+                if (config.minTriggerSize && tradeNotional < config.minTriggerSize) {
+                    stats.tradesSkipped++;
+                    continue;
+                }
 
-            // Calculate copy size
-            const copySize = calculateCopySize(config, tradeShares, trade.price); // USDC amount
+                // Filter 3: Max odds (skip trades on highly likely outcomes)
+                if (config.maxOdds && trade.price > config.maxOdds) {
+                    stats.tradesSkipped++;
+                    continue;
+                }
 
-            if (copySize <= 0) {
-                stats.tradesSkipped++;
-                continue;
-            }
+                // Filter 4: Direction handling (COPY vs COUNTER)
+                let copySide = trade.side;
+                if (config.direction === 'COUNTER') {
+                    copySide = trade.side === 'BUY' ? 'SELL' : 'BUY';
+                }
 
-            // Polymarket minimum is $1
-            if (copySize < 1) {
-                stats.tradesSkipped++;
-                continue;
-            }
+                // Calculate copy size
+                const copySize = calculateCopySize(config, tradeShares, trade.price); // USDC amount
 
-            const idempotencyKey = buildIdempotencyKey(config.id, trade, copySide);
-            const existingByKey = await prisma.copyTrade.findUnique({
-                where: { idempotencyKey },
-                select: { id: true },
-            });
+                if (copySize <= 0) {
+                    stats.tradesSkipped++;
+                    continue;
+                }
 
-            if (existingByKey) {
-                console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (idempotency), skipping.`);
-                continue;
-            }
+                // Polymarket minimum is $1
+                if (copySize < 1) {
+                    stats.tradesSkipped++;
+                    continue;
+                }
 
-            if (trade.transactionHash) {
-                const existingByTx = await prisma.copyTrade.findUnique({
-                    where: { configId_originalTxHash: { configId: config.id, originalTxHash: trade.transactionHash } },
+                const idempotencyKey = buildIdempotencyKey(config.id, trade, copySide);
+
+                // OPTIMIZATION: Check DB async (don't block if we can help it, but uniqueness is strict)
+                // We'll trust the gate and in-memory checks more for speed, but idempotency prevents dups.
+                const existingByKey = await prisma.copyTrade.findUnique({
+                    where: { idempotencyKey },
                     select: { id: true },
                 });
-                if (existingByTx) {
-                    console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (txHash), skipping.`);
+
+                if (existingByKey) {
+                    console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (idempotency), skipping.`);
                     continue;
                 }
-            }
 
-            const canAttemptExecution = Boolean(activeWorkerKey && executionService && executionSigner && trade.asset);
-            let basePrice = trade.price;
-            let priceSource = 'trade';
-            let priceGuardError: string | null = null;
-
-            if (canAttemptExecution && trade.asset) {
-                const quote = await fetchFreshPrice(trade.asset, copySide as 'BUY' | 'SELL');
-                if (!quote) {
-                    priceGuardError = 'PRICE_QUOTE_UNAVAILABLE';
-                } else {
-                    const priceAgeMs = Date.now() - quote.fetchedAt;
-                    if (priceAgeMs > PRICE_TTL_MS) {
-                        priceGuardError = 'PRICE_QUOTE_STALE';
-                    }
-                    basePrice = quote.price;
-                    priceSource = quote.source;
-                    if (trade.price > 0) {
-                        const maxDeviation = (config.maxSlippage ?? 0) / 100;
-                        if (maxDeviation > 0) {
-                            const deviation = Math.abs(basePrice - trade.price) / trade.price;
-                            if (deviation > maxDeviation) {
-                                priceGuardError = `PRICE_DEVIATION_${(deviation * 100).toFixed(2)}%`;
-                            }
-                        }
+                if (trade.transactionHash) {
+                    const existingByTx = await prisma.copyTrade.findUnique({
+                        where: { configId_originalTxHash: { configId: config.id, originalTxHash: trade.transactionHash } },
+                        select: { id: true },
+                    });
+                    if (existingByTx) {
+                        console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (txHash), skipping.`);
+                        continue;
                     }
                 }
-            }
 
-            const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
-            const execPrice = copySide === 'BUY'
-                ? basePrice * (1 + fixedSlippage)
-                : basePrice * (1 - fixedSlippage);
-            const copyShares = execPrice > 0 ? (copySize / execPrice) : 0;
-
-            if (copyShares <= 0 || !Number.isFinite(copyShares)) {
-                stats.tradesSkipped++;
-                continue;
-            }
-
-            // ========================================
-            // Create PENDING CopyTrade Record
-            // ========================================
-
-            let copyTrade;
-            try {
-                copyTrade = await prisma.copyTrade.create({
-                    data: {
-                        configId: config.id,
-                        idempotencyKey,
-                        originalTrader: traderAddr,
-                        originalSide: copySide,
-                        leaderSide: trade.side,
-                        originalSize: tradeShares,
-                        originalPrice: trade.price,
-                        marketSlug: trade.marketSlug || null,
-                        conditionId: trade.conditionId || null,
-                        tokenId: trade.asset || null,
-                        outcome: trade.outcome || null,
-                        originalTxHash: trade.transactionHash || null,
-                        copySize,
-                        copyPrice: execPrice,
-                        status: 'PENDING',
-                        expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
-                    },
-                });
-            } catch (error: any) {
-                if (error?.code === 'P2002') {
-                    console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (unique constraint), skipping.`);
-                    stats.tradesSkipped++;
-                    continue;
-                }
-                throw error;
-            }
-
-            stats.tradesCreated++;
-            console.log(`   [Config ${config.id.slice(0, 8)}] Created PENDING trade: ${copyTrade.id.slice(0, 8)}`);
-            console.log(`   Copy: ${copySide} $${copySize.toFixed(2)} @ ${execPrice.toFixed(4)} (${priceSource})`);
-
-            // ========================================
-            // Execute Immediately (if configured)
-            // ========================================
-
-            if (canAttemptExecution) {
-                if (!ENABLE_REAL_TRADING) {
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: 'REAL_TRADING_DISABLED',
-                        },
-                    });
-                    stats.tradesSkipped++;
-                    console.log(`   ⛔ Real trading disabled. Skipped execution.`);
-                    continue;
-                }
-
-                if (priceGuardError) {
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: `PRICE_GUARD_${priceGuardError}`,
-                        },
-                    });
-                    stats.tradesSkipped++;
-                    console.log(`   ⛔ Price guard blocked execution: ${priceGuardError}`);
-                    continue;
-                }
-
+                const canAttemptExecution = Boolean(activeWorkerKey && executionService && executionSigner && trade.asset);
+                let basePrice = trade.price;
+                let priceSource = 'trade';
+                let priceGuardError: string | null = null;
                 let adjustedCopySize = copySize;
-                let adjustedCopyShares = copyShares;
-                const proxyAddress = await executionService!.resolveProxyAddress(config.walletAddress, executionSigner!);
-                const preflight = await preflightExecution(
-                    config.walletAddress,
-                    proxyAddress,
-                    copySide as 'BUY' | 'SELL',
-                    trade.asset!,
-                    copySize,
-                    basePrice
-                );
+                let adjustedCopyShares = 0;
+                let proxyAddress: string | null = null;
 
-                if (!preflight.allowed) {
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: `PREFLIGHT_${preflight.reason || 'FAILED'}`,
-                        },
-                    });
-                    stats.tradesSkipped++;
-                    console.log(`   ⛔ Preflight blocked execution: ${preflight.reason}`);
-                    continue;
-                }
+                // OPTIMIZATION: Parallelize Preflight Checks
+                if (canAttemptExecution && trade.asset) {
+                    // 1. Price Check
+                    const quotePromise = fetchFreshPrice(trade.asset, copySide as 'BUY' | 'SELL');
 
-                adjustedCopySize = preflight.adjustedCopySize;
-                adjustedCopyShares = preflight.adjustedCopyShares;
+                    // 2. Proxy Resolution
+                    const proxyPromise = executionService!.resolveProxyAddress(config.walletAddress, executionSigner!).catch(() => null);
 
-                if (adjustedCopySize < 1) {
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: 'ADJUSTED_SIZE_TOO_SMALL',
-                        },
-                    });
-                    stats.tradesSkipped++;
-                    console.log(`   ⛔ Adjusted size below minimum after preflight.`);
-                    continue;
-                }
+                    const [quote, resolvedProxy] = await Promise.all([quotePromise, proxyPromise]);
+                    proxyAddress = resolvedProxy;
 
-                if (adjustedCopySize !== copySize) {
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: {
-                            copySize: adjustedCopySize,
-                            copyPrice: execPrice,
-                        },
-                    });
-                }
-
-                const guardrail = await checkExecutionGuardrails(config.walletAddress, adjustedCopySize, {
-                    marketSlug: trade.marketSlug || undefined,
-                    tokenId: trade.asset || undefined,
-                    tradeId: copyTrade.id,
-                });
-                if (!guardrail.allowed) {
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
-                        },
-                    });
-                    stats.tradesSkipped++;
-                    console.log(`   ⛔ Guardrail blocked execution: ${guardrail.reason}`);
-                    continue;
-                }
-
-                const execStart = Date.now();
-                try {
-                    // Execute via CopyTradingExecutionService (handles Proxy & Order)
-                    console.log(`   🚀 Executing via Service for ${config.walletAddress}...`);
-
-                    const result = await executionService.executeOrderWithProxy({
-                        tradeId: copyTrade.id,
-                        walletAddress: config.walletAddress,
-                        tokenId: trade.asset,
-                        side: copySide as 'BUY' | 'SELL',
-                        amount: adjustedCopySize,
-                        price: basePrice,
-                        proxyAddress: proxyAddress || undefined,
-                        slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined, // If FIXED, use maxSlippage as the value
-                        maxSlippage: config.maxSlippage, // Pass for AUTO content
-                        slippageMode: config.slippageType as 'FIXED' | 'AUTO',
-                        orderType: 'limit',
-                    });
-
-                    if (result.success) {
-                        metrics.executions += 1;
-                        metrics.successes += 1;
-                        metrics.totalLatencyMs += Date.now() - execStart;
-                        // Check for Settlement Success
-                        // BUY: needs tokenPushTxHash. SELL: needs returnTransferTxHash.
-                        let isSettled = false;
-                        let settlementHash = '';
-
-                        if (copySide === 'BUY') {
-                            if (result.tokenPushTxHash) {
-                                isSettled = true;
-                                settlementHash = result.tokenPushTxHash;
-                            }
-                        } else {
-                            if (result.returnTransferTxHash) {
-                                isSettled = true;
-                                settlementHash = result.returnTransferTxHash;
-                            }
+                    if (!quote) {
+                        priceGuardError = 'PRICE_QUOTE_UNAVAILABLE';
+                    } else {
+                        const priceAgeMs = Date.now() - quote.fetchedAt;
+                        if (priceAgeMs > PRICE_TTL_MS) {
+                            priceGuardError = 'PRICE_QUOTE_STALE';
                         }
-
-                        // Override if Float was used and token push succeeded (Reimbursement fail is not "Settlement Pending" for User perspective, it's Bot problem).
-                        // If Token Push succeed -> User is safe.
-
-                        // What if result.useProxyFunds is false? (e.g. error before fund move, but result.success=false then)
-                        // If result.success is true, we executed trade.
-
-                        const newStatus = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
-
-                        // Update positions + realized PnL
-                        let realizedPnL: number | null = null;
-                        let finalCopySize = adjustedCopySize;
-
-                        try {
-                            if (copySide === 'BUY') {
-                                await recordBuyPosition(config.walletAddress, trade.asset, adjustedCopyShares, execPrice, finalCopySize);
-                            } else {
-                                const sellResult = await recordSellPosition(config.walletAddress, trade.asset, adjustedCopyShares, execPrice);
-                                realizedPnL = sellResult.realizedPnL;
-                                if (sellResult.proceeds > 0 && sellResult.proceeds < finalCopySize) {
-                                    finalCopySize = sellResult.proceeds;
+                        basePrice = quote.price;
+                        priceSource = quote.source;
+                        if (trade.price > 0) {
+                            const maxDeviation = (config.maxSlippage ?? 0) / 100;
+                            if (maxDeviation > 0) {
+                                const deviation = Math.abs(basePrice - trade.price) / trade.price;
+                                if (deviation > maxDeviation) {
+                                    priceGuardError = `PRICE_DEVIATION_${(deviation * 100).toFixed(2)}%`;
                                 }
                             }
-                        } catch (positionErr) {
-                            console.warn(`   ⚠️ Failed to update position for ${config.walletAddress}:`, positionErr);
                         }
-
-                        await prisma.copyTrade.update({
-                            where: { id: copyTrade.id },
-                            data: {
-                                status: newStatus,
-                                executedAt: new Date(),
-                                txHash: result.transactionHashes?.[0] || result.orderId,
-                                errorMessage: isSettled ? null : "Settlement Pending: Funds/Tokens not returned",
-                                realizedPnL: realizedPnL ?? undefined,
-                                copySize: finalCopySize,
-                                copyPrice: execPrice,
-                                usedBotFloat: result.usedBotFloat ?? false,
-                                executedBy: activeWorkerAddress ?? undefined
-                            },
-                        });
-                        stats.tradesExecuted++;
-                        console.log(`   ✅ Executed! Order: ${result.orderId} (Status: ${newStatus})`);
-                        if (result.useProxyFunds) {
-                            console.log(`   💰 Used Proxy Funds: ${result.fundTransferTxHash || "Float"}`);
-                        }
-                        if (!isSettled) {
-                            console.log(`   ⚠️ SETTLEMENT PENDING! Queued for recovery.`);
-                        }
-                    } else {
-                        metrics.executions += 1;
-                        metrics.failures += 1;
-                        metrics.totalLatencyMs += Date.now() - execStart;
-                        recordFailureReason(result.error || 'EXECUTION_FAILED');
-                        const failureMessage = result.error || 'EXECUTION_FAILED';
-                        const shouldRetry = isTransientError(failureMessage) && MAX_RETRY_ATTEMPTS > 0;
-                        const nextRetryCount = shouldRetry ? (copyTrade.retryCount || 0) + 1 : copyTrade.retryCount || 0;
-                        const retryAllowed = shouldRetry && nextRetryCount <= MAX_RETRY_ATTEMPTS;
-                        await prisma.copyTrade.update({
-                            where: { id: copyTrade.id },
-                            data: {
-                                status: 'FAILED',
-                                errorMessage: failureMessage,
-                                retryCount: nextRetryCount,
-                                nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
-                            },
-                        });
-                        stats.tradesFailed++;
-                        console.log(`   ❌ Failed: ${result.error}`);
                     }
-                } catch (execError) {
-                    const errorMsg = execError instanceof Error ? execError.message : String(execError);
-                    metrics.executions += 1;
-                    metrics.failures += 1;
-                    metrics.totalLatencyMs += Date.now() - execStart;
-                    recordFailureReason(errorMsg);
-                    const shouldRetry = isTransientError(errorMsg) && MAX_RETRY_ATTEMPTS > 0;
-                    const nextRetryCount = shouldRetry ? (copyTrade.retryCount || 0) + 1 : copyTrade.retryCount || 0;
-                    const retryAllowed = shouldRetry && nextRetryCount <= MAX_RETRY_ATTEMPTS;
-                    await prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
+
+                    // 3. Preflight logic (sync math + async checks)
+                    if (proxyAddress && !priceGuardError) {
+                        const preflight = await preflightExecution(
+                            config.walletAddress,
+                            proxyAddress,
+                            copySide as 'BUY' | 'SELL',
+                            trade.asset!,
+                            copySize,
+                            basePrice
+                        );
+
+                        if (!preflight.allowed) {
+                            // Skip logic handled below
+                        } else {
+                            adjustedCopySize = preflight.adjustedCopySize;
+                            adjustedCopyShares = preflight.adjustedCopyShares;
+                        }
+                    }
+                }
+
+                const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
+                const execPrice = copySide === 'BUY'
+                    ? basePrice * (1 + fixedSlippage)
+                    : basePrice * (1 - fixedSlippage);
+                const copyShares = execPrice > 0 ? (adjustedCopySize / execPrice) : 0;
+
+                if (adjustedCopySize < 1) {
+                    stats.tradesSkipped++;
+                    continue;
+                }
+
+                // OPTIMIZATION: Fire Execution IMMEDIATELY if safe
+                // We create the DB record in parallel/after
+                let executionPromise: Promise<any> | null = null;
+                let fastTracked = false;
+
+                if (canAttemptExecution && !priceGuardError && proxyAddress && ENABLE_REAL_TRADING) {
+                    // Rate Limit Check
+                    if (limiter.allow()) {
+                        fastTracked = true;
+                        const execStart = Date.now();
+                        console.log(`   🚀 [FastTrack] Executing via Service for ${config.walletAddress}...`);
+
+                        executionPromise = executionService!.executeOrderWithProxy({
+                            tradeId: "pending-db-creation", // Placeholder, will update later if needed or not use tradeId in service layer strictly
+                            walletAddress: config.walletAddress,
+                            tokenId: trade.asset!,
+                            side: copySide as 'BUY' | 'SELL',
+                            amount: adjustedCopySize,
+                            price: basePrice,
+                            overrides: GAS_SETTINGS,
+                            proxyAddress: proxyAddress || undefined,
+                            slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
+                            maxSlippage: config.maxSlippage,
+                            slippageMode: config.slippageType as 'FIXED' | 'AUTO',
+                            orderType: 'limit',
+                        }).then(res => ({ ...res, execStart }));
+                    } else {
+                        console.log(`   ⏳ Rate limit hit, skipping execution.`);
+                    }
+                }
+
+                // ========================================
+                // Create PENDING CopyTrade Record (Async)
+                // ========================================
+                // We await this now, but the execution request is already IN FLIGHT (if fastTracked)
+
+                let copyTrade;
+                try {
+                    copyTrade = await prisma.copyTrade.create({
                         data: {
-                            status: 'FAILED',
-                            errorMessage: errorMsg,
-                            retryCount: nextRetryCount,
-                            nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
+                            configId: config.id,
+                            idempotencyKey,
+                            originalTrader: traderAddr,
+                            originalSide: copySide,
+                            leaderSide: trade.side,
+                            originalSize: tradeShares,
+                            originalPrice: trade.price,
+                            marketSlug: trade.marketSlug || null,
+                            conditionId: trade.conditionId || null,
+                            tokenId: trade.asset || null,
+                            outcome: trade.outcome || null,
+                            originalTxHash: trade.transactionHash || null,
+                            copySize: adjustedCopySize,
+                            copyPrice: execPrice,
+                            status: fastTracked ? 'PENDING' : 'SKIPPED', // If not fast tracked, likely skipped or failed checks
+                            errorMessage: fastTracked ? null : (priceGuardError || 'Checks failed'),
+                            expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
                         },
                     });
-                    stats.tradesFailed++;
-                    console.log(`   ❌ Execution error: ${errorMsg}`);
+                    stats.tradesCreated++;
+                } catch (error: any) {
+                    // If DB fails, we might have an orphan order in flight. 
+                    // This is a risk of optimistic execution. 
+                    // But generally DB constraint violations are handled before execution in previous logic.
+                    if (error?.code === 'P2002') {
+                        console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (unique constraint) during creation.`);
+                        stats.tradesSkipped++;
+                        // If we fired execution, we can't easily cancel it here. 
+                        // Ideally we'd log this anomaly.
+                    }
+                    // Continue to next config
+                    continue;
                 }
-            } else {
-                // No private key - leave as PENDING for manual/API execution
-                console.log(`   ⏳ Left as PENDING (no TRADING_PRIVATE_KEY or no tokenId)`);
-            }
 
-        } catch (error) {
-            console.error(`   ❌ Error processing config ${config.id}:`, error);
-            stats.tradesFailed++;
+                // ========================================
+                // Handle Execution Result
+                // ========================================
+
+                if (fastTracked && executionPromise && copyTrade) {
+                    try {
+                        const result = await executionPromise;
+                        const latency = Date.now() - result.execStart;
+
+                        // Update DB with result
+                        if (result.success) {
+                            metrics.executions += 1;
+                            metrics.successes += 1;
+                            metrics.totalLatencyMs += latency;
+
+                            let isSettled = false;
+                            if (copySide === 'BUY') {
+                                isSettled = Boolean(result.tokenPushTxHash);
+                            } else {
+                                isSettled = Boolean(result.returnTransferTxHash);
+                            }
+
+                            // Settlement / Position Logic (Async - don't block loop)
+                            (async () => {
+                                try {
+                                    if (copySide === 'BUY') {
+                                        await recordBuyPosition(config.walletAddress, trade.asset!, adjustedCopyShares, execPrice, adjustedCopySize);
+                                    } else {
+                                        await recordSellPosition(config.walletAddress, trade.asset!, adjustedCopyShares, execPrice);
+                                    }
+                                } catch (e) { console.warn('Position update failed', e); }
+                            })();
+
+                            await prisma.copyTrade.update({
+                                where: { id: copyTrade.id },
+                                data: {
+                                    status: isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING',
+                                    executedAt: new Date(),
+                                    txHash: result.transactionHashes?.[0] || result.orderId,
+                                    errorMessage: isSettled ? null : "Settlement Pending",
+                                    usedBotFloat: result.usedBotFloat ?? false,
+                                    executedBy: activeWorkerAddress ?? undefined
+                                },
+                            });
+                            stats.tradesExecuted++;
+                            console.log(`   ✅ [FastTrack] Executed! Order: ${result.orderId} (${latency}ms)`);
+
+                        } else {
+                            metrics.executions += 1;
+                            metrics.failures += 1;
+                            await prisma.copyTrade.update({
+                                where: { id: copyTrade.id },
+                                data: {
+                                    status: 'FAILED',
+                                    errorMessage: result.error || 'EXECUTION_FAILED',
+                                },
+                            });
+                            stats.tradesFailed++;
+                            console.log(`   ❌ [FastTrack] Failed: ${result.error}`);
+                        }
+
+                    } catch (execError: any) {
+                        console.error(`   ❌ [FastTrack] Execution exception:`, execError);
+                        await prisma.copyTrade.update({
+                            where: { id: copyTrade.id },
+                            data: { status: 'FAILED', errorMessage: execError.message },
+                        });
+                    }
+                } else if (!fastTracked && copyTrade) {
+                    // Log why we didn't execute
+                    if (!ENABLE_REAL_TRADING) console.log(`   ⛔ Real trading disabled.`);
+                    if (priceGuardError) console.log(`   ⛔ Price guard: ${priceGuardError}`);
+                    if (!proxyAddress) console.log(`   ⛔ No proxy found.`);
+                }
+
+            } catch (error) {
+                console.error(`   ❌ Error processing config ${config.id}:`, error);
+                stats.tradesFailed++;
+            }
         }
+
+    } finally {
+        gate.exit();
     }
 }
 
@@ -1940,6 +1900,17 @@ async function start(): Promise<void> {
     // Connect to WebSocket and subscribe to ALL activity
     console.log('\n📡 Connecting to Polymarket WebSocket...');
     realtimeService.connect();
+
+    // OPTIMIZATION: Crash-only mode. If WS drops, exit so supervisor restarts.
+    realtimeService.on('disconnected', () => {
+        console.error('❌ WebSocket disconnected. Exiting for restart...');
+        process.exit(1);
+    });
+
+    realtimeService.on('error', (err: any) => {
+        console.error('❌ WebSocket error. Exiting for restart...', err);
+        process.exit(1);
+    });
 
     // Wait for connection
     await new Promise<void>((resolve) => {

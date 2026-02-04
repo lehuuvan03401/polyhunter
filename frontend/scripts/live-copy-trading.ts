@@ -16,8 +16,9 @@
 
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, CopyTradeStatus } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { RealtimeServiceV2 } from '../../src/services/realtime-service-v2.ts';
@@ -27,6 +28,8 @@ import { RateLimiter } from '../../src/core/rate-limiter';
 import { createUnifiedCache } from '../../src/core/unified-cache';
 import { getStrategyConfig, StrategyProfile } from '../../src/config/strategy-profiles';
 import { normalizeTradeSizing } from '../../src/utils/trade-sizing.js';
+import { PositionTracker } from '../../src/core/tracking/position-tracker.ts';
+import { CtfEventListener } from '../../src/services/ctf-event-listener.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,17 +98,9 @@ const cache = createUnifiedCache();
 const gammaClient = new GammaApiClient(rateLimiter, cache);
 
 // --- TRACKING STATE ---
-interface Position {
-    tokenId: string;
-    balance: number;        // shares
-    avgEntryPrice: number;  // cost basis
-    totalCost: number;      // total USDC spent
-    marketSlug: string;
-    outcome: string;
-    conditionId?: string;
-}
-
-const positions = new Map<string, Position>();
+// --- TRACKING STATE ---
+const tracker = new PositionTracker();
+const positionMetadata = new Map<string, { marketSlug: string; outcome: string; conditionId?: string }>();
 let configId: string;
 let activeConfig: Awaited<ReturnType<typeof seedConfig>> | null = null;
 
@@ -163,6 +158,20 @@ async function fetchWithRetry(
     }
 
     throw lastError;
+}
+
+const ORDERS_LOG_PATH = process.env.ORDERS_LOG_PATH || './logs/orders.ndjson';
+
+// --- HELPERS ---
+function ensureDir(filePath: string) {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function appendNdjson(filePath: string, obj: unknown) {
+    ensureDir(filePath);
+    const line = JSON.stringify(obj) + "\n";
+    fs.promises.appendFile(filePath, line).catch((err) => console.error('Log Error:', err));
 }
 
 // --- SEED CONFIG ---
@@ -224,47 +233,14 @@ async function seedConfig() {
 // --- POSITION MANAGEMENT ---
 // --- POSITION MANAGEMENT ---
 function updatePositionOnBuy(tokenId: string, shares: number, price: number, marketSlug: string, outcome: string, conditionId?: string) {
-    const existing = positions.get(tokenId);
-
-    if (existing) {
-        // Update weighted average price
-        const newTotalCost = existing.totalCost + (shares * price);
-        const newBalance = existing.balance + shares;
-        existing.avgEntryPrice = newTotalCost / newBalance;
-        existing.balance = newBalance;
-        existing.totalCost = newTotalCost;
-        // outcome stays same
-    } else {
-        positions.set(tokenId, {
-            tokenId,
-            balance: shares,
-            avgEntryPrice: price,
-            totalCost: shares * price,
-
-            marketSlug,
-            outcome,
-            conditionId
-        });
+    tracker.onBuy(tokenId, shares, price);
+    if (!positionMetadata.has(tokenId)) {
+        positionMetadata.set(tokenId, { marketSlug, outcome, conditionId });
     }
 }
 
 function updatePositionOnSell(tokenId: string, shares: number, price: number): number {
-    const existing = positions.get(tokenId);
-
-    if (!existing || existing.balance <= 0) {
-        console.log(`   ⚠️  No position to sell for token ${tokenId.substring(0, 20)}...`);
-        return 0;
-    }
-
-    const sharesToSell = Math.min(shares, existing.balance);
-    const costBasis = sharesToSell * existing.avgEntryPrice;
-    const proceeds = sharesToSell * price;
-    const pnl = proceeds - costBasis;
-
-    existing.balance -= sharesToSell;
-    existing.totalCost -= costBasis;
-
-    return pnl;
+    return tracker.onSell(tokenId, shares, price);
 }
 
 function calculateCopySize(
@@ -394,7 +370,7 @@ async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
             const resp = await fetch(fetchUrl);
             if (resp.ok) {
                 const book = await resp.json();
-                console.log(`[DEBUG] /book resp for ${trade.asset}:`, JSON.stringify(book));
+                // console.log(`[DEBUG] /book resp for ${trade.asset}:`, JSON.stringify(book));
                 conditionId = book.market; // 'market' field is conditionId
                 if (!conditionId) {
                     console.warn(`[DEBUG] 'market' field missing in book for ${trade.asset}`);
@@ -465,7 +441,7 @@ async function recordCopyTrade(
             outcome: enriched.outcome,
             copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
             copyPrice: execPrice,
-            status: 'EXECUTED',
+            status: CopyTradeStatus.EXECUTED,
             txHash: trade.transactionHash ? `${TX_PREFIX}${trade.transactionHash}` : `${TX_PREFIX}${Date.now()}`,
             originalTxHash: trade.transactionHash || null,
             executedAt: new Date(),
@@ -492,7 +468,25 @@ async function recordCopyTrade(
 
         // Update or create position in DB
         const tokenId = trade.asset;
-        const position = positions.get(tokenId);
+        const position = tracker.metrics(tokenId);
+
+        // High-Frequency Logging (NDJSON)
+        appendNdjson(ORDERS_LOG_PATH, {
+            t: Date.now(),
+            status: 'EXECUTED',
+            side: trade.side,
+            tokenID: trade.asset,
+            shares: originalShares, // Leader size
+            copyShares: copyAmount / execPrice,
+            price: trade.price,
+            execPrice: execPrice,
+            notionalUSDC: trade.size * trade.price,
+            copyUSDC: copyAmount,
+            marketSlug: enriched.marketSlug,
+            outcome: enriched.outcome,
+            tx: trade.transactionHash,
+            pnl: pnl
+        });
 
         if (position) {
             await prisma.userPosition.upsert({
@@ -503,16 +497,16 @@ async function recordCopyTrade(
                     }
                 },
                 update: {
-                    balance: position.balance,
-                    avgEntryPrice: position.avgEntryPrice,
-                    totalCost: position.totalCost,
+                    balance: position.shares,
+                    avgEntryPrice: position.avgPrice,
+                    totalCost: position.costUSDC,
                 },
                 create: {
                     walletAddress: FOLLOWER_WALLET.toLowerCase(),
                     tokenId: tokenId,
-                    balance: position.balance,
-                    avgEntryPrice: position.avgEntryPrice,
-                    totalCost: position.totalCost,
+                    balance: position.shares,
+                    avgEntryPrice: position.avgPrice,
+                    totalCost: position.costUSDC,
                 }
             });
         }
@@ -551,6 +545,16 @@ async function handleTrade(trade: ActivityTrade) {
 
     // Check for weird slugs (Optional debugging)
     // console.log(`[DEBUG] 🔎 Detected trade for target: ${trade.marketSlug} | Side: ${trade.side}`);
+
+    // --- FIX: ENRICH METADATA EARLY ---
+    // CtfEventListener (On-Chain) trades have no metadata initially. We must fetch it now.
+    if (!trade.conditionId && !trade.marketSlug) {
+        // console.log(`[DEBUG] 🔍 Enriching metadata for token ${trade.asset}...`);
+        const enriched = await enrichTradeMetadata(trade);
+        if (enriched.conditionId) trade.conditionId = enriched.conditionId;
+        if (enriched.marketSlug) trade.marketSlug = enriched.marketSlug;
+        if (enriched.outcome) trade.outcome = enriched.outcome;
+    }
 
     // Skip trades without conditionId (can't get metadata)
     if (!trade.conditionId && !trade.marketSlug) {
@@ -653,14 +657,14 @@ async function handleTrade(trade: ActivityTrade) {
     // 🔥 CRITICAL: Skip SELL trades if we don't have a position
     // In real copy trading, we only sell what we've bought
     if (trade.side === 'SELL') {
-        const existing = positions.get(trade.asset);
-        if (!existing || existing.balance <= 0) {
+        const existing = tracker.metrics(trade.asset);
+        if (!existing || existing.shares <= 0) {
             console.log(`\n⏭️  SKIPPED SELL (no position): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
             return;
         }
 
-        if (copyShares > existing.balance) {
-            copyShares = existing.balance;
+        if (copyShares > existing.shares) {
+            copyShares = existing.shares;
             copyAmount = copyShares * execPrice;
         }
     }
@@ -681,16 +685,16 @@ async function handleTrade(trade: ActivityTrade) {
         totalBuyVolume += copyAmount;
         budgetUsed += copyAmount; // Track budget usage
 
-        const pos = positions.get(trade.asset)!;
-        positionLine = `   💼 Position: ${pos.balance.toFixed(2)} shares @ avg $${pos.avgEntryPrice.toFixed(4)}`;
+        const pos = tracker.metrics(trade.asset);
+        positionLine = `   💼 Position: ${pos.shares.toFixed(2)} shares @ avg $${pos.avgPrice.toFixed(4)}`;
     } else {
         const pnl = updatePositionOnSell(trade.asset, copyShares, execPrice);
         tradePnL = pnl;
         realizedPnL += pnl;
         totalSellVolume += copyAmount;
 
-        const pos = positions.get(trade.asset);
-        const remaining = pos ? pos.balance.toFixed(2) : '0';
+        const pos = tracker.metrics(trade.asset);
+        const remaining = pos ? pos.shares.toFixed(2) : '0';
 
         // Fee impact
         const netPnl = pnl - (ESTIMATED_GAS_FEE_USD * 2); // Deduct for Buy (past) and Sell (now) approx? 
@@ -812,8 +816,18 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
             if (!tokenId) continue;
 
             // Check if we hold this token
-            const pos = positions.get(tokenId);
-            if (!pos || pos.balance <= 0) continue;
+            // Check if we hold this token
+            const metrics = tracker.metrics(tokenId);
+            if (!metrics || metrics.shares <= 0) continue;
+            const meta = positionMetadata.get(tokenId);
+
+            // Shim compatible object
+            const pos = {
+                balance: metrics.shares,
+                totalCost: metrics.costUSDC,
+                shares: metrics.shares,
+                ...meta
+            };
 
             if (!startSettlement(tokenId)) continue;
 
@@ -851,7 +865,7 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
                         configId: configId,
                         originalTrader: 'POLYMARKET_SETTLEMENT',
                         originalSide: 'SELL',
-                        originalSize: pos.balance,
+                        originalSize: pos.shares,
                         originalPrice: settlementValue,
                         marketSlug: market.slug,
                         conditionId: conditionId,
@@ -859,7 +873,7 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
                         outcome: outcomeName,
                         copySize: proceeds,
                         copyPrice: settlementValue,
-                        status: 'EXECUTED',
+                        status: CopyTradeStatus.EXECUTED,
                         executedAt: new Date(),
                         txHash: `${TX_PREFIX}settlement-${Date.now()}`,
                         realizedPnL: pnl,
@@ -876,7 +890,8 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
                 });
 
                 // Remove from Local Map
-                positions.delete(tokenId);
+                tracker.remove(tokenId);
+                positionMetadata.delete(tokenId);
                 finishSettlement(tokenId, true);
             } catch (err) {
                 finishSettlement(tokenId, false);
@@ -892,12 +907,16 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
 // --- REDEMPTION LOGIC ---
 async function processRedemptions() {
     console.log('\n🔄 Processing Settlements (Wins & Losses)...');
-    const activeTokenIds = Array.from(positions.keys());
+    const activeTokenIds = tracker.getAllPositions().map(p => p.tokenId);
     if (activeTokenIds.length === 0) return;
 
     for (const tokenId of activeTokenIds) {
-        const pos = positions.get(tokenId);
-        if (!pos) continue;
+        const metrics = tracker.metrics(tokenId);
+        const meta = positionMetadata.get(tokenId);
+        if (!metrics || !meta) continue;
+
+        // Merge for compatibility
+        const pos = { ...meta, shares: metrics.shares, totalCost: metrics.costUSDC, conditionId: meta.conditionId };
 
         try {
             // Check if market is resolved and we WON
@@ -957,11 +976,11 @@ async function processRedemptions() {
                         // Check for Win (Explicit Winner or Price is effectively 1)
                         if (isWinner === true || (price !== undefined && price >= 0.95)) {
                             if (!startSettlement(tokenId)) continue;
-                            console.log(`   🎉 Redeeming WIN for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
+                            console.log(`   🎉 Redeeming WIN for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.shares.toFixed(2)}`);
 
                             // 1. Credit Realized PnL (Value - Cost)
                             // Redemption gives $1.00 per share.
-                            const redemptionValue = pos.balance;
+                            const redemptionValue = pos.shares;
                             const profit = redemptionValue - pos.totalCost;
                             realizedPnL += profit;
                             totalSellVolume += redemptionValue;
@@ -980,7 +999,7 @@ async function processRedemptions() {
                                     originalTrader: 'PROTOCOL',
                                     originalSize: 0,
                                     originalPrice: 1.0,
-                                    status: 'EXECUTED',
+                                    status: CopyTradeStatus.EXECUTED,
                                     executedAt: new Date(),
                                     txHash: `${TX_PREFIX}redeem-${Date.now()}`,
                                     errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`,
@@ -993,7 +1012,8 @@ async function processRedemptions() {
                             await prisma.userPosition.deleteMany({
                                 where: { walletAddress: FOLLOWER_WALLET.toLowerCase(), tokenId: tokenId }
                             });
-                            positions.delete(tokenId);
+                            tracker.remove(tokenId);
+                            positionMetadata.delete(tokenId);
                             finishSettlement(tokenId, true);
 
                             console.log(`      💰 Credited $${redemptionValue.toFixed(2)} (Profit: $${profit.toFixed(2)})`);
@@ -1001,7 +1021,7 @@ async function processRedemptions() {
                         // Check for Loss (Explicit Loser or Price is effectively 0)
                         else if (isWinner === false || (price !== undefined && price <= 0.05)) {
                             if (!startSettlement(tokenId)) continue;
-                            console.log(`   💀 Settle LOSS for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.balance.toFixed(2)}`);
+                            console.log(`   💀 Settle LOSS for ${pos.marketSlug} (${pos.outcome}). Shares: ${pos.shares.toFixed(2)}`);
 
                             const settlementValue = 0;
                             const profit = -pos.totalCost; // 100% Loss
@@ -1020,9 +1040,9 @@ async function processRedemptions() {
                                     copySize: 0, // Proceeds at $0
                                     copyPrice: execPrice,
                                     originalTrader: 'PROTOCOL',
-                                    originalSize: pos.balance,
+                                    originalSize: pos.shares,
                                     originalPrice: 0.0,
-                                    status: 'EXECUTED',
+                                    status: CopyTradeStatus.EXECUTED,
                                     executedAt: new Date(),
                                     txHash: `${TX_PREFIX}settle-loss-${Date.now()}`,
                                     realizedPnL: profit,
@@ -1034,7 +1054,8 @@ async function processRedemptions() {
                             await prisma.userPosition.deleteMany({
                                 where: { walletAddress: FOLLOWER_WALLET.toLowerCase(), tokenId: tokenId }
                             });
-                            positions.delete(tokenId);
+                            tracker.remove(tokenId);
+                            positionMetadata.delete(tokenId);
                             finishSettlement(tokenId, true);
 
                             console.log(`      📉 Realized Loss: $${Math.abs(profit).toFixed(2)}`);
@@ -1071,15 +1092,16 @@ async function printSummary() {
     let unrealizedPnL = 0;
 
     // Batch fetch prices for summary using ROBUST matching logic (Slug + Outcome)
-    const activeTokenIds = Array.from(positions.keys());
+    const activeTokenIds = tracker.getAllPositions().map(p => p.tokenId);
     const priceMap = new Map<string, number>();
 
     if (activeTokenIds.length > 0) {
         console.log(`\n🔎 Fetching live prices for ${activeTokenIds.length} active positions...`);
         try {
             for (const tokenId of activeTokenIds) {
-                const pos = positions.get(tokenId);
-                if (!pos) continue;
+                const meta = positionMetadata.get(tokenId);
+                if (!meta) continue;
+                const pos = { ...meta };
                 try {
                     // 0. Try CLOB Price first (Alignment with Frontend)
                     try {
@@ -1152,12 +1174,12 @@ async function printSummary() {
             console.warn('   ⚠️ Failed to fetch live prices for summary');
         }
     }
-    for (const [tokenId, pos] of positions) {
-        if (pos.balance > 0) {
+    for (const posMetrics of tracker.getAllPositions()) {
+        if (posMetrics.shares > 0) {
             // Use live price if available, else entry price
-            const livePrice = priceMap.get(tokenId) ?? pos.avgEntryPrice;
-            const marketValue = pos.balance * livePrice;
-            unrealizedPnL += marketValue - pos.totalCost;
+            const livePrice = priceMap.get(posMetrics.tokenId) ?? posMetrics.avgPrice;
+            const marketValue = posMetrics.shares * livePrice;
+            unrealizedPnL += marketValue - posMetrics.costUSDC;
         }
     }
 
@@ -1238,6 +1260,20 @@ async function main() {
         autoReconnect: false,
         debug: false,
     });
+
+    // 2b. Setup Event Listener (Deterministic source of truth)
+    // Uses POLYGON_RPC_URL (HTTP) by default for stability, or POLYGON_WS if only that is available.
+    // HTTP Polling is preferred for long-running "safety net" to avoid WS crashes.
+    const polygonRpc = process.env.POLYGON_RPC_URL || process.env.POLYGON_WS;
+    let eventListener: CtfEventListener | null = null;
+
+    if (polygonRpc) {
+        console.log('🔌 Initializing CTF Event Listener (Safety Net)...');
+        eventListener = new CtfEventListener(polygonRpc, TARGET_TRADER);
+        eventListener.start(handleTrade);
+    } else {
+        console.log('⚠️  No POLYGON_RPC_URL or POLYGON_WS provided. CTF Event Listener disabled (relying on API only).');
+    }
 
     console.log('🔌 Connecting to Polymarket WebSocket...');
     realtimeService.connect();
@@ -1327,6 +1363,7 @@ async function main() {
     await processRedemptions();
     await printSummary();
 
+    if (eventListener) eventListener.stop();
     realtimeService.disconnect();
     await prisma.$disconnect();
 
