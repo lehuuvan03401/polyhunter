@@ -65,6 +65,7 @@ export class CopyTradingExecutionService {
     private defaultSigner: ethers.Signer;
     private chainId: number;
     private debtLogger?: DebtLogger;
+    private proxyCache = new Map<string, string>(); // Optimization: Cache user -> proxy mapping
 
     constructor(
         tradingService: TradingService,
@@ -125,9 +126,14 @@ export class CopyTradingExecutionService {
     }
 
     /**
-     * Resolve User's Proxy Address using Factory
+     * Resolve User's Proxy Address using Factory (Cached)
      */
     async resolveProxyAddress(userAddress: string, signer?: ethers.Signer): Promise<string | null> {
+        // 1. Check Cache
+        if (this.proxyCache.has(userAddress)) {
+            // console.log(`[CopyExec] ⚡️ Proxy Cache Hit for ${userAddress}`);
+            return this.proxyCache.get(userAddress) || null;
+        }
         const addresses = this.getChainAddresses();
         const executionSigner = this.getSigner(signer);
 
@@ -141,6 +147,7 @@ export class CopyTradingExecutionService {
         const factory = new ethers.Contract(addresses.proxyFactory, PROXY_FACTORY_ABI, executionSigner);
         const userProxy = await factory.getUserProxy(userAddress);
         if (userProxy && userProxy !== ethers.constants.AddressZero) {
+            this.proxyCache.set(userAddress, userProxy); // Update Cache
             return userProxy;
         }
         return null;
