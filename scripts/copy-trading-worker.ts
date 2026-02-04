@@ -967,7 +967,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             slippage: config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : undefined,
                             maxSlippage: config.maxSlippage,
                             slippageMode: config.slippageType as 'FIXED' | 'AUTO',
-                            orderType: 'limit',
+                            orderType: 'market',
                         }).then(res => ({ ...res, execStart }));
                     } else {
                         console.log(`   ⏳ Rate limit hit, skipping execution.`);
