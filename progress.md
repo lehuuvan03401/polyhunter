@@ -162,3 +162,24 @@
   - openspec/changes/add-price-fallback/verification.md (created)
   - openspec/changes/add-execution-tx-monitor/verification.md (created)
   - openspec/changes/add-cache-eviction/verification.md (created)
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-execution-stage-metrics`.
+- Files created/modified:
+  - openspec/changes/add-execution-stage-metrics/proposal.md (created)
+  - openspec/changes/add-execution-stage-metrics/tasks.md (created)
+  - openspec/changes/add-execution-stage-metrics/specs/copy-trading/spec.md (created)
+
+### Phase 3: Implementation (Execution Stage Metrics)
+- **Status:** complete
+- Actions taken:
+  - Added per-stage metrics tracking (count/total/max) for execution pipeline.
+  - Instrumented fast-track and retry paths (prewrite, guardrails, pricing, preflight, execution, persistence).
+  - Extended metrics summary with per-stage averages and max latency.
+  - Added verification notes for stage metrics logging.
+- Files created/modified:
+  - scripts/copy-trading-worker.ts (modified)
+  - openspec/changes/add-execution-stage-metrics/verification.md (created)
+  - openspec/changes/add-execution-stage-metrics/tasks.md (modified)
