@@ -34,6 +34,7 @@ const prisma = new PrismaClient({ adapter });
 
 const RETENTION_DAYS = 90;
 const BATCH_SIZE = 1000;
+const RUN_POST_ARCHIVE_MAINTENANCE = process.env.ARCHIVE_RUN_VACUUM !== 'false';
 
 async function archiveCopyTrades() {
     const cutoffDate = new Date();
@@ -150,10 +151,23 @@ async function archiveCommissionLogs() {
     console.log(`[Archive] CommissionLog Archiving Complete. Total: ${totalArchived}`);
 }
 
+async function runPostArchiveMaintenance() {
+    if (!RUN_POST_ARCHIVE_MAINTENANCE) {
+        console.log('[Archive] Post-archive maintenance disabled (ARCHIVE_RUN_VACUUM=false).');
+        return;
+    }
+
+    console.log('[Archive] Running VACUUM (ANALYZE) on CopyTrade and CommissionLog...');
+    await pool.query('VACUUM (ANALYZE) "CopyTrade";');
+    await pool.query('VACUUM (ANALYZE) "CommissionLog";');
+    console.log('[Archive] Post-archive maintenance complete.');
+}
+
 async function main() {
     try {
         await archiveCopyTrades();
         await archiveCommissionLogs();
+        await runPostArchiveMaintenance();
     } catch (e) {
         console.error('[Archive] Error during archiving:', e);
         process.exit(1);

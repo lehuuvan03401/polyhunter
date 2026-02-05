@@ -327,6 +327,9 @@
   - Implemented P0 hot-path indexes in Prisma schema and created migration.
   - Ran EXPLAIN (ANALYZE, BUFFERS) against CopyTrade and CommissionLog hot queries on local DB.
   - Implemented P1 row-claim locking (lockedAt/lockedBy) in worker and applied migration.
+  - Ran two workers in dry-run with DATABASE_URL; workers started and processed activity but no settlement-pending/failed rows were present, so lock-claim behavior not observed.
+  - Implemented P2 post-archive maintenance (VACUUM/ANALYZE) in `scripts/archive-data.ts`.
+  - Documented deferred Redis cache adapter in `openspec/changes/optimize-db-design/design.md`.
 
 ## Error Log (DB Proposals)
 | Timestamp | Error | Attempt | Resolution |

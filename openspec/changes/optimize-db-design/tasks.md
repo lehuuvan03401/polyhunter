@@ -15,5 +15,5 @@
 - [x] Add verification notes for multi-worker behavior. <!-- id: 10 -->
 
 ## P2: Cache + Maintenance
-- [ ] Add post-archive maintenance step (VACUUM/ANALYZE) or ops runbook update. <!-- id: 11 -->
-- [ ] Document deferred Redis cache adapter for future proposal. <!-- id: 12 -->
+- [x] Add post-archive maintenance step (VACUUM/ANALYZE) or ops runbook update. <!-- id: 11 -->
+- [x] Document deferred Redis cache adapter for future proposal. <!-- id: 12 -->

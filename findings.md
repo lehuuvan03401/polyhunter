@@ -88,3 +88,6 @@
 - Implemented P0 indexes: CopyTrade (status, expiresAt), (status, nextRetryAt), (status, executedAt) and CommissionLog (referrerId, createdAt).
 - EXPLAIN results (local dev data):\n  - Executed totals query uses `CopyTrade_status_executedAt_idx`.\n  - Pending expiry and retry scans still used `CopyTrade_status_idx` with filters (likely due to low data/selectivity).\n  - CommissionLog time-window query used `CommissionLog_referrerId_idx` with createdAt filter (composite index may be favored with more data).
 - Implemented P1 locking: `CopyTrade.lockedAt`/`lockedBy` fields + row-claiming in recovery/retry/expiry scans with TTL-based staleness.
+- Multi-worker dry-run started successfully, but no `SETTLEMENT_PENDING`/`FAILED` rows were claimed during the short run, so lock-claim behavior remains unobserved.
+- Added post-archive maintenance: `scripts/archive-data.ts` now runs `VACUUM (ANALYZE)` on CopyTrade/CommissionLog (can disable via `ARCHIVE_RUN_VACUUM=false`).
+- Deferred Redis cache adapter documented in `openspec/changes/optimize-db-design/design.md` for a future proposal.

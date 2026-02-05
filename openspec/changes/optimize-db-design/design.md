@@ -29,7 +29,8 @@
 
 ## P2: Cache + Maintenance
 **Config cache:**
-- Use `UnifiedCache` with an external `CacheAdapter` (Redis) when available.
+**Deferred (future proposal):**
+- Redis-backed `CacheAdapter` for `UnifiedCache` to reduce config polling load.
 - TTL should be >= refresh interval or invalidation-based (on config updates).
 
 **Post-archive maintenance:**
