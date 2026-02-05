@@ -28,13 +28,16 @@
 ## Test Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
-| Copy-trade prewrite verify | `npx tsx scripts/verify/copy-trade-prewrite.ts` | Reports stale PENDING count | Failed: @prisma/client missing | ✗ |
-| Debt recovery verification | docs/operations/debt-recovery-verification.md | Steps documented | Not run | ☐ |
-| Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Steps documented | Not run | ☐ |
-| Preflight cache verification | openspec/changes/add-preflight-balance-cache/verification.md | Steps documented | Not run | ☐ |
-| Price fallback verification | openspec/changes/add-price-fallback/verification.md | Steps documented | Not run | ☐ |
-| Tx monitor verification | openspec/changes/add-execution-tx-monitor/verification.md | Steps documented | Not run | ☐ |
-| Cache eviction verification | openspec/changes/add-cache-eviction/verification.md | Steps documented | Not run | ☐ |
+| Copy-trade prewrite (read-only) | `npx tsx scripts/verify/copy-trade-prewrite.ts` | Reports stale PENDING count | Stale PENDING trades: 0 | ✓ |
+| Copy-trade prewrite (write/expiry) | `VERIFY_PREWRITE_WRITE=true VERIFY_CONFIG_ID=cmkza8so900002ilkerxa08d6 npx tsx scripts/verify/copy-trade-prewrite.ts` | Duplicate blocked + stale expired | Duplicate blocked (P2002), stale expired, cleanup ok | ✓ |
+| Execution stage metrics | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | Stage metrics logged | Stage metrics logged (prewrite/guardrails/pricing/preflight) | ✓ |
+| Orderbook quote cache | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | Cache hits + inflight dedupe | hits=12 inflight=1 misses=2 | ✓ |
+| Preflight cache verification | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | Cache hits + inflight dedupe | hits=3 inflight=1 misses=5 | ✓ |
+| Cache eviction verification | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | TTL prune + size eviction | TTL prune observed (quote/preflight prune); size eviction not hit | PARTIAL |
+| Price fallback verification | openspec/changes/add-price-fallback/verification.md | Fallback usage + TTL guards | Blocked: fallback not triggered (orderbook ok) | ⛔ |
+| Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Proxy mutex serialization | Blocked: requires concurrent executions (dry-run blocks) | ⛔ |
+| Tx monitor verification | openspec/changes/add-execution-tx-monitor/verification.md | Stuck tx replace | Blocked: requires on-chain txs | ⛔ |
+| Debt recovery verification | docs/operations/debt-recovery-verification.md | Debt recovery loop verified | Blocked: requires funded proxy + real recovery flow | ⛔ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -43,6 +46,11 @@
 | 2026-02-04 10:50 | openspec show optimize-real-copy-trading --json --deltas-only failed (missing Why section) | 1 | Will inspect change files directly |
 | 2026-02-04 11:05 | verify script failed: @prisma/client not found | 1 | Added dynamic import with friendly error; run after deps install |
 | 2026-02-04 11:08 | verify script still missing @prisma/client from frontend context | 2 | Requires installing @prisma/client in this repo |
+| 2026-02-05 06:47 | verify script failed: Missing @prisma/client | 3 | Blocked until Prisma client available in this workspace |
+| 2026-02-05 07:16 | env load failed: .env.local syntax error (inline comment) | 1 | Use sanitized env export or fix .env.local.localhost |
+| 2026-02-05 07:35 | verify script adapter init failed (Pool not constructor) | 1 | Normalized pg/adapter module exports in verify script |
+| 2026-02-05 07:35 | worker Prisma init failed in dry-run | 1 | Added adapter fallback in worker Prisma initialization |
+| 2026-02-05 07:59 | WS message: "CLOB messages are not supported anymore" | 1 | Activity works; consider skipping market events or updating WS topic |
 
 ## 5-Question Reboot Check
 | Question | Answer |
@@ -183,3 +191,19 @@
   - scripts/copy-trading-worker.ts (modified)
   - openspec/changes/add-execution-stage-metrics/verification.md (created)
   - openspec/changes/add-execution-stage-metrics/tasks.md (modified)
+
+### Phase 4: Testing & Verification
+**Status:** partially complete (local dry-run)
+- Actions taken:
+  - Fixed `.env.local` generation issue (newline between localhost + secrets).
+  - Added Prisma adapter fallback to verification script and worker initialization.
+  - Ran prewrite verification (read-only + write/expiry) successfully.
+  - Temporarily set `CopyTradingConfig.maxSlippage=0` for local validation to bypass price deviation guard.
+  - Ran worker with `COPY_TRADING_WS_FILTER_BY_ADDRESS=false` and short metrics interval to capture cache + stage metrics.
+  - Observed quote cache hits/inflight, preflight cache hits/inflight, stage metrics logging.
+  - Observed TTL cache prune in metrics interval (size eviction not hit).
+- Blockers:
+  - WebSocket returns 400 (CLOB messages unsupported) on market events; activity still works but noisy.
+  - Dry-run prevents real execution needed for proxy queue / tx monitor checks.
+  - Debt recovery requires funded proxy and real repayment flow.
+  - Price fallback not triggered (orderbook available).

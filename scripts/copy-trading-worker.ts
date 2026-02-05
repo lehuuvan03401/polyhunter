@@ -34,6 +34,7 @@
  * - COPY_TRADING_TRADE_WINDOW_MS: Time window for max trades (optional)
  * - COPY_TRADING_EMERGENCY_PAUSE: Emergency pause switch (optional)
  * - COPY_TRADING_DRY_RUN: Dry-run mode (optional)
+ * - POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE: Optional CLOB API credentials
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
  * - COPY_TRADING_PREFLIGHT_CACHE_TTL_MS: Max age for preflight balance/allowance cache (default: 2000)
@@ -60,9 +61,12 @@ import { ethers } from 'ethers';
 import { createHash } from 'crypto';
 import { CTF_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '../src/core/contracts.js';
 import { normalizeTradeSizing } from '../src/utils/trade-sizing.js';
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 // Dynamic import for Prisma to handle different runtime contexts
 let prisma: any = null;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ============================================================================
 // Configuration
@@ -92,6 +96,9 @@ const WORKER_ALLOWLIST = (process.env.COPY_TRADING_WORKER_ALLOWLIST || '')
     .split(',')
     .map((addr) => addr.trim().toLowerCase())
     .filter(Boolean);
+const POLY_API_KEY = process.env.POLY_API_KEY;
+const POLY_API_SECRET = process.env.POLY_API_SECRET;
+const POLY_API_PASSPHRASE = process.env.POLY_API_PASSPHRASE;
 const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
 const METRICS_INTERVAL_MS = parseInt(process.env.COPY_TRADING_METRICS_INTERVAL_MS || '300000', 10);
 const BOT_USDC_WARN = Number(process.env.COPY_TRADING_BOT_USDC_WARN || '0');
@@ -327,6 +334,60 @@ async function timeStage<T>(stage: StageKey, fn: () => Promise<T>): Promise<T> {
     } finally {
         recordStage(stage, Date.now() - start);
     }
+}
+
+async function loadPrismaModule(): Promise<any> {
+    try {
+        return await import('@prisma/client');
+    } catch (error) {
+        const fallbackClient = pathToFileURL(
+            path.resolve(__dirname, '../frontend/node_modules/@prisma/client/index.js')
+        ).href;
+        return await import(fallbackClient);
+    }
+}
+
+async function loadPrismaAdapter(): Promise<{ Pool: any; PrismaPg: any }> {
+    try {
+        const pgModule: any = await import('pg');
+        const adapterModule: any = await import('@prisma/adapter-pg');
+        const Pool = pgModule.Pool ?? pgModule.default?.Pool ?? pgModule.default;
+        const PrismaPg = adapterModule.PrismaPg ?? adapterModule.default?.PrismaPg ?? adapterModule.default;
+        return { Pool, PrismaPg };
+    } catch (error) {
+        const fallbackPg = pathToFileURL(
+            path.resolve(__dirname, '../frontend/node_modules/pg/lib/index.js')
+        ).href;
+        const fallbackAdapter = pathToFileURL(
+            path.resolve(__dirname, '../frontend/node_modules/@prisma/adapter-pg/dist/index.js')
+        ).href;
+        const pgModule: any = await import(fallbackPg);
+        const adapterModule: any = await import(fallbackAdapter);
+        const Pool = pgModule.Pool ?? pgModule.default?.Pool ?? pgModule.default;
+        const PrismaPg = adapterModule.PrismaPg ?? adapterModule.default?.PrismaPg ?? adapterModule.default;
+        return { Pool, PrismaPg };
+    }
+}
+
+async function createPrismaClient(): Promise<any> {
+    const prismaModule = await loadPrismaModule();
+    const databaseUrl = process.env.DATABASE_URL || '';
+    try {
+        return new prismaModule.PrismaClient();
+    } catch (error) {
+        if (!databaseUrl) {
+            throw error;
+        }
+    }
+
+    const { Pool, PrismaPg } = await loadPrismaAdapter();
+    if (!Pool || !PrismaPg) {
+        throw new Error('Prisma adapter modules missing Pool/PrismaPg exports.');
+    }
+    const pool = new Pool({ connectionString: databaseUrl });
+    const adapter = new PrismaPg(pool);
+    const client = new prismaModule.PrismaClient({ adapter, log: ['error'] });
+    return client;
 }
 
 // ============================================================================
@@ -2061,16 +2122,15 @@ function isTransientError(message: string): boolean {
 }
 
 function logMetricsSummary(): void {
-    if (metrics.executions === 0) {
-        console.log('\n📈 Metrics: No executions in the last interval.');
-        return;
-    }
-
     const successRate = metrics.executions > 0 ? (metrics.successes / metrics.executions) * 100 : 0;
     const avgLatency = metrics.executions > 0 ? metrics.totalLatencyMs / metrics.executions : 0;
 
     console.log('\n📈 Metrics Summary:');
-    console.log(`   Executions: ${metrics.executions}`);
+    if (metrics.executions === 0) {
+        console.log('   Executions: 0 (no executions in the last interval)');
+    } else {
+        console.log(`   Executions: ${metrics.executions}`);
+    }
     console.log(`   Success Rate: ${successRate.toFixed(2)}%`);
     console.log(`   Avg Latency: ${avgLatency.toFixed(0)}ms`);
     console.log(`   Quote Cache: hits=${quoteStats.hits}, inflight=${quoteStats.inflightHits}, misses=${quoteStats.misses}`);
@@ -2192,12 +2252,12 @@ async function start(): Promise<void> {
 
     // Initialize Prisma dynamically
     try {
-        const prismaModule = await import('@prisma/client');
-        prisma = new prismaModule.PrismaClient();
+        prisma = await createPrismaClient();
         console.log('   Prisma: Connected ✅');
     } catch (error) {
         console.error('   ❌ Failed to initialize Prisma. Make sure DATABASE_URL is set.');
         console.error('   Run from frontend directory or set DATABASE_URL environment variable.');
+        console.error(error);
         process.exit(1);
     }
 
@@ -2206,9 +2266,13 @@ async function start(): Promise<void> {
         try {
             const rateLimiter = new RateLimiter();
             const cache = createUnifiedCache();
+            const apiCredentials = POLY_API_KEY && POLY_API_SECRET && POLY_API_PASSPHRASE
+                ? { key: POLY_API_KEY, secret: POLY_API_SECRET, passphrase: POLY_API_PASSPHRASE }
+                : undefined;
             tradingService = new TradingService(rateLimiter, cache, {
                 privateKey: workerSelection.privateKey,
                 chainId: CHAIN_ID,
+                credentials: apiCredentials,
             });
             await tradingService.initialize();
 

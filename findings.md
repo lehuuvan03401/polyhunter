@@ -19,6 +19,7 @@
 - `update-real-copy-trading-safety` tasks are all checked as complete (may be implemented but not archived); proposal already covers idempotency, preflight, guardrails, price TTL, and usedBotFloat persistence.
 - `update-real-copy-trading-safety` delta already modified Event Deduplication to enforce DB idempotency and added Pre-Execution Validation + Execution Price Guard; it does not specify pre-write execution ordering.
 - `CopyTrade` model already has unique `idempotencyKey`, default `PENDING` status, and unique `(configId, originalTxHash)` indexes, enabling a prewrite-before-execute flow without schema changes.
+- Frontend Prisma schema uses config-mode (no datasource url), so Prisma clients must be constructed with adapters (`@prisma/adapter-pg`) rather than default URL-based construction.
 
 ## Technical Decisions
 | Decision | Rationale |
@@ -49,6 +50,10 @@
 |-------|------------|
 | Session-catchup script path missing (CLAUDE_PLUGIN_ROOT unset) | Used local skill templates directory |
 | `openspec show optimize-real-copy-trading --json --deltas-only` failed (missing Why section) | Will inspect change files directly |
+| `.env.local` generation concatenated comments onto values | Added trailing newline in `frontend/.env.local.localhost` |
+| Verification script failed to init Prisma (adapter missing / Pool export mismatch) | Added adapter fallback with robust module export handling |
+| Worker dry-run WS returned 400: "CLOB messages are not supported anymore" | Blocks live-trade validation; needs updated WS/channel config |
+| CLOB API key creation failed (400: Could not create api key) | Likely missing/invalid POLY API credentials or wallet permissions |
 
 ## Resources
 - `scripts/copy-trading-worker.ts`

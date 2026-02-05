@@ -1,6 +1,10 @@
+import { fileURLToPath, pathToFileURL } from 'url';
+import path from 'path';
+
 const configId = process.env.VERIFY_CONFIG_ID || '';
 const enableWrite = process.env.VERIFY_PREWRITE_WRITE === 'true';
 const PREFIX = 'verify-prewrite';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function buildKey(suffix: string) {
     return `${PREFIX}-${suffix}-${Date.now()}`;
@@ -11,11 +15,55 @@ async function main() {
     try {
         ({ PrismaClient } = await import('@prisma/client'));
     } catch (error) {
-        console.error('Missing @prisma/client. Install dependencies or run from a context where Prisma is available.');
-        process.exit(1);
+        try {
+            const fallbackClient = pathToFileURL(
+                path.resolve(__dirname, '../../frontend/node_modules/@prisma/client/index.js')
+            ).href;
+            ({ PrismaClient } = await import(fallbackClient));
+        } catch (fallbackError) {
+            console.error('Missing @prisma/client. Install dependencies or run from a context where Prisma is available.');
+            process.exit(1);
+        }
     }
 
-    const prisma = new PrismaClient();
+    let pool: any;
+    let prisma: any;
+    const databaseUrl = process.env.DATABASE_URL || '';
+    if (databaseUrl) {
+        try {
+            let Pool: any;
+            let PrismaPg: any;
+            try {
+                const pgModule: any = await import('pg');
+                const adapterModule: any = await import('@prisma/adapter-pg');
+                Pool = pgModule.Pool ?? pgModule.default?.Pool ?? pgModule.default;
+                PrismaPg = adapterModule.PrismaPg ?? adapterModule.default?.PrismaPg ?? adapterModule.default;
+            } catch (adapterError) {
+                const fallbackPg = pathToFileURL(
+                    path.resolve(__dirname, '../../frontend/node_modules/pg/lib/index.js')
+                ).href;
+                const fallbackAdapter = pathToFileURL(
+                    path.resolve(__dirname, '../../frontend/node_modules/@prisma/adapter-pg/dist/index.js')
+                ).href;
+                const pgModule: any = await import(fallbackPg);
+                const adapterModule: any = await import(fallbackAdapter);
+                Pool = pgModule.Pool ?? pgModule.default?.Pool ?? pgModule.default;
+                PrismaPg = adapterModule.PrismaPg ?? adapterModule.default?.PrismaPg ?? adapterModule.default;
+            }
+            if (!Pool || !PrismaPg) {
+                throw new Error('Adapter modules missing Pool/PrismaPg exports.');
+            }
+            pool = new Pool({ connectionString: databaseUrl });
+            const adapter = new PrismaPg(pool);
+            prisma = new PrismaClient({ adapter, log: ['error'] });
+        } catch (error) {
+            console.error('Failed to initialize Prisma with adapter. Ensure pg + @prisma/adapter-pg are available.');
+            console.error(error);
+            process.exit(1);
+        }
+    } else {
+        prisma = new PrismaClient();
+    }
 
     if (!configId && enableWrite) {
         console.error('VERIFY_CONFIG_ID is required for write verification. Provide a valid CopyTradingConfig id.');
@@ -150,6 +198,9 @@ async function main() {
     console.log('✅ Cleanup complete.');
 
     await prisma.$disconnect();
+    if (pool?.end) {
+        await pool.end();
+    }
 }
 
 main()
