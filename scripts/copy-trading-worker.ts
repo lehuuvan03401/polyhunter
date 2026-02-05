@@ -34,6 +34,8 @@
  * - COPY_TRADING_TRADE_WINDOW_MS: Time window for max trades (optional)
  * - COPY_TRADING_EMERGENCY_PAUSE: Emergency pause switch (optional)
  * - COPY_TRADING_DRY_RUN: Dry-run mode (optional)
+ * - COPY_TRADING_GLOBAL_ORDERS_PER_MIN: Global orders/min circuit breaker (default: 90)
+ * - COPY_TRADING_USER_ORDERS_PER_MIN: Per-user orders/min cap (default: global cap)
  * - COPY_TRADING_ENABLE_MARKET_EVENTS: Enable market lifecycle subscriptions (default: true)
  * - COPY_TRADING_FORCE_FALLBACK_PRICE: Force fallback price (skip orderbook) for verification (default: false)
  * - POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE: Optional CLOB API credentials
@@ -62,7 +64,7 @@ import type { ApiCredentials } from '../src/index.js';
 import type { DebtLogger } from '../src/services/copy-trading-execution-service.js';
 import { ethers } from 'ethers';
 import { createHash } from 'crypto';
-import { CTF_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '../src/core/contracts.js';
+import { CTF_ABI, CONTRACT_ADDRESSES, ERC20_ABI, USDC_DECIMALS } from '../src/core/contracts.js';
 import { normalizeTradeSizing } from '../src/utils/trade-sizing.js';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -70,6 +72,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 // Dynamic import for Prisma to handle different runtime contexts
 let prisma: any = null;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let executionProvider: ethers.providers.JsonRpcProvider | null = null;
 
 // ============================================================================
 // Configuration
@@ -103,6 +106,11 @@ const POLY_API_KEY = process.env.POLY_API_KEY;
 const POLY_API_SECRET = process.env.POLY_API_SECRET;
 const POLY_API_PASSPHRASE = process.env.POLY_API_PASSPHRASE;
 const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
+const GLOBAL_ORDER_LIMIT_PER_MIN = parseInt(process.env.COPY_TRADING_GLOBAL_ORDERS_PER_MIN || '90', 10);
+const USER_ORDER_LIMIT_PER_MIN = parseInt(
+    process.env.COPY_TRADING_USER_ORDERS_PER_MIN || String(GLOBAL_ORDER_LIMIT_PER_MIN),
+    10
+);
 const METRICS_INTERVAL_MS = parseInt(process.env.COPY_TRADING_METRICS_INTERVAL_MS || '300000', 10);
 const BOT_USDC_WARN = Number(process.env.COPY_TRADING_BOT_USDC_WARN || '0');
 const BOT_MATIC_WARN = Number(process.env.COPY_TRADING_BOT_MATIC_WARN || '0');
@@ -232,8 +240,19 @@ class InflightGate {
     }
 }
 
-const limiter = new MinuteLimiter(90); // Default to 90 orders/min (CLOB limit)
+const globalOrderLimiter = GLOBAL_ORDER_LIMIT_PER_MIN > 0 ? new MinuteLimiter(GLOBAL_ORDER_LIMIT_PER_MIN) : null;
+const userOrderLimiters = new Map<string, MinuteLimiter>();
 const gate = new InflightGate(8); // Default to 8 concurrent orders
+
+function getUserOrderLimiter(config: WatchedConfig): MinuteLimiter | null {
+    if (USER_ORDER_LIMIT_PER_MIN <= 0) return null;
+    const key = config.walletAddress.toLowerCase();
+    const existing = userOrderLimiters.get(key);
+    if (existing) return existing;
+    const limiter = new MinuteLimiter(USER_ORDER_LIMIT_PER_MIN);
+    userOrderLimiters.set(key, limiter);
+    return limiter;
+}
 
 interface WatchedConfig {
     id: string;
@@ -260,50 +279,95 @@ interface WatchedConfig {
 }
 
 class UserExecutionManager {
-    private services = new Map<string, TradingService>();
+    private services = new Map<string, { fingerprint: string; service: TradingService }>();
 
-    async getService(config: WatchedConfig): Promise<TradingService | null> {
-        if (config.executionMode !== 'EOA') return null;
+    private buildFingerprint(config: WatchedConfig): string {
+        return createHash('sha256')
+            .update([
+                config.encryptedKey || '',
+                config.iv || '',
+                config.apiKey || '',
+                config.apiSecret || '',
+                config.apiPassphrase || '',
+            ].join('|'))
+            .digest('hex');
+    }
 
-        if (this.services.has(config.id)) {
-            return this.services.get(config.id)!;
+    private decryptField(value: string): string {
+        const [iv, data] = value.split(':');
+        if (!iv || !data) {
+            throw new Error('Invalid encrypted field format');
         }
+        return EncryptionService.decrypt(data, iv);
+    }
 
+    private async createService(config: WatchedConfig, credentials?: ApiCredentials): Promise<TradingService> {
+        const privateKey = EncryptionService.decrypt(config.encryptedKey!, config.iv!);
+        const limiter = new RateLimiter(); // Independent limit for this user
+        const svc = new TradingService(limiter, cache, {
+            privateKey,
+            chainId: CHAIN_ID,
+            credentials,
+        });
+        await svc.initialize();
+        return svc;
+    }
+
+    async getEOAService(config: WatchedConfig): Promise<TradingService | null> {
         if (!config.encryptedKey || !config.iv) {
             console.warn(`[UserExecutionManager] EOA mode enabled for ${config.id} but missing keys.`);
             return null;
         }
 
-        try {
-            const privateKey = EncryptionService.decrypt(config.encryptedKey, config.iv);
-            let credentials: ApiCredentials | undefined;
+        const fingerprint = this.buildFingerprint(config);
+        const cached = this.services.get(config.id);
+        if (cached && cached.fingerprint === fingerprint) {
+            return cached.service;
+        }
 
+        try {
+            let credentials: ApiCredentials | undefined;
             if (config.apiKey && config.apiSecret && config.apiPassphrase) {
-                const decryptField = (val: string) => {
-                    const [iv, data] = val.split(':');
-                    return EncryptionService.decrypt(data, iv);
-                };
                 credentials = {
-                    key: decryptField(config.apiKey),
-                    secret: decryptField(config.apiSecret),
-                    passphrase: decryptField(config.apiPassphrase),
+                    key: this.decryptField(config.apiKey),
+                    secret: this.decryptField(config.apiSecret),
+                    passphrase: this.decryptField(config.apiPassphrase),
                 };
             }
 
-            const limiter = new RateLimiter(); // Independent limit for this user
-            const svc = new TradingService(limiter, cache, {
-                privateKey,
-                chainId: CHAIN_ID,
-                credentials
-            });
-
-            // Warm up / derive keys
-            await svc.initialize();
-
-            this.services.set(config.id, svc);
+            const svc = await this.createService(config, credentials);
+            this.services.set(config.id, { fingerprint, service: svc });
             return svc;
         } catch (error) {
-            console.error(`[UserExecutionManager] Failed to initialize service for ${config.id}:`, error);
+            console.error(`[UserExecutionManager] Failed to initialize EOA service for ${config.id}:`, error);
+            return null;
+        }
+    }
+
+    async getProxyService(config: WatchedConfig): Promise<TradingService | null> {
+        if (!config.apiKey || !config.apiSecret || !config.apiPassphrase) return null;
+        if (!config.encryptedKey || !config.iv) {
+            console.warn(`[UserExecutionManager] Proxy mode has API creds for ${config.id} but missing keys.`);
+            return null;
+        }
+
+        const fingerprint = this.buildFingerprint(config);
+        const cached = this.services.get(config.id);
+        if (cached && cached.fingerprint === fingerprint) {
+            return cached.service;
+        }
+
+        try {
+            const credentials: ApiCredentials = {
+                key: this.decryptField(config.apiKey),
+                secret: this.decryptField(config.apiSecret),
+                passphrase: this.decryptField(config.apiPassphrase),
+            };
+            const svc = await this.createService(config, credentials);
+            this.services.set(config.id, { fingerprint, service: svc });
+            return svc;
+        } catch (error) {
+            console.error(`[UserExecutionManager] Failed to initialize proxy service for ${config.id}:`, error);
             return null;
         }
     }
@@ -708,7 +772,18 @@ async function fetchFreshPrice(
     side: 'BUY' | 'SELL',
     fallback?: { price?: number; timestampMs?: number; source?: string }
 ): Promise<{ price: number; fetchedAt: number; source: string } | null> {
-    if (!tradingService) return null;
+    if (!tradingService) {
+        if (fallback?.price && fallback.price > 0) {
+            const fallbackFetchedAt = fallback.timestampMs || Date.now();
+            if (Date.now() - fallbackFetchedAt <= PRICE_TTL_MS) {
+                priceSourceStats.fallback++;
+                const fallbackSource = fallback.source || 'fallback';
+                console.log(`[Worker] ⚠️ Orderbook unavailable, using fallback price (${fallbackSource}) for ${tokenId}.`);
+                return { price: fallback.price, fetchedAt: fallbackFetchedAt, source: fallbackSource };
+            }
+        }
+        return null;
+    }
 
     if (FORCE_FALLBACK_PRICE && fallback?.price && fallback.price > 0) {
         const fallbackFetchedAt = fallback.timestampMs || Date.now();
@@ -1057,6 +1132,64 @@ async function preflightExecution(
     };
 }
 
+async function preflightExecutionEOA(
+    walletAddress: string,
+    side: 'BUY' | 'SELL',
+    tokenId: string,
+    copySize: number,
+    price: number
+): Promise<{ allowed: boolean; reason?: string; adjustedCopySize: number; adjustedCopyShares: number }> {
+    const provider = executionProvider || executionSigner?.provider;
+    if (!provider) {
+        return { allowed: false, reason: 'NO_PROVIDER', adjustedCopySize: copySize, adjustedCopyShares: 0 };
+    }
+
+    if (!price || price <= 0) {
+        return { allowed: false, reason: 'INVALID_PRICE', adjustedCopySize: copySize, adjustedCopyShares: 0 };
+    }
+
+    if (side === 'BUY') {
+        const usdc = new ethers.Contract(CONTRACT_ADDRESSES.usdc, ERC20_ABI, provider);
+        const balanceRaw = await getPreflightCached(
+            buildPreflightKey(['eoausdc', walletAddress]),
+            () => usdc.balanceOf(walletAddress)
+        ).catch(() => ethers.BigNumber.from(0));
+        const balance = Number(ethers.utils.formatUnits(balanceRaw, USDC_DECIMALS));
+        if (balance < copySize) {
+            return {
+                allowed: false,
+                reason: `INSUFFICIENT_USDC ${balance.toFixed(2)} < ${copySize.toFixed(2)}`,
+                adjustedCopySize: copySize,
+                adjustedCopyShares: copySize / price,
+            };
+        }
+        return { allowed: true, adjustedCopySize: copySize, adjustedCopyShares: copySize / price };
+    }
+
+    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
+    const balanceRaw = await getPreflightCached(
+        buildPreflightKey(['eoactf', walletAddress, tokenId]),
+        () => ctf.balanceOf(walletAddress, tokenId)
+    ).catch(() => ethers.BigNumber.from(0));
+    const actualShares = Number(ethers.utils.formatUnits(balanceRaw, USDC_DECIMALS));
+    const requestedShares = copySize / price;
+    const adjustedShares = Math.min(requestedShares, actualShares);
+
+    if (adjustedShares <= 0) {
+        return { allowed: false, reason: 'NO_SHARES_AVAILABLE', adjustedCopySize: 0, adjustedCopyShares: 0 };
+    }
+
+    if (adjustedShares < requestedShares) {
+        console.log(`[Worker] ⚠️ EOA sell capped: requested ${requestedShares.toFixed(2)}, available ${actualShares.toFixed(2)}`);
+    }
+
+    return {
+        allowed: true,
+        adjustedCopySize: adjustedShares * price,
+        adjustedCopyShares: adjustedShares,
+    };
+}
+
 // ========================================================================
 // Position Tracking Helpers
 // ========================================================================
@@ -1253,10 +1386,14 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     }
                 }
 
-                const canAttemptExecution = Boolean(activeWorkerKey && executionService && executionSigner && trade.asset);
+                const isEOA = config.executionMode === 'EOA';
+                const canAttemptExecution = Boolean(trade.asset) && (isEOA
+                    ? Boolean(executionProvider || executionSigner?.provider)
+                    : Boolean(activeWorkerKey && executionService && executionSigner));
                 let basePrice = trade.price;
                 let priceSource = 'trade';
                 let priceGuardError: string | null = null;
+                let preflightError: string | null = null;
                 let adjustedCopySize = copySize;
                 let adjustedCopyShares = 0;
                 let proxyAddress: string | null = null;
@@ -1280,8 +1417,10 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             throw error;
                         });
 
-                    // 2. Proxy Resolution
-                    const proxyPromise = executionService!.resolveProxyAddress(config.walletAddress, executionSigner!).catch(() => null);
+                    // 2. Proxy Resolution (proxy mode only)
+                    const proxyPromise = isEOA
+                        ? Promise.resolve(null)
+                        : executionService!.resolveProxyAddress(config.walletAddress, executionSigner!).catch(() => null);
 
                     const [quote, resolvedProxy] = await Promise.all([quotePromise, proxyPromise]);
                     proxyAddress = resolvedProxy;
@@ -1307,21 +1446,40 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     }
 
                     // 3. Preflight logic (sync math + async checks)
-                    if (proxyAddress && !priceGuardError) {
-                        const preflight = await timeStage('preflight', () => preflightExecution(
-                            config.walletAddress,
-                            proxyAddress,
-                            copySide as 'BUY' | 'SELL',
-                            trade.asset!,
-                            copySize,
-                            basePrice
-                        ));
+                    if (!priceGuardError) {
+                        if (isEOA) {
+                            const preflight = await timeStage('preflight', () => preflightExecutionEOA(
+                                config.walletAddress,
+                                copySide as 'BUY' | 'SELL',
+                                trade.asset!,
+                                copySize,
+                                basePrice
+                            ));
 
-                        if (!preflight.allowed) {
-                            // Skip logic handled below
+                            if (!preflight.allowed) {
+                                preflightError = preflight.reason || 'EOA_PREFLIGHT_FAILED';
+                            } else {
+                                adjustedCopySize = preflight.adjustedCopySize;
+                                adjustedCopyShares = preflight.adjustedCopyShares;
+                            }
+                        } else if (proxyAddress) {
+                            const preflight = await timeStage('preflight', () => preflightExecution(
+                                config.walletAddress,
+                                proxyAddress,
+                                copySide as 'BUY' | 'SELL',
+                                trade.asset!,
+                                copySize,
+                                basePrice
+                            ));
+
+                            if (!preflight.allowed) {
+                                preflightError = preflight.reason || 'PREFLIGHT_FAILED';
+                            } else {
+                                adjustedCopySize = preflight.adjustedCopySize;
+                                adjustedCopyShares = preflight.adjustedCopyShares;
+                            }
                         } else {
-                            adjustedCopySize = preflight.adjustedCopySize;
-                            adjustedCopyShares = preflight.adjustedCopyShares;
+                            preflightError = 'NO_PROXY';
                         }
                     }
                 }
@@ -1339,7 +1497,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 
                 let guardrailReason: string | undefined;
                 let guardrailAllowed = true;
-                if (canAttemptExecution && !priceGuardError && proxyAddress) {
+                if (canAttemptExecution && !priceGuardError && !preflightError) {
                     const guardrail = await timeStage('guardrails', () => checkExecutionGuardrails(config.walletAddress, adjustedCopySize, {
                         marketSlug: trade.marketSlug || undefined,
                         tokenId: trade.asset || undefined,
@@ -1352,13 +1510,20 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 let executionPromise: Promise<any> | null = null;
                 let fastTracked = false;
                 let rateLimited = false;
-                const shouldExecuteCandidate = Boolean(canAttemptExecution && !priceGuardError && proxyAddress && guardrailAllowed);
+                const shouldExecuteCandidate = Boolean(
+                    canAttemptExecution &&
+                    !priceGuardError &&
+                    !preflightError &&
+                    guardrailAllowed &&
+                    (isEOA || proxyAddress)
+                );
                 const initialSkipReason = shouldExecuteCandidate
                     ? null
-                    : (guardrailReason
+                    : (preflightError
+                        || guardrailReason
                         || priceGuardError
                         || (!ENABLE_REAL_TRADING ? 'REAL_TRADING_DISABLED' : undefined)
-                        || (!proxyAddress ? 'NO_PROXY' : undefined)
+                        || (!isEOA && !proxyAddress ? 'NO_PROXY' : undefined)
                         || 'CHECKS_FAILED');
 
                 // ========================================
@@ -1399,16 +1564,24 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 }
 
                 if (shouldExecuteCandidate) {
-                    if (!limiter.allow()) {
-                        console.log(`   ⏳ Rate limit hit, skipping execution.`);
+                    const userLimiter = getUserOrderLimiter(config);
+                    if (globalOrderLimiter && !globalOrderLimiter.allow()) {
+                        console.log(`   ⏳ Global order cap hit, skipping execution.`);
                         rateLimited = true;
                         await prisma.copyTrade.update({
                             where: { id: copyTrade.id },
-                            data: { status: 'SKIPPED', errorMessage: 'RATE_LIMIT' },
+                            data: { status: 'SKIPPED', errorMessage: 'GLOBAL_RATE_LIMIT' },
+                        });
+                    } else if (userLimiter && !userLimiter.allow()) {
+                        console.log(`   ⏳ User rate limit hit, skipping execution.`);
+                        rateLimited = true;
+                        await prisma.copyTrade.update({
+                            where: { id: copyTrade.id },
+                            data: { status: 'SKIPPED', errorMessage: 'USER_RATE_LIMIT' },
                         });
                     } else if (config.executionMode === 'EOA') {
                         // EOA Execution Path
-                        const userService = await userExecManager.getService(config);
+                        const userService = await userExecManager.getEOAService(config);
                         if (!userService) {
                             console.warn(`   [Exec] EOA service unavailable for config ${config.id}, skipping.`);
                             await prisma.copyTrade.update({
@@ -1424,7 +1597,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                                 tokenId: trade.asset!,
                                 side: copySide as any,
                                 amount: copySide === 'BUY' ? adjustedCopySize : adjustedCopyShares,
-                                price: basePrice * 1.05, // 5% slippage guard for FOK (price is worst acceptable)
+                                price: execPrice,
                                 orderType: 'FOK',
                             })).then(res => ({
                                 ...res,
@@ -1440,6 +1613,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         const execStart = Date.now();
                         console.log(`   🚀 [FastTrack] Executing via Proxy for ${config.walletAddress}...`);
 
+                        const proxyTradingService = await userExecManager.getProxyService(config);
                         executionPromise = timeStage('execution', () => executionService!.executeOrderWithProxy({
                             tradeId: copyTrade.id,
                             walletAddress: config.walletAddress,
@@ -1453,6 +1627,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             maxSlippage: config.maxSlippage,
                             slippageMode: config.slippageType as 'FIXED' | 'AUTO',
                             orderType: 'market',
+                            tradingService: proxyTradingService || undefined,
                         })).then(res => ({ ...res, execStart }));
                     }
                 }
@@ -2356,6 +2531,7 @@ async function start(): Promise<void> {
     console.log(`   Chain ID: ${CHAIN_ID}`);
     const selectedRpc = await selectExecutionRpc();
     console.log(`   Execution RPC: ${selectedRpc}`);
+    executionProvider = new ethers.providers.JsonRpcProvider(selectedRpc);
 
     // Initialize Prisma dynamically
     try {

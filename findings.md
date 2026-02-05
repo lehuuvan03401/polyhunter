@@ -20,6 +20,7 @@
 - `update-real-copy-trading-safety` delta already modified Event Deduplication to enforce DB idempotency and added Pre-Execution Validation + Execution Price Guard; it does not specify pre-write execution ordering.
 - `CopyTrade` model already has unique `idempotencyKey`, default `PENDING` status, and unique `(configId, originalTxHash)` indexes, enabling a prewrite-before-execute flow without schema changes.
 - Frontend Prisma schema uses config-mode (no datasource url), so Prisma clients must be constructed with adapters (`@prisma/adapter-pg`) rather than default URL-based construction.
+- `fix-copy-trading-logic` change proposal is still `draft`; additional optimizations (EOA-specific guardrails/preflight, per-user creds in proxy mode, global circuit breaker) should be added to the change before implementation.
 
 ## Technical Decisions
 | Decision | Rationale |
@@ -44,11 +45,17 @@
 | Implemented execution tx monitor | Tracks on-chain txs and replaces stuck ones |
 | Created change `add-cache-eviction` | Plan to bound worker caches with eviction |
 | Implemented cache eviction | Bounds quote/preflight caches and prunes on metrics interval |
+| Pending: extend `fix-copy-trading-logic` specs | Add EOA-specific guardrails/preflight, per-user creds for proxy mode, and global circuit breaker requirement |
+| Updated `fix-copy-trading-logic` delta specs/tasks/design | Formalized EOA guardrails, proxy-mode creds, and global circuit breaker before implementation |
+| Implemented EOA-specific preflight + per-user/global limiters | Ensures EOA executes without proxy dependency and respects caps |
+| Proxy-mode per-user CLOB creds | Worker uses user TradingService when creds (and key) exist, else falls back |
+| Config API redaction | Prevents encrypted secrets from being returned in API responses |
 
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|
 | Session-catchup script path missing (CLAUDE_PLUGIN_ROOT unset) | Used local skill templates directory |
+| Session-catchup script still unavailable (CLAUDE_PLUGIN_ROOT unset) | Proceeded without session-catchup using existing plan files |
 | `openspec show optimize-real-copy-trading --json --deltas-only` failed (missing Why section) | Will inspect change files directly |
 | `.env.local` generation concatenated comments onto values | Added trailing newline in `frontend/.env.local.localhost` |
 | Verification script failed to init Prisma (adapter missing / Pool export mismatch) | Added adapter fallback with robust module export handling |

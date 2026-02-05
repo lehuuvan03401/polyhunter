@@ -9,6 +9,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { EncryptionService } from '@/lib/encryption'; // Import EncryptionService
 
+const redactConfigSecrets = (config: any) => {
+    if (!config) return config;
+    return {
+        ...config,
+        encryptedKey: null,
+        iv: null,
+        apiKey: null,
+        apiSecret: null,
+        apiPassphrase: null,
+    };
+};
 
 /**
  * GET /api/copy-trading/config
@@ -38,7 +49,8 @@ export async function GET(request: NextRequest) {
             orderBy: { createdAt: 'desc' },
         });
 
-        return NextResponse.json({ configs });
+        const sanitized = configs.map(redactConfigSecrets);
+        return NextResponse.json({ configs: sanitized });
     } catch (error) {
         console.error('Error fetching copy trading configs:', error);
         return NextResponse.json(
@@ -221,7 +233,7 @@ export async function POST(request: NextRequest) {
             },
         });
 
-        return NextResponse.json({ config }, { status: 201 });
+        return NextResponse.json({ config: redactConfigSecrets(config) }, { status: 201 });
     } catch (error) {
         console.error('Error creating copy trading config:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -336,7 +348,7 @@ export async function PATCH(request: NextRequest) {
             data: updateData,
         });
 
-        return NextResponse.json({ config: updated });
+        return NextResponse.json({ config: redactConfigSecrets(updated) });
     } catch (error) {
         console.error('Error updating copy trading config:', error);
         return NextResponse.json(

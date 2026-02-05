@@ -29,6 +29,11 @@ class UserExecutionManager {
 *   Ideally, these should also be encrypted like the Private Key.
 *   **Decision**: For V1 of this fix, we will encrypt them using the same `EncryptionService`.
 
+### 4. Guardrails & Rate Limiting
+*   **EOA Preflight**: EOA executions must run preflight checks that do not require proxy resolution (balance/allowance + price guardrails).
+*   **Per-User Limits**: Each user credential set gets its own `RateLimiter`.
+*   **Global Circuit Breaker**: A global cap is enforced before per-user limits to protect the system during bursts or upstream degradation.
+
 ## Data Flow (Speed Mode)
 1.  **User** enables Speed Mode, enters PK + API Keys in UI.
 2.  **API** encrypts all secrets and saves to `CopyTradingConfig` (DB).
