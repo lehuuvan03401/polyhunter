@@ -35,6 +35,7 @@
  * - COPY_TRADING_EMERGENCY_PAUSE: Emergency pause switch (optional)
  * - COPY_TRADING_DRY_RUN: Dry-run mode (optional)
  * - COPY_TRADING_ENABLE_MARKET_EVENTS: Enable market lifecycle subscriptions (default: true)
+ * - COPY_TRADING_FORCE_FALLBACK_PRICE: Force fallback price (skip orderbook) for verification (default: false)
  * - POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE: Optional CLOB API credentials
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
@@ -113,6 +114,7 @@ const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
 const ENABLE_MARKET_EVENTS = process.env.COPY_TRADING_ENABLE_MARKET_EVENTS !== 'false';
+const FORCE_FALLBACK_PRICE = process.env.COPY_TRADING_FORCE_FALLBACK_PRICE === 'true';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
 const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_USD || '0');
@@ -643,6 +645,16 @@ async function fetchFreshPrice(
     fallback?: { price?: number; timestampMs?: number; source?: string }
 ): Promise<{ price: number; fetchedAt: number; source: string } | null> {
     if (!tradingService) return null;
+
+    if (FORCE_FALLBACK_PRICE && fallback?.price && fallback.price > 0) {
+        const fallbackFetchedAt = fallback.timestampMs || Date.now();
+        if (Date.now() - fallbackFetchedAt <= PRICE_TTL_MS) {
+            priceSourceStats.fallback++;
+            console.log(`[Worker] ⚠️ Forced fallback price for ${tokenId} (${fallback.source || 'trade'}).`);
+            return { price: fallback.price, fetchedAt: fallbackFetchedAt, source: fallback.source || 'trade' };
+        }
+        return null;
+    }
 
     const cacheKey = buildQuoteKey(tokenId, side);
     const cached = quoteCache.get(cacheKey);

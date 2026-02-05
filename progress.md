@@ -34,7 +34,9 @@
 | Orderbook quote cache | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | Cache hits + inflight dedupe | hits=12 inflight=1 misses=2 | ✓ |
 | Preflight cache verification | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | Cache hits + inflight dedupe | hits=3 inflight=1 misses=5 | ✓ |
 | Cache eviction verification | `COPY_TRADING_METRICS_INTERVAL_MS=10000 npx tsx scripts/copy-trading-worker.ts` | TTL prune + size eviction | TTL prune observed (quote/preflight prune); size eviction not hit | PARTIAL |
-| Price fallback verification | openspec/changes/add-price-fallback/verification.md | Fallback usage + TTL guards | Blocked: fallback not triggered (orderbook ok) | ⛔ |
+| Market events toggle (disabled) | `COPY_TRADING_ENABLE_MARKET_EVENTS=false npx tsx scripts/copy-trading-worker.ts` | Skips market lifecycle subscriptions | Log: `Market lifecycle events disabled` | ✓ |
+| Market events toggle (enabled) | `COPY_TRADING_ENABLE_MARKET_EVENTS=true npx tsx scripts/copy-trading-worker.ts` | Subscribes to market lifecycle events | Log: `Subscribing to market lifecycle events...` | ✓ |
+| Price fallback verification | `COPY_TRADING_FORCE_FALLBACK_PRICE=true npx tsx scripts/copy-trading-worker.ts` | Fallback usage + TTL guards | Forced fallback logs + Price Source fallback=35 | ✓ |
 | Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Proxy mutex serialization | Blocked: requires concurrent executions (dry-run blocks) | ⛔ |
 | Tx monitor verification | openspec/changes/add-execution-tx-monitor/verification.md | Stuck tx replace | Blocked: requires on-chain txs | ⛔ |
 | Debt recovery verification | docs/operations/debt-recovery-verification.md | Debt recovery loop verified | Blocked: requires funded proxy + real recovery flow | ⛔ |
@@ -202,6 +204,7 @@
   - Ran worker with `COPY_TRADING_WS_FILTER_BY_ADDRESS=false` and short metrics interval to capture cache + stage metrics.
   - Observed quote cache hits/inflight, preflight cache hits/inflight, stage metrics logging.
   - Observed TTL cache prune in metrics interval (size eviction not hit).
+  - Forced fallback pricing with `COPY_TRADING_FORCE_FALLBACK_PRICE=true` and confirmed fallback logs/metrics.
 - Blockers:
   - WebSocket returns 400 (CLOB messages unsupported) on market events; activity still works but noisy.
   - Dry-run prevents real execution needed for proxy queue / tx monitor checks.
@@ -227,3 +230,23 @@
   - scripts/copy-trading-worker.ts (modified)
   - openspec/changes/add-market-events-toggle/verification.md (created)
   - openspec/changes/add-market-events-toggle/tasks.md (modified)
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-force-fallback-price`.
+- Files created/modified:
+  - openspec/changes/add-force-fallback-price/proposal.md (created)
+  - openspec/changes/add-force-fallback-price/tasks.md (created)
+  - openspec/changes/add-force-fallback-price/specs/copy-trading/spec.md (created)
+
+### Phase 3: Implementation (Forced Fallback Price)
+- **Status:** complete
+- Actions taken:
+  - Added COPY_TRADING_FORCE_FALLBACK_PRICE flag to skip orderbook and use fallback.
+  - Logged forced fallback usage and incremented fallback metrics.
+  - Added verification notes.
+- Files created/modified:
+  - scripts/copy-trading-worker.ts (modified)
+  - openspec/changes/add-force-fallback-price/verification.md (created)
+  - openspec/changes/add-force-fallback-price/tasks.md (modified)
