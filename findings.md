@@ -87,3 +87,4 @@
 - Decision: Redis cache adapter deferred; not in this proposal.
 - Implemented P0 indexes: CopyTrade (status, expiresAt), (status, nextRetryAt), (status, executedAt) and CommissionLog (referrerId, createdAt).
 - EXPLAIN results (local dev data):\n  - Executed totals query uses `CopyTrade_status_executedAt_idx`.\n  - Pending expiry and retry scans still used `CopyTrade_status_idx` with filters (likely due to low data/selectivity).\n  - CommissionLog time-window query used `CommissionLog_referrerId_idx` with createdAt filter (composite index may be favored with more data).
+- Implemented P1 locking: `CopyTrade.lockedAt`/`lockedBy` fields + row-claiming in recovery/retry/expiry scans with TTL-based staleness.

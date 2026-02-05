@@ -326,6 +326,7 @@
   - Proposal approved with decisions: single umbrella change, lockedAt/lockedBy strategy, Redis deferred.
   - Implemented P0 hot-path indexes in Prisma schema and created migration.
   - Ran EXPLAIN (ANALYZE, BUFFERS) against CopyTrade and CommissionLog hot queries on local DB.
+  - Implemented P1 row-claim locking (lockedAt/lockedBy) in worker and applied migration.
 
 ## Error Log (DB Proposals)
 | Timestamp | Error | Attempt | Resolution |

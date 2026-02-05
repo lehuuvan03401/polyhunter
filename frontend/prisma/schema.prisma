@@ -339,6 +339,8 @@ model CopyTrade {
   executedBy   String? // Worker address that executed the trade
   retryCount   Int             @default(0)
   nextRetryAt  DateTime?
+  lockedAt     DateTime?
+  lockedBy     String?
 
   // Timestamps
   detectedAt DateTime  @default(now())

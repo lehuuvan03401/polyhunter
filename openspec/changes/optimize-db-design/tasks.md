@@ -9,10 +9,10 @@
 
 ## P1: Recovery Claiming / Locking
 - [x] Choose locking strategy: `lockedAt/lockedBy` fields. <!-- id: 6 -->
-- [ ] Add `lockedAt`/`lockedBy` columns to CopyTrade and migrate. <!-- id: 7 -->
-- [ ] Implement row-claiming for `recoverPendingTrades`, `retryFailedTrades`, and expiry scans. <!-- id: 8 -->
-- [ ] Add safety TTL handling for claimed rows. <!-- id: 9 -->
-- [ ] Add verification notes for multi-worker behavior. <!-- id: 10 -->
+- [x] Add `lockedAt`/`lockedBy` columns to CopyTrade and migrate. <!-- id: 7 -->
+- [x] Implement row-claiming for `recoverPendingTrades`, `retryFailedTrades`, and expiry scans. <!-- id: 8 -->
+- [x] Add safety TTL handling for claimed rows. <!-- id: 9 -->
+- [x] Add verification notes for multi-worker behavior. <!-- id: 10 -->
 
 ## P2: Cache + Maintenance
 - [ ] Add post-archive maintenance step (VACUUM/ANALYZE) or ops runbook update. <!-- id: 11 -->

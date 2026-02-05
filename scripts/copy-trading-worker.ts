@@ -137,6 +137,7 @@ const QUOTE_CACHE_TTL_MS = Math.min(PRICE_TTL_MS, 5000);
 const PREFLIGHT_CACHE_TTL_MS = Math.min(parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_TTL_MS || '2000', 10), 2000);
 const QUOTE_CACHE_MAX_ENTRIES = parseInt(process.env.COPY_TRADING_QUOTE_CACHE_MAX_ENTRIES || '500', 10);
 const PREFLIGHT_CACHE_MAX_ENTRIES = parseInt(process.env.COPY_TRADING_PREFLIGHT_CACHE_MAX_ENTRIES || '1000', 10);
+const COPY_TRADE_LOCK_TTL_MS = parseInt(process.env.COPY_TRADING_LOCK_TTL_MS || '300000', 10);
 
 // EIP-1559 Aggressive Gas Settings for Polygon (To avoid stuck copy trades)
 const GAS_SETTINGS = {
@@ -1768,10 +1769,11 @@ async function recoverPendingTrades(): Promise<void> {
     if (!executionService) return;
 
     try {
-        const pendingTrades = await prisma.copyTrade.findMany({
+        const pendingTrades = await claimCopyTrades({
             where: { status: 'SETTLEMENT_PENDING' },
             include: { config: true }, // Need wallet address
-            take: 10 // Batch size
+            orderBy: { executedAt: 'asc' },
+            take: 10
         });
 
         if (pendingTrades.length === 0) return;
@@ -1808,6 +1810,10 @@ async function recoverPendingTrades(): Promise<void> {
 
             if (!proxyAddress || !trade.tokenId || !priceForRecovery || priceForRecovery <= 0) {
                 console.warn(`   ⚠️ Recovery skipped due to missing data (proxy/token/price).`);
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: { lockedAt: null, lockedBy: null },
+                });
                 continue;
             }
 
@@ -1828,11 +1834,17 @@ async function recoverPendingTrades(): Promise<void> {
                         status: 'EXECUTED',
                         executedAt: new Date(), // Or keep original?
                         txHash: result.txHash, // Update with settlement hash
-                        errorMessage: null
+                        errorMessage: null,
+                        lockedAt: null,
+                        lockedBy: null,
                     }
                 });
             } else {
                 console.error(`   ❌ Recovery Failed: ${result.error}`);
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: { lockedAt: null, lockedBy: null },
+                });
             }
         }
 
@@ -1845,11 +1857,12 @@ async function expireStalePendingTrades(): Promise<void> {
     if (!prisma) return;
     try {
         const now = new Date();
-        const staleTrades = await prisma.copyTrade.findMany({
+        const staleTrades = await claimCopyTrades({
             where: {
                 status: 'PENDING',
                 expiresAt: { lt: now },
             },
+            orderBy: { expiresAt: 'asc' },
             take: 25,
         });
 
@@ -1863,6 +1876,8 @@ async function expireStalePendingTrades(): Promise<void> {
                 data: {
                     status: 'FAILED',
                     errorMessage: 'PENDING_EXPIRED',
+                    lockedAt: null,
+                    lockedBy: null,
                 },
             });
         }
@@ -1929,7 +1944,7 @@ async function retryFailedTrades(): Promise<void> {
 
     try {
         const now = new Date();
-        const failedTrades = await prisma.copyTrade.findMany({
+        const failedTrades = await claimCopyTrades({
             where: {
                 status: 'FAILED',
                 retryCount: { lt: MAX_RETRY_ATTEMPTS },
@@ -1948,7 +1963,13 @@ async function retryFailedTrades(): Promise<void> {
         console.log(`\n🔁 [Retry] Attempting ${failedTrades.length} failed trades...`);
 
         for (const trade of failedTrades) {
-            if (!trade.tokenId) continue;
+            if (!trade.tokenId) {
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: { lockedAt: null, lockedBy: null },
+                });
+                continue;
+            }
             const basePrice = trade.copyPrice ?? trade.originalPrice;
 
             if (!basePrice || basePrice <= 0) {
@@ -1958,6 +1979,8 @@ async function retryFailedTrades(): Promise<void> {
                         retryCount: trade.retryCount + 1,
                         nextRetryAt: new Date(Date.now() + RETRY_BACKOFF_MS),
                         errorMessage: 'RETRY_INVALID_PRICE',
+                        lockedAt: null,
+                        lockedBy: null,
                     },
                 });
                 continue;
@@ -1975,6 +1998,8 @@ async function retryFailedTrades(): Promise<void> {
                         retryCount: MAX_RETRY_ATTEMPTS,
                         nextRetryAt: null,
                         errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                        lockedAt: null,
+                        lockedBy: null,
                     },
                 });
                 continue;
@@ -1997,6 +2022,8 @@ async function retryFailedTrades(): Promise<void> {
                         retryCount: trade.retryCount + 1,
                         nextRetryAt: new Date(Date.now() + RETRY_BACKOFF_MS),
                         errorMessage: `RETRY_PREFLIGHT_${preflight.reason || 'FAILED'}`,
+                        lockedAt: null,
+                        lockedBy: null,
                     },
                 });
                 continue;
@@ -2064,6 +2091,8 @@ async function retryFailedTrades(): Promise<void> {
                             usedBotFloat: result.usedBotFloat ?? false,
                             executedBy: activeWorkerAddress ?? undefined,
                             nextRetryAt: null,
+                            lockedAt: null,
+                            lockedBy: null,
                         },
                     }));
                     stats.tradesExecuted++;
@@ -2086,6 +2115,8 @@ async function retryFailedTrades(): Promise<void> {
                             errorMessage: failureMessage,
                             retryCount: nextRetryCount,
                             nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
+                            lockedAt: null,
+                            lockedBy: null,
                         },
                     }));
                     stats.tradesFailed++;
@@ -2109,6 +2140,8 @@ async function retryFailedTrades(): Promise<void> {
                         errorMessage: errorMsg,
                         retryCount: nextRetryCount,
                         nextRetryAt: retryAllowed ? new Date(Date.now() + RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
+                        lockedAt: null,
+                        lockedBy: null,
                     },
                 }));
                 stats.tradesFailed++;
@@ -2118,6 +2151,42 @@ async function retryFailedTrades(): Promise<void> {
     } catch (error) {
         console.error('[Retry] Failed to process retry queue:', error);
     }
+}
+
+// Claim rows for recovery/retry scans to avoid multi-worker double-processing.
+async function claimCopyTrades(options: {
+    where: Record<string, any>;
+    orderBy?: Record<string, any>;
+    take: number;
+    include?: Record<string, any>;
+}): Promise<any[]> {
+    if (!prisma) return [];
+
+    const now = new Date();
+    const lockOwnerBase = activeWorkerAddress || 'worker';
+    const lockOwner = `${lockOwnerBase}-${process.pid}-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+    const staleBefore = new Date(now.getTime() - COPY_TRADE_LOCK_TTL_MS);
+    const lockClause = { OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }] };
+
+    const candidates = await prisma.copyTrade.findMany({
+        where: { AND: [options.where, lockClause] },
+        orderBy: options.orderBy,
+        take: options.take,
+        select: { id: true },
+    });
+
+    if (candidates.length === 0) return [];
+
+    const ids = candidates.map((c: any) => c.id);
+    await prisma.copyTrade.updateMany({
+        where: { AND: [{ id: { in: ids } }, options.where, lockClause] },
+        data: { lockedAt: now, lockedBy: lockOwner },
+    });
+
+    return prisma.copyTrade.findMany({
+        where: { id: { in: ids }, lockedBy: lockOwner },
+        include: options.include,
+    });
 }
 
 // ============================================================================
