@@ -313,3 +313,21 @@
 
 ### Phase 4: Real Funds Prep
 - Restored CopyTradingConfig.maxSlippage to 2% for target trader configs.
+
+## Session: 2026-02-05 (DB Proposals)
+
+### Phase 1: Discovery
+- **Status:** in_progress
+- Actions taken:
+  - Read OpenSpec instructions and project context.
+  - Listed active changes/specs to avoid proposal overlap.
+  - Reviewed `storage` spec and recent DB-related change proposals.
+  - Updated task_plan.md and findings.md for DB optimization proposal workstream.
+  - Proposal approved with decisions: single umbrella change, lockedAt/lockedBy strategy, Redis deferred.
+  - Implemented P0 hot-path indexes in Prisma schema and created migration.
+  - Ran EXPLAIN (ANALYZE, BUFFERS) against CopyTrade and CommissionLog hot queries on local DB.
+
+## Error Log (DB Proposals)
+| Timestamp | Error | Attempt | Resolution |
+|---|---|---|---|
+| 2026-02-05 23:10 | session-catchup failed (/scripts/session-catchup.py not found) | 1 | Proceeded without catchup; updated plan/findings manually |

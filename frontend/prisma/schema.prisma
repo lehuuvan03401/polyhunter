@@ -131,6 +131,7 @@ model CommissionLog {
   @@index([referrerId])
   @@index([type])
   @@index([createdAt])
+  @@index([referrerId, createdAt])
 }
 
 // ========================================
@@ -354,6 +355,9 @@ model CopyTrade {
   @@index([tokenId, executedAt])
   @@index([originalTrader, originalPrice])
   @@index([txHash])
+  @@index([status, expiresAt])
+  @@index([status, nextRetryAt])
+  @@index([status, executedAt])
 }
 
 // Sync log for tracking sync history

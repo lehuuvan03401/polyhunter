@@ -1,118 +1,50 @@
-# Task Plan: Real copy-trading optimization rollout
+# Task Plan: Database Optimization Proposals
 <!--
-  WHAT: Roadmap for sequential, safe, high-performance improvements.
-  WHY: Keep goals and gating (OpenSpec) explicit.
+  WHAT: Create prioritized OpenSpec proposals to improve database design/performance.
+  WHY: Ensure DB design is robust and efficient before implementation.
 -->
 
 ## Goal
-Create and execute OpenSpec change proposals and implement real copy-trading optimizations one item at a time, prioritizing safety and performance.
+Deliver OpenSpec change proposals for database optimization in priority order (P0 → P2), with clear tasks and specs. No implementation until approval.
 
 ## Current Phase
-Phase 4 (testing)
+Phase 4: Delivery
 
 ## Phases
 
-### Phase 1: Requirements & Discovery
-- [x] Confirm optimization order and scope for item 1
-- [x] Review relevant specs and active changes
+### Phase 1: Discovery
+- [x] Review current Prisma schema + hot queries
+- [x] Review active DB-related changes to avoid overlap
 - [x] Capture key risks/constraints in findings.md
 - **Status:** complete
 
-### Phase 2: Planning & Structure
-- [x] Draft OpenSpec change proposal for item 1
-- [x] Define tasks and (if needed) design decisions
-- [x] Validate proposal via openspec
+### Phase 2: Proposal Drafting
+- [x] Create OpenSpec change proposal(s) with priority ordering
+- [x] Draft spec deltas (storage + any impacted capabilities)
+- [x] Define tasks with P0/P1/P2 sequencing
 - **Status:** complete
 
-### Phase 3: Implementation
-- [x] Implement approved proposal tasks
-- [x] Add/update tests as needed
-- [x] Update tasks checklist to complete
-- [x] Wire debt logging + recovery into worker execution path
-- [x] Document or verify debt recovery behavior
-- [x] Implement scoped tx mutex for per-signer serialization
-- [x] Add verification notes for scoped mutex
-- **Status:** complete
- 
-### Phase 3: Implementation (Orderbook Quote Cache)
-- [x] Implement quote cache + in-flight dedupe
-- [x] Add logging/metrics for cache hits/misses
-- [x] Add verification notes for cache behavior
+### Phase 3: Validation
+- [x] Run `openspec validate <change-id> --strict --no-interactive`
+- [x] Resolve any validation issues
 - **Status:** complete
 
-### Phase 3: Implementation (Proxy Execution Queue)
-- [x] Implement proxy-scoped mutex for fund/settlement
-- [x] Add verification notes for proxy queue
-- **Status:** complete
-
-### Phase 3: Implementation (Preflight Balance Cache)
-- [x] Implement preflight cache + in-flight dedupe
-- [x] Add logging/metrics for cache hits/misses
-- [x] Add verification notes for cache behavior
-- **Status:** complete
-
-### Phase 3: Implementation (Price Fallback)
-- [x] Implement fallback price selection
-- [x] Log price source and fallback usage
-- [x] Add verification notes for fallback behavior
-- **Status:** complete
-
-### Phase 3: Implementation (Execution Tx Monitor)
-- [x] Initialize TxMonitor and track execution txs
-- [x] Implement replacement callback with bumped gas
-- [x] Add verification notes for stuck tx handling
-- **Status:** complete
-
-### Phase 3: Implementation (Cache Eviction)
-- [x] Add size limits and eviction for caches
-- [x] Add periodic prune for expired entries
-- [x] Add verification notes for cache eviction
-- **Status:** complete
-
-### Phase 4: Testing & Verification
-- [ ] Run relevant tests / targeted verification
-- [ ] Document results in progress.md
-- [ ] Fix any regressions
-- **Status:** pending
-
-### Phase 5: Delivery
-- [ ] Summarize changes and remaining work
-- [ ] Propose next optimization item
-- **Status:** pending
-
-### Phase 6: Contract Execution Guards
-- [x] Draft OpenSpec change proposal for on-chain execution guardrails
-- [x] Validate proposal via openspec
-- [x] Implement contract + SDK changes after approval
-- [x] Add/update tests and verification notes
+### Phase 4: Delivery
+- [x] Summarize proposals and priority order
+- [x] Confirm next action (approval or adjustments)
 - **Status:** complete
 
 ## Key Questions
-1. Which optimization item is first (default: idempotency + write-before-execute)?
-2. One proposal per item or a combined proposal for multiple items?
+1. Single umbrella proposal vs. multiple smaller proposals?
+2. Are we okay with DB schema changes (indexes/partitioning/decimal types) in the next iteration?
+3. Should Redis be a required dependency for config caching or optional?
 
 ## Decisions Made
 | Decision | Rationale |
-|----------|-----------|
-| Use sequential OpenSpec proposals | Safer rollout, clearer approvals, smaller blast radius |
-| Change id: `add-copy-trade-prewrite` | Targets orphan-execution risk without duplicating existing changes |
-| Next change id: `add-scoped-tx-mutex` | Enables parallel execution across distinct signers |
-| Next change id: `add-orderbook-quote-cache` | Reduces redundant orderbook fetches under burst load |
-| Next change id: `add-proxy-execution-queue` | Serializes fund operations per proxy to avoid overlap |
-| Next change id: `add-preflight-balance-cache` | Caches preflight reads to reduce RPC load |
-| Next change id: `add-price-fallback` | Adds fallback price source when orderbook unavailable |
-| Next change id: `add-execution-tx-monitor` | Wires TxMonitor for stuck tx replacement |
-| Next change id: `add-cache-eviction` | Bounds worker caches to prevent memory growth |
-| Next change id: `add-execution-stage-metrics` | Adds per-stage latency visibility for pipeline tuning |
-| Next change id: `add-market-events-toggle` | Allows disabling market lifecycle WS subscriptions when unsupported |
-| Next change id: `add-force-fallback-price` | Allows forcing fallback pricing for verification |
-| Next change id: `add-contract-execution-guards` | Adds on-chain allowlist + pause + executor binding + address resolution |
+|---|---|
+|  |  |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
-|-------|---------|------------|
-| CLAUDE_PLUGIN_ROOT not set for session-catchup script | 1 | Used local skill templates path to create planning files |
-| CLAUDE_PLUGIN_ROOT not set for session-catchup script | 2 | Skipped session-catchup and continued with existing plan files |
-| session-catchup failed (/scripts/session-catchup.py not found) | 1 | Will proceed without catchup; ensure plan/progress/findings are current |
-| openspec show optimize-real-copy-trading --json --deltas-only failed (missing Why section) | 1 | Will inspect change files directly instead of openspec show |
-| verify script failed to load @prisma/client | 1 | Added dynamic import with friendly error; requires deps installed |
+|---|---|---|
+| session-catchup failed (/scripts/session-catchup.py not found) | 1 | Proceeded without catchup; updated plan/findings manually |

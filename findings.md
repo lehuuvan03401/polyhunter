@@ -75,3 +75,15 @@
 
 ## Visual/Browser Findings
 - None
+
+## DB Optimization Proposal Prep
+- Active DB-related changes already completed: `optimize-db-performance` (async prewrite + config cache) and `implement-data-archiving` (archive tables + script).
+- Existing `storage` spec is minimal; new DB requirements should extend `storage` rather than creating a duplicate capability.
+- Current config caching is in-memory with TTL 10s, while refresh interval is 60s; this does not materially reduce DB reads under normal operation.
+- CopyTrade hot queries in worker include status+time filters (pending expiry, retry scheduling, executed totals) that lack composite indexes today.
+- Recovery loops can be double-processed across multiple worker instances; locking/claiming is not modeled in specs yet.
+- Decision: single umbrella proposal `optimize-db-design` approved.
+- Decision: P1 locking uses `lockedAt/lockedBy` fields (schema-based), not `SKIP LOCKED`.
+- Decision: Redis cache adapter deferred; not in this proposal.
+- Implemented P0 indexes: CopyTrade (status, expiresAt), (status, nextRetryAt), (status, executedAt) and CommissionLog (referrerId, createdAt).
+- EXPLAIN results (local dev data):\n  - Executed totals query uses `CopyTrade_status_executedAt_idx`.\n  - Pending expiry and retry scans still used `CopyTrade_status_idx` with filters (likely due to low data/selectivity).\n  - CommissionLog time-window query used `CommissionLog_referrerId_idx` with createdAt filter (composite index may be favored with more data).
