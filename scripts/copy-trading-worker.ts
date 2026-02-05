@@ -523,31 +523,37 @@ async function createPrismaClient(): Promise<any> {
 async function refreshConfigs(): Promise<void> {
     try {
         console.log('[Worker] Refreshing active copy trading configs...');
-        const configs = await prisma.copyTradingConfig.findMany({
-            where: { isActive: true },
-            select: {
-                id: true,
-                walletAddress: true,
-                traderAddress: true,
-                mode: true,
-                sizeScale: true,
-                fixedAmount: true,
-                maxSizePerTrade: true,
-                minSizePerTrade: true,
-                sideFilter: true,
-                minTriggerSize: true,
-                maxOdds: true,
-                direction: true,
-                slippageType: true,
-                maxSlippage: true,
-                tradeSizeMode: true,
-                executionMode: true,
-                encryptedKey: true,
-                iv: true,
-                apiKey: true,
-                apiSecret: true,
-                apiPassphrase: true,
-            }
+        // Cache key for active configs (TTL: 10 seconds)
+        const CACHE_KEY_ACTIVE_CONFIGS = 'copy-trading:configs:active';
+        const CONFIG_CACHE_TTL = 10_000;
+
+        const configs = await cache.getOrSet(CACHE_KEY_ACTIVE_CONFIGS, CONFIG_CACHE_TTL, async () => {
+            return prisma.copyTradingConfig.findMany({
+                where: { isActive: true },
+                select: {
+                    id: true,
+                    walletAddress: true,
+                    traderAddress: true,
+                    mode: true,
+                    sizeScale: true,
+                    fixedAmount: true,
+                    maxSizePerTrade: true,
+                    minSizePerTrade: true,
+                    sideFilter: true,
+                    minTriggerSize: true,
+                    maxOdds: true,
+                    direction: true,
+                    slippageType: true,
+                    maxSlippage: true,
+                    tradeSizeMode: true,
+                    executionMode: true,
+                    encryptedKey: true,
+                    iv: true,
+                    apiKey: true,
+                    apiSecret: true,
+                    apiPassphrase: true,
+                }
+            });
         });
 
         // Group by trader address
@@ -1149,7 +1155,9 @@ async function preflightExecutionEOA(
     }
 
     if (side === 'BUY') {
-        const usdc = new ethers.Contract(CONTRACT_ADDRESSES.usdc, ERC20_ABI, provider);
+        const chainKey = CHAIN_ID === 137 ? 'polygon' : 'amoy';
+        const usdcAddress = CONTRACT_ADDRESSES[chainKey].usdc;
+        const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
         const balanceRaw = await getPreflightCached(
             buildPreflightKey(['eoausdc', walletAddress]),
             () => usdc.balanceOf(walletAddress)
@@ -1527,67 +1535,63 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         || 'CHECKS_FAILED');
 
                 // ========================================
-                // Create PENDING CopyTrade Record (Prewrite)
+                // Async Prewrite (Fire-and-Forget)
                 // ========================================
-                let copyTrade;
-                try {
-                    copyTrade = await timeStage('prewrite', () => prisma.copyTrade.create({
-                        data: {
-                            configId: config.id,
-                            idempotencyKey,
-                            originalTrader: traderAddr,
-                            originalSide: copySide,
-                            leaderSide: trade.side,
-                            originalSize: tradeShares,
-                            originalPrice: trade.price,
-                            marketSlug: trade.marketSlug || null,
-                            conditionId: trade.conditionId || null,
-                            tokenId: trade.asset || null,
-                            outcome: trade.outcome || null,
-                            originalTxHash: trade.transactionHash || null,
-                            copySize: adjustedCopySize,
-                            copyPrice: execPrice,
-                            status: shouldExecuteCandidate ? 'PENDING' : 'SKIPPED',
-                            errorMessage: shouldExecuteCandidate ? null : (initialSkipReason || 'Checks failed'),
-                            expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
-                        },
-                    }));
-                    stats.tradesCreated++;
-                } catch (error: any) {
-                    if (error?.code === 'P2002') {
+                // We start the DB write but DO NOT await it before execution.
+                // We capture the promise to await it later for status updates.
+                const prewritePromise = timeStage('prewrite', () => prisma.copyTrade.create({
+                    data: {
+                        configId: config.id,
+                        idempotencyKey,
+                        originalTrader: traderAddr,
+                        originalSide: copySide,
+                        leaderSide: trade.side,
+                        originalSize: tradeShares,
+                        originalPrice: trade.price,
+                        marketSlug: trade.marketSlug || null,
+                        conditionId: trade.conditionId || null,
+                        tokenId: trade.asset || null,
+                        outcome: trade.outcome || null,
+                        originalTxHash: trade.transactionHash || null,
+                        copySize: adjustedCopySize,
+                        copyPrice: execPrice,
+                        status: shouldExecuteCandidate ? 'PENDING' : 'SKIPPED',
+                        errorMessage: shouldExecuteCandidate ? null : (initialSkipReason || 'Checks failed'),
+                        expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
+                    },
+                }).catch((err: any) => {
+                    // Log error but don't crash execution if we can help it.
+                    // If this fails, we won't have an ID to update later.
+                    if (err?.code === 'P2002') {
                         console.log(`   [Config ${config.id.slice(0, 8)}] Duplicate (unique constraint) during prewrite.`);
-                        stats.tradesSkipped++;
-                    } else {
-                        console.error(`   ❌ Prewrite failed for config ${config.id}:`, error);
+                        return null; // Signal duplicate
                     }
-                    continue;
-                }
+                    console.error(`   ❌ Prewrite failed for config ${config.id}:`, err);
+                    throw err; // Re-throw to be caught by the reconciler
+                }));
+
+                // Definitions for deferred updates (since we can't update DB until prewrite resolves)
+                let limitReason: string | null = null;
+                let initializationError: string | null = null;
 
                 if (shouldExecuteCandidate) {
                     const userLimiter = getUserOrderLimiter(config);
+
                     if (globalOrderLimiter && !globalOrderLimiter.allow()) {
-                        console.log(`   ⏳ Global order cap hit, skipping execution.`);
-                        rateLimited = true;
-                        await prisma.copyTrade.update({
-                            where: { id: copyTrade.id },
-                            data: { status: 'SKIPPED', errorMessage: 'GLOBAL_RATE_LIMIT' },
-                        });
+                        limitReason = 'GLOBAL_RATE_LIMIT';
                     } else if (userLimiter && !userLimiter.allow()) {
-                        console.log(`   ⏳ User rate limit hit, skipping execution.`);
+                        limitReason = 'USER_RATE_LIMIT';
+                    }
+
+                    if (limitReason) {
+                        console.log(`   ⏳ ${limitReason} hit, skipping execution.`);
                         rateLimited = true;
-                        await prisma.copyTrade.update({
-                            where: { id: copyTrade.id },
-                            data: { status: 'SKIPPED', errorMessage: 'USER_RATE_LIMIT' },
-                        });
                     } else if (config.executionMode === 'EOA') {
                         // EOA Execution Path
                         const userService = await userExecManager.getEOAService(config);
                         if (!userService) {
                             console.warn(`   [Exec] EOA service unavailable for config ${config.id}, skipping.`);
-                            await prisma.copyTrade.update({
-                                where: { id: copyTrade.id },
-                                data: { status: 'FAILED', errorMessage: 'EOA_INIT_FAILED' },
-                            });
+                            initializationError = 'EOA_INIT_FAILED';
                         } else {
                             fastTracked = true;
                             const execStart = Date.now();
@@ -1615,7 +1619,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 
                         const proxyTradingService = await userExecManager.getProxyService(config);
                         executionPromise = timeStage('execution', () => executionService!.executeOrderWithProxy({
-                            tradeId: copyTrade.id,
+                            tradeId: 'PENDING_PREWRITE', // We don't have ID yet, service must handle this or we pass dummy
                             walletAddress: config.walletAddress,
                             tokenId: trade.asset!,
                             side: copySide as 'BUY' | 'SELL',
@@ -1631,6 +1635,43 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         })).then(res => ({ ...res, execStart }));
                     }
                 }
+
+                // ========================================
+                // Reconcile: Await Prewrite & Update Status
+                // ========================================
+                let copyTrade: any = null;
+                try {
+                    // Await the prewrite to get the record ID
+                    copyTrade = await prewritePromise;
+                } catch (e) {
+                    // Prewrite failed or duplicate. Execution might have successfully started!
+                    // If execution started, we have a problem: no DB record to store the result.
+                    console.error(`   🚨 Prewrite CRITICAL failure for ${config.id}. Logs may be incomplete.`);
+                    // We can't update DB if creation failed.
+                    continue;
+                }
+
+                if (!copyTrade) {
+                    // Duplicate detected (returned null in catch)
+                    stats.tradesSkipped++;
+                    continue;
+                }
+
+                stats.tradesCreated++;
+
+                // Apply Deferred Updates
+                if (limitReason) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: { status: 'SKIPPED', errorMessage: limitReason },
+                    });
+                } else if (initializationError) {
+                    await prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: { status: 'FAILED', errorMessage: initializationError },
+                    });
+                }
+
 
                 // ========================================
                 // Handle Execution Result
