@@ -66,7 +66,12 @@
 *   **底层**:
     1.  `USDC.approve(Proxy)`
     2.  `Proxy.deposit(amount)`
-*   **状态**: 资金安全地躺在 Proxy 合约中，只有用户 (Owner) 和授权的 Bot (Operator) 可动用。
+*   **状态**: 资金安全地躺在 Proxy 合约中，只有用户 (Owner) 和绑定的 Executor 合约可动用。
+
+### 2.5 合约级安全护栏 (On-chain Guardrails)
+*   **执行入口**: `Proxy.execute` 仅允许 Owner 或绑定的 Executor 调用。
+*   **目标白名单**: Proxy + Executor 仅允许调用已批准的目标合约（默认 USDC.e + CTF）。
+*   **紧急暂停**: 平台可在链上暂停执行，但不影响入金/提现。
 
 ### 3. 跟单交易 (Real Trading - "The Flash Transfer")
 客户无感，后台自动完成的“闪电中转”：

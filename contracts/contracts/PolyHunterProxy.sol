@@ -36,6 +36,12 @@ contract PolyHunterProxy is ReentrancyGuard {
     
     // Platform treasury
     address public treasury;
+
+    // Bound executor contract
+    address public executor;
+
+    // Pause switch for execution
+    bool public paused;
     
     // Fee percentage in basis points (1000 = 10%, 500 = 5%, 200 = 2%)
     uint256 public feePercent;
@@ -63,10 +69,12 @@ contract PolyHunterProxy is ReentrancyGuard {
     event Withdrawn(address indexed user, uint256 amount, uint256 fee);
     event TreasuryUpdated(address newTreasury);
     event FeePercentUpdated(uint256 newFeePercent);
-    event OperatorUpdated(address indexed operator, bool active);
+    event ExecutorUpdated(address newExecutor);
+    event AllowedTargetUpdated(address indexed target, bool allowed);
+    event ExecutionPaused(bool paused);
     
-    // Authorized operators (can execute trades but cannot withdraw)
-    mapping(address => bool) public operators;
+    // Allowed execution targets (CTF, USDC, etc.)
+    mapping(address => bool) public allowedTargets;
     
     // Modifiers
     modifier onlyOwner() {
@@ -74,8 +82,8 @@ contract PolyHunterProxy is ReentrancyGuard {
         _;
     }
     
-    modifier onlyOperatorOrOwner() {
-        require(msg.sender == owner || operators[msg.sender], "Not authorized");
+    modifier onlyExecutorOrOwner() {
+        require(msg.sender == owner || msg.sender == executor, "Not authorized");
         _;
     }
     
@@ -89,19 +97,26 @@ contract PolyHunterProxy is ReentrancyGuard {
         address _treasury,
         address _usdc,
         address _ctfExchange,
+        address _executor,
         uint256 _feePercent
     ) {
         require(_owner != address(0), "Invalid owner");
         require(_treasury != address(0), "Invalid treasury");
         require(_usdc != address(0), "Invalid USDC");
+        require(_ctfExchange != address(0), "Invalid CTF");
+        require(_executor != address(0), "Invalid executor");
         require(_feePercent <= 2000, "Fee too high"); // Max 20%
         
         owner = _owner;
         treasury = _treasury;
         usdc = IERC20(_usdc);
         ctfExchange = _ctfExchange;
+        executor = _executor;
         feePercent = _feePercent;
         factory = msg.sender;
+
+        allowedTargets[_usdc] = true;
+        allowedTargets[_ctfExchange] = true;
     }
     
     /**
@@ -140,9 +155,9 @@ contract PolyHunterProxy is ReentrancyGuard {
 
     /**
      * @notice Settle any pending fees based on current profit
-     * @dev Callable by Operator (Bot) or Owner to realize platform revenue
+     * @dev Callable by Executor (Bot) or Owner to realize platform revenue
      */
-    function settleFees() external onlyOperatorOrOwner nonReentrant {
+    function settleFees() external onlyExecutorOrOwner nonReentrant {
         (uint256 fee, ) = _calculatePendingFee();
         require(fee > 0, "No fees due");
         require(usdc.balanceOf(address(this)) >= fee, "Insufficient balance for fees");
@@ -304,26 +319,52 @@ contract PolyHunterProxy is ReentrancyGuard {
     }
     
     /**
-     * @notice Set operator status
-     * @param operator Address of the operator
-     * @param active Active status
+     * @notice Set executor address
+     * @param _executor Executor contract address
      */
-    function setOperator(address operator, bool active) external onlyOwner {
-        operators[operator] = active;
-        emit OperatorUpdated(operator, active);
+    function setExecutor(address _executor) external onlyFactory {
+        require(_executor != address(0), "Invalid executor");
+        executor = _executor;
+        emit ExecutorUpdated(_executor);
+    }
+
+    function setAllowedTarget(address target, bool allowed) external onlyFactory {
+        require(target != address(0), "Invalid target");
+        allowedTargets[target] = allowed;
+        emit AllowedTargetUpdated(target, allowed);
+    }
+
+    function setAllowedTargets(address[] calldata targets, bool allowed) external onlyFactory {
+        for (uint256 i = 0; i < targets.length; i++) {
+            address target = targets[i];
+            if (target != address(0)) {
+                allowedTargets[target] = allowed;
+                emit AllowedTargetUpdated(target, allowed);
+            }
+        }
+    }
+
+    function pauseExecution() external onlyFactory {
+        paused = true;
+        emit ExecutionPaused(true);
+    }
+
+    function unpauseExecution() external onlyFactory {
+        paused = false;
+        emit ExecutionPaused(false);
     }
 
     /**
      * @notice Execute arbitrary call for trading
-     * @dev Owner or Operator can call Polymarket contracts through this proxy
+     * @dev Owner or Executor can call Polymarket contracts through this proxy
      */
     function execute(
         address target,
         bytes calldata data
-    ) external onlyOperatorOrOwner nonReentrant returns (bytes memory) {
-        require(target != address(usdc), "Cannot call USDC directly");
-        require(target != treasury, "Cannot call treasury directly");
-        
+    ) external onlyExecutorOrOwner nonReentrant returns (bytes memory) {
+        require(!paused, "Execution paused");
+        require(allowedTargets[target], "Target not allowed");
+
         (bool success, bytes memory result) = target.call(data);
         require(success, "Execution failed");
         return result;

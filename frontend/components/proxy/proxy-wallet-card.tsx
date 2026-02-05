@@ -17,7 +17,8 @@ export function ProxyWalletCard() {
         createProxy,
         deposit,
         withdraw,
-        authorizeOperator,
+        isExecutorAuthorized,
+        executorAddress,
         txPending,
         txStatus,
         error
@@ -25,7 +26,6 @@ export function ProxyWalletCard() {
 
     const [amount, setAmount] = useState('');
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
-    const [operatorAddress, setOperatorAddress] = useState('');
 
     const getStatusText = (status: typeof txStatus) => {
         if (!status) return t('status.processing');
@@ -72,24 +72,6 @@ export function ProxyWalletCard() {
         }
     };
 
-    const handleAuthorize = async () => {
-        // Use configured bot address from env or fallback to user input
-        const defaultBot = process.env.NEXT_PUBLIC_BOT_ADDRESS || '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
-        const targetOp = operatorAddress.trim() || defaultBot;
-
-        if (!targetOp || !targetOp.startsWith('0x')) {
-            toast.error(t('toast.invalidOp'));
-            return;
-        }
-
-        const result = await authorizeOperator(targetOp, true);
-        if (result.success) {
-            toast.success(t('toast.authSuccess'));
-            setOperatorAddress('');
-        } else {
-            toast.error(result.error || t('toast.authFail'));
-        }
-    };
 
     if (isLoading) {
         return (
@@ -314,31 +296,18 @@ export function ProxyWalletCard() {
                             <div className="rounded-md bg-muted p-3 text-sm bg-gray-100 dark:bg-gray-800">
                                 <div className="flex items-center gap-2 mb-2 font-medium">
                                     <ShieldCheck className="h-4 w-4" />
-                                    {t('botAuth')}
+                                    {t('settings.title')}
                                 </div>
-                                <p className="text-xs text-muted-foreground mb-3">
-                                    {t('botAuthDesc')}
+                                <p className="text-xs text-muted-foreground mb-1">
+                                    {executorAddress
+                                        ? `Executor: ${executorAddress.slice(0, 6)}...${executorAddress.slice(-4)}`
+                                        : t('settings.unauthorized.desc')}
                                 </p>
-                                <div className="space-y-2">
-                                    <input
-                                        placeholder={`Default Bot: ${process.env.NEXT_PUBLIC_BOT_ADDRESS ? `${process.env.NEXT_PUBLIC_BOT_ADDRESS.slice(0, 6)}...${process.env.NEXT_PUBLIC_BOT_ADDRESS.slice(-4)}` : '0x...'}`}
-                                        value={operatorAddress}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOperatorAddress(e.target.value)}
-                                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 border-gray-200 dark:border-gray-700"
-                                    />
-                                    <button
-                                        onClick={handleAuthorize}
-                                        disabled={txPending}
-                                        className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-8 px-3 text-xs w-full bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
-                                    >
-                                        {txPending ? (
-                                            <>
-                                                <Loader2 className="h-3 w-3 animate-spin" />
-                                                <span className="ml-2">{getStatusText(txStatus)}</span>
-                                            </>
-                                        ) : t('authBtn')}
-                                    </button>
-                                </div>
+                                {!isExecutorAuthorized && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Executor binding is managed by the platform.
+                                    </p>
+                                )}
                             </div>
                         </div>
                     )}

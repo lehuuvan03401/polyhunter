@@ -1,10 +1,9 @@
 import { ethers } from 'ethers';
-import { PrismaClient } from '@prisma/client';
 import { TradingService } from '../../src/services/trading-service.js';
 import { CopyTradingExecutionService } from '../../src/services/copy-trading-execution-service.js';
 import { RateLimiter } from '../../src/core/rate-limiter.js';
 import { createUnifiedCache } from '../../src/core/unified-cache.js';
-import { CONTRACT_ADDRESSES, ERC20_ABI, CTF_ABI, USDC_DECIMALS } from '../../src/core/contracts.js';
+import { CONTRACT_ADDRESSES, EXECUTOR_ABI, POLY_HUNTER_PROXY_ABI } from '../../src/core/contracts.js';
 
 const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .split(',')
@@ -19,8 +18,6 @@ const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
     .map((addr) => addr.trim().toLowerCase())
     .filter(Boolean);
 const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
-
-const prisma = new PrismaClient();
 
 async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
     const candidates = RPC_URLS.length > 0 ? RPC_URLS : [FALLBACK_RPC];
@@ -69,8 +66,11 @@ async function main() {
 
     const rateLimiter = new RateLimiter();
     const cache = createUnifiedCache();
+    const apiCredentials = process.env.POLY_API_KEY && process.env.POLY_API_SECRET && process.env.POLY_API_PASSPHRASE
+        ? { key: process.env.POLY_API_KEY, secret: process.env.POLY_API_SECRET, passphrase: process.env.POLY_API_PASSPHRASE }
+        : undefined;
     const tradingService = TRADING_PRIVATE_KEY
-        ? new TradingService(rateLimiter, cache, { privateKey: TRADING_PRIVATE_KEY, chainId: CHAIN_ID })
+        ? new TradingService(rateLimiter, cache, { privateKey: TRADING_PRIVATE_KEY, chainId: CHAIN_ID, credentials: apiCredentials })
         : null;
     if (tradingService) await tradingService.initialize();
 
@@ -100,22 +100,37 @@ async function main() {
 
         if (!addresses.executor) {
             issues.push('EXECUTOR_NOT_CONFIGURED');
+        } else if (!addresses.usdc) {
+            issues.push('USDC_NOT_CONFIGURED');
+        } else if (!CONTRACT_ADDRESSES.ctf) {
+            issues.push('CTF_NOT_CONFIGURED');
         } else {
-            if (addresses.usdc) {
-                const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, provider);
-                const allowanceRaw = await usdc.allowance(proxyAddress, addresses.executor);
-                const allowance = Number(allowanceRaw) / (10 ** USDC_DECIMALS);
-                console.log(`USDC allowance (proxy -> executor): ${allowance}`);
-                if (allowance <= 0) {
-                    issues.push('ALLOWANCE_MISSING_USDC');
-                }
-            }
+            const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, provider);
+            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, provider);
 
-            const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
-            const approved = await ctf.isApprovedForAll(proxyAddress, addresses.executor);
-            console.log(`CTF approval (proxy -> executor): ${approved}`);
-            if (!approved) {
-                issues.push('ALLOWANCE_MISSING_CTF');
+            const [executorUsdcAllowed, executorCtfAllowed] = await Promise.all([
+                executor.allowedTargets(addresses.usdc),
+                executor.allowedTargets(CONTRACT_ADDRESSES.ctf),
+            ]);
+            console.log(`Executor allowlist (USDC): ${executorUsdcAllowed}`);
+            console.log(`Executor allowlist (CTF): ${executorCtfAllowed}`);
+            if (!executorUsdcAllowed) issues.push('EXECUTOR_ALLOWLIST_USDC');
+            if (!executorCtfAllowed) issues.push('EXECUTOR_ALLOWLIST_CTF');
+
+            try {
+                const [proxyUsdcAllowed, proxyCtfAllowed, paused] = await Promise.all([
+                    proxy.allowedTargets(addresses.usdc),
+                    proxy.allowedTargets(CONTRACT_ADDRESSES.ctf),
+                    proxy.paused(),
+                ]);
+                console.log(`Proxy allowlist (USDC): ${proxyUsdcAllowed}`);
+                console.log(`Proxy allowlist (CTF): ${proxyCtfAllowed}`);
+                console.log(`Proxy paused: ${paused}`);
+                if (!proxyUsdcAllowed) issues.push('PROXY_ALLOWLIST_USDC');
+                if (!proxyCtfAllowed) issues.push('PROXY_ALLOWLIST_CTF');
+                if (paused) issues.push('PROXY_PAUSED');
+            } catch (error) {
+                issues.push('PROXY_GUARD_UNSUPPORTED');
             }
         }
     }
@@ -140,6 +155,4 @@ main()
         console.error('Readiness check error:', error);
         process.exit(1);
     })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+    .finally(() => {});

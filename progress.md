@@ -37,6 +37,7 @@
 | Market events toggle (disabled) | `COPY_TRADING_ENABLE_MARKET_EVENTS=false npx tsx scripts/copy-trading-worker.ts` | Skips market lifecycle subscriptions | Log: `Market lifecycle events disabled` | ✓ |
 | Market events toggle (enabled) | `COPY_TRADING_ENABLE_MARKET_EVENTS=true npx tsx scripts/copy-trading-worker.ts` | Subscribes to market lifecycle events | Log: `Subscribing to market lifecycle events...` | ✓ |
 | Price fallback verification | `COPY_TRADING_FORCE_FALLBACK_PRICE=true npx tsx scripts/copy-trading-worker.ts` | Fallback usage + TTL guards | Forced fallback logs + Price Source fallback=35 | ✓ |
+| Real funds readiness | `npx tsx scripts/verify/copy-trading-readiness.ts` | Ready for execution | Failed: NO_PROXY on mainnet | ✗ |
 | Proxy queue verification | openspec/changes/add-proxy-execution-queue/verification.md | Proxy mutex serialization | Blocked: requires concurrent executions (dry-run blocks) | ⛔ |
 | Tx monitor verification | openspec/changes/add-execution-tx-monitor/verification.md | Stuck tx replace | Blocked: requires on-chain txs | ⛔ |
 | Debt recovery verification | docs/operations/debt-recovery-verification.md | Debt recovery loop verified | Blocked: requires funded proxy + real recovery flow | ⛔ |
@@ -53,6 +54,7 @@
 | 2026-02-05 07:35 | verify script adapter init failed (Pool not constructor) | 1 | Normalized pg/adapter module exports in verify script |
 | 2026-02-05 07:35 | worker Prisma init failed in dry-run | 1 | Added adapter fallback in worker Prisma initialization |
 | 2026-02-05 07:59 | WS message: "CLOB messages are not supported anymore" | 1 | Activity works; consider skipping market events or updating WS topic |
+| 2026-02-05 18:29 | readiness failed: NO_PROXY on mainnet | 1 | Create proxy for execution wallet on mainnet |
 
 ## Session: 2026-02-05
 
@@ -196,6 +198,45 @@
 - **Status:** complete
 - Actions taken:
   - Created and validated change proposal `add-execution-stage-metrics`.
+  
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** in_progress
+- Actions taken:
+  - Confirmed option 1 (contract safety hardening) selected.
+  - Reviewed existing proposals for execution safety/allowlist to avoid overlap.
+  - Created and validated change proposal `add-contract-execution-guards`.
+  - Drafted proposal/design/spec/tasks for on-chain allowlist, pause, executor binding, and address validation.
+  - Updated proposal/specs to enforce executor-only execution and dual allowlist (Proxy + Executor).
+
+### Phase 3: Implementation (Contract Execution Guards)
+- **Status:** complete
+- Actions taken:
+  - Implemented Proxy executor binding + allowlist + pause guard.
+  - Implemented Executor allowlist + pause guard.
+  - Added ProxyFactory relay helpers for allowlist and pause, plus executor binding updates.
+  - Updated SDK/frontend ABIs and runtime execution address validation.
+  - Updated readiness/verification scripts for allowlist-based guards.
+  - Updated docs for on-chain guardrails.
+  - Added/extended contract tests for allowlist, pause, and executor binding.
+  - Added verification notes for the change.
+- Files created/modified:
+  - contracts/contracts/PolyHunterProxy.sol
+  - contracts/contracts/ProxyFactory.sol
+  - contracts/contracts/PolyHunterExecutor.sol
+  - contracts/scripts/deploy.ts
+  - contracts/scripts/deploy-executor.ts
+  - contracts/scripts/setup-local-fork.ts
+  - contracts/test/ProxySystem.test.ts
+  - src/core/contracts.ts
+  - src/services/copy-trading-execution-service.ts
+  - scripts/verify/copy-trading-readiness.ts
+  - scripts/verify-local-fork.ts
+  - frontend/lib/contracts/abis.ts
+  - frontend/lib/contracts/useProxy.ts
+  - frontend/components/proxy/proxy-action-center.tsx
+  - frontend/components/proxy/proxy-wallet-card.tsx
+  - docs/guides/real_trading_architecture.md
+  - openspec/changes/add-contract-execution-guards/verification.md
 - Files created/modified:
   - openspec/changes/add-execution-stage-metrics/proposal.md (created)
   - openspec/changes/add-execution-stage-metrics/tasks.md (created)

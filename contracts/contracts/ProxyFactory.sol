@@ -18,6 +18,9 @@ contract ProxyFactory is Ownable {
     
     // Platform treasury
     address public treasury;
+
+    // Bound Executor contract for new proxies
+    address public executor;
     
     // Tier-based fee percentages (in basis points)
     // STARTER = 1000 (10%), PRO = 500 (5%), WHALE = 200 (2%)
@@ -34,6 +37,10 @@ contract ProxyFactory is Ownable {
     event TierFeeUpdated(uint8 tier, uint256 feePercent);
     event TreasuryUpdated(address newTreasury);
     event ProxyTierUpdated(address indexed proxy, uint8 newTier);
+    event ExecutorUpdated(address newExecutor);
+    event ProxyExecutorUpdated(address indexed proxy, address newExecutor);
+    event ProxyAllowlistUpdated(address indexed proxy, address indexed target, bool allowed);
+    event ProxyExecutionPaused(address indexed proxy, bool paused);
     
     // Tier enum (for clarity)
     uint8 public constant TIER_STARTER = 0;
@@ -44,14 +51,17 @@ contract ProxyFactory is Ownable {
         address _usdc,
         address _ctfExchange,
         address _treasury,
+        address _executor,
         address _owner
     ) Ownable(_owner) {
         require(_usdc != address(0), "Invalid USDC");
         require(_treasury != address(0), "Invalid treasury");
+        require(_executor != address(0), "Invalid executor");
         
         usdc = _usdc;
         ctfExchange = _ctfExchange;
         treasury = _treasury;
+        executor = _executor;
         
         // Set default tier fees
         tierFees[TIER_STARTER] = 1000; // 10%
@@ -74,6 +84,7 @@ contract ProxyFactory is Ownable {
             treasury,
             usdc,
             ctfExchange,
+            executor,
             feePercent
         );
         
@@ -136,6 +147,15 @@ contract ProxyFactory is Ownable {
         treasury = _treasury;
         emit TreasuryUpdated(_treasury);
     }
+
+    /**
+     * @notice Update executor address for new proxies
+     */
+    function setExecutor(address _executor) external onlyOwner {
+        require(_executor != address(0), "Invalid executor");
+        executor = _executor;
+        emit ExecutorUpdated(_executor);
+    }
     
     /**
      * @notice Update a user's proxy tier (fee percentage)
@@ -151,6 +171,53 @@ contract ProxyFactory is Ownable {
         PolyHunterProxy(proxyAddress).setFeePercent(newFee);
         
         emit ProxyTierUpdated(proxyAddress, newTier);
+    }
+
+    /**
+     * @notice Update executor binding for a specific proxy
+     */
+    function updateProxyExecutor(address proxy, address newExecutor) external onlyOwner {
+        require(proxy != address(0), "Invalid proxy");
+        require(newExecutor != address(0), "Invalid executor");
+        PolyHunterProxy(proxy).setExecutor(newExecutor);
+        emit ProxyExecutorUpdated(proxy, newExecutor);
+    }
+
+    /**
+     * @notice Update allowlist target for a specific proxy
+     */
+    function updateProxyAllowlist(address proxy, address target, bool allowed) external onlyOwner {
+        require(proxy != address(0), "Invalid proxy");
+        PolyHunterProxy(proxy).setAllowedTarget(target, allowed);
+        emit ProxyAllowlistUpdated(proxy, target, allowed);
+    }
+
+    /**
+     * @notice Batch update allowlist for all proxies in a range
+     * @dev Use with caution - can be gas intensive
+     */
+    function batchUpdateAllowlist(address target, bool allowed, uint256 startIndex, uint256 endIndex) external onlyOwner {
+        require(endIndex <= allProxies.length, "Invalid end index");
+        for (uint256 i = startIndex; i < endIndex; i++) {
+            PolyHunterProxy(allProxies[i]).setAllowedTarget(target, allowed);
+            emit ProxyAllowlistUpdated(allProxies[i], target, allowed);
+        }
+    }
+
+    /**
+     * @notice Pause execution on a specific proxy
+     */
+    function pauseProxy(address proxy) external onlyOwner {
+        PolyHunterProxy(proxy).pauseExecution();
+        emit ProxyExecutionPaused(proxy, true);
+    }
+
+    /**
+     * @notice Unpause execution on a specific proxy
+     */
+    function unpauseProxy(address proxy) external onlyOwner {
+        PolyHunterProxy(proxy).unpauseExecution();
+        emit ProxyExecutionPaused(proxy, false);
     }
     
     /**

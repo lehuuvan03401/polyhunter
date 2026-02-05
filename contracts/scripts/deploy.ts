@@ -60,6 +60,20 @@ async function main() {
     const treasuryAddress = await treasury.getAddress();
     console.log("✅ Treasury deployed to:", treasuryAddress);
 
+    // Deploy Executor (needed for ProxyFactory binding)
+    console.log("\n📦 Deploying PolyHunterExecutor...");
+    const Executor = await ethers.getContractFactory("PolyHunterExecutor");
+    const executor = await Executor.deploy(); // No args, Owner = valid msg.sender
+    await executor.waitForDeployment();
+    const executorAddress = await executor.getAddress();
+    console.log("✅ PolyHunterExecutor deployed to:", executorAddress);
+
+    // Initialize Executor allowlist
+    console.log("\n🔐 Setting Executor allowlist...");
+    const allowlistTx = await executor.setAllowedTargets([usdcAddress, ctfExchangeAddress], true);
+    await allowlistTx.wait();
+    console.log("✅ Executor allowlist set for USDC + CTF");
+
     // Deploy ProxyFactory
     console.log("\n📦 Deploying ProxyFactory...");
     const ProxyFactory = await ethers.getContractFactory("ProxyFactory");
@@ -67,19 +81,12 @@ async function main() {
         usdcAddress,
         ctfExchangeAddress,
         treasuryAddress,
+        executorAddress,
         deployer.address
     );
     await proxyFactory.waitForDeployment();
     const proxyFactoryAddress = await proxyFactory.getAddress();
     console.log("✅ ProxyFactory deployed to:", proxyFactoryAddress);
-
-    // Deploy Executor
-    console.log("\n📦 Deploying PolyHunterExecutor...");
-    const Executor = await ethers.getContractFactory("PolyHunterExecutor");
-    const executor = await Executor.deploy(); // No args, Owner = valid msg.sender
-    await executor.waitForDeployment();
-    const executorAddress = await executor.getAddress();
-    console.log("✅ PolyHunterExecutor deployed to:", executorAddress);
 
     // Summary
     console.log("\n========================================");

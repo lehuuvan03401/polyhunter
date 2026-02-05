@@ -11,6 +11,7 @@ describe("Horus Proxy System", function () {
     let usdc: MockERC20;
     let treasury: Treasury;
     let proxyFactory: ProxyFactory;
+    let executor: any;
 
     const INITIAL_BALANCE = ethers.parseUnits("10000", 6); // 10,000 USDC
 
@@ -27,12 +28,18 @@ describe("Horus Proxy System", function () {
         treasury = await Treasury.deploy(await usdc.getAddress(), owner.address);
         await treasury.waitForDeployment();
 
+        // Deploy Executor
+        const Executor = await ethers.getContractFactory("PolyHunterExecutor");
+        executor = await Executor.deploy();
+        await executor.waitForDeployment();
+
         // Deploy ProxyFactory
         const ProxyFactory = await ethers.getContractFactory("ProxyFactory");
         proxyFactory = await ProxyFactory.deploy(
             await usdc.getAddress(),
             owner.address, // Mock CTF exchange
             await treasury.getAddress(),
+            await executor.getAddress(),
             owner.address
         );
         await proxyFactory.waitForDeployment();
@@ -95,6 +102,16 @@ describe("Horus Proxy System", function () {
             await proxyFactory.connect(user2).createProxy(1);
 
             expect(await proxyFactory.getTotalProxies()).to.equal(2);
+        });
+
+        it("should bind executor and allowlist defaults on new proxy", async function () {
+            await proxyFactory.connect(user1).createProxy(0);
+            const proxyAddress = await proxyFactory.getUserProxy(user1.address);
+            const proxy = await ethers.getContractAt("PolyHunterProxy", proxyAddress);
+
+            expect(await proxy.executor()).to.equal(await executor.getAddress());
+            expect(await proxy.allowedTargets(await usdc.getAddress())).to.equal(true);
+            expect(await proxy.allowedTargets(owner.address)).to.equal(true); // Mock CTF exchange
         });
     });
 
@@ -182,6 +199,46 @@ describe("Horus Proxy System", function () {
             expect(stats.feesPaid).to.equal(0);
             expect(stats.profit).to.equal(0);
             expect(stats.currentFeePercent).to.equal(1000); // 10%
+        });
+
+        it("should block execution for non-allowlisted targets", async function () {
+            await expect(
+                proxy.connect(user1).execute(user2.address, "0x")
+            ).to.be.revertedWith("Target not allowed");
+        });
+
+        it("should block execution when paused", async function () {
+            const data = usdc.interface.encodeFunctionData("balanceOf", [user1.address]);
+            await proxyFactory.pauseProxy(await proxy.getAddress());
+
+            await expect(
+                proxy.connect(user1).execute(await usdc.getAddress(), data)
+            ).to.be.revertedWith("Execution paused");
+        });
+    });
+
+    describe("PolyHunterExecutor", function () {
+        it("should enforce allowlist and pause", async function () {
+            await proxyFactory.connect(user1).createProxy(0);
+            const proxyAddress = await proxyFactory.getUserProxy(user1.address);
+
+            await executor.addWorker(user2.address);
+
+            const data = usdc.interface.encodeFunctionData("balanceOf", [user1.address]);
+
+            await expect(
+                executor.connect(user2).executeOnProxy(proxyAddress, await usdc.getAddress(), data)
+            ).to.be.revertedWith("Horus: Target not allowed");
+
+            await executor.setAllowedTargets([await usdc.getAddress()], true);
+
+            await executor.pauseExecution();
+            await expect(
+                executor.connect(user2).executeOnProxy(proxyAddress, await usdc.getAddress(), data)
+            ).to.be.revertedWith("Horus: Paused");
+
+            await executor.unpauseExecution();
+            await executor.connect(user2).executeOnProxy(proxyAddress, await usdc.getAddress(), data);
         });
     });
 

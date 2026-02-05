@@ -33,7 +33,7 @@ let lastExpiryCheckAt = 0;
 
 // Imports for Proxy Execution
 import { ethers } from 'ethers';
-import { PROXY_FACTORY_ABI, POLY_HUNTER_PROXY_ABI, ERC20_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '@/lib/contracts/abis';
+import { PROXY_FACTORY_ABI, EXECUTOR_ABI, ERC20_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from '@/lib/contracts/abis';
 
 const CTF_APPROVAL_ABI = [
     'function isApprovedForAll(address account, address operator) external view returns (bool)',
@@ -195,7 +195,7 @@ function evaluateOrderbookGuardrails(params: {
 
 /**
  * Transfer USDC from Proxy to Bot wallet
- * Bot must be set as Operator on the Proxy
+ * Bot must be a whitelisted Executor worker
  */
 async function transferFromProxy(
     proxyAddress: string,
@@ -204,7 +204,6 @@ async function transferFromProxy(
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
     try {
         const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-        const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, signer);
         const botAddress = signer.address;
 
         // Encode USDC transfer call
@@ -212,9 +211,13 @@ async function transferFromProxy(
         const amountWei = ethers.utils.parseUnits(amount.toString(), USDC_DECIMALS);
         const transferData = usdcInterface.encodeFunctionData('transfer', [botAddress, amountWei]);
 
-        // Execute transfer through proxy
-        console.log(`[Proxy] Transferring $${amount} USDC from Proxy to Bot...`);
-        const tx = await proxy.execute(addresses.usdc, transferData);
+        // Execute transfer through executor
+        if (!addresses.executor) {
+            throw new Error('Executor address not configured');
+        }
+        console.log(`[Proxy] Transferring $${amount} USDC from Proxy to Bot via Executor...`);
+        const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, signer);
+        const tx = await executor.executeOnProxy(proxyAddress, addresses.usdc, transferData);
         const receipt = await tx.wait();
 
         console.log(`[Proxy] Transfer complete: ${receipt.transactionHash}`);

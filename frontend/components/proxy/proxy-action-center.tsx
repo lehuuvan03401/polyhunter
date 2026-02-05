@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useProxy, TIERS, type TierName } from '@/lib/contracts/useProxy';
 import { useOpenOrders } from '@/lib/hooks/useOpenOrders';
-import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle, Settings, Wallet, Shield, Lock } from 'lucide-react';
+import { Loader2, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCopyTradingStore } from '@/lib/copy-trading-store';
 import { StrategySelector } from './strategy-selector';
@@ -24,13 +24,10 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         txStatus,
         error,
         isExecutorAuthorized: isAuthFromChain,
-        authorizeOperator,
+        executorAddress,
         settleFees,
         refreshStats
     } = useProxy();
-
-    // Authorization state for UI
-    const [localIsAuthorized, setLocalIsAuthorized] = useState(false);
 
     // Copy Trading & Locked Funds Logic
     const { getActiveConfigs } = useCopyTradingStore();
@@ -45,26 +42,14 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
     const balanceNum = stats && typeof stats.balance === 'number' ? stats.balance : 0;
     const availableBalance = Math.max(0, balanceNum - lockedFunds);
 
-    // Sync local state when stats update
-    useEffect(() => {
-        setLocalIsAuthorized(isAuthFromChain);
-    }, [isAuthFromChain]);
-
     const [amount, setAmount] = useState('');
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
-    const [operatorAddress, setOperatorAddress] = useState('');
-    const [userWantsAdvanced, setUserWantsAdvanced] = useState(false);
-    const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
 
     // Copy Trading Store for safety check
     const configs = useCopyTradingStore((state) => state.configs);
     const activeConfigsForSafetyCheck = configs.filter(c => c.isActive);
-    const hasActiveTrades = activeConfigsForSafetyCheck.length > 0;
 
-    // Optimistic UI state
-    const [optimisticAuth, setOptimisticAuth] = useState<boolean | null>(null);
-    // If optimisticAuth is null, use chain state. Otherwise use optimistic state.
-    const isExecutorAuthorized = optimisticAuth !== null ? optimisticAuth : isAuthFromChain;
+    const isExecutorAuthorized = isAuthFromChain;
 
     const getStatusText = (status: typeof txStatus) => {
         switch (status) {
@@ -105,43 +90,6 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         }
     };
 
-    const handleAuthorize = async () => {
-        const defaultExecutor = process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6';
-        const targetOp = operatorAddress.trim() || defaultExecutor;
-
-        if (!targetOp || !targetOp.startsWith('0x')) {
-            toast.error(t('toast.invalidOp'));
-            return;
-        }
-
-        const result = await authorizeOperator(targetOp, true);
-        if (result.success) {
-            setOptimisticAuth(true); // Immediate feedback
-            toast.success(t('toast.authSuccess'));
-            setOperatorAddress('');
-            onSuccess?.();
-            await refreshStats(); // Ensure chain state matches
-        } else {
-            toast.error(result.error || t('toast.authFail'));
-        }
-    };
-
-    const handleRevoke = async () => {
-        const defaultExecutor = process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6';
-        // Use custom address if set, otherwise default
-        const targetOp = operatorAddress.trim() || defaultExecutor;
-
-        const result = await authorizeOperator(targetOp, false); // false = revoke
-        if (result.success) {
-            setOptimisticAuth(false); // Immediate feedback
-            toast.success('Access revoked successfully');
-            setShowRevokeConfirm(false);
-            onSuccess?.();
-            await refreshStats();
-        } else {
-            toast.error(result.error || 'Revocation failed');
-        }
-    };
 
     // Strategy Profile Management
     // Default to first active config's profile or MODERATE
@@ -398,159 +346,62 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             )}
                         </div>
 
-                        {showRevokeConfirm ? (
-                            <div className="bg-red-900/10 border border-red-900/50 rounded-xl p-6 text-center animate-in fade-in">
-                                <div className="mx-auto w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
-                                    <AlertTriangle className="w-6 h-6 text-red-500" />
-                                </div>
-                                <h4 className="text-red-400 font-bold mb-2">{t('settings.revoke.title')}</h4>
-
-                                {hasActiveTrades ? (
-                                    <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-                                        <p className="text-red-300 font-semibold mb-1">⚠️ {t('settings.revoke.activeWarning')}</p>
-                                        <p className="text-red-300/80 text-sm">
-                                            {t.rich('settings.revoke.activeDesc', {
-                                                count: activeConfigs.length,
-                                                strong: (chunks: any) => <strong>{chunks}</strong>
-                                            })}
-                                        </p>
+                        <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden animate-in fade-in">
+                            <div className={`p-6 border-b border-gray-700/50 ${isExecutorAuthorized ? 'bg-green-900/10' : 'bg-blue-900/10'}`}>
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${isExecutorAuthorized ? 'bg-green-500/20' : 'bg-blue-500/20'}`}>
+                                        <ShieldCheck className={`w-6 h-6 ${isExecutorAuthorized ? 'text-green-400' : 'text-blue-400'}`} />
                                     </div>
-                                ) : (
-                                    <p className="text-gray-400 text-sm mb-6">
-                                        {t('settings.revoke.confirm')}
-                                    </p>
-                                )}
-
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => setShowRevokeConfirm(false)}
-                                        className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg"
-                                    >
-                                        {t('settings.revoke.cancel')}
-                                    </button>
-                                    <button
-                                        onClick={handleRevoke}
-                                        disabled={txPending}
-                                        className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2"
-                                    >
-                                        {txPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                                        {t('settings.revoke.action')}
-                                    </button>
-                                </div>
-                            </div>
-                        ) : isExecutorAuthorized ? (
-                            <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl overflow-hidden animate-in fade-in">
-                                {/* Header Status */}
-                                <div className="p-6 border-b border-gray-700/50 bg-green-900/10">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                                            <ShieldCheck className="w-6 h-6 text-green-400" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-green-400 font-bold text-lg">{t('settings.authorized.title')}</h4>
-                                            <p className="text-gray-400 text-sm">
-                                                {t('settings.authorized.desc')}
+                                    <div>
+                                        <h4 className={`font-bold text-lg ${isExecutorAuthorized ? 'text-green-400' : 'text-blue-400'}`}>
+                                            {isExecutorAuthorized ? t('settings.authorized.title') : t('settings.unauthorized.title')}
+                                        </h4>
+                                        <p className="text-gray-400 text-sm">
+                                            {executorAddress
+                                                ? `Executor: ${executorAddress.slice(0, 6)}...${executorAddress.slice(-4)}`
+                                                : t('settings.unauthorized.desc')}
+                                        </p>
+                                        {!isExecutorAuthorized && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Executor binding is managed by the platform.
                                             </p>
-                                        </div>
+                                        )}
                                     </div>
-                                </div>
-
-                                {/* Info Grid */}
-                                <div className="p-6 grid gap-6 md:grid-cols-3">
-                                    <div className="space-y-2">
-                                        <h5 className="font-semibold text-white flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                            {t('settings.authorized.nonCustodial')}
-                                        </h5>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            {t.rich('settings.authorized.nonCustodialDesc', {
-                                                strong: (chunks: any) => <strong>{chunks}</strong>
-                                            })}
-                                        </p>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h5 className="font-semibold text-white flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-purple-500" />
-                                            {t('settings.authorized.highSpeed')}
-                                        </h5>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            {t('settings.authorized.highSpeedDesc')}
-                                        </p>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h5 className="font-semibold text-white flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                                            {t('settings.authorized.fullControl')}
-                                        </h5>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            {t('settings.authorized.fullControlDesc')}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Actions Footer */}
-                                <div className="px-6 py-4 bg-gray-900/50 border-t border-gray-700/50 flex justify-between items-center">
-                                    <button
-                                        onClick={() => setShowRevokeConfirm(true)}
-                                        className="text-xs font-semibold text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
-                                    >
-                                        {t('settings.authorized.revoke')}
-                                    </button>
-
-                                    <button
-                                        onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
-                                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                                    >
-                                        {userWantsAdvanced ? t('settings.authorized.hideAdvanced') : t('settings.authorized.advanced')}
-                                    </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="bg-blue-900/10 border border-blue-900/30 rounded-xl overflow-hidden animate-in fade-in">
-                                <div className="p-6 text-center border-b border-blue-900/30">
-                                    <div className="mx-auto w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
-                                        <ShieldCheck className="w-6 h-6 text-blue-400" />
-                                    </div>
-                                    <h4 className="text-blue-400 font-semibold mb-2">{t('settings.unauthorized.title')}</h4>
-                                    <p className="text-gray-400 text-sm">
-                                        {t('settings.unauthorized.desc')}
+
+                            <div className="p-6 grid gap-6 md:grid-cols-3">
+                                <div className="space-y-2">
+                                    <h5 className="font-semibold text-white flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                        {t('settings.authorized.nonCustodial')}
+                                    </h5>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        {t.rich('settings.authorized.nonCustodialDesc', {
+                                            strong: (chunks: any) => <strong>{chunks}</strong>
+                                        })}
                                     </p>
                                 </div>
-
-                                {/* Info Grid (Same as authorized state) */}
-                                <div className="p-6 grid gap-6 md:grid-cols-3 bg-gray-900/30">
-                                    <div className="space-y-2">
-                                        <h5 className="font-semibold text-white flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                            {t('settings.authorized.nonCustodial')}
-                                        </h5>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            {t.rich('settings.authorized.nonCustodialDesc', {
-                                                strong: (chunks: any) => <strong>{chunks}</strong>
-                                            })}
-                                        </p>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h5 className="font-semibold text-white flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-purple-500" />
-                                            {t('settings.authorized.highSpeed')}
-                                        </h5>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            {t('settings.authorized.highSpeedDesc')}
-                                        </p>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h5 className="font-semibold text-white flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                                            {t('settings.authorized.fullControl')}
-                                        </h5>
-                                        <p className="text-xs text-gray-400 leading-relaxed">
-                                            {t('settings.authorized.fullControlDesc')}
-                                        </p>
-                                    </div>
+                                <div className="space-y-2">
+                                    <h5 className="font-semibold text-white flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                        {t('settings.authorized.highSpeed')}
+                                    </h5>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        {t('settings.authorized.highSpeedDesc')}
+                                    </p>
+                                </div>
+                                <div className="space-y-2">
+                                    <h5 className="font-semibold text-white flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                                        {t('settings.authorized.fullControl')}
+                                    </h5>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        {t('settings.authorized.fullControlDesc')}
+                                    </p>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
                         {/* Strategy Profile Selection (Only show if Authorized) */}
                         {isExecutorAuthorized && (
@@ -574,52 +425,6 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                             </div>
                         )}
 
-                        {(!isExecutorAuthorized || userWantsAdvanced) && !showRevokeConfirm && (
-                            <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-gray-400 flex justify-between">
-                                        <span>{t('settings.executor.label')}</span>
-                                        {!isExecutorAuthorized && (
-                                            <button
-                                                onClick={() => setUserWantsAdvanced(!userWantsAdvanced)}
-                                                className="text-xs text-blue-400 hover:text-blue-300"
-                                            >
-                                                {userWantsAdvanced ? t('settings.executor.useDefault') : t('settings.executor.custom')}
-                                            </button>
-                                        )}
-                                    </label>
-
-                                    {(userWantsAdvanced || !isExecutorAuthorized) && (
-                                        <input
-                                            placeholder={`Default Executor: ${process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS ? `${process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS.slice(0, 6)}...${process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS.slice(-4)}` : '0x...'}`}
-                                            value={operatorAddress}
-                                            onChange={(e) => setOperatorAddress(e.target.value)}
-                                            disabled={!userWantsAdvanced && !isExecutorAuthorized} // Read-only if just showing default
-                                            className={`w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500 ${(!userWantsAdvanced && !isExecutorAuthorized) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        />
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {!isExecutorAuthorized && (
-                            <button
-                                onClick={handleAuthorize}
-                                disabled={txPending || (isExecutorAuthorized && !userWantsAdvanced)}
-                                className={`w-full py-3 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2
-                                    ${isExecutorAuthorized && !userWantsAdvanced
-                                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/20'
-                                    }`}
-                            >
-                                {txPending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <ShieldCheck className="h-4 w-4" />
-                                )}
-                                {txPending ? t('settings.authAction.processing') : (isExecutorAuthorized ? t('settings.authAction.update') : t('settings.authAction.authorize'))}
-                            </button>
-                        )}
                     </div>
                 )}
 

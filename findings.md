@@ -11,6 +11,8 @@
 - OpenSpec specs relevant: `copy-trading` and `copy-execution` (from `openspec list --specs`).
 - Project context confirms SDK + worker + contracts architecture; ethers v5 and Polygon RPC constraints apply (`openspec/project.md`).
 - Active changes include `optimize-real-copy-trading`, `optimize-execution-engine`, and `add-execution-safety-controls` (from `openspec list`).
+- Existing proposals `add-execution-safety-controls` and `add-execution-whitelist-guardrails` already cover app-level pause + worker allowlist guardrails; on-chain contract-level guardrails are not specified.
+- Mainnet addresses in `deployed-addresses.json` do not match defaults in `src/core/contracts.ts`, so env overrides are required to avoid address drift.
 - `copy-trading` spec includes price TTL=5s, debt logging on reimbursement failure, txHash-based dedup (60s), and pre-sell balance verification requirements.
 - `copy-execution` spec requires debt records on float reimbursement failures and periodic recovery.
 - Existing change `optimize-real-copy-trading` focuses on WS-based low-latency execution and sim realism; it does not cover idempotency/write-before-execute.
@@ -50,6 +52,8 @@
 | Implemented EOA-specific preflight + per-user/global limiters | Ensures EOA executes without proxy dependency and respects caps |
 | Proxy-mode per-user CLOB creds | Worker uses user TradingService when creds (and key) exist, else falls back |
 | Config API redaction | Prevents encrypted secrets from being returned in API responses |
+| Planned change `add-contract-execution-guards` | On-chain allowlist + pause + executor binding + address validation |
+| Implemented contract execution guards | Proxy execution restricted to owner + bound executor; allowlists enforced in Proxy + Executor |
 
 ## Issues Encountered
 | Issue | Resolution |

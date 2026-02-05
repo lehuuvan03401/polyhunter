@@ -24,6 +24,20 @@ async function main() {
 
     console.log(`✅ PolyHunterExecutor deployed to: ${executorAddress}`);
 
+    const targets = [
+        process.env.USDC_ADDRESS,
+        process.env.CTF_EXCHANGE_ADDRESS || process.env.CTF_ADDRESS,
+    ].filter(Boolean) as string[];
+
+    if (targets.length > 0) {
+        console.log("🔐 Setting Executor allowlist...");
+        const allowTx = await executor.setAllowedTargets(targets, true);
+        await allowTx.wait();
+        console.log("✅ Executor allowlist updated.");
+    } else {
+        console.log("ℹ️  No allowlist targets provided (set USDC_ADDRESS / CTF_ADDRESS).");
+    }
+
     // 2. Derive Workers
     const workers: string[] = [];
 

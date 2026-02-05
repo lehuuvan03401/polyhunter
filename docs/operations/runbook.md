@@ -11,18 +11,20 @@ export ENABLE_FORK=true
 npx hardhat node
 
 🖥️ 终端 2: 部署基础设施 (合约 & Proxy)
-这步会部署 Factory, Executor，并为您的账号创建 Proxy 和充值 USDC。
+这步会部署 Executor、Factory，并为您的账号创建 Proxy 和充值 USDC，同时初始化 on-chain allowlist 与执行绑定。
 
 bash
-# 1. 部署 Executor & 初始化 Worker Fleet
+# 1. 部署 Executor & 初始化 Worker Fleet + Allowlist
 cd contracts
 npx hardhat run scripts/deploy-executor.ts --network localhost
 # ✅ 脚本会自动更新 .env 中的 NEXT_PUBLIC_EXECUTOR_ADDRESS
+# ✅ 脚本会根据 USDC_ADDRESS / CTF_ADDRESS 自动设置 Executor allowlist
 
 # 2. 部署 Factory & 创建 User Proxy
 # 注意：此脚本会读取 frontend/.env
 npx hardhat run scripts/setup-local-fork.ts --network localhost
-# ✅ 脚本会自动更新 .env 中的 NEXT_PUBLIC_PROXY_FACTORY_ADDRESS，并自动授权 Executor
+# ✅ 脚本会自动更新 .env 中的 NEXT_PUBLIC_PROXY_FACTORY_ADDRESS
+# ✅ 新 Proxy 默认绑定 Executor，并在 Proxy/Executor 上初始化 allowlist（USDC + CTF）
 
 (脚本执行完毕后，.env 已自动更新，直接进行下一步)
 
@@ -89,11 +91,13 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 ```
 
 
-setup-local-fork.ts的说明：
+setup-local-fork.ts 的说明：
 
+部署 Executor (🚀 Deploying Executor):
+部署执行中枢合约，并初始化 allowlist（默认 USDC.e + CTF）。
 部署 ProxyFactory (🏭 Deploying ProxyFactory):
 虽然主网上已经有 Factory 了，但我们在本地无法控制它（比如无法随意设置 Owner）。
-所以我们部署一个全新的、属于您的 Factory。通过构造函数，我们将它指向真实的 USDC 和 CTF，这样它创建出来的 Proxy 就能和真实世界的合约交互了。
+所以我们部署一个全新的、属于您的 Factory。通过构造函数，我们将它指向真实的 USDC 和 CTF，并绑定 Executor，这样它创建出来的 Proxy 就能和真实世界的合约交互，并且执行入口受控。
 创建 Proxy Wallet (👤 Creating Proxy):
 调用刚才部署的新 Factory，为您（Hardhat 默认账号 #0）创建一个智能合约钱包。
 充值 USDC (💰 Funding Proxy):

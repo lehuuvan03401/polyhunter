@@ -18,9 +18,17 @@ contract PolyHunterExecutor is Ownable {
     // Whitelist of valid worker wallets (The Fleet)
     mapping(address => bool) public isWorker;
 
+    // Allowlisted target contracts
+    mapping(address => bool) public allowedTargets;
+
+    // Pause switch for execution
+    bool public paused;
+
     event WorkerAdded(address indexed worker);
     event WorkerRemoved(address indexed worker);
     event ExecutionForwarded(address indexed proxy, address indexed worker, bool success);
+    event TargetAllowedUpdated(address indexed target, bool allowed);
+    event ExecutionPaused(bool paused);
 
     constructor() Ownable(msg.sender) {}
 
@@ -56,6 +64,44 @@ contract PolyHunterExecutor is Ownable {
     }
 
     /**
+     * @notice Update allowlist targets
+     */
+    function setAllowedTarget(address target, bool allowed) external onlyOwner {
+        require(target != address(0), "Invalid target");
+        allowedTargets[target] = allowed;
+        emit TargetAllowedUpdated(target, allowed);
+    }
+
+    /**
+     * @notice Batch update allowlist targets
+     */
+    function setAllowedTargets(address[] calldata targets, bool allowed) external onlyOwner {
+        for (uint256 i = 0; i < targets.length; i++) {
+            address target = targets[i];
+            if (target != address(0)) {
+                allowedTargets[target] = allowed;
+                emit TargetAllowedUpdated(target, allowed);
+            }
+        }
+    }
+
+    /**
+     * @notice Pause execution forwarding
+     */
+    function pauseExecution() external onlyOwner {
+        paused = true;
+        emit ExecutionPaused(true);
+    }
+
+    /**
+     * @notice Unpause execution forwarding
+     */
+    function unpauseExecution() external onlyOwner {
+        paused = false;
+        emit ExecutionPaused(false);
+    }
+
+    /**
      * @notice Execute a transaction on a user's Proxy.
      * @dev Only whitelisted workers can call this.
      * @param proxy The user's Proxy contract address.
@@ -68,6 +114,8 @@ contract PolyHunterExecutor is Ownable {
         bytes calldata data
     ) external payable returns (bytes memory) {
         require(isWorker[msg.sender], "Horus: Unauthorized Worker");
+        require(!paused, "Horus: Paused");
+        require(allowedTargets[target], "Horus: Target not allowed");
 
         // Forward the execution to the Proxy
         // content: Proxy.execute(target, data)

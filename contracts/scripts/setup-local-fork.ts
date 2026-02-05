@@ -9,9 +9,8 @@ dotenv.config({ path: path.resolve(__dirname, "../../frontend/.env") });
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const MASTER_PK = process.env.TRADING_PRIVATE_KEY;
-const EXECUTOR_ADDRESS = process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS;
 const USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // Polygon USDC
-const CLOB_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"; // Polymarket CLOB
+const CTF_EXCHANGE = process.env.CTF_EXCHANGE_ADDRESS || process.env.CTF_ADDRESS || "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
 
 async function main() {
     console.log("🛠️  Setting up Local Fork Environment...");
@@ -29,21 +28,35 @@ async function main() {
     const treasuryAddress = await treasury.getAddress();
     console.log(`✅ Treasury deployed: ${treasuryAddress}`);
 
-    // 1. Deploy ProxyFactory
+    // 1. Deploy Executor
+    console.log("🚀 Deploying Executor...");
+    const Executor = await ethers.getContractFactory("PolyHunterExecutor");
+    const executor = await Executor.deploy();
+    await executor.waitForDeployment();
+    const executorAddress = await executor.getAddress();
+    console.log(`✅ Executor deployed: ${executorAddress}`);
+
+    console.log("🔐 Setting Executor allowlist...");
+    const allowTx = await executor.setAllowedTargets([USDC_ADDRESS, CTF_EXCHANGE], true);
+    await allowTx.wait();
+    console.log("✅ Executor allowlist set");
+
+    // 2. Deploy ProxyFactory
     console.log("🏭 Deploying ProxyFactory...");
     const ProxyFactory = await ethers.getContractFactory("ProxyFactory");
     // ProxyFactory(usdc, ctfExchange, treasury, owner)
     const factory = await ProxyFactory.deploy(
         USDC_ADDRESS,
-        CLOB_EXCHANGE,
+        CTF_EXCHANGE,
         treasuryAddress, // Actual Treasury Contract
+        executorAddress, // Bound Executor
         deployer.address  // Owner = Deployer
     );
     await factory.waitForDeployment();
     const factoryAddress = await factory.getAddress();
     console.log(`✅ ProxyFactory deployed: ${factoryAddress}`);
 
-    // 2. Create Proxy for Master Wallet
+    // 3. Create Proxy for Master Wallet
     console.log(`👤 Creating Proxy for Master Wallet (${deployer.address})...`);
     const tx = await (factory as any).connect(deployer).createProxy(1); // Tier 1
     await tx.wait();
@@ -51,19 +64,7 @@ async function main() {
     const userProxy = await factory.getUserProxy(deployer.address);
     console.log(`✅ Proxy Created: ${userProxy}`);
 
-    // 3. Authorize Executor on Proxy
-    if (!EXECUTOR_ADDRESS) {
-        throw new Error("❌ NEXT_PUBLIC_EXECUTOR_ADDRESS not found in env. Please run deploy-executor.ts first!");
-    }
-    console.log(`🔑 Authorizing Executor (${EXECUTOR_ADDRESS}) on Proxy...`);
-    // Need Proxy interface. We can use getContractAt if artifact exists, or simpler interface
-    const proxy = await ethers.getContractAt("PolyHunterProxy", userProxy, deployer);
-    const authTx = await proxy.setOperator(EXECUTOR_ADDRESS, true);
-    await authTx.wait();
-    console.log(`✅ Executor Authorized!`);
-
-
-    // 3. Fund Proxy with USDC (Simulated)
+    // 4. Fund Proxy with USDC (Simulated)
     // We need USDC artifact or ABI.
     // USDC_ADDRESS defined at top
     const IMPERSONATE_USDC_WHALE = "0xe7804c37c13166fF0b37F5aE0BB07A3aEbb6e245"; // Binace Hot Wallet or similar
@@ -94,6 +95,7 @@ async function main() {
     console.log("\n============================================");
     console.log(`✅ Factory Address: ${factoryAddress}`);
     console.log(`✅ Treasury Address: ${treasuryAddress}`);
+    console.log(`✅ Executor Address: ${executorAddress}`);
 
     // Automate .env update
     try {
@@ -107,7 +109,8 @@ async function main() {
 
         const updates = {
             "NEXT_PUBLIC_PROXY_FACTORY_ADDRESS": factoryAddress,
-            "NEXT_PUBLIC_TREASURY_ADDRESS": treasuryAddress
+            "NEXT_PUBLIC_TREASURY_ADDRESS": treasuryAddress,
+            "NEXT_PUBLIC_EXECUTOR_ADDRESS": executorAddress
         };
 
         for (const [key, value] of Object.entries(updates)) {

@@ -46,6 +46,12 @@ export const PROXY_FACTORY_ABI = [
     'function hasProxy(address user) external view returns (bool)',
     'function getTotalProxies() external view returns (uint256)',
     'function getTierFee(uint8 tier) external view returns (uint256)',
+    'function setExecutor(address executor) external',
+    'function updateProxyExecutor(address proxy, address newExecutor) external',
+    'function updateProxyAllowlist(address proxy, address target, bool allowed) external',
+    'function batchUpdateAllowlist(address target, bool allowed, uint256 startIndex, uint256 endIndex) external',
+    'function pauseProxy(address proxy) external',
+    'function unpauseProxy(address proxy) external',
     'event ProxyCreated(address indexed user, address indexed proxy, uint8 tier)',
 ] as const;
 
@@ -54,6 +60,9 @@ export const POLY_HUNTER_PROXY_ABI = [
     // Read functions
     'function owner() external view returns (address)',
     'function treasury() external view returns (address)',
+    'function executor() external view returns (address)',
+    'function paused() external view returns (bool)',
+    'function allowedTargets(address target) external view returns (bool)',
     'function feePercent() external view returns (uint256)',
     'function totalDeposited() external view returns (uint256)',
     'function totalWithdrawn() external view returns (uint256)',
@@ -62,9 +71,12 @@ export const POLY_HUNTER_PROXY_ABI = [
     'function getProfit() external view returns (int256)',
     'function getEstimatedFee() external view returns (uint256)',
     'function getStats() external view returns (uint256 balance, uint256 deposited, uint256 withdrawn, uint256 feesPaid, int256 profit, uint256 currentFeePercent, uint256 pendingFee)',
-    'function operators(address operator) external view returns (bool)',
     // Write functions
-    'function setOperator(address operator, bool active) external',
+    'function setExecutor(address executor) external',
+    'function setAllowedTarget(address target, bool allowed) external',
+    'function setAllowedTargets(address[] calldata targets, bool allowed) external',
+    'function pauseExecution() external',
+    'function unpauseExecution() external',
     'function deposit(uint256 amount) external',
     'function withdraw(uint256 amount) external',
     'function withdrawAll() external',
@@ -75,7 +87,22 @@ export const POLY_HUNTER_PROXY_ABI = [
     // Events
     'event Deposited(address indexed user, uint256 amount)',
     'event Withdrawn(address indexed user, uint256 amount, uint256 fee)',
-    'event OperatorUpdated(address indexed operator, bool active)',
+    'event ExecutorUpdated(address newExecutor)',
+    'event AllowedTargetUpdated(address indexed target, bool allowed)',
+    'event ExecutionPaused(bool paused)',
+] as const;
+
+// PolyHunterExecutor ABI (for proxy forwarding)
+export const EXECUTOR_ABI = [
+    'function executeOnProxy(address proxy, address target, bytes calldata data) external payable returns (bytes memory)',
+    'function addWorker(address worker) external',
+    'function addWorkers(address[] calldata workers) external',
+    'function setAllowedTarget(address target, bool allowed) external',
+    'function setAllowedTargets(address[] calldata targets, bool allowed) external',
+    'function pauseExecution() external',
+    'function unpauseExecution() external',
+    'function allowedTargets(address target) external view returns (bool)',
+    'function paused() external view returns (bool)',
 ] as const;
 
 // ERC20 ABI (for USDC approvals)

@@ -77,7 +77,7 @@ export class CopyTradingExecutionService {
         debtLogger?: DebtLogger
     ) {
         this.tradingService = tradingService;
-        this.defaultSigner = defaultSigner; // Bot signer (Default Operator)
+        this.defaultSigner = defaultSigner; // Bot signer (Default worker)
         this.chainId = chainId;
         this.debtLogger = debtLogger;
 
@@ -172,6 +172,28 @@ export class CopyTradingExecutionService {
         return executionSigner.getAddress();
     }
 
+    private assertExecutionAddresses(): void {
+        const addresses = this.getChainAddresses();
+        const missing: string[] = [];
+
+        if (!addresses.proxyFactory || addresses.proxyFactory.includes('0xabc123')) {
+            missing.push('proxyFactory');
+        }
+        if (!addresses.executor) {
+            missing.push('executor');
+        }
+        if (!addresses.usdc) {
+            missing.push('usdc');
+        }
+        if (!CONTRACT_ADDRESSES.ctf) {
+            missing.push('ctf');
+        }
+
+        if (missing.length > 0) {
+            throw new Error(`[CopyExec] Missing execution addresses: ${missing.join(', ')}`);
+        }
+    }
+
     /**
      * Get USDC balance of a Proxy wallet
      */
@@ -188,7 +210,7 @@ export class CopyTradingExecutionService {
     }
 
     /**
-     * Get Bot (Operator) USDC balance for Float check
+     * Get Bot (Worker) USDC balance for Float check
      */
     async getBotUsdcBalance(signer?: ethers.Signer): Promise<number> {
         const addresses = this.getChainAddresses();
@@ -383,31 +405,41 @@ export class CopyTradingExecutionService {
         amount: number;
         signer?: ethers.Signer;
     }): Promise<AllowanceCheckResult> {
-        const { proxyAddress, side, amount, signer } = params;
+        const { proxyAddress, side, signer } = params;
         const addresses = this.getChainAddresses();
 
         if (!addresses.executor) {
             return { allowed: false, reason: 'EXECUTOR_NOT_CONFIGURED' };
         }
+        if (!addresses.usdc) {
+            return { allowed: false, reason: 'USDC_ADDRESS_NOT_CONFIGURED' };
+        }
+        if (!CONTRACT_ADDRESSES.ctf) {
+            return { allowed: false, reason: 'CTF_ADDRESS_NOT_CONFIGURED' };
+        }
 
         const executionSigner = this.getSigner(signer);
+        const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, executionSigner);
+        const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, executionSigner);
 
-        if (side === 'BUY') {
-            if (!addresses.usdc) return { allowed: false, reason: 'USDC_ADDRESS_NOT_CONFIGURED' };
-            const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, executionSigner);
-            const allowanceRaw = await usdc.allowance(proxyAddress, addresses.executor);
-            const allowance = Number(allowanceRaw) / (10 ** USDC_DECIMALS);
-            if (allowance <= 0 || allowance < amount) {
-                return { allowed: false, reason: 'ALLOWANCE_MISSING_USDC', allowance };
-            }
-            return { allowed: true, allowance };
+        const paused = await proxy.paused().catch(() => false);
+        if (paused) {
+            return { allowed: false, reason: 'PROXY_PAUSED' };
         }
 
-        const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
-        const approved = await ctf.isApprovedForAll(proxyAddress, addresses.executor);
-        if (!approved) {
-            return { allowed: false, reason: 'ALLOWANCE_MISSING_CTF' };
+        const target = side === 'BUY' ? addresses.usdc : CONTRACT_ADDRESSES.ctf;
+        const [proxyAllowed, executorAllowed] = await Promise.all([
+            proxy.allowedTargets(target).catch(() => false),
+            executor.allowedTargets(target).catch(() => false),
+        ]);
+
+        if (!proxyAllowed) {
+            return { allowed: false, reason: 'PROXY_ALLOWLIST_BLOCKED' };
         }
+        if (!executorAllowed) {
+            return { allowed: false, reason: 'EXECUTOR_ALLOWLIST_BLOCKED' };
+        }
+
         return { allowed: true };
     }
 
@@ -424,6 +456,8 @@ export class CopyTradingExecutionService {
         const execService = tradingService || this.tradingService;
 
         console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches (No Mutex)...`);
+
+        this.assertExecutionAddresses();
 
 
 

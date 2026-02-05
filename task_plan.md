@@ -80,6 +80,13 @@ Phase 4 (testing)
 - [ ] Propose next optimization item
 - **Status:** pending
 
+### Phase 6: Contract Execution Guards
+- [x] Draft OpenSpec change proposal for on-chain execution guardrails
+- [x] Validate proposal via openspec
+- [x] Implement contract + SDK changes after approval
+- [x] Add/update tests and verification notes
+- **Status:** complete
+
 ## Key Questions
 1. Which optimization item is first (default: idempotency + write-before-execute)?
 2. One proposal per item or a combined proposal for multiple items?
@@ -99,11 +106,13 @@ Phase 4 (testing)
 | Next change id: `add-execution-stage-metrics` | Adds per-stage latency visibility for pipeline tuning |
 | Next change id: `add-market-events-toggle` | Allows disabling market lifecycle WS subscriptions when unsupported |
 | Next change id: `add-force-fallback-price` | Allows forcing fallback pricing for verification |
+| Next change id: `add-contract-execution-guards` | Adds on-chain allowlist + pause + executor binding + address resolution |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|
 | CLAUDE_PLUGIN_ROOT not set for session-catchup script | 1 | Used local skill templates path to create planning files |
 | CLAUDE_PLUGIN_ROOT not set for session-catchup script | 2 | Skipped session-catchup and continued with existing plan files |
+| session-catchup failed (/scripts/session-catchup.py not found) | 1 | Will proceed without catchup; ensure plan/progress/findings are current |
 | openspec show optimize-real-copy-trading --json --deltas-only failed (missing Why section) | 1 | Will inspect change files directly instead of openspec show |
 | verify script failed to load @prisma/client | 1 | Added dynamic import with friendly error; requires deps installed |

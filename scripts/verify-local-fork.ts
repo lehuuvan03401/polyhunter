@@ -22,6 +22,8 @@ async function main() {
     // 2. Set Environment Variables (Override constants)
     process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS = config.proxyFactory;
     process.env.USDC_ADDRESS = config.usdc;
+    process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS = config.executor;
+    process.env.NEXT_PUBLIC_CTF_ADDRESS = config.ctfExchange;
     // Map Local (31337) to Amoy Env Vars because Service defaults to Amoy for non-137
     process.env.AMOY_PROXY_FACTORY_ADDRESS = config.proxyFactory;
     process.env.AMOY_USDC_ADDRESS = config.usdc;
@@ -29,7 +31,7 @@ async function main() {
     // For now assuming we are Forking Mainnet, so CTF address defaults to Real one in contracts.ts, which is fine.
 
     // 3. Dynamic Import of SDK
-    const { CONTRACT_ADDRESSES, PROXY_FACTORY_ABI, POLY_HUNTER_PROXY_ABI, ERC20_ABI, CTF_ABI } = await import('../src/core/contracts.js');
+    const { CONTRACT_ADDRESSES, PROXY_FACTORY_ABI, ERC20_ABI } = await import('../src/core/contracts.js');
     console.log("🔍 SDK CONTRACT_ADDRESSES:", JSON.stringify(CONTRACT_ADDRESSES, null, 2));
 
     const { CopyTradingExecutionService } = await import('../src/services/copy-trading-execution-service.js');
@@ -125,19 +127,16 @@ async function main() {
         process.exit(1);
     }
 
-    // 6. Setup Delegation
-    console.log("🔑 Setting Delegation...");
-    const factory = new ethers.Contract(config.proxyFactory, PROXY_FACTORY_ABI, user);
-    const proxyAddr = await factory.getUserProxy(userAddr);
-    const proxy = new ethers.Contract(proxyAddr, POLY_HUNTER_PROXY_ABI, user);
-    await (await proxy.setOperator(botAddr, true)).wait();
-    console.log("   ✅ Bot is now an operator");
+    // 6. Configure Executor
+    console.log("🔑 Configuring Executor...");
+    const executor = new ethers.Contract(config.executor, [
+        'function addWorker(address worker) external',
+        'function setAllowedTargets(address[] calldata targets, bool allowed) external',
+    ], deployer);
 
-    // Approve Bot to spend Proxy USDC (Required for Pull)
-    console.log("   🔑 Approving Bot to spend Proxy USDC...");
-    const MAX_UINT = ethers.constants.MaxUint256;
-    await (await proxy.approveTrading(botAddr, MAX_UINT)).wait();
-    console.log("   ✅ Bot approved for USDC");
+    await (await executor.addWorker(botAddr)).wait();
+    await (await executor.setAllowedTargets([config.usdc, config.ctfExchange], true)).wait();
+    console.log("   ✅ Executor worker + allowlist configured");
 
     // 7. Execute Copy Trade (BUY)
     console.log("\n⚡️ Executing Copy Trade (BUY)...");

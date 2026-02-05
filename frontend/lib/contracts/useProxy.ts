@@ -126,14 +126,13 @@ export interface UseProxyReturn {
     approveUSDC: (amount: number) => Promise<boolean>;
     /** Execute arbitrary call through proxy (for trading) */
     executeCall: (target: string, data: string) => Promise<{ success: boolean; txHash?: string; error?: string }>;
-    /** Authorize an operator */
-    authorizeOperator: (operator: string, active: boolean) => Promise<{ success: boolean; txHash?: string; error?: string }>;
 
     // Transaction state
     txPending: boolean;
     txStatus: 'IDLE' | 'APPROVING' | 'DEPOSITING' | 'WITHDRAWING' | 'AUTHORIZING' | 'CREATING' | 'EXECUTING' | 'CONFIRMING' | 'SETTLING';
     txHash: string | null;
     isExecutorAuthorized: boolean;
+    executorAddress: string | null;
 }
 
 export function useProxy(): UseProxyReturn {
@@ -150,6 +149,7 @@ export function useProxy(): UseProxyReturn {
     const [txStatus, setTxStatus] = useState<UseProxyReturn['txStatus']>('IDLE');
     const [txHash, setTxHash] = useState<string | null>(null);
     const [isExecutorAuthorized, setIsExecutorAuthorized] = useState(false);
+    const [executorAddress, setExecutorAddress] = useState<string | null>(null);
 
     const walletAddress = user?.wallet?.address;
 
@@ -294,16 +294,15 @@ export function useProxy(): UseProxyReturn {
             const promises: Promise<any>[] = [
                 proxy.getStats(),
                 provider.getBalance(proxyAddress), // ETH balance (for gas if needed)
+                proxy.executor().catch(() => ethers.constants.AddressZero),
             ];
-
-            // Check if Default Executor is authorized
-            if (ADDRESSES.executor) {
-                promises.push(proxy.operators(ADDRESSES.executor));
-            }
 
             const results = await Promise.all(promises);
             const statsResult = results[0];
-            const isAuthorized = ADDRESSES.executor ? results[2] : false;
+            const boundExecutor = results[2] as string;
+            const isAuthorized = ADDRESSES.executor
+                ? boundExecutor?.toLowerCase() === ADDRESSES.executor.toLowerCase()
+                : false;
 
             setStats({
                 balance: formatUSDC(statsResult.balance),
@@ -315,6 +314,7 @@ export function useProxy(): UseProxyReturn {
                 pendingFee: formatUSDC(statsResult.pendingFee),
             });
             setIsExecutorAuthorized(isAuthorized);
+            setExecutorAddress(boundExecutor || null);
         } catch (err) {
             console.error('Error fetching stats:', err);
         }
@@ -668,41 +668,6 @@ export function useProxy(): UseProxyReturn {
 
 
     /**
-     * Authorize or deauthorize an operator
-     */
-    const authorizeOperator = useCallback(async (operator: string, active: boolean): Promise<{ success: boolean; txHash?: string; error?: string }> => {
-        if (!proxyAddress) {
-            return { success: false, error: 'No proxy address' };
-        }
-
-        setTxPending(true);
-        setTxStatus('AUTHORIZING');
-        setError(null);
-
-        try {
-            const { signer } = await getSignerAndProvider();
-            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, signer);
-
-            const tx = await proxy.setOperator(operator, active);
-            setTxHash(tx.hash);
-            setTxStatus('CONFIRMING');
-
-            await tx.wait();
-            // Refresh stats to check if auth status updated
-            await refreshStats();
-
-            return { success: true, txHash: tx.hash };
-        } catch (err: unknown) {
-            const errorMsg = parseTransactionError(err);
-            setError(errorMsg);
-            return { success: false, error: errorMsg };
-        } finally {
-            setTxPending(false);
-            setTxStatus('IDLE');
-        }
-    }, [proxyAddress, getSignerAndProvider, refreshStats]);
-
-    /**
      * Settle pending fees manually
      */
     const settleFees = useCallback(async (): Promise<boolean> => {
@@ -754,10 +719,10 @@ export function useProxy(): UseProxyReturn {
         settleFees,
         approveUSDC,
         executeCall,
-        authorizeOperator,
         txPending,
         txStatus,
         txHash,
         isExecutorAuthorized,
+        executorAddress,
     };
 }
