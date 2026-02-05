@@ -90,6 +90,45 @@ CopyExec 日志流畅输出：
 npx tsx scripts/verify/copy-trading-readiness.ts
 ```
 
+---
+
+## 主网迁移步骤（新合约逻辑）
+
+当合约逻辑有变更（如 Executor 绑定、allowlist、pause）时，需要 **重新部署** 并迁移用户到新 Proxy。建议步骤如下：
+
+### 1) 部署新 Executor + 设置 Allowlist
+```bash
+cd contracts
+USDC_ADDRESS=0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174 \
+CTF_ADDRESS=0x4D97DCd97eC945f40cF65F87097ACe5EA0476045 \
+npx hardhat run scripts/deploy-executor.ts --network polygon
+```
+输出新的 `NEXT_PUBLIC_EXECUTOR_ADDRESS`，并确保 **Executor allowlist 已包含 USDC + CTF**。
+
+### 2) 部署新 ProxyFactory（绑定新 Executor）
+```bash
+cd contracts
+USDC_ADDRESS=0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174 \
+CTF_ADDRESS=0x4D97DCd97eC945f40cF65F87097ACe5EA0476045 \
+npx hardhat run scripts/deploy.ts --network polygon
+```
+输出新的 `ProxyFactory/Treasury/Executor` 地址，并更新 `.env` / `deployed-addresses.json`。
+
+### 3) 更新运行环境
+- `PROXY_FACTORY_ADDRESS` / `EXECUTOR_ADDRESS` / `USDC_ADDRESS` / `CTF_ADDRESS`
+- `NEXT_PUBLIC_*` 前端地址同步更新
+
+### 4) 为执行钱包创建 Proxy
+使用执行钱包（TRADING_PRIVATE_KEY）在新 Factory 上创建 Proxy（或通过前端用户钱包创建）。
+
+### 5) 迁移用户资金（旧 Proxy -> 新 Proxy）
+建议策略（按需选择）：
+- **用户主动迁移**：用户自行提款 → 再入金到新 Proxy
+- **运营协助**：提供迁移提示与引导（避免直接代转）
+
+### 6) 废弃旧 Proxy
+- 旧 Proxy 不具备新的安全护栏（allowlist/pause/绑定），建议 **停止新交易** 并引导迁移。
+
 
 setup-local-fork.ts 的说明：
 

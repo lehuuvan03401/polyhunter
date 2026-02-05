@@ -49,10 +49,11 @@ model Referrer {
   descendants TeamClosure[] @relation("AncestorRelation")
 
   // Performance Metrics
-  maxDepth       Int             @default(0) // Deepest level of the team
-  sunLineCount   Int             @default(0) // Number of qualified sun lines
-  teamVolume     Float           @default(0) // Total volume of the subtree
-  commissionLogs CommissionLog[]
+  maxDepth              Int                    @default(0) // Deepest level of the team
+  sunLineCount          Int                    @default(0) // Number of qualified sun lines
+  teamVolume            Float                  @default(0) // Total volume of the subtree
+  commissionLogs        CommissionLog[]
+  commissionLogArchives CommissionLogArchive[]
 }
 
 // Closure Table for efficient tree traversal
@@ -297,7 +298,8 @@ model CopyTradingConfig {
   updatedAt DateTime @updatedAt
 
   // Relations
-  copyTrades CopyTrade[]
+  copyTrades        CopyTrade[]
+  copyTradeArchives CopyTradeArchive[]
 
   @@index([walletAddress])
   @@index([traderAddress])
@@ -479,4 +481,69 @@ model LeaderboardCacheMeta {
   traderCount  Int?
   errorMessage String?
   updatedAt    DateTime @updatedAt
+}
+
+// ========================================
+// Archiving Models
+// ========================================
+
+model CopyTradeArchive {
+  id       String            @id
+  config   CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId String
+
+  // Original trade info
+  originalTrader String
+  originalSide   String
+  leaderSide     String?
+  originalSize   Float
+  originalPrice  Float
+  marketSlug     String?
+  originalTxHash String?
+  conditionId    String?
+  tokenId        String?
+  outcome        String?
+
+  // Copy trade info
+  copySize  Float
+  copyPrice Float?
+
+  // Execution status
+  status       CopyTradeStatus
+  txHash       String?
+  errorMessage String?
+  realizedPnL  Float?
+  usedBotFloat Boolean         @default(false)
+  executedBy   String?
+  retryCount   Int             @default(0)
+  nextRetryAt  DateTime?
+
+  // Timestamps
+  detectedAt DateTime
+  executedAt DateTime?
+  expiresAt  DateTime?
+  archivedAt DateTime  @default(now())
+
+  @@index([configId])
+  @@index([originalTrader])
+  @@index([archivedAt])
+  @@index([detectedAt])
+}
+
+model CommissionLogArchive {
+  id            String   @id
+  referrer      Referrer @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+  referrerId    String
+  amount        Float
+  type          String
+  sourceTradeId String?
+  sourceUserId  String?
+  generation    Int?
+  createdAt     DateTime
+  archivedAt    DateTime @default(now())
+
+  @@index([referrerId])
+  @@index([type])
+  @@index([archivedAt])
+  @@index([createdAt])
 }
