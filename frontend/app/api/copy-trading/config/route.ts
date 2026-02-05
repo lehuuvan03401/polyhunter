@@ -89,7 +89,12 @@ export async function POST(request: NextRequest) {
             autoExecute,
 
             // Strategy
-            strategyProfile
+            strategyProfile,
+
+            // API Credentials
+            apiKey,
+            apiSecret,
+            apiPassphrase
         } = body;
 
         // Validation
@@ -161,6 +166,22 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Helper to encrypt API Credential (stores as IV:DATA)
+        const encryptField = (text: string): string | null => {
+            if (!text) return null;
+            try {
+                const { encryptedData, iv } = EncryptionService.encrypt(text);
+                return `${iv}:${encryptedData}`; // Store IV with data
+            } catch (e) {
+                console.error("Encryption failed for field:", e);
+                return null;
+            }
+        };
+
+        const encryptedApiKey = encryptField(apiKey);
+        const encryptedApiSecret = encryptField(apiSecret);
+        const encryptedApiPassphrase = encryptField(apiPassphrase);
+
         const config = await prisma.copyTradingConfig.create({
             data: {
                 walletAddress: walletAddress.toLowerCase(),
@@ -194,6 +215,9 @@ export async function POST(request: NextRequest) {
                 executionMode: executionMode === 'EOA' ? 'EOA' : 'PROXY',
                 encryptedKey,
                 iv,
+                apiKey: encryptedApiKey,
+                apiSecret: encryptedApiSecret,
+                apiPassphrase: encryptedApiPassphrase,
             },
         });
 
@@ -296,6 +320,16 @@ export async function PATCH(request: NextRequest) {
         if (updates.minTriggerSize !== undefined) updateData.minTriggerSize = updates.minTriggerSize;
         if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
         if (updates.strategyProfile !== undefined) updateData.strategyProfile = updates.strategyProfile;
+
+        // Handle API Credential Updates
+        const encryptFieldUpdate = (text: string) => {
+            const { encryptedData, iv } = EncryptionService.encrypt(text);
+            return `${iv}:${encryptedData}`;
+        };
+
+        if (updates.apiKey) updateData.apiKey = encryptFieldUpdate(updates.apiKey);
+        if (updates.apiSecret) updateData.apiSecret = encryptFieldUpdate(updates.apiSecret);
+        if (updates.apiPassphrase) updateData.apiPassphrase = encryptFieldUpdate(updates.apiPassphrase);
 
         const updated = await prisma.copyTradingConfig.update({
             where: { id },

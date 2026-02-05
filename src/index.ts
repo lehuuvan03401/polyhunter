@@ -299,6 +299,7 @@ export {
   ROUNDING_CONFIG,
 } from './utils/price-utils.js';
 export type { TickSize } from './utils/price-utils.js';
+export { EncryptionService } from './utils/encryption.js';
 
 // NOTE: MCP tools have been moved to @catalyst-team/poly-mcp package
 // See packages/poly-mcp/

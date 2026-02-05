@@ -57,7 +57,8 @@
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
 import type { ActivityTrade, MarketEvent, Subscription } from '../src/services/realtime-service-v2.js';
-import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService, GammaApiClient } from '../src/index.js';
+import { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService, GammaApiClient, EncryptionService } from '../src/index.js';
+import type { ApiCredentials } from '../src/index.js';
 import type { DebtLogger } from '../src/services/copy-trading-execution-service.js';
 import { ethers } from 'ethers';
 import { createHash } from 'crypto';
@@ -250,7 +251,64 @@ interface WatchedConfig {
     slippageType: string;
     maxSlippage: number;
     tradeSizeMode?: 'SHARES' | 'NOTIONAL' | null;
+    executionMode: 'PROXY' | 'EOA';
+    encryptedKey?: string | null;
+    iv?: string | null;
+    apiKey?: string | null;
+    apiSecret?: string | null;
+    apiPassphrase?: string | null;
 }
+
+class UserExecutionManager {
+    private services = new Map<string, TradingService>();
+
+    async getService(config: WatchedConfig): Promise<TradingService | null> {
+        if (config.executionMode !== 'EOA') return null;
+
+        if (this.services.has(config.id)) {
+            return this.services.get(config.id)!;
+        }
+
+        if (!config.encryptedKey || !config.iv) {
+            console.warn(`[UserExecutionManager] EOA mode enabled for ${config.id} but missing keys.`);
+            return null;
+        }
+
+        try {
+            const privateKey = EncryptionService.decrypt(config.encryptedKey, config.iv);
+            let credentials: ApiCredentials | undefined;
+
+            if (config.apiKey && config.apiSecret && config.apiPassphrase) {
+                const decryptField = (val: string) => {
+                    const [iv, data] = val.split(':');
+                    return EncryptionService.decrypt(data, iv);
+                };
+                credentials = {
+                    key: decryptField(config.apiKey),
+                    secret: decryptField(config.apiSecret),
+                    passphrase: decryptField(config.apiPassphrase),
+                };
+            }
+
+            const limiter = new RateLimiter(); // Independent limit for this user
+            const svc = new TradingService(limiter, cache, {
+                privateKey,
+                chainId: CHAIN_ID,
+                credentials
+            });
+
+            // Warm up / derive keys
+            await svc.initialize();
+
+            this.services.set(config.id, svc);
+            return svc;
+        } catch (error) {
+            console.error(`[UserExecutionManager] Failed to initialize service for ${config.id}:`, error);
+            return null;
+        }
+    }
+}
+const userExecManager = new UserExecutionManager();
 
 let activeConfigs: Map<string, WatchedConfig[]> = new Map(); // traderAddress -> configs[]
 let watchedAddresses: Set<string> = new Set();
@@ -419,6 +477,12 @@ async function refreshConfigs(): Promise<void> {
                 slippageType: true,
                 maxSlippage: true,
                 tradeSizeMode: true,
+                executionMode: true,
+                encryptedKey: true,
+                iv: true,
+                apiKey: true,
+                apiSecret: true,
+                apiPassphrase: true,
             }
         });
 
@@ -1342,10 +1406,39 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             where: { id: copyTrade.id },
                             data: { status: 'SKIPPED', errorMessage: 'RATE_LIMIT' },
                         });
+                    } else if (config.executionMode === 'EOA') {
+                        // EOA Execution Path
+                        const userService = await userExecManager.getService(config);
+                        if (!userService) {
+                            console.warn(`   [Exec] EOA service unavailable for config ${config.id}, skipping.`);
+                            await prisma.copyTrade.update({
+                                where: { id: copyTrade.id },
+                                data: { status: 'FAILED', errorMessage: 'EOA_INIT_FAILED' },
+                            });
+                        } else {
+                            fastTracked = true;
+                            const execStart = Date.now();
+                            console.log(`   🚀 [EOA] Executing DIRECTLY for ${config.walletAddress}...`);
+
+                            executionPromise = timeStage('execution', () => userService.createMarketOrder({
+                                tokenId: trade.asset!,
+                                side: copySide as any,
+                                amount: copySide === 'BUY' ? adjustedCopySize : adjustedCopyShares,
+                                price: basePrice * 1.05, // 5% slippage guard for FOK (price is worst acceptable)
+                                orderType: 'FOK',
+                            })).then(res => ({
+                                ...res,
+                                execStart,
+                                transactionHashes: res.transactionHashes,
+                                tokenPushTxHash: null,
+                                returnTransferTxHash: null
+                            }));
+                        }
                     } else {
+                        // Proxy Execution Path (Existing)
                         fastTracked = true;
                         const execStart = Date.now();
-                        console.log(`   🚀 [FastTrack] Executing via Service for ${config.walletAddress}...`);
+                        console.log(`   🚀 [FastTrack] Executing via Proxy for ${config.walletAddress}...`);
 
                         executionPromise = timeStage('execution', () => executionService!.executeOrderWithProxy({
                             tradeId: copyTrade.id,

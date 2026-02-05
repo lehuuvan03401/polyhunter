@@ -244,7 +244,7 @@ model CopyTradingConfig {
 
   // Strategy Profile
   strategyProfile StrategyProfile @default(MODERATE)
-  tradeSizeMode TradeSizeMode @default(SHARES)
+  tradeSizeMode   TradeSizeMode   @default(SHARES)
 
   // Slippage settings
   slippageType String @default("FIXED") // 'FIXED' | 'AUTO'
@@ -258,6 +258,9 @@ model CopyTradingConfig {
   executionMode ExecutionMode @default(PROXY)
   encryptedKey  String? // For EOA mode (Encrypted Private Key)
   iv            String? // Initialization Vector for decryption
+  apiKey        String? // Encrypted CLOB API Key
+  apiSecret     String? // Encrypted CLOB API Secret
+  apiPassphrase String? // Encrypted CLOB API Passphrase
 
   // Copy mode settings
   mode            CopyTradingMode @default(PERCENTAGE)
@@ -303,10 +306,10 @@ model CopyTradingConfig {
 
 // Individual copy trade record
 model CopyTrade {
-  id       String            @id @default(cuid())
-  config   CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-  configId String
-  idempotencyKey String @unique @default(cuid())
+  id             String            @id @default(cuid())
+  config         CopyTradingConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId       String
+  idempotencyKey String            @unique @default(cuid())
 
   // Original trade info
   originalTrader String
@@ -339,6 +342,7 @@ model CopyTrade {
   executedAt DateTime?
   expiresAt  DateTime? // For PENDING trades
 
+  @@unique([configId, originalTxHash])
   @@index([configId])
   @@index([status])
   @@index([detectedAt])
@@ -348,7 +352,6 @@ model CopyTrade {
   @@index([tokenId, executedAt])
   @@index([originalTrader, originalPrice])
   @@index([txHash])
-  @@unique([configId, originalTxHash])
 }
 
 // Sync log for tracking sync history
