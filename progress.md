@@ -269,3 +269,6 @@
   - scripts/copy-trading-worker.ts (modified)
   - openspec/changes/add-force-fallback-price/verification.md (created)
   - openspec/changes/add-force-fallback-price/tasks.md (modified)
+
+### Phase 4: Real Funds Prep
+- Restored CopyTradingConfig.maxSlippage to 2% for target trader configs.
