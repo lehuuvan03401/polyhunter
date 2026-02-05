@@ -34,6 +34,7 @@
  * - COPY_TRADING_TRADE_WINDOW_MS: Time window for max trades (optional)
  * - COPY_TRADING_EMERGENCY_PAUSE: Emergency pause switch (optional)
  * - COPY_TRADING_DRY_RUN: Dry-run mode (optional)
+ * - COPY_TRADING_ENABLE_MARKET_EVENTS: Enable market lifecycle subscriptions (default: true)
  * - POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE: Optional CLOB API credentials
  * - COPY_TRADING_PRICE_TTL_MS: Max age for price quotes in ms (default: 5000)
  * - COPY_TRADING_IDEMPOTENCY_BUCKET_MS: Time bucket for idempotency fallback (default: 5000)
@@ -111,6 +112,7 @@ const RETRY_INTERVAL_MS = parseInt(process.env.COPY_TRADING_RETRY_INTERVAL_MS ||
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
+const ENABLE_MARKET_EVENTS = process.env.COPY_TRADING_ENABLE_MARKET_EVENTS !== 'false';
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
 const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_USD || '0');
@@ -2384,16 +2386,20 @@ async function start(): Promise<void> {
     });
 
     // Subscribe to Market Events (Resolution)
-    console.log('📡 Subscribing to market lifecycle events...');
-    realtimeService.subscribeMarketEvents({
-        onMarketEvent: async (event: MarketEvent) => {
-            try {
-                await handleMarketResolution(event);
-            } catch (error) {
-                console.error('Error in market event handler:', error);
+    if (ENABLE_MARKET_EVENTS) {
+        console.log('📡 Subscribing to market lifecycle events...');
+        realtimeService.subscribeMarketEvents({
+            onMarketEvent: async (event: MarketEvent) => {
+                try {
+                    await handleMarketResolution(event);
+                } catch (error) {
+                    console.error('Error in market event handler:', error);
+                }
             }
-        }
-    });
+        });
+    } else {
+        console.log('📡 Market lifecycle events disabled (COPY_TRADING_ENABLE_MARKET_EVENTS=false)');
+    }
 
     // Subscribe to trading activity
     console.log('📡 Subscribing to trading activity...');

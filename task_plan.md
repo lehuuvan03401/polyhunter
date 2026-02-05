@@ -97,6 +97,7 @@ Phase 4 (testing)
 | Next change id: `add-execution-tx-monitor` | Wires TxMonitor for stuck tx replacement |
 | Next change id: `add-cache-eviction` | Bounds worker caches to prevent memory growth |
 | Next change id: `add-execution-stage-metrics` | Adds per-stage latency visibility for pipeline tuning |
+| Next change id: `add-market-events-toggle` | Allows disabling market lifecycle WS subscriptions when unsupported |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

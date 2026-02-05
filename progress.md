@@ -207,3 +207,23 @@
   - Dry-run prevents real execution needed for proxy queue / tx monitor checks.
   - Debt recovery requires funded proxy and real repayment flow.
   - Price fallback not triggered (orderbook available).
+
+### Phase 2 (Next Item): Planning & Structure
+- **Status:** complete
+- Actions taken:
+  - Created and validated change proposal `add-market-events-toggle`.
+- Files created/modified:
+  - openspec/changes/add-market-events-toggle/proposal.md (created)
+  - openspec/changes/add-market-events-toggle/tasks.md (created)
+  - openspec/changes/add-market-events-toggle/specs/copy-trading/spec.md (created)
+
+### Phase 3: Implementation (Market Events Toggle)
+- **Status:** complete
+- Actions taken:
+  - Added COPY_TRADING_ENABLE_MARKET_EVENTS flag to skip market lifecycle subscriptions.
+  - Logged enabled/disabled state at startup.
+  - Added verification notes.
+- Files created/modified:
+  - scripts/copy-trading-worker.ts (modified)
+  - openspec/changes/add-market-events-toggle/verification.md (created)
+  - openspec/changes/add-market-events-toggle/tasks.md (modified)
