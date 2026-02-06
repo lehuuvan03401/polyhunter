@@ -433,3 +433,4 @@
   - Verified worker pool override, incremental refresh, and full refresh reconciliation (see `openspec/changes/add-supervisor-capacity-controls/verification.md`).
   - Added deployment checklist `docs/operations/deploy-supervisor-capacity-controls.md`.
   - Added rollout SOP `docs/operations/sop-supervisor-capacity-controls.md`.
+  - Recorded release notes in `docs/operations/release-notes.md`.

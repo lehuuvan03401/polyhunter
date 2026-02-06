@@ -135,6 +135,7 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 
 相关部署步骤见：`docs/operations/deploy-supervisor-capacity-controls.md`  
 上线 SOP 见：`docs/operations/sop-supervisor-capacity-controls.md`
+发布说明见：`docs/operations/release-notes.md`
 
 ---
 
