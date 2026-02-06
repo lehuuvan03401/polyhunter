@@ -92,6 +92,38 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 
 ---
 
+## Supervisor 扩容与共享存储（多实例）
+
+当需要 **多实例部署** 来支撑大量用户/跟单量时，建议启用共享存储与分片：
+
+### 1) 共享 Redis（队列 + 去重 + Guardrail 计数）
+设置以下任一环境变量：
+- `SUPERVISOR_REDIS_URL`（优先）
+- `REDIS_URL`（兜底）
+
+若未设置，将退回内存模式（仅适用于单实例）。
+如需启用 Redis，请确保已安装 `ioredis`（在 `frontend` 目录执行 `npm install ioredis`）。
+
+### 2) 分片（避免多实例重复处理）
+每个实例设置不同分片：
+- `SUPERVISOR_SHARD_COUNT=4`
+- `SUPERVISOR_SHARD_INDEX=0|1|2|3`
+
+### 3) 监听过滤（降低 WS 噪声）
+默认启用地址过滤：
+- `SUPERVISOR_WS_FILTER_BY_ADDRESS=true`（默认）
+设置为 `false` 将订阅全量 activity。
+
+### 4) 性能调参
+- `SUPERVISOR_FANOUT_CONCURRENCY=25`：同一交易的并发分发上限
+- `SUPERVISOR_QUEUE_MAX_SIZE=5000`：队列容量（满则丢弃并记录指标）
+- `SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS=500`：队列自动排空周期
+- `SUPERVISOR_DEDUP_TTL_MS=60000`：去重 TTL
+- `SUPERVISOR_GUARDRAIL_CACHE_TTL_MS=5000`：Guardrail 计数缓存 TTL
+- `SUPERVISOR_MARKET_META_TTL_MS=300000`：市场元数据缓存 TTL
+
+---
+
 ## 主网迁移步骤（新合约逻辑）
 
 当合约逻辑有变更（如 Executor 绑定、allowlist、pause）时，需要 **重新部署** 并迁移用户到新 Proxy。建议步骤如下：

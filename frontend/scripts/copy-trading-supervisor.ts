@@ -36,7 +36,7 @@ import { DataApiClient } from '../../src/clients/data-api';
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 import { AffiliateEngine } from '../lib/services/affiliate-engine';
 import { PositionService } from '../lib/services/position-service';
-import { RealtimeServiceV2, ActivityTrade } from '../../src/services/realtime-service-v2';
+import { RealtimeServiceV2, ActivityTrade, Subscription } from '../../src/services/realtime-service-v2';
 import { TxMonitor, TrackedTx } from '../../src/core/tx-monitor';
 import { normalizeTradeSizingFromShares } from '../../src/utils/trade-sizing.js';
 
@@ -57,6 +57,17 @@ const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_US
 const MAX_TRADES_PER_WINDOW = Number(process.env.COPY_TRADING_MAX_TRADES_PER_WINDOW || '0');
 const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '600000');
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
+const GUARDRAIL_CACHE_TTL_MS = parseInt(process.env.SUPERVISOR_GUARDRAIL_CACHE_TTL_MS || '5000', 10);
+const MARKET_META_TTL_MS = parseInt(process.env.SUPERVISOR_MARKET_META_TTL_MS || '300000', 10);
+const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10);
+const FANOUT_CONCURRENCY = parseInt(process.env.SUPERVISOR_FANOUT_CONCURRENCY || '25', 10);
+const QUEUE_MAX_SIZE = parseInt(process.env.SUPERVISOR_QUEUE_MAX_SIZE || '5000', 10);
+const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS || '500', 10);
+const WS_ADDRESS_FILTER = process.env.SUPERVISOR_WS_FILTER_BY_ADDRESS !== 'false';
+const SHARD_COUNT = Math.max(1, parseInt(process.env.SUPERVISOR_SHARD_COUNT || '1', 10));
+const SHARD_INDEX = Math.max(0, parseInt(process.env.SUPERVISOR_SHARD_INDEX || '0', 10));
+const SHARD_INDEX_EFFECTIVE = SHARD_INDEX % SHARD_COUNT;
+const REDIS_URL = process.env.SUPERVISOR_REDIS_URL || process.env.REDIS_URL || '';
 
 const SELFTEST_ENABLED = process.env.SUPERVISOR_SELFTEST === 'true';
 const SELFTEST_EXIT = process.env.SUPERVISOR_SELFTEST_EXIT === 'true';
@@ -125,6 +136,8 @@ const realtimeService = new RealtimeServiceV2({
     pingInterval: 1000, // Aggressive 1s KeepAlive for low latency
     debug: false
 });
+let activitySubscription: Subscription | null = null;
+let activitySubscriptionKey = '';
 
 // Core Services
 const gammaApi = new GammaApiClient(rateLimiter, cache);
@@ -176,6 +189,15 @@ async function shutdown(signal: string) {
         console.error("DB disconnect error", e);
     }
 
+    if (redisClient) {
+        console.log("[Supervisor] 📦 Disconnecting Redis...");
+        try {
+            await redisClient.quit();
+        } catch (e) {
+            console.error("Redis disconnect error", e);
+        }
+    }
+
     console.log("[Supervisor] 👋 Goodbye.");
     process.exit(0);
 }
@@ -209,7 +231,7 @@ interface ActiveConfig {
 
 let activeConfigs: ActiveConfig[] = [];
 let monitoredTraders: Set<string> = new Set();
-let isProcessing = false;
+let ownedTraders: Set<string> = new Set();
 
 class UserExecutionManager {
     private services = new Map<string, { fingerprint: string; service: TradingService }>();
@@ -308,8 +330,58 @@ interface JobQueueItem {
     originalSize: number;
     isPreflight: boolean;
     overrides?: ethers.Overrides;
+    enqueuedAt?: number;
 }
-const jobQueue = new TaskQueue<JobQueueItem>(1000);
+
+interface QueueStore<T> {
+    enqueue(item: T): Promise<boolean>;
+    dequeue(): Promise<T | null>;
+    size(): Promise<number>;
+}
+
+class MemoryQueueStore<T> implements QueueStore<T> {
+    private queue: TaskQueue<T>;
+    constructor(maxSize: number) {
+        this.queue = new TaskQueue<T>(maxSize);
+    }
+    async enqueue(item: T): Promise<boolean> {
+        return this.queue.enqueue(item);
+    }
+    async dequeue(): Promise<T | null> {
+        return this.queue.dequeue() ?? null;
+    }
+    async size(): Promise<number> {
+        return this.queue.length;
+    }
+}
+
+class RedisQueueStore<T> implements QueueStore<T> {
+    constructor(
+        private client: any,
+        private key: string,
+        private maxSize: number
+    ) { }
+
+    async enqueue(item: T): Promise<boolean> {
+        const size = await this.client.llen(this.key);
+        if (size >= this.maxSize) return false;
+        await this.client.rpush(this.key, JSON.stringify(item));
+        return true;
+    }
+
+    async dequeue(): Promise<T | null> {
+        const raw = await this.client.lpop(this.key);
+        if (!raw) return null;
+        return JSON.parse(raw) as T;
+    }
+
+    async size(): Promise<number> {
+        return this.client.llen(this.key);
+    }
+}
+
+let queueStore: QueueStore<JobQueueItem> = new MemoryQueueStore<JobQueueItem>(QUEUE_MAX_SIZE);
+let redisClient: any | null = null;
 
 // --- HEALTH METRICS ---
 interface Metrics {
@@ -326,6 +398,15 @@ const metrics: Metrics = {
     totalLatencyMs: 0,
     lastResetAt: Date.now(),
 };
+const queueStats = {
+    enqueued: 0,
+    dequeued: 0,
+    dropped: 0,
+    totalLagMs: 0,
+    maxLagMs: 0,
+    maxDepth: 0,
+};
+let isDrainingQueue = false;
 
 function recordExecution(success: boolean, latencyMs: number): void {
     metrics.totalExecutions++;
@@ -334,29 +415,49 @@ function recordExecution(success: boolean, latencyMs: number): void {
     metrics.totalLatencyMs += latencyMs;
 }
 
-function logMetricsSummary(): void {
-    const duration = (Date.now() - metrics.lastResetAt) / 1000 / 60; // minutes
-    const avgLatency = metrics.totalExecutions > 0
-        ? (metrics.totalLatencyMs / metrics.totalExecutions / 1000).toFixed(2)
-        : '0';
-    const successRate = metrics.totalExecutions > 0
-        ? ((metrics.successfulExecutions / metrics.totalExecutions) * 100).toFixed(1)
-        : '100';
+async function logMetricsSummary(): Promise<void> {
+    try {
+        const duration = (Date.now() - metrics.lastResetAt) / 1000 / 60; // minutes
+        const avgLatency = metrics.totalExecutions > 0
+            ? (metrics.totalLatencyMs / metrics.totalExecutions / 1000).toFixed(2)
+            : '0';
+        const successRate = metrics.totalExecutions > 0
+            ? ((metrics.successfulExecutions / metrics.totalExecutions) * 100).toFixed(1)
+            : '100';
+        const queueDepth = await queueStore.size();
+        queueStats.maxDepth = Math.max(queueStats.maxDepth, queueDepth);
+        const avgQueueLag = queueStats.dequeued > 0
+            ? (queueStats.totalLagMs / queueStats.dequeued / 1000).toFixed(2)
+            : '0';
 
-    console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: ${metrics.totalExecutions} executions, ${successRate}% success, ${avgLatency}s avg latency`);
+        console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: ${metrics.totalExecutions} executions, ${successRate}% success, ${avgLatency}s avg latency`);
+        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
+        console.log(`[Metrics] 🧾 Dedup: hits=${dedupStats.hits} misses=${dedupStats.misses}`);
 
-    // Reset for next period
-    metrics.totalExecutions = 0;
-    metrics.successfulExecutions = 0;
-    metrics.failedExecutions = 0;
-    metrics.totalLatencyMs = 0;
-    metrics.lastResetAt = Date.now();
+        // Reset for next period
+        metrics.totalExecutions = 0;
+        metrics.successfulExecutions = 0;
+        metrics.failedExecutions = 0;
+        metrics.totalLatencyMs = 0;
+        metrics.lastResetAt = Date.now();
+        queueStats.enqueued = 0;
+        queueStats.dequeued = 0;
+        queueStats.dropped = 0;
+        queueStats.totalLagMs = 0;
+        queueStats.maxLagMs = 0;
+        queueStats.maxDepth = queueDepth;
+        dedupStats.hits = 0;
+        dedupStats.misses = 0;
+    } catch (error) {
+        console.warn('[Supervisor] Metrics summary failed:', error);
+    }
 }
 
 // --- PRICE CACHE (5 second TTL) ---
 const priceCache = new Map<string, { price: number; timestamp: number }>();
 const PRICE_CACHE_TTL = 5000;
 const PREFLIGHT_CACHE_TTL_MS = 2000;
+const marketMetaCache = new Map<string, { data: { marketSlug: string; conditionId: string; outcome: string }; fetchedAt: number }>();
 
 const MARKET_CAPS = new Map<string, number>();
 if (MARKET_CAPS_RAW) {
@@ -431,6 +532,86 @@ async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Pr
 
     preflightInFlight.set(key, promise);
     return promise;
+}
+
+interface CounterStore {
+    get(key: string): Promise<number | null>;
+    set(key: string, value: number, ttlMs: number): Promise<void>;
+    incrBy(key: string, value: number, ttlMs: number): Promise<number>;
+}
+
+class MemoryCounterStore implements CounterStore {
+    private store = new Map<string, { value: number; expiresAt: number }>();
+    async get(key: string): Promise<number | null> {
+        const entry = this.store.get(key);
+        if (!entry) return null;
+        if (entry.expiresAt <= Date.now()) {
+            this.store.delete(key);
+            return null;
+        }
+        return entry.value;
+    }
+    async set(key: string, value: number, ttlMs: number): Promise<void> {
+        this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    }
+    async incrBy(key: string, value: number, ttlMs: number): Promise<number> {
+        const current = await this.get(key);
+        const next = (current ?? 0) + value;
+        await this.set(key, next, ttlMs);
+        return next;
+    }
+}
+
+class RedisCounterStore implements CounterStore {
+    constructor(private client: any, private prefix: string) { }
+    async get(key: string): Promise<number | null> {
+        const value = await this.client.get(`${this.prefix}${key}`);
+        return value ? Number(value) : null;
+    }
+    async set(key: string, value: number, ttlMs: number): Promise<void> {
+        await this.client.set(`${this.prefix}${key}`, value.toString(), 'PX', ttlMs);
+    }
+    async incrBy(key: string, value: number, ttlMs: number): Promise<number> {
+        const fullKey = `${this.prefix}${key}`;
+        const next = await this.client.incrbyfloat(fullKey, value);
+        await this.client.pexpire(fullKey, ttlMs);
+        return Number(next);
+    }
+}
+
+let counterStore: CounterStore = new MemoryCounterStore();
+
+async function getCachedCounter(key: string, fallback: () => Promise<number>): Promise<number> {
+    const cached = await counterStore.get(key);
+    if (cached !== null) return cached;
+    const value = await fallback();
+    await counterStore.set(key, value, GUARDRAIL_CACHE_TTL_MS);
+    return value;
+}
+
+function getDailyKey(date: Date): string {
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+}
+
+function getWindowBucket(): string {
+    return String(Math.floor(Date.now() / TRADE_WINDOW_MS));
+}
+
+async function incrementGuardrailCounters(params: {
+    walletAddress: string;
+    amount: number;
+    marketSlug?: string;
+}) {
+    const dailyKey = getDailyKey(new Date());
+    await counterStore.incrBy(`global:${dailyKey}`, params.amount, GUARDRAIL_CACHE_TTL_MS);
+    await counterStore.incrBy(`wallet:${params.walletAddress.toLowerCase()}:${dailyKey}`, params.amount, GUARDRAIL_CACHE_TTL_MS);
+    if (params.marketSlug) {
+        await counterStore.incrBy(`market:${params.marketSlug.toLowerCase()}:${dailyKey}`, params.amount, GUARDRAIL_CACHE_TTL_MS);
+    }
+    await counterStore.incrBy(`window:${getWindowBucket()}`, 1, GUARDRAIL_CACHE_TTL_MS);
 }
 
 async function recordGuardrailEvent(params: {
@@ -528,9 +709,10 @@ async function checkExecutionGuardrails(
     }
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const dailyKey = getDailyKey(new Date());
 
     if (GLOBAL_DAILY_CAP_USD > 0) {
-        const globalUsed = await getExecutedTotalSince(since);
+        const globalUsed = await getCachedCounter(`global:${dailyKey}`, () => getExecutedTotalSince(since));
         if (globalUsed + amount > GLOBAL_DAILY_CAP_USD) {
             await recordGuardrailEvent({ reason: 'GLOBAL_DAILY_CAP_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
             return {
@@ -541,7 +723,10 @@ async function checkExecutionGuardrails(
     }
 
     if (WALLET_DAILY_CAP_USD > 0) {
-        const walletUsed = await getExecutedTotalSince(since, walletAddress);
+        const walletUsed = await getCachedCounter(
+            `wallet:${walletAddress.toLowerCase()}:${dailyKey}`,
+            () => getExecutedTotalSince(since, walletAddress)
+        );
         if (walletUsed + amount > WALLET_DAILY_CAP_USD) {
             await recordGuardrailEvent({ reason: 'WALLET_DAILY_CAP_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
             return {
@@ -554,7 +739,10 @@ async function checkExecutionGuardrails(
     if (marketSlug) {
         const marketCap = MARKET_CAPS.get(marketSlug) || MARKET_DAILY_CAP_USD;
         if (marketCap > 0) {
-            const marketUsed = await getExecutedTotalForMarketSince(since, marketSlug);
+            const marketUsed = await getCachedCounter(
+                `market:${marketSlug.toLowerCase()}:${dailyKey}`,
+                () => getExecutedTotalForMarketSince(since, marketSlug)
+            );
             if (marketUsed + amount > marketCap) {
                 await recordGuardrailEvent({ reason: 'MARKET_DAILY_CAP_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
                 return {
@@ -567,7 +755,10 @@ async function checkExecutionGuardrails(
 
     if (MAX_TRADES_PER_WINDOW > 0) {
         const windowStart = new Date(Date.now() - TRADE_WINDOW_MS);
-        const tradeCount = await getExecutedCountSince(windowStart);
+        const tradeCount = await getCachedCounter(
+            `window:${getWindowBucket()}`,
+            () => getExecutedCountSince(windowStart)
+        );
         if (tradeCount >= MAX_TRADES_PER_WINDOW) {
             await recordGuardrailEvent({ reason: 'TRADE_RATE_LIMIT_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
             return {
@@ -675,6 +866,7 @@ async function preloadUserPositions(): Promise<void> {
         }
 
         console.log(`[Supervisor] ✅ Loaded ${positions.length} positions for ${userPositionsCache.size} wallets`);
+        await prefetchMarketMetadata(positions.map((pos) => pos.tokenId));
     } catch (error: any) {
         console.error('[Supervisor] ❌ Failed to preload positions:', error.message);
     }
@@ -714,25 +906,78 @@ function updatePositionCache(walletAddress: string, tokenId: string, balanceChan
     }
 }
 
-// --- EVENT DEDUPLICATION (60 second TTL) ---
-// Uses txHash-only as key for cross-channel deduplication (WS + Chain)
-const processedEvents = new Map<string, number>();
-const EVENT_TTL = 60_000;
+// --- EVENT DEDUPLICATION (Shared Store) ---
+interface DedupStore {
+    checkAndSet(key: string, ttlMs: number): Promise<boolean>;
+}
 
-function isEventDuplicate(txHash: string): boolean {
-    const ts = processedEvents.get(txHash);
-    if (ts && Date.now() - ts < EVENT_TTL) {
-        // Silently ignore duplicates (dedup working correctly)
+class MemoryDedupStore implements DedupStore {
+    private store = new Map<string, number>();
+    async checkAndSet(key: string, ttlMs: number): Promise<boolean> {
+        const now = Date.now();
+        const expiresAt = this.store.get(key);
+        if (expiresAt && expiresAt > now) {
+            return false;
+        }
+        this.store.set(key, now + ttlMs);
+        if (this.store.size > 5000) {
+            for (const [k, v] of this.store.entries()) {
+                if (v <= now) this.store.delete(k);
+            }
+        }
         return true;
     }
-    processedEvents.set(txHash, Date.now());
-    // Cleanup old entries periodically
-    if (processedEvents.size > 1000) {
-        const now = Date.now();
-        for (const [k, v] of processedEvents.entries()) {
-            if (now - v > EVENT_TTL) processedEvents.delete(k);
-        }
+}
+
+class RedisDedupStore implements DedupStore {
+    constructor(private client: any, private prefix: string) { }
+    async checkAndSet(key: string, ttlMs: number): Promise<boolean> {
+        const result = await this.client.set(`${this.prefix}${key}`, '1', 'PX', ttlMs, 'NX');
+        return result === 'OK';
     }
+}
+
+let dedupStore: DedupStore = new MemoryDedupStore();
+const dedupStats = { hits: 0, misses: 0 };
+
+async function initSharedStores(): Promise<void> {
+    if (!REDIS_URL) {
+        console.warn('[Supervisor] ⚠️ REDIS_URL not set. Using in-memory queue/dedup/counters.');
+        return;
+    }
+
+    try {
+        const { default: Redis } = await import('ioredis');
+        redisClient = new Redis(REDIS_URL, { enableReadyCheck: true, maxRetriesPerRequest: 2 });
+        await redisClient.ping();
+        const prefix = 'copytrading:supervisor:';
+        queueStore = new RedisQueueStore<JobQueueItem>(redisClient, `${prefix}queue`, QUEUE_MAX_SIZE);
+        dedupStore = new RedisDedupStore(redisClient, `${prefix}dedup:`);
+        counterStore = new RedisCounterStore(redisClient, `${prefix}counter:`);
+        console.log('[Supervisor] ✅ Redis connected. Shared stores enabled.');
+    } catch (error) {
+        console.warn('[Supervisor] ⚠️ Redis unavailable, falling back to in-memory stores.', error);
+    }
+}
+
+function buildDedupKey(params: { txHash: string; logIndex?: number; tokenId?: string; side?: string }): string {
+    if (params.logIndex !== undefined && params.logIndex !== null) {
+        return `${params.txHash}:${params.logIndex}`;
+    }
+    if (params.tokenId) {
+        return `${params.txHash}:${params.tokenId}:${params.side || ''}`;
+    }
+    return params.txHash;
+}
+
+async function isEventDuplicate(params: { txHash: string; logIndex?: number; tokenId?: string; side?: string }): Promise<boolean> {
+    const key = buildDedupKey(params);
+    const allowed = await dedupStore.checkAndSet(key, DEDUP_TTL_MS);
+    if (!allowed) {
+        dedupStats.hits += 1;
+        return true;
+    }
+    dedupStats.misses += 1;
     return false;
 }
 
@@ -766,28 +1011,90 @@ async function passesFilters(
 }
 
 async function checkQueue() {
-    if (jobQueue.isEmpty) return;
+    if (!walletManager || isDrainingQueue) return;
+    isDrainingQueue = true;
 
-    // Try to get a worker
-    const worker = walletManager ? walletManager.checkoutWorker() : null;
-    if (!worker) return; // Still no workers
+    try {
+        while (true) {
+            const worker = walletManager.checkoutWorker();
+            if (!worker) return;
 
-    // Get next job
-    const job = jobQueue.dequeue();
-    if (job) {
-        console.log(`[Supervisor] 📥 Dequeued job for User ${job.config.walletAddress}. Remaining: ${jobQueue.length}`);
-        // Execute (Don't await, let it run in background)
-        executeJobInternal(
-            worker,
-            job.config,
-            job.side,
-            job.tokenId,
-            job.approxPrice,
-            job.originalTrader,
-            job.originalSize,
-            job.isPreflight
-        );
+            const job = await queueStore.dequeue();
+            if (!job) {
+                walletManager.checkinWorker(worker.address);
+                return;
+            }
+
+            const lagMs = job.enqueuedAt ? (Date.now() - job.enqueuedAt) : 0;
+            queueStats.dequeued += 1;
+            queueStats.totalLagMs += lagMs;
+            queueStats.maxLagMs = Math.max(queueStats.maxLagMs, lagMs);
+
+            console.log(`[Supervisor] 📥 Dequeued job for User ${job.config.walletAddress}.`);
+            void executeJobInternal(
+                worker,
+                job.config,
+                job.side,
+                job.tokenId,
+                job.approxPrice,
+                job.originalTrader,
+                job.originalSize,
+                job.isPreflight,
+                job.overrides
+            );
+        }
+    } catch (error) {
+        console.error('[Supervisor] Queue drain failed:', error);
+    } finally {
+        isDrainingQueue = false;
     }
+}
+
+function ownsTrader(traderAddress: string): boolean {
+    if (SHARD_COUNT <= 1) return true;
+    const hash = createHash('sha256').update(traderAddress.toLowerCase()).digest('hex');
+    const bucket = parseInt(hash.slice(0, 8), 16) % SHARD_COUNT;
+    return bucket === SHARD_INDEX_EFFECTIVE;
+}
+
+function buildActivitySubscriptionKey(addresses: string[], filtered: boolean): string {
+    if (!filtered) return 'all';
+    if (addresses.length === 0) return 'none';
+    const sorted = [...addresses].sort();
+    const hash = createHash('sha256').update(sorted.join(',')).digest('hex');
+    return `filtered:${sorted.length}:${hash}`;
+}
+
+function subscribeToActivityIfNeeded(): void {
+    const sortedAddresses = Array.from(ownedTraders).map((addr) => addr.toLowerCase()).sort();
+    const shouldFilter = WS_ADDRESS_FILTER && sortedAddresses.length > 0;
+    const nextKey = buildActivitySubscriptionKey(sortedAddresses, shouldFilter);
+
+    if (nextKey === activitySubscriptionKey) return;
+
+    if (activitySubscription) {
+        activitySubscription.unsubscribe();
+        activitySubscription = null;
+    }
+
+    if (!shouldFilter) {
+        if (sortedAddresses.length === 0 && WS_ADDRESS_FILTER) {
+            activitySubscriptionKey = 'none';
+            console.log('[Supervisor] 🎧 Activity subscription paused (no monitored traders).');
+            return;
+        }
+        activitySubscription = realtimeService.subscribeAllActivity({ onTrade: handleActivityTrade });
+        activitySubscriptionKey = 'all';
+        console.log('[Supervisor] 🎧 Activity subscription: all trades');
+        return;
+    }
+
+    activitySubscription = realtimeService.subscribeActivity(
+        { traderAddresses: sortedAddresses },
+        { onTrade: handleActivityTrade }
+    );
+    activitySubscriptionKey = nextKey;
+    console.log(`[Supervisor] 🎧 Activity subscription: filtered (${sortedAddresses.length} traders)`);
 }
 
 // --- HELPERS ---
@@ -827,14 +1134,18 @@ async function refreshConfigs() {
         }));
 
         monitoredTraders = new Set(activeConfigs.map(c => c.traderAddress.toLowerCase()));
+        ownedTraders = new Set(Array.from(monitoredTraders).filter(ownsTrader));
 
         const stats = walletManager ? walletManager.getStats() : { total: 1, available: 1 };
-        console.log(`[Supervisor] Refreshed: ${activeConfigs.length} strategies. Fleet: ${stats.available}/${stats.total} ready.`);
+        const shardInfo = SHARD_COUNT > 1 ? ` Shard ${SHARD_INDEX_EFFECTIVE + 1}/${SHARD_COUNT} (${ownedTraders.size}/${monitoredTraders.size} traders)` : '';
+        console.log(`[Supervisor] Refreshed: ${activeConfigs.length} strategies. Fleet: ${stats.available}/${stats.total} ready.${shardInfo}`);
 
         // Update Mempool Detector
         if (mempoolDetector) {
-            mempoolDetector.updateMonitoredTraders(monitoredTraders);
+            mempoolDetector.updateMonitoredTraders(ownedTraders);
         }
+
+        subscribeToActivityIfNeeded();
 
     } catch (e) {
         console.error("[Supervisor] Config refresh failed:", e);
@@ -843,12 +1154,19 @@ async function refreshConfigs() {
 
 async function getMarketMetadata(tokenId: string) {
     try {
+        const cached = marketMetaCache.get(tokenId);
+        if (cached && Date.now() - cached.fetchedAt < MARKET_META_TTL_MS) {
+            return cached.data;
+        }
+
         if (CHAIN_ID === 31337 || CHAIN_ID === 1337 || tokenId.startsWith('mock-')) {
-            return {
+            const fallback = {
                 marketSlug: 'unknown-simulated',
                 conditionId: '0x0',
                 outcome: 'Yes'
             };
+            marketMetaCache.set(tokenId, { data: fallback, fetchedAt: Date.now() });
+            return fallback;
         }
         // Use MarketService to get CLOB Market info via Orderbook
         const book = await marketService.getTokenOrderbook(tokenId);
@@ -858,19 +1176,58 @@ async function getMarketMetadata(tokenId: string) {
         // Find specific token outcome
         const token = market.tokens.find(t => t.tokenId === tokenId);
 
-        return {
+        const data = {
             marketSlug: market.marketSlug || 'unknown-market',
             conditionId: market.conditionId,
             outcome: token?.outcome || 'Yes'
         };
+        marketMetaCache.set(tokenId, { data, fetchedAt: Date.now() });
+        return data;
     } catch (e) {
         // Fallback for missing simulated markets
-        return {
+        const fallback = {
             marketSlug: 'unknown-simulated',
             conditionId: '0x0',
             outcome: 'Yes'
         };
+        marketMetaCache.set(tokenId, { data: fallback, fetchedAt: Date.now() });
+        return fallback;
     }
+}
+
+async function runWithConcurrency<T>(
+    items: T[],
+    limit: number,
+    handler: (item: T) => Promise<void>
+): Promise<void> {
+    if (limit <= 1) {
+        for (const item of items) {
+            await handler(item);
+        }
+        return;
+    }
+
+    const executing = new Set<Promise<void>>();
+    for (const item of items) {
+        const p = handler(item).catch((err) => {
+            console.error('[Supervisor] Fanout error:', err);
+        });
+        executing.add(p);
+        p.finally(() => executing.delete(p));
+        if (executing.size >= limit) {
+            await Promise.race(executing);
+        }
+    }
+    await Promise.all(executing);
+}
+
+async function prefetchMarketMetadata(tokenIds: string[]): Promise<void> {
+    const unique = Array.from(new Set(tokenIds.filter(Boolean)));
+    if (unique.length === 0) return;
+    const limit = Math.max(1, Math.min(FANOUT_CONCURRENCY, 10));
+    await runWithConcurrency(unique, limit, async (tokenId) => {
+        await getMarketMetadata(tokenId);
+    });
 }
 
 async function handleTransfer(
@@ -881,13 +1238,8 @@ async function handleTransfer(
     value: ethers.BigNumber,
     event: ethers.Event
 ) {
-    // Deduplicate events to prevent double execution (unified txHash-only)
-    const txHash = event.transactionHash;
-    if (isEventDuplicate(txHash)) {
-        return;
-    }
-
     try {
+        const txHash = event.transactionHash;
         const tokenId = id.toString();
         const amountValues = value.toString();
         const rawShares = parseFloat(amountValues) / 1e6;
@@ -896,15 +1248,19 @@ async function handleTransfer(
         let trader: string | null = null;
         let side: 'BUY' | 'SELL' | null = null;
 
-        if (monitoredTraders.has(to.toLowerCase())) {
+        if (ownedTraders.has(to.toLowerCase())) {
             trader = to.toLowerCase();
             side = 'BUY';
-        } else if (monitoredTraders.has(from.toLowerCase())) {
+        } else if (ownedTraders.has(from.toLowerCase())) {
             trader = from.toLowerCase();
             side = 'SELL';
         }
 
         if (!trader || !side) return;
+
+        if (await isEventDuplicate({ txHash, logIndex: event.logIndex, tokenId, side })) {
+            return;
+        }
 
         console.log(`[Supervisor] 🚨 SIGNAL DETECTED: Trader ${trader} ${side} Token ${tokenId}`);
 
@@ -917,10 +1273,10 @@ async function handleTransfer(
         // 3. Fetch real market price (cached)
         const price = await getCachedPrice(tokenId, side);
 
-        for (const sub of subscribers) {
+        await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
             const { tradeShares } = normalizeTradeSizingFromShares(sub, rawShares, price);
             await processJob(sub, side!, tokenId, price, trader!, tradeShares);
-        }
+        });
 
     } catch (error) {
         console.error(`[Supervisor] Event processing error:`, error);
@@ -953,8 +1309,6 @@ const handleSniffedTx = async (
     // Or we simply let the second execution fail/idempotency check.
     // For now, let's just log and trigger.
 
-    if (isProcessing) return;
-
     try {
         const tokenId = id.toString();
         const amountValues = value.toString();
@@ -964,15 +1318,19 @@ const handleSniffedTx = async (
         let side: 'BUY' | 'SELL' | null = null;
 
         // Sniffed data logic same as Event (SafeTransferFrom)
-        if (monitoredTraders.has(to.toLowerCase())) {
+        if (ownedTraders.has(to.toLowerCase())) {
             trader = to.toLowerCase();
             side = 'BUY';
-        } else if (monitoredTraders.has(from.toLowerCase())) {
+        } else if (ownedTraders.has(from.toLowerCase())) {
             trader = from.toLowerCase();
             side = 'SELL';
         }
 
         if (!trader || !side) return;
+
+        if (await isEventDuplicate({ txHash, tokenId, side })) {
+            return;
+        }
 
         console.log(`[Supervisor] 🦈 MEMPOOL SNIPING: Trader ${trader} ${side} Token ${tokenId} (Pending Tx: ${txHash})`);
 
@@ -984,10 +1342,10 @@ const handleSniffedTx = async (
         // Price might be slightly different as it's pending, but we use strict/market anyway.
         const PRICE_PLACEHOLDER = 0.5;
 
-        for (const config of subscribers) {
+        await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (config) => {
             const { tradeShares } = normalizeTradeSizingFromShares(config, rawShares, PRICE_PLACEHOLDER);
-            processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, tradeShares, true, overrides);
-        }
+            await processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, tradeShares, true, overrides);
+        });
 
     } catch (e) {
         console.error(`[Supervisor] Mempool sniff error:`, e);
@@ -1066,20 +1424,30 @@ async function processJob(
             return;
         }
         const queueOverrides = overrides;
-        const queued = jobQueue.enqueue({
-            config,
-            side,
-            tokenId,
-            approxPrice,
-            originalTrader,
-            originalSize,
-            isPreflight,
-            overrides: queueOverrides
-        });
-        if (queued) {
-            console.warn(`[Supervisor] ⏳ All workers busy. Job QUEUED for User ${config.walletAddress}. Queue size: ${jobQueue.length}`);
-        } else {
-            console.error(`[Supervisor] ❌ Job DROPPED (Queue Full) for User ${config.walletAddress}`);
+        try {
+            const queued = await queueStore.enqueue({
+                config,
+                side,
+                tokenId,
+                approxPrice,
+                originalTrader,
+                originalSize,
+                isPreflight,
+                overrides: queueOverrides,
+                enqueuedAt: Date.now()
+            });
+            if (queued) {
+                queueStats.enqueued += 1;
+                const depth = await queueStore.size();
+                queueStats.maxDepth = Math.max(queueStats.maxDepth, depth);
+                console.warn(`[Supervisor] ⏳ All workers busy. Job QUEUED for User ${config.walletAddress}. Queue size: ${depth}`);
+            } else {
+                queueStats.dropped += 1;
+                console.error(`[Supervisor] ❌ Job DROPPED (Queue Full) for User ${config.walletAddress}`);
+            }
+        } catch (error) {
+            queueStats.dropped += 1;
+            console.error(`[Supervisor] ❌ Queue enqueue failed for ${config.walletAddress}:`, error);
         }
         return;
     }
@@ -1339,6 +1707,14 @@ async function executeJobInternal(
             }
         });
 
+        if (result.success) {
+            await incrementGuardrailCounters({
+                walletAddress: config.walletAddress,
+                amount: adjustedCopyAmount,
+                marketSlug: metadata.marketSlug,
+            });
+        }
+
         console.log(`[Supervisor] ✅ Job Complete for User ${config.walletAddress}: ${result.success ? "Success" : "Failed (" + result.error + ")"} (${latencyMs}ms)`);
 
         if (result.success) {
@@ -1439,22 +1815,23 @@ async function executeJobInternal(
 
 // --- WEB SOCKET HANDLERS ---
 async function handleActivityTrade(trade: ActivityTrade) {
-    // 0. Deduplicate using txHash-only (unified with chain listener)
+    // 0. Deduplicate using shared store
     if (!trade.transactionHash) return;
-    if (isEventDuplicate(trade.transactionHash)) return;
 
     try {
         const traderAddress = trade.trader?.address?.toLowerCase();
         if (!traderAddress) return;
 
         // 1. Identification & Filtering
-        if (!monitoredTraders.has(traderAddress)) return;
+        if (!ownedTraders.has(traderAddress)) return;
 
         // trade.side in Activity is "BUY" or "SELL"
         const side = trade.side;
         const tokenId = trade.asset;
         const size = trade.size;
         const price = trade.price;
+
+        if (await isEventDuplicate({ txHash: trade.transactionHash, tokenId, side })) return;
 
         console.log(`[Supervisor] ⚡ WS DETECTED: ${traderAddress} ${side} ${tokenId} ($${price})`);
 
@@ -1463,13 +1840,13 @@ async function handleActivityTrade(trade: ActivityTrade) {
         if (subscribers.length === 0) return;
 
         // 3. Execution
-        for (const sub of subscribers) {
+        await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
             try {
                 await processJob(sub, side!, tokenId, price, traderAddress!, size);
             } catch (execError) {
                 console.error(`[Supervisor] WS Execution error for ${sub.walletAddress}:`, execError);
             }
-        }
+        });
 
     } catch (e) {
         console.error(`[Supervisor] WS Handle Error:`, e);
@@ -1479,12 +1856,7 @@ async function handleActivityTrade(trade: ActivityTrade) {
 function startActivityListener() {
     console.log("[Supervisor] 🔌 Connecting Activity WebSocket...");
     realtimeService.connect();
-
-    // Subscribe to ALL activity to catch monitored traders
-    realtimeService.subscribeAllActivity({
-        onTrade: handleActivityTrade
-    });
-
+    subscribeToActivityIfNeeded();
     console.log("[Supervisor] 🎧 Listening for WS Trades...");
 }
 
@@ -1495,6 +1867,8 @@ async function main() {
     console.log("Starting Copy Trading Supervisor (Enterprise)...");
 
     // --- INITIALIZATION ---
+    await initSharedStores();
+
     if (MASTER_MNEMONIC) {
         walletManager = new WalletManager(
             provider,
@@ -1649,7 +2023,13 @@ async function main() {
     }, 120000); // 2 mins
 
     // Metrics Logging Loop
-    setInterval(logMetricsSummary, 300000); // 5 mins
+    setInterval(() => {
+        void logMetricsSummary();
+    }, 300000); // 5 mins
+    // Queue Drain Loop
+    setInterval(() => {
+        void checkQueue();
+    }, QUEUE_DRAIN_INTERVAL_MS);
 
     // Start Listeners
     // Always start listeners - monitoredTraders might be populated later via refreshConfigs

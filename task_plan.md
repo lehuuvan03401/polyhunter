@@ -1,48 +1,44 @@
-# Task Plan: Verify Fix Copy Trading Logic (EOA/Proxy)
+# Task Plan: Scale Copy Trading Supervisor Implementation
 <!--
-  WHAT: Verify fix-copy-trading-logic execution paths for EOA and Proxy modes.
-  WHY: Ensure real execution paths behave correctly before Phase 5 real-funds testing.
+  WHAT: Implement scaling improvements for copy-trading supervisor.
+  WHY: Support large user volume and high fan-out with multi-instance safety.
 -->
 
 ## Goal
-Run verification for EOA and Proxy execution paths, capture evidence/logs, and update OpenSpec verification/tasks accordingly.
+Ship scaling improvements in `frontend/scripts/copy-trading-supervisor.ts` plus runbook updates.
 
 ## Current Phase
-Phase 4: Delivery
+Phase 2: Verification
 
 ## Phases
 
-### Phase 1: Discovery
-- [x] Read relevant OpenSpec change + specs
-- [x] Identify required env/config/DB setup for EOA + Proxy verification
-- [x] Confirm current execution flow and logs in worker/service
+### Phase 1: Implementation
+- [x] Add address-filtered WS subscription (fallback to all-activity when needed)
+- [x] Add bounded fan-out concurrency for subscriber dispatch
+- [x] Add durable queue + backpressure with drop metrics
+- [x] Add shared dedup store (txHash + logIndex)
+- [x] Add market metadata cache + prefetch
+- [x] Add guardrail counters cache + post-exec increments
+- [x] Add sharded ownership to avoid duplicate processing
+- [x] Add queue/dedup metrics and queue drain loop
+- [x] Add Redis optional shared stores + shutdown cleanup
+- [x] Update runbook with scaling knobs
 - **Status:** complete
 
-### Phase 2: Setup
-- [x] Prepare local verification harness for EOA execution mode (encrypted key + iv in-script)
-- [x] Prepare local verification harness for Proxy execution mode (mock token bypass)
-- [x] Select local mock token + env to avoid mainnet dependencies
-- **Status:** complete
-
-### Phase 3: Validation
-- [x] Run execution path verification script (EOA + Proxy)
-- [x] Capture logs + update verification docs
-- **Status:** complete
-
-### Phase 4: Delivery
-- [x] Update `openspec/changes/fix-copy-trading-logic/verification.md`
-- [x] Update tasks checklist if needed
-- **Status:** complete
+### Phase 2: Verification
+- [ ] Dry-run sanity check (single instance + mock/local)
+- [ ] Multi-instance smoke (shared Redis + shard split)
+- [ ] Queue backpressure test (force saturation)
+- **Status:** in_progress
 
 ## Key Questions
-1. Which trader address(s) to use for EOA/Proxy verification?
-2. Should we use live WS activity or seed trades for deterministic verification?
-3. Are we verifying on mainnet RPC or local fork?
+1. Do we need strict limits on WS address filter size?
+2. Should Redis be mandated in prod, or optional with warnings?
 
 ## Decisions Made
 | Decision | Rationale |
 |---|---|
-|  |  |
+| Use Redis when available; fallback to memory | Keeps local/dev simple while enabling shared stores for prod |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

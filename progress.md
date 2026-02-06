@@ -388,3 +388,24 @@
   - Added selftest harness to supervisor (`SUPERVISOR_SELFTEST=true`) with optional temp config creation/cleanup.
   - Ran selftest in DRY_RUN + PROXY mode, confirmed guardrail gating and DRY_RUN logging path.
   - Reduced local noise by short-circuiting market metadata lookup for mock/local tokens.
+
+## Session: 2026-02-06 (Scale Copy Trading Supervisor Proposal)
+
+### Phase 1: Discovery
+- **Status:** complete
+- Actions taken:
+  - Documented supervisor bottlenecks and scaling risks in `findings.md`.
+
+### Phase 2: Proposal Drafting
+- **Status:** complete
+- Actions taken:
+  - Created OpenSpec change `scale-copy-trading-supervisor` with proposal, tasks, design, and spec deltas (copy-trading + storage).
+
+### Phase 3: Scaling Implementation
+- **Status:** complete
+- Actions taken:
+  - Added Redis-backed shared stores (queue/dedup/counters) with in-memory fallback.
+  - Added address-filtered WS subscription with shard-aware trader ownership.
+  - Added bounded fan-out dispatch, queue backpressure metrics, and queue drain loop.
+  - Added guardrail counter updates after successful executions.
+  - Updated runbook with scaling knobs and Redis/sharding guidance.
