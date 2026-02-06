@@ -331,6 +331,7 @@
   - Implemented P2 post-archive maintenance (VACUUM/ANALYZE) in `scripts/archive-data.ts`.
   - Documented deferred Redis cache adapter in `openspec/changes/optimize-db-design/design.md`.
   - Added lock-claim runbook + verification tooling (seed/claim scripts) and verified claim exclusivity (one process claimed 2 rows; the other claimed 0).
+  - Re-ran lock-claim verification with seed + two claim runs using `.env.local` DATABASE_URL; both runs claimed 2 trades sequentially after release and cleanup removed 2 rows.
 
 ## Error Log (DB Proposals)
 | Timestamp | Error | Attempt | Resolution |
