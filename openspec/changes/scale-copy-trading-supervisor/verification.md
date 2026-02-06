@@ -65,6 +65,29 @@ Result:
 - PASS: only one supervisor logged `SIGNAL DETECTED` for the same events (mint BUY + sell), confirming shared dedup.
 - Logs: `logs/supervisor-dedup/supervisor-a.log`, `logs/supervisor-dedup/supervisor-b.log`.
 
+### Load model + synthetic simulation (10k users baseline)
+Command (model only):
+```
+npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/supervisor-load-model.ts
+```
+Result (model):
+- Total copy trades/day: 50,000,000
+- Avg copy trades/sec: 578.70
+- Avg followers/trader (10k users * 10 follows / 1k traders): 100
+- Leader trades/sec: 5.787
+- With 20 workers and 1s exec latency: ~20 trades/sec per instance
+- Instances needed (avg): 28.94, with 2x headroom: 58
+
+Command (synthetic simulation):
+```
+SUPERVISOR_LOAD_SIMULATE=true SUPERVISOR_LOAD_SIM_EVENTS=200 SUPERVISOR_LOAD_SIM_EVENTS_PER_SEC=20 \\
+SUPERVISOR_LOAD_SIM_FOLLOWERS=100 SUPERVISOR_LOAD_SIM_EXEC_LATENCY_MS=30 SUPERVISOR_LOAD_SIM_WORKERS=20 \\
+npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/supervisor-load-model.ts
+```
+Result (simulation):
+- 20k tasks processed in ~31.3s (throughput ~637 tasks/sec)
+- Avg queue lag ~10.5s, max queue depth 13,480 (arrival > service, backlog grows)
+
 ## 3) Queue backpressure saturation
 Status: PASS (synthetic load generator).
 Command:

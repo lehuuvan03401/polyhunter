@@ -420,3 +420,4 @@
   - Added `frontend/scripts/verify/dedup-shared.ts` and verified Redis dedup rejects duplicate key within TTL.
   - Ran dual-supervisor real-event test with shared Redis; only one instance logged signals, confirming cross-instance dedup.
   - Added `frontend/scripts/verify/seed-supervisor-config.ts` to create/cleanup test config for dedup runs.
+  - Added `frontend/scripts/verify/supervisor-load-model.ts` and recorded load model + synthetic simulation results for 10k-user assumptions.

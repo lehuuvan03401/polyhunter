@@ -32,6 +32,12 @@ Complete
 - [x] Real-event dual supervisor dedup test
 - **Status:** complete
 
+### Phase 3: Load Modeling
+- [x] Model capacity for 10k users / 10 follows / 5k trades per user per day
+- [x] Run synthetic load simulation and record throughput/latency
+- [x] Update verification + tasks to reflect load test results
+- **Status:** complete
+
 ## Key Questions
 1. Do we need strict limits on WS address filter size?
 2. Should Redis be mandated in prod, or optional with warnings?

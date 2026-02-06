@@ -9,7 +9,7 @@
 - [x] Add metrics for queue depth, lag, drops, and dedup hit rate.
 
 ## 2. Verification
-- [ ] Load test with large subscriber sets and high event rate; record throughput/latency.
+- [x] Load test with large subscriber sets and high event rate; record throughput/latency.
 - [x] Validate no duplicate executions across two supervisor instances.
 - [x] Validate backpressure behavior when queue is saturated.
 
