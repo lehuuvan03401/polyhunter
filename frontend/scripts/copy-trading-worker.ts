@@ -326,10 +326,10 @@ function getDynamicMaxDeviation(params: {
 }
 
 // Cache to prevent API spam and rate limits
-const metadataCache = new Map<string, { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; timestamp: number }>();
+const metadataCache = new Map<string, { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; endDate?: string; volume?: number; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache (metadata rarely changes)
 
-async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string; conditionId: string; outcome: string; marketQuestion: string }> {
+async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; endDate?: string; volume?: number }> {
     // 1. Check Cache
     const cached = metadataCache.get(tokenId);
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
@@ -364,12 +364,16 @@ async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string;
             const outcome = tokenData?.outcome || 'Yes';
             const slug = market.market_slug || '';
             const question = market.question || '';
+            const endDate = market.end_date_iso || market.endDate;
+            const volume = Number(market.volume || market.volume24hr || 0);
 
             const data = {
                 marketSlug: slug,
                 conditionId: conditionId,
                 outcome: outcome,
-                marketQuestion: question
+                marketQuestion: question,
+                endDate,
+                volume
             };
             // Cache valid CLOB result
             if (slug) metadataCache.set(tokenId, { ...data, timestamp: Date.now() });
@@ -407,7 +411,9 @@ async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string;
                         marketSlug: marketData.slug || '',
                         conditionId: conditionId,
                         outcome: tokenData?.outcome || 'Yes',
-                        marketQuestion: marketData.question || ''
+                        marketQuestion: marketData.question || '',
+                        endDate: marketData.endDate || marketData.end_date_iso,
+                        volume: Number(marketData.volume || marketData.volumeNum || 0)
                     };
                 }
             }
@@ -725,6 +731,56 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             if (config.minTriggerSize && tradeNotional < config.minTriggerSize) continue;
 
+            // --- 1. Max Loss Protection (Global Stop Loss) ---
+            if (config.stopLoss && config.stopLoss > 0) {
+                const stats = await prisma.copyTrade.aggregate({
+                    where: { configId: config.id, realizedPnL: { not: null } },
+                    _sum: { realizedPnL: true }
+                });
+                const totalPnL = stats._sum.realizedPnL || 0;
+                // If total loss (negative PnL) exceeds stopLoss amount
+                if (totalPnL < -Math.abs(config.stopLoss)) {
+                    console.warn(`[Worker] 🛑 Max Loss Hit for ${config.walletAddress}: PnL $${totalPnL.toFixed(2)} vs Limit -$${config.stopLoss}`);
+                    // Auto-Disable
+                    await prisma.copyTradingConfig.update({
+                        where: { id: config.id },
+                        data: { isActive: false }
+                    });
+                    continue; // Skip trade
+                }
+            }
+
+            // --- 2. Smart Risk Filters ---
+
+            // A. Max Odds Check
+            if (config.maxOdds && config.maxOdds > 0) {
+                // maxOdds is 0-100 or 0-1 depending on storage. tRPC/schema says Float. 
+                // UI sends 95 for 95%. Worker usually sees price 0-1.
+                // Let's assume schema stores as percentage (e.g. 95) or decimal (0.95)? 
+                // FrontEnd: `Number(maxOdds) / 100` if not simple mode.
+                // So DB stores 0.95.
+                // Let's being safe: check if > 1.
+                const limit = config.maxOdds > 1 ? config.maxOdds / 100 : config.maxOdds;
+                if (leaderPrice > limit) {
+                    await logSkippedTrade({
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: side,
+                        originalSize: tradeShares,
+                        originalPrice: leaderPrice,
+                        tokenId: tokenId,
+                        copySize: 0,
+                        copyPrice: leaderPrice,
+                        originalTxHash: txHash || `skip-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: trade.marketSlug,
+                        conditionId: trade.conditionId,
+                        outcome: trade.outcome
+                    }, `ODDS_TOO_HIGH_${leaderPrice.toFixed(2)}`);
+                    continue;
+                }
+            }
+
             // Logic for COUNTER trade
             let copySide = side;
             if (config.direction === 'COUNTER') {
@@ -750,7 +806,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             // 1.5 Fetch Metadata (Or use trade data if available)
             // ActivityTrade has marketSlug and outcome!
-            let metadata = {
+            let metadata: { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; endDate?: string; volume?: number } = {
                 marketSlug: trade.marketSlug || '',
                 conditionId: trade.conditionId || '',
                 outcome: trade.outcome || '',
@@ -785,6 +841,86 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     conditionId: metadata.conditionId,
                     outcome: metadata.outcome
                 }, 'ORDERBOOK_UNAVAILABLE');
+                continue;
+            }
+
+            // --- Smart Filters B/C/D (Post-Orderbook) ---
+
+            // B. Min Liquidity Check (Smart Filter)
+            if (config.minLiquidity && config.minLiquidity > 0) {
+                const book = orderbookSnapshot.orderbook;
+                const relevantSide = (copySide === 'BUY' ? book.asks : book.bids) || [];
+                let totalLiq = 0;
+                // Sum up liquidity in first 20 levels
+                for (let i = 0; i < Math.min(relevantSide.length, 20); i++) {
+                    const level = relevantSide[i];
+                    const sz = getLevelSize(level);
+                    const px = Number(level.price);
+                    totalLiq += (sz * px);
+                }
+
+                if (totalLiq < config.minLiquidity) {
+                    await logSkippedTrade({
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: copySide,
+                        originalSize: tradeShares,
+                        originalPrice: leaderPrice,
+                        tokenId: tokenId,
+                        copySize: copySizeUsdc,
+                        copyPrice: marketPrice,
+                        originalTxHash: txHash || `skip-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }, `LOW_LIQUIDITY_$${totalLiq.toFixed(0)}`);
+                    continue;
+                }
+            }
+
+            // C. Max Days Out (Smart Filter)
+            if (config.maxDaysOut && config.maxDaysOut > 0 && metadata.endDate) {
+                const end = new Date(metadata.endDate).getTime();
+                const now = Date.now();
+                const days = (end - now) / (1000 * 60 * 60 * 24);
+                if (days > config.maxDaysOut) {
+                    await logSkippedTrade({
+                        configId: config.id,
+                        originalTrader: traderAddress,
+                        originalSide: copySide,
+                        originalSize: tradeShares,
+                        originalPrice: leaderPrice,
+                        tokenId: tokenId,
+                        copySize: copySizeUsdc,
+                        copyPrice: marketPrice,
+                        originalTxHash: txHash || `skip-${Date.now()}`,
+                        detectedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }, `MARKET_DAYS_OUT_${days.toFixed(0)}`);
+                    continue;
+                }
+            }
+
+            // D. Min Volume (Smart Filter)
+            if (config.minVolume && config.minVolume > 0 && (metadata.volume || 0) < config.minVolume) {
+                await logSkippedTrade({
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    tokenId: tokenId,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash: txHash || `skip-${Date.now()}`,
+                    detectedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, `LOW_VOLUME_$${(metadata.volume || 0).toFixed(0)}`);
                 continue;
             }
 
@@ -976,7 +1112,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             }
 
             // 3. Execute
-            let result;
+            let result: { success: boolean; orderId?: string; transactionHashes?: string[]; error?: string; usedBotFloat?: boolean } = { success: false, error: 'Initialization Failed' };
             try {
                 const maxAttempts = useLimitFallback ? 2 : 1;
                 for (let attempt = 1; attempt <= maxAttempts; attempt++) {
