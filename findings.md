@@ -73,6 +73,7 @@
 | Verification script failed to init Prisma (adapter missing / Pool export mismatch) | Added adapter fallback with robust module export handling |
 | Worker dry-run WS returned 400: "CLOB messages are not supported anymore" | Blocks live-trade validation; needs updated WS/channel config |
 | CLOB API key creation failed (400: Could not create api key) | Likely missing/invalid POLY API credentials or wallet permissions |
+| Local fork executor rejected txs with `Horus: Unauthorized Worker` | `setup-local-fork.ts` does not whitelist workers; run `contracts/scripts/add-worker.ts` for test wallet |
 
 ## Resources
 - `scripts/copy-trading-worker.ts`

@@ -465,4 +465,6 @@
   - Added verification checklist in `openspec/changes/optimize-copy-execution-throughput/verification.md`.
   - Ran worker with async settlement enabled; metrics log includes `Settlement Queue: depth=0`.
   - Verified parallel order placement via `scripts/verify/parallel-order-placement.ts` (maxConcurrent=2).
-  - Settlement recovery remains blocked pending funded proxy / live execution.
+  - Verified async settlement flow via `scripts/verify/async-settlement-flow.ts` (SETTLEMENT_PENDING → EXECUTED).
+  - Added `contracts/scripts/add-worker.ts` to whitelist worker on local executor (required for fork tests).
+  - Settlement retry increment still pending (needs forced failure).

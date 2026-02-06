@@ -6,10 +6,11 @@
   - Output: `Parallel order placement observed (maxConcurrent=2).`
 
 ## 2.2 Async Settlement Queue
-- [ ] Enable `COPY_TRADING_ASYNC_SETTLEMENT=true` and execute a BUY/SELL.
-- [ ] Confirm `SETTLEMENT_PENDING` records are created.
-- [ ] Confirm recovery loop settles and flips to `EXECUTED`.
-- **Status:** blocked (Prisma seed script failed with adapter-required config; no funded proxy for live run).
+- [x] Enable `COPY_TRADING_ASYNC_SETTLEMENT=true` and execute a BUY/SELL.
+- [x] Confirm `SETTLEMENT_PENDING` records are created.
+- [x] Confirm recovery loop settles and flips to `EXECUTED`.
+- **Evidence:** `npx tsx scripts/verify/async-settlement-flow.ts`
+  - Output includes: `Deferring settlement`, `Created SETTLEMENT_PENDING trade ...`, `Settlement recovered ... marked EXECUTED`.
 
 ## 2.3 Settlement Retry + Logging
 - [ ] Force a settlement failure (e.g., insufficient proxy funds) and verify retryCount/nextRetryAt increments.
