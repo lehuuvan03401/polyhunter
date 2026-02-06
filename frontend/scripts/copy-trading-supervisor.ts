@@ -20,7 +20,7 @@ import path from 'path';
 import { ethers } from 'ethers';
 import { createHash } from 'crypto';
 import { EncryptionService } from '../../src/core/encryption.js'; // Import EncryptionService
-import { CONTRACT_ADDRESSES, CTF_ABI } from '../../src/core/contracts';
+import { CONTRACT_ADDRESSES, CTF_ABI, ERC20_ABI, USDC_DECIMALS } from '../../src/core/contracts';
 import { CopyTradingExecutionService, ExecutionParams } from '../../src/services/copy-trading-execution-service';
 import { TradingService, TradeInfo } from '../../src/services/trading-service';
 import { RateLimiter } from '../../src/core/rate-limiter';
@@ -44,6 +44,19 @@ import { normalizeTradeSizingFromShares } from '../../src/utils/trade-sizing.js'
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
 const DRY_RUN = process.env.DRY_RUN === 'true';
+const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
+const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
+const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
+    .split(',')
+    .map((addr) => addr.trim().toLowerCase())
+    .filter(Boolean);
+const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
+const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
+const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
+const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_USD || '0');
+const MAX_TRADES_PER_WINDOW = Number(process.env.COPY_TRADING_MAX_TRADES_PER_WINDOW || '0');
+const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '600000');
+const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 
 // Env checks
 if (!process.env.TRADING_PRIVATE_KEY) {
@@ -329,6 +342,21 @@ function logMetricsSummary(): void {
 // --- PRICE CACHE (5 second TTL) ---
 const priceCache = new Map<string, { price: number; timestamp: number }>();
 const PRICE_CACHE_TTL = 5000;
+const PREFLIGHT_CACHE_TTL_MS = 2000;
+
+const MARKET_CAPS = new Map<string, number>();
+if (MARKET_CAPS_RAW) {
+    MARKET_CAPS_RAW.split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .forEach((entry) => {
+            const [slug, cap] = entry.split(/[:=]/).map((part) => part.trim());
+            const capValue = Number(cap);
+            if (slug && Number.isFinite(capValue) && capValue > 0) {
+                MARKET_CAPS.set(slug.toLowerCase(), capValue);
+            }
+        });
+}
 
 async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number> {
     const cached = priceCache.get(tokenId);
@@ -353,6 +381,254 @@ async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<nu
 // Maps: walletAddress -> tokenId -> balance
 const userPositionsCache = new Map<string, Map<string, number>>();
 const POSITION_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh every 5 minutes
+
+const preflightCache = new Map<string, { value: any; fetchedAt: number }>();
+const preflightInFlight = new Map<string, Promise<any>>();
+
+function buildPreflightKey(parts: Array<string | number | null | undefined>): string {
+    return parts
+        .filter((part) => part !== null && part !== undefined)
+        .map((part) => String(part))
+        .join('|');
+}
+
+async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    const cached = preflightCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt <= PREFLIGHT_CACHE_TTL_MS) {
+        return cached.value as T;
+    }
+
+    const inflight = preflightInFlight.get(key);
+    if (inflight) {
+        return inflight as Promise<T>;
+    }
+
+    const promise = (async () => {
+        try {
+            const value = await fetcher();
+            if (value !== undefined && value !== null) {
+                preflightCache.set(key, { value, fetchedAt: Date.now() });
+            }
+            return value;
+        } finally {
+            preflightInFlight.delete(key);
+        }
+    })();
+
+    preflightInFlight.set(key, promise);
+    return promise;
+}
+
+async function recordGuardrailEvent(params: {
+    reason: string;
+    source: string;
+    walletAddress?: string;
+    amount?: number;
+    tradeId?: string;
+    tokenId?: string;
+}) {
+    try {
+        await prisma.guardrailEvent.create({
+            data: {
+                reason: params.reason,
+                source: params.source,
+                walletAddress: params.walletAddress,
+                amount: params.amount,
+                tradeId: params.tradeId,
+                tokenId: params.tokenId,
+            },
+        });
+    } catch (error) {
+        console.warn('[Supervisor] Failed to persist guardrail event:', error);
+    }
+}
+
+async function getExecutedTotalSince(since: Date, walletAddress?: string): Promise<number> {
+    const where = {
+        status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
+        executedAt: { gte: since },
+        ...(walletAddress
+            ? { config: { walletAddress: walletAddress.toLowerCase() } }
+            : {}),
+    } as any;
+
+    const result = await prisma.copyTrade.aggregate({
+        _sum: { copySize: true },
+        where,
+    });
+
+    return Number(result?._sum?.copySize || 0);
+}
+
+async function getExecutedTotalForMarketSince(since: Date, marketSlug: string): Promise<number> {
+    const result = await prisma.copyTrade.aggregate({
+        _sum: { copySize: true },
+        where: {
+            status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
+            executedAt: { gte: since },
+            marketSlug,
+        },
+    });
+
+    return Number(result?._sum?.copySize || 0);
+}
+
+async function getExecutedCountSince(since: Date): Promise<number> {
+    return prisma.copyTrade.count({
+        where: {
+            status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
+            executedAt: { gte: since },
+        },
+    });
+}
+
+async function checkExecutionGuardrails(
+    walletAddress: string,
+    amount: number,
+    context: { source?: string; marketSlug?: string; tradeId?: string; tokenId?: string } = {}
+): Promise<{ allowed: boolean; reason?: string }> {
+    const source = context.source || 'supervisor';
+    const marketSlug = context.marketSlug?.toLowerCase();
+
+    if (EMERGENCY_PAUSE) {
+        await recordGuardrailEvent({ reason: 'EMERGENCY_PAUSE', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+        return { allowed: false, reason: 'EMERGENCY_PAUSE' };
+    }
+
+    if (!ENABLE_REAL_TRADING) {
+        await recordGuardrailEvent({ reason: 'REAL_TRADING_DISABLED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+        return { allowed: false, reason: 'REAL_TRADING_DISABLED' };
+    }
+
+    if (EXECUTION_ALLOWLIST.length > 0) {
+        const normalized = walletAddress.toLowerCase();
+        if (!EXECUTION_ALLOWLIST.includes(normalized)) {
+            await recordGuardrailEvent({ reason: 'ALLOWLIST_BLOCKED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+            return { allowed: false, reason: 'ALLOWLIST_BLOCKED' };
+        }
+    }
+
+    if (MAX_TRADE_USD > 0 && amount > MAX_TRADE_USD) {
+        await recordGuardrailEvent({ reason: 'MAX_TRADE_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+        return { allowed: false, reason: `MAX_TRADE_EXCEEDED (${amount.toFixed(2)} > ${MAX_TRADE_USD})` };
+    }
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    if (GLOBAL_DAILY_CAP_USD > 0) {
+        const globalUsed = await getExecutedTotalSince(since);
+        if (globalUsed + amount > GLOBAL_DAILY_CAP_USD) {
+            await recordGuardrailEvent({ reason: 'GLOBAL_DAILY_CAP_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+            return {
+                allowed: false,
+                reason: `GLOBAL_DAILY_CAP_EXCEEDED (${globalUsed.toFixed(2)} + ${amount.toFixed(2)} > ${GLOBAL_DAILY_CAP_USD})`,
+            };
+        }
+    }
+
+    if (WALLET_DAILY_CAP_USD > 0) {
+        const walletUsed = await getExecutedTotalSince(since, walletAddress);
+        if (walletUsed + amount > WALLET_DAILY_CAP_USD) {
+            await recordGuardrailEvent({ reason: 'WALLET_DAILY_CAP_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+            return {
+                allowed: false,
+                reason: `WALLET_DAILY_CAP_EXCEEDED (${walletUsed.toFixed(2)} + ${amount.toFixed(2)} > ${WALLET_DAILY_CAP_USD})`,
+            };
+        }
+    }
+
+    if (marketSlug) {
+        const marketCap = MARKET_CAPS.get(marketSlug) || MARKET_DAILY_CAP_USD;
+        if (marketCap > 0) {
+            const marketUsed = await getExecutedTotalForMarketSince(since, marketSlug);
+            if (marketUsed + amount > marketCap) {
+                await recordGuardrailEvent({ reason: 'MARKET_DAILY_CAP_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+                return {
+                    allowed: false,
+                    reason: `MARKET_DAILY_CAP_EXCEEDED (${marketUsed.toFixed(2)} + ${amount.toFixed(2)} > ${marketCap})`,
+                };
+            }
+        }
+    }
+
+    if (MAX_TRADES_PER_WINDOW > 0) {
+        const windowStart = new Date(Date.now() - TRADE_WINDOW_MS);
+        const tradeCount = await getExecutedCountSince(windowStart);
+        if (tradeCount >= MAX_TRADES_PER_WINDOW) {
+            await recordGuardrailEvent({ reason: 'TRADE_RATE_LIMIT_EXCEEDED', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+            return {
+                allowed: false,
+                reason: `TRADE_RATE_LIMIT_EXCEEDED (${tradeCount} >= ${MAX_TRADES_PER_WINDOW})`,
+            };
+        }
+    }
+
+    if (DRY_RUN) {
+        await recordGuardrailEvent({ reason: 'DRY_RUN', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
+        return { allowed: false, reason: 'DRY_RUN' };
+    }
+
+    return { allowed: true };
+}
+
+async function preflightExecutionEOA(
+    walletAddress: string,
+    side: 'BUY' | 'SELL',
+    tokenId: string,
+    copySize: number,
+    price: number
+): Promise<{ allowed: boolean; reason?: string; adjustedCopySize: number; adjustedCopyShares: number }> {
+    if (!provider) {
+        return { allowed: false, reason: 'NO_PROVIDER', adjustedCopySize: copySize, adjustedCopyShares: 0 };
+    }
+
+    if (!price || price <= 0) {
+        return { allowed: false, reason: 'INVALID_PRICE', adjustedCopySize: copySize, adjustedCopyShares: 0 };
+    }
+
+    if (side === 'BUY') {
+        const chainKey = CHAIN_ID === 137 ? 'polygon' : 'amoy';
+        const usdcAddress = CONTRACT_ADDRESSES[chainKey].usdc;
+        const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
+        const balanceRaw = await getPreflightCached(
+            buildPreflightKey(['eoausdc', walletAddress]),
+            () => usdc.balanceOf(walletAddress)
+        ).catch(() => ethers.BigNumber.from(0));
+        const balance = Number(ethers.utils.formatUnits(balanceRaw, USDC_DECIMALS));
+        if (balance < copySize) {
+            return {
+                allowed: false,
+                reason: `INSUFFICIENT_USDC ${balance.toFixed(2)} < ${copySize.toFixed(2)}`,
+                adjustedCopySize: copySize,
+                adjustedCopyShares: copySize / price,
+            };
+        }
+        return { allowed: true, adjustedCopySize: copySize, adjustedCopyShares: copySize / price };
+    }
+
+    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
+    const balanceRaw = await getPreflightCached(
+        buildPreflightKey(['eoactf', walletAddress, tokenId]),
+        () => ctf.balanceOf(walletAddress, tokenId)
+    ).catch(() => ethers.BigNumber.from(0));
+    const actualShares = Number(ethers.utils.formatUnits(balanceRaw, USDC_DECIMALS));
+    const requestedShares = copySize / price;
+    const adjustedShares = Math.min(requestedShares, actualShares);
+
+    if (adjustedShares <= 0) {
+        return { allowed: false, reason: 'NO_SHARES_AVAILABLE', adjustedCopySize: 0, adjustedCopyShares: 0 };
+    }
+
+    if (adjustedShares < requestedShares) {
+        console.log(`[Supervisor] ⚠️ EOA sell capped: requested ${requestedShares.toFixed(2)}, available ${actualShares.toFixed(2)}`);
+    }
+
+    return {
+        allowed: true,
+        adjustedCopySize: adjustedShares * price,
+        adjustedCopyShares: adjustedShares,
+    };
+}
 
 /**
  * Preload all user positions from database into memory cache
@@ -817,11 +1093,119 @@ async function executeJobInternal(
             return;
         }
 
+        let adjustedCopyAmount = copyAmount;
+        let adjustedCopyShares = 0;
+
+        if (config.executionMode === 'EOA') {
+            const preflight = await preflightExecutionEOA(
+                config.walletAddress,
+                side,
+                tokenId,
+                copyAmount,
+                approxPrice
+            );
+
+            if (!preflight.allowed) {
+                const metadata = await getMarketMetadata(tokenId);
+                await prisma.copyTrade.create({
+                    data: {
+                        configId: config.id,
+                        originalTrader: originalTrader,
+                        originalSide: side,
+                        originalSize: originalSize,
+                        originalPrice: approxPrice,
+                        tokenId: tokenId,
+                        copySize: copyAmount,
+                        copyPrice: approxPrice,
+                        status: 'SKIPPED',
+                        errorMessage: preflight.reason || 'EOA_PREFLIGHT_FAILED',
+                        executedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }
+                });
+                return;
+            }
+
+            adjustedCopyAmount = preflight.adjustedCopySize;
+            adjustedCopyShares = preflight.adjustedCopyShares;
+        }
+
+        const guardrailMeta = (MARKET_DAILY_CAP_USD > 0 || MARKET_CAPS.size > 0)
+            ? await getMarketMetadata(tokenId)
+            : null;
+        const guardrail = await checkExecutionGuardrails(config.walletAddress, adjustedCopyAmount, {
+            source: 'supervisor',
+            marketSlug: guardrailMeta?.marketSlug,
+            tradeId: `auto-${Date.now()}-${config.id}`,
+            tokenId,
+        });
+
+        if (!guardrail.allowed) {
+            if (guardrail.reason === 'DRY_RUN') {
+                // DRY_RUN Mode: Log execution decision without placing order
+                const latencyMs = Date.now() - startTime;
+                console.log(`[DRY_RUN] ════════════════════════════════════════`);
+                console.log(`[DRY_RUN] Would execute: ${side} $${adjustedCopyAmount.toFixed(2)} of token ${tokenId.substring(0, 20)}...`);
+                console.log(`[DRY_RUN]   User: ${config.walletAddress}`);
+                console.log(`[DRY_RUN]   Price: $${approxPrice.toFixed(4)}`);
+                console.log(`[DRY_RUN]   Slippage: ${config.maxSlippage}% (${config.slippageType})`);
+                console.log(`[DRY_RUN]   Mode: ${config.executionMode}`);
+                console.log(`[DRY_RUN]   Original: ${originalTrader} ${side} ${originalSize.toFixed(2)} shares`);
+                console.log(`[DRY_RUN]   Latency: ${latencyMs}ms`);
+                console.log(`[DRY_RUN] ════════════════════════════════════════`);
+
+                recordExecution(true, latencyMs);
+
+                const metadata = guardrailMeta || await getMarketMetadata(tokenId);
+                await prisma.copyTrade.create({
+                    data: {
+                        configId: config.id,
+                        originalTrader: originalTrader,
+                        originalSide: side,
+                        originalSize: originalSize,
+                        originalPrice: approxPrice,
+                        tokenId: tokenId,
+                        copySize: adjustedCopyAmount,
+                        copyPrice: approxPrice,
+                        status: 'SKIPPED',
+                        errorMessage: 'DRY_RUN mode - execution skipped',
+                        executedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }
+                });
+            } else {
+                const metadata = guardrailMeta || await getMarketMetadata(tokenId);
+                await prisma.copyTrade.create({
+                    data: {
+                        configId: config.id,
+                        originalTrader: originalTrader,
+                        originalSide: side,
+                        originalSize: originalSize,
+                        originalPrice: approxPrice,
+                        tokenId: tokenId,
+                        copySize: adjustedCopyAmount,
+                        copyPrice: approxPrice,
+                        status: 'SKIPPED',
+                        errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                        executedAt: new Date(),
+                        marketSlug: metadata.marketSlug,
+                        conditionId: metadata.conditionId,
+                        outcome: metadata.outcome
+                    }
+                });
+            }
+            return;
+        }
+
         // DRY_RUN Mode: Log execution decision without placing order
         if (DRY_RUN) {
             const latencyMs = Date.now() - startTime;
             console.log(`[DRY_RUN] ════════════════════════════════════════`);
-            console.log(`[DRY_RUN] Would execute: ${side} $${copyAmount.toFixed(2)} of token ${tokenId.substring(0, 20)}...`);
+            console.log(`[DRY_RUN] Would execute: ${side} $${adjustedCopyAmount.toFixed(2)} of token ${tokenId.substring(0, 20)}...`);
             console.log(`[DRY_RUN]   User: ${config.walletAddress}`);
             console.log(`[DRY_RUN]   Price: $${approxPrice.toFixed(4)}`);
             console.log(`[DRY_RUN]   Slippage: ${config.maxSlippage}% (${config.slippageType})`);
@@ -844,7 +1228,7 @@ async function executeJobInternal(
                     originalSize: originalSize,
                     originalPrice: approxPrice,
                     tokenId: tokenId,
-                    copySize: copyAmount,
+                    copySize: adjustedCopyAmount,
                     copyPrice: approxPrice,
                     status: 'SKIPPED',
                     errorMessage: 'DRY_RUN mode - execution skipped',
@@ -866,8 +1250,8 @@ async function executeJobInternal(
                 ? approxPrice * (1 + fixedSlippage)
                 : approxPrice * (1 - fixedSlippage);
             const orderAmount = side === 'BUY'
-                ? copyAmount
-                : (execPrice > 0 ? copyAmount / execPrice : 0);
+                ? adjustedCopyAmount
+                : (adjustedCopyShares || (execPrice > 0 ? adjustedCopyAmount / execPrice : 0));
 
             const orderResult = await worker.tradingService.createMarketOrder({
                 tokenId,
@@ -888,7 +1272,7 @@ async function executeJobInternal(
                 walletAddress: config.walletAddress, // User
                 tokenId: tokenId,
                 side: side,
-                amount: copyAmount,
+                amount: adjustedCopyAmount,
                 price: approxPrice,
                 maxSlippage: config.maxSlippage,
                 slippageMode: config.slippageType,
@@ -921,12 +1305,12 @@ async function executeJobInternal(
                 originalSide: side,
                 originalSize: originalSize,
                 originalPrice: approxPrice,
-                tokenId: tokenId,
-                copySize: copyAmount,
-                copyPrice: approxPrice,
-                status: result.success ? 'EXECUTED' : 'FAILED',
-                txHash: result.orderId,
-                errorMessage: result.error,
+            tokenId: tokenId,
+            copySize: adjustedCopyAmount,
+            copyPrice: approxPrice,
+            status: result.success ? 'EXECUTED' : 'FAILED',
+            txHash: result.orderId,
+            errorMessage: result.error,
                 executedAt: new Date(),
                 marketSlug: metadata.marketSlug,
                 conditionId: metadata.conditionId,
@@ -940,7 +1324,7 @@ async function executeJobInternal(
             // --- POSITION TRACKING & PROFIT-BASED FEE ---
             try {
                 // Import is already at top level in this script
-                const tradeValue = copyAmount; // USDC value of this trade
+                const tradeValue = adjustedCopyAmount; // USDC value of this trade
                 const shares = tradeValue / approxPrice; // Approx shares traded
 
                 if (side === 'BUY') {

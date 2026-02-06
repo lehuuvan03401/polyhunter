@@ -367,3 +367,17 @@
   - Implemented EOA execution path in `frontend/scripts/copy-trading-supervisor.ts` using user-specific `TradingService`.
   - Added per-user TradingService cache + encrypted API credential decryption for EOA.
   - Ensured EOA path bypasses proxy execution and does not enqueue into fleet queue.
+
+### Phase 5: Supervisor Guardrails + Preflight
+- **Status:** complete
+- Actions taken:
+  - Added guardrail checks and guardrail event persistence in supervisor.
+  - Added EOA preflight checks for USDC/CTF balance with short TTL cache.
+  - Applied guardrail/preflight gating before execution and DRY_RUN logging.
+
+### Phase 6: Supervisor DRY_RUN Smoke
+- **Status:** complete
+- Actions taken:
+  - Initial run failed due to TS path alias resolution (`@/lib/prisma`) when using plain `tsx`.
+  - Re-ran with `npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts`.
+  - Supervisor booted in DRY_RUN: wallet fleet initialized, configs loaded, WS + TransferSingle listeners started.
