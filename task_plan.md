@@ -26,8 +26,8 @@ Phase 2: Verification
 - **Status:** complete
 
 ### Phase 2: Verification
-- [ ] Dry-run sanity check (single instance + mock/local)
-- [ ] Multi-instance smoke (shared Redis + shard split)
+- [x] Dry-run sanity check (single instance + mock/local)
+- [x] Multi-instance smoke (shared Redis + shard split)
 - [ ] Queue backpressure test (force saturation)
 - **Status:** in_progress
 
@@ -43,4 +43,4 @@ Phase 2: Verification
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |---|---|---|
-| session-catchup failed (/scripts/session-catchup.py not found) | 4 | Proceeded without catchup; updated plan manually |
+| session-catchup failed (/scripts/session-catchup.py not found) | 5 | Proceeded without catchup; updated plan manually |
