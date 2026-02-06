@@ -29,6 +29,7 @@ Complete
 - [x] Dry-run sanity check (single instance + mock/local)
 - [x] Multi-instance smoke (shared Redis + shard split)
 - [x] Queue backpressure test (force saturation)
+- [x] Real-event dual supervisor dedup test
 - **Status:** complete
 
 ## Key Questions

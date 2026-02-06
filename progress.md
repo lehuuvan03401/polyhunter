@@ -411,10 +411,12 @@
   - Updated runbook with scaling knobs and Redis/sharding guidance.
 
 ### Phase 4: Scaling Verification
-- **Status:** in_progress
+**Status:** complete
 - Actions taken:
   - Ran supervisor dry-run selftest (local mock, DRY_RUN=true). Output recorded in `openspec/changes/scale-copy-trading-supervisor/verification.md`.
   - Verified shard routing with `SUPERVISOR_SHARD_COUNT=2` and `SUPERVISOR_SHARD_INDEX=0/1`.
   - Verified Redis shared store initialization on both shards (local Redis warned that password is supplied for `default` user with no password).
   - Added `frontend/scripts/verify/queue-backpressure.ts` and ran queue saturation (5200 attempts, 5000 enqueued, 200 dropped).
-  - All verification steps complete; explicit shared dedup/queue beyond init remains observational.
+  - Added `frontend/scripts/verify/dedup-shared.ts` and verified Redis dedup rejects duplicate key within TTL.
+  - Ran dual-supervisor real-event test with shared Redis; only one instance logged signals, confirming cross-instance dedup.
+  - Added `frontend/scripts/verify/seed-supervisor-config.ts` to create/cleanup test config for dedup runs.
