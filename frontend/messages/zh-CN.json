@@ -1093,7 +1093,9 @@
             "startCopying": "开始跟单",
             "noLimit": "无限制",
             "eg80": "例如 80",
-            "eg25": "25"
+            "eg25": "25",
+            "slippageInfo": "自动滑点保护",
+            "slippageInfoDesc": "根据市场深度智能调整"
         },
         "preview": {
             "text": "复制交易员投资额的 {sharePercent}%，每笔交易上限为 ${maxPerTrade}。每笔至少 $0.1。",
@@ -1116,7 +1118,7 @@
             "minLiquidityDesc": "仅复制流动性充足的市场交易",
             "minVolumeDesc": "要求活跃市场的最低交易量",
             "maxOddsDesc": "避免复制极有可能的结果 (例如 80 = 跳过高于 80% 的交易)",
-            "minTriggerDesc": "交易员必须交易的最小金额才能触发跟单"
+            "minTriggerDesc": "跟单触发门槛（交易员至少需交易金额）"
         },
         "warnings": {
             "proxyRequired": "需要代理",

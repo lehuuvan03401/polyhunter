@@ -483,6 +483,21 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                 )}
                             </div>
 
+                            {/* Auto Slippage Info (Simple Mode) */}
+                            <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 flex items-center justify-between">
+                                <div className="space-y-1">
+                                    <div className="text-xs font-bold text-white flex items-center gap-2">
+                                        <Zap className="h-3.5 w-3.5 text-blue-500" /> {t('form.slippageInfo')}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                        {t('form.slippageInfoDesc')}
+                                    </div>
+                                </div>
+                                <div className="text-[10px] font-bold bg-blue-500/10 text-blue-500 px-2 py-1 rounded border border-blue-500/20">
+                                    {t('form.auto')}
+                                </div>
+                            </div>
+
                             {/* Info Card: What happens? */}
                             <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 space-y-3">
                                 <div className="flex items-center gap-2 text-white font-bold text-sm">

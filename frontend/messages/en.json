@@ -1092,7 +1092,9 @@
             "startCopying": "Start Copying",
             "noLimit": "No limit",
             "eg80": "e.g. 80",
-            "eg25": "25"
+            "eg25": "25",
+            "slippageInfo": "Auto Slippage",
+            "slippageInfoDesc": "Smartly adjusted for market depth"
         },
         "preview": {
             "text": "Copy {sharePercent}% of what the trader invests, up to ${maxPerTrade} max per trade. Min $0.1 per trade.",
