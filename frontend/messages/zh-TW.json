@@ -1070,7 +1070,7 @@
             "privateKeyWarning": "極速模式需要您的私鑰以便在沒有代理的情況下立即簽署交易。請使用資金有限的專用交易錢包。密鑰已加密。",
             "maxLossProtection": "最大虧損保護",
             "comingSoon": "即將推出",
-            "autoStopLoss": "自動止損保護即將推出",
+            "autoStopLoss": "如果總虧損超過此金額，自動暫停跟單",
             "takeProfit": "止盈 ($)",
             "stopLoss": "止損 ($)",
             "autoPauseProfit": "盈利達到此值時自動暫停",
@@ -1104,9 +1104,10 @@
             "smartCopyPoints": {
                 "1": "根據交易員的信心水平按比例複製。",
                 "2": "您的每筆最大金額可保護您免受過大倉位的影響。",
-                "3": "如果交易員賣出，我們會立即賣出所有。"
+                "3": "如果交易員賣出，我們會立即全倉賣出。"
             },
-            "example": "例如：如果交易員買入 $500，您仍然只買入 ${fixedAmount}",
+            "continuousMode": "連續跟單（無限模式）",
+            "example": "例如：如果交易員買入 $500，你只需要買入 ${fixedAmount}",
             "dynamicPreview": "如果交易員買入 $1,000 → 您跟單 ${amount1000} | 如果交易員買入 $500 → 您跟單 ${amount500}",
             "slippageAuto": "滑點根據流動性動態計算。如果影響超過此值，交易將失敗。",
             "slippageFixed": "交易將以完全符合此滑點容忍度執行。",

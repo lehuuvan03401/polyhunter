@@ -37,12 +37,13 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
     const [activeTab, setActiveTab] = React.useState<TabType>('Mode');
     const [isAdvancedMode, setIsAdvancedMode] = React.useState(false); // Default to Simple Mode
+    const [riskProfile, setRiskProfile] = React.useState<'Conservative' | 'Moderate' | 'Aggressive'>('Moderate');
     const [copyMode, setCopyMode] = React.useState<CopyMode>('% Shares');
     const [sellMode, setSellMode] = React.useState<SellMode>('Same %');
     const [infiniteMode, setInfiniteMode] = React.useState(true); // Default ON for continuous copying
 
     // Form States
-    const [sharePercent, setSharePercent] = React.useState('50');
+    const [sharePercent, setSharePercent] = React.useState('10'); // Default Moderate 10%
     const [takeProfit, setTakeProfit] = React.useState('');
     const [stopLoss, setStopLoss] = React.useState('');
     const [copyDirection, setCopyDirection] = React.useState<'Copy' | 'Counter'>('Copy');
@@ -60,7 +61,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [maxPerMarket, setMaxPerMarket] = React.useState('500');   // $500 per market cap
     const [minLiquidity, setMinLiquidity] = React.useState('1000');  // $1000 min liquidity
     const [minVolume, setMinVolume] = React.useState('1000');        // $1000 min volume
-    const [maxOdds, setMaxOdds] = React.useState('90');              // 90% max odds
+    const [maxOdds, setMaxOdds] = React.useState('95');              // 95% max odds (Updated default)
     const [minTrigger, setMinTrigger] = React.useState('100');       // $100 min trigger size
 
     // Sell Mode States
@@ -116,6 +117,21 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
             if (sellMode === 'Fixed Amount') apiSellMode = 'FIXED_AMOUNT';
             if (sellMode === 'Custom %') apiSellMode = 'CUSTOM_PERCENT';
 
+            // Smart Defaults for Simple Mode
+            let smartLiquidity = 1000;
+            let smartOdds = 0.95;
+            let smartVolume = 1000;
+
+            if (!isAdvancedMode) {
+                if (riskProfile === 'Conservative') {
+                    smartLiquidity = 2000;
+                    smartOdds = 0.85;
+                } else if (riskProfile === 'Aggressive') {
+                    smartLiquidity = 500;
+                    smartOdds = 0.98;
+                }
+            }
+
             // Save to API for backend copy trading
             const apiResponse = await fetch('/api/copy-trading/config', {
                 method: 'POST',
@@ -138,9 +154,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     // Filters
                     maxDaysOut: maxDaysOut ? Number(maxDaysOut) : undefined,
                     maxPerMarket: !isAdvancedMode ? undefined : (maxPerMarket ? Number(maxPerMarket) : undefined), // Unlimited in Simple Mode
-                    minLiquidity: !isAdvancedMode ? 1000 : (minLiquidity ? Number(minLiquidity) : undefined),
-                    minVolume: !isAdvancedMode ? 1000 : (minVolume ? Number(minVolume) : undefined),
-                    maxOdds: !isAdvancedMode ? 0.95 : (maxOdds ? Number(maxOdds) / 100 : undefined), // Safer default (95%)
+                    minLiquidity: !isAdvancedMode ? smartLiquidity : (minLiquidity ? Number(minLiquidity) : undefined),
+                    minVolume: !isAdvancedMode ? smartVolume : (minVolume ? Number(minVolume) : undefined),
+                    maxOdds: !isAdvancedMode ? smartOdds : (maxOdds ? Number(maxOdds) / 100 : undefined),
                     minTriggerSize: minTrigger ? Number(minTrigger) : undefined,
                     // Sell strategy
                     sellMode: !isAdvancedMode ? 'SAME_PERCENT' : apiSellMode,
@@ -233,19 +249,21 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                     <button
                                         onClick={() => setIsAdvancedMode(false)}
                                         className={cn(
-                                            "px-3 py-1 rounded-md text-[10px] font-bold transition-all",
+                                            "px-3 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center gap-1.5",
                                             !isAdvancedMode ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
                                         )}
                                     >
+                                        <Zap className="h-3 w-3" />
                                         {t('mode.simple')}
                                     </button>
                                     <button
                                         onClick={() => setIsAdvancedMode(true)}
                                         className={cn(
-                                            "px-3 py-1 rounded-md text-[10px] font-bold transition-all",
+                                            "px-3 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center gap-1.5",
                                             isAdvancedMode ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
                                         )}
                                     >
+                                        <Settings className="h-3 w-3" />
                                         {t('mode.pro')}
                                     </button>
                                 </div>
@@ -328,10 +346,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                     <div className="text-xs font-bold text-white mb-2">{t('form.riskProfile')}</div>
                                     <div className="grid grid-cols-3 gap-2">
                                         <button
-                                            onClick={() => { setSharePercent('5'); setMaxPerTrade('50'); }}
+                                            onClick={() => { setRiskProfile('Conservative'); setSharePercent('5'); setMaxPerTrade('50'); }}
                                             className={cn(
                                                 "py-2 rounded-lg text-xs font-bold transition-colors",
-                                                sharePercent === '5' && maxPerTrade === '50'
+                                                riskProfile === 'Conservative'
                                                     ? "bg-green-600 text-white"
                                                     : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
@@ -339,10 +357,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             🛡️ {t('form.conservative')}
                                         </button>
                                         <button
-                                            onClick={() => { setSharePercent('10'); setMaxPerTrade('100'); }}
+                                            onClick={() => { setRiskProfile('Moderate'); setSharePercent('10'); setMaxPerTrade('100'); }}
                                             className={cn(
                                                 "py-2 rounded-lg text-xs font-bold transition-colors",
-                                                sharePercent === '10' && maxPerTrade === '100'
+                                                riskProfile === 'Moderate'
                                                     ? "bg-blue-600 text-white"
                                                     : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
@@ -350,10 +368,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             ⚖️ {t('form.moderate')}
                                         </button>
                                         <button
-                                            onClick={() => { setSharePercent('20'); setMaxPerTrade('200'); }}
+                                            onClick={() => { setRiskProfile('Aggressive'); setSharePercent('20'); setMaxPerTrade('200'); }}
                                             className={cn(
                                                 "py-2 rounded-lg text-xs font-bold transition-colors",
-                                                sharePercent === '20' && maxPerTrade === '200'
+                                                riskProfile === 'Aggressive'
                                                     ? "bg-orange-600 text-white"
                                                     : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
@@ -496,21 +514,40 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             })}
                                         </span>
                                     </div>
+                                    <div className="flex items-start gap-2 pt-1 border-t border-white/5 mt-1">
+                                        <RefreshCcw className="h-3 w-3 text-blue-500 mt-0.5" />
+                                        <span className="font-medium text-blue-200">
+                                            {t.rich('preview.continuousMode', {
+                                                b: (chunks) => <b className="text-white">{chunks}</b>,
+                                                default: "Continuous Copying Enabled" // Fallback if key missing
+                                            })}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Max Loss Protection - Coming Soon */}
+                            {/* Max Loss Protection */}
                             <div>
                                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                     {t('form.maxLossProtection')}
-                                    <span className="text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-500 rounded">{t('form.comingSoon')}</span>
                                 </div>
-                                <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-3 opacity-50 cursor-not-allowed flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
-                                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                                <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                                        <AlertTriangle className="h-5 w-5 text-red-500" />
                                     </div>
-                                    <div className="flex-1 text-sm text-muted-foreground">
-                                        {t('form.autoStopLoss')}
+                                    <div className="flex-1">
+                                        <div className="text-xs font-bold text-white mb-1.5">{t('form.autoStopLoss')}</div>
+                                        <div className="relative">
+                                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder={t('form.noLimit')}
+                                                value={stopLoss}
+                                                onChange={(e) => setStopLoss(e.target.value)}
+                                                className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg pl-6 pr-3 py-2 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
