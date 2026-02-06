@@ -80,6 +80,12 @@
 - `openspec/AGENTS.md`
 - `openspec/project.md`
 
+## Supervisor Capacity Findings
+- 10k users × 10 follows × 5k trades/day implies ~50M copy trades/day (~579/sec avg).
+- With 20 workers and 1s exec latency, ~20 trades/sec per instance → ~29 instances avg (58 with 2x headroom).
+- At 250ms avg latency, ~80 trades/sec per instance → ~7–8 instances avg (16 with 2x headroom).
+- Current supervisor has fixed worker pool size and full-table config refresh, which are bottlenecks at this scale.
+
 ## Visual/Browser Findings
 - None
 

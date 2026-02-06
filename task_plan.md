@@ -38,6 +38,18 @@ Complete
 - [x] Update verification + tasks to reflect load test results
 - **Status:** complete
 
+### Phase 4: Capacity Controls Proposal
+- [x] Draft OpenSpec change proposal for worker pool + config refresh
+- [x] Add spec deltas and tasks
+- [x] Run `openspec validate add-supervisor-capacity-controls --strict --no-interactive`
+- [x] Request approval to implement
+- [x] Implement tasks + verification
+- **Status:** complete
+
+### Phase 5: Capacity Controls Delivery
+- [x] Record verification results
+- **Status:** complete
+
 ## Key Questions
 1. Do we need strict limits on WS address filter size?
 2. Should Redis be mandated in prod, or optional with warnings?

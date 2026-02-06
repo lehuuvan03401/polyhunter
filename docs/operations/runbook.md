@@ -121,6 +121,17 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 - `SUPERVISOR_DEDUP_TTL_MS=60000`：去重 TTL
 - `SUPERVISOR_GUARDRAIL_CACHE_TTL_MS=5000`：Guardrail 计数缓存 TTL
 - `SUPERVISOR_MARKET_META_TTL_MS=300000`：市场元数据缓存 TTL
+- `SUPERVISOR_WORKER_POOL_SIZE=20`：每实例 worker 数量（默认 20）
+- `SUPERVISOR_CONFIG_REFRESH_MS=10000`：增量配置刷新间隔
+- `SUPERVISOR_CONFIG_FULL_REFRESH_MS=300000`：全量配置重建间隔
+
+### 5) 容量规划（10k 用户基线）
+假设：10k 用户 × 每人跟 10 个交易员 × 每人 5k 单/天。
+
+- 总跟单量/天：50,000,000
+- 平均跟单量/秒：约 579/s
+- 若平均执行延迟 250ms，20 workers/实例 → 单实例吞吐约 80/s
+- 建议实例数：8（均值）/ 16（2x headroom）/ 24（3x 峰值）
 
 ---
 

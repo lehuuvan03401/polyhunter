@@ -63,6 +63,9 @@ const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10
 const FANOUT_CONCURRENCY = parseInt(process.env.SUPERVISOR_FANOUT_CONCURRENCY || '25', 10);
 const QUEUE_MAX_SIZE = parseInt(process.env.SUPERVISOR_QUEUE_MAX_SIZE || '5000', 10);
 const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS || '500', 10);
+const WORKER_POOL_SIZE = Math.max(1, parseInt(process.env.SUPERVISOR_WORKER_POOL_SIZE || '20', 10));
+const CONFIG_REFRESH_INTERVAL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_CONFIG_REFRESH_MS || '10000', 10));
+const CONFIG_FULL_REFRESH_INTERVAL_MS = Math.max(60000, parseInt(process.env.SUPERVISOR_CONFIG_FULL_REFRESH_MS || String(5 * 60 * 1000), 10));
 const WS_ADDRESS_FILTER = process.env.SUPERVISOR_WS_FILTER_BY_ADDRESS !== 'false';
 const SHARD_COUNT = Math.max(1, parseInt(process.env.SUPERVISOR_SHARD_COUNT || '1', 10));
 const SHARD_INDEX = Math.max(0, parseInt(process.env.SUPERVISOR_SHARD_INDEX || '0', 10));
@@ -230,6 +233,16 @@ interface ActiveConfig {
 }
 
 let activeConfigs: ActiveConfig[] = [];
+const configCache = new Map<string, ActiveConfig>();
+let configRefreshCursor: Date | null = null;
+let isRefreshingConfigs = false;
+let pendingFullRefresh = false;
+const configRefreshStats = {
+    lastRunAt: 0,
+    lastDurationMs: 0,
+    lastFetched: 0,
+    lastMode: 'none'
+};
 let monitoredTraders: Set<string> = new Set();
 let ownedTraders: Set<string> = new Set();
 
@@ -433,6 +446,9 @@ async function logMetricsSummary(): Promise<void> {
         console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: ${metrics.totalExecutions} executions, ${successRate}% success, ${avgLatency}s avg latency`);
         console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
         console.log(`[Metrics] 🧾 Dedup: hits=${dedupStats.hits} misses=${dedupStats.misses}`);
+        if (configRefreshStats.lastRunAt) {
+            console.log(`[Metrics] 🧭 Config refresh: mode=${configRefreshStats.lastMode} fetched=${configRefreshStats.lastFetched} duration=${configRefreshStats.lastDurationMs}ms at=${new Date(configRefreshStats.lastRunAt).toISOString()}`);
+        }
 
         // Reset for next period
         metrics.totalExecutions = 0;
@@ -1098,47 +1114,107 @@ function subscribeToActivityIfNeeded(): void {
 }
 
 // --- HELPERS ---
-async function refreshConfigs() {
+function isConfigEligible(config: any): boolean {
+    return Boolean(config?.isActive && config?.autoExecute && config?.channel === 'EVENT_LISTENER');
+}
+
+function buildActiveConfig(config: any): ActiveConfig {
+    return {
+        id: config.id,
+        walletAddress: config.walletAddress,
+        traderAddress: config.traderAddress,
+        tradeSizeMode: config.tradeSizeMode,
+        mode: config.mode,
+        fixedAmount: config.fixedAmount || undefined,
+        sizeScale: config.sizeScale || undefined,
+        maxSizePerTrade: config.maxSizePerTrade,
+        minSizePerTrade: config.minSizePerTrade || undefined,
+        maxSlippage: config.maxSlippage,
+        slippageType: config.slippageType as 'FIXED' | 'AUTO',
+        autoExecute: config.autoExecute,
+        executionMode: config.executionMode as 'PROXY' | 'EOA',
+        encryptedKey: config.encryptedKey || undefined,
+        iv: config.iv || undefined,
+        apiKey: config.apiKey || undefined,
+        apiSecret: config.apiSecret || undefined,
+        apiPassphrase: config.apiPassphrase || undefined,
+        // Filter Fields
+        minLiquidity: config.minLiquidity || undefined,
+        minVolume: config.minVolume || undefined,
+        maxOdds: config.maxOdds || undefined
+    };
+}
+
+async function refreshConfigs(options: { full?: boolean } = {}) {
+    if (isRefreshingConfigs) {
+        if (options.full) pendingFullRefresh = true;
+        return;
+    }
+    isRefreshingConfigs = true;
+    const startedAt = Date.now();
+    const fullRefresh = options.full || !configRefreshCursor;
+
     try {
-        const configs = await prisma.copyTradingConfig.findMany({
-            where: {
-                isActive: true,
-                autoExecute: true,
-                channel: 'EVENT_LISTENER'
+        let fetched: any[] = [];
+
+        if (fullRefresh) {
+            fetched = await prisma.copyTradingConfig.findMany({
+                where: {
+                    isActive: true,
+                    autoExecute: true,
+                    channel: 'EVENT_LISTENER'
+                }
+            });
+
+            configCache.clear();
+            for (const config of fetched) {
+                configCache.set(config.id, buildActiveConfig(config));
             }
-        });
+        } else {
+            const cursor = configRefreshCursor || new Date(0);
+            fetched = await prisma.copyTradingConfig.findMany({
+                where: {
+                    updatedAt: { gt: cursor }
+                }
+            });
 
-        activeConfigs = configs.map(c => ({
-            id: c.id,
-            walletAddress: c.walletAddress,
-            traderAddress: c.traderAddress,
-            tradeSizeMode: c.tradeSizeMode,
-            mode: c.mode,
-            fixedAmount: c.fixedAmount || undefined,
-            sizeScale: c.sizeScale || undefined,
-            maxSizePerTrade: c.maxSizePerTrade,
-            minSizePerTrade: c.minSizePerTrade || undefined,
-            maxSlippage: c.maxSlippage,
-            slippageType: c.slippageType as 'FIXED' | 'AUTO',
-            autoExecute: c.autoExecute,
-            executionMode: c.executionMode as 'PROXY' | 'EOA',
-            encryptedKey: c.encryptedKey || undefined,
-            iv: c.iv || undefined,
-            apiKey: c.apiKey || undefined,
-            apiSecret: c.apiSecret || undefined,
-            apiPassphrase: c.apiPassphrase || undefined,
-            // Filter Fields
-            minLiquidity: c.minLiquidity || undefined,
-            minVolume: c.minVolume || undefined,
-            maxOdds: c.maxOdds || undefined
-        }));
+            for (const config of fetched) {
+                if (isConfigEligible(config)) {
+                    configCache.set(config.id, buildActiveConfig(config));
+                } else {
+                    configCache.delete(config.id);
+                }
+            }
+        }
 
+        if (fetched.length > 0) {
+            const latest = fetched.reduce((max, config) => {
+                const updatedAt = config.updatedAt ? new Date(config.updatedAt) : null;
+                if (!updatedAt) return max;
+                return !max || updatedAt > max ? updatedAt : max;
+            }, configRefreshCursor);
+            if (latest) {
+                configRefreshCursor = latest;
+            }
+        } else if (!configRefreshCursor) {
+            configRefreshCursor = new Date();
+        }
+
+        activeConfigs = Array.from(configCache.values());
         monitoredTraders = new Set(activeConfigs.map(c => c.traderAddress.toLowerCase()));
         ownedTraders = new Set(Array.from(monitoredTraders).filter(ownsTrader));
 
         const stats = walletManager ? walletManager.getStats() : { total: 1, available: 1 };
         const shardInfo = SHARD_COUNT > 1 ? ` Shard ${SHARD_INDEX_EFFECTIVE + 1}/${SHARD_COUNT} (${ownedTraders.size}/${monitoredTraders.size} traders)` : '';
-        console.log(`[Supervisor] Refreshed: ${activeConfigs.length} strategies. Fleet: ${stats.available}/${stats.total} ready.${shardInfo}`);
+        const durationMs = Date.now() - startedAt;
+
+        configRefreshStats.lastRunAt = Date.now();
+        configRefreshStats.lastDurationMs = durationMs;
+        configRefreshStats.lastFetched = fetched.length;
+        configRefreshStats.lastMode = fullRefresh ? 'full' : 'incremental';
+
+        console.log(`[Supervisor] Refreshed (${configRefreshStats.lastMode}): ${activeConfigs.length} strategies. Fleet: ${stats.available}/${stats.total} ready.${shardInfo}`);
+        console.log(`[Supervisor] Config refresh metrics: fetched=${fetched.length} duration=${durationMs}ms at=${new Date(configRefreshStats.lastRunAt).toISOString()}`);
 
         // Update Mempool Detector
         if (mempoolDetector) {
@@ -1149,6 +1225,12 @@ async function refreshConfigs() {
 
     } catch (e) {
         console.error("[Supervisor] Config refresh failed:", e);
+    } finally {
+        isRefreshingConfigs = false;
+        if (pendingFullRefresh) {
+            pendingFullRefresh = false;
+            await refreshConfigs({ full: true });
+        }
     }
 }
 
@@ -1875,7 +1957,7 @@ async function main() {
             rateLimiter,
             cache,
             MASTER_MNEMONIC,
-            20, // Pool Size: 20 Parallel Workers
+            WORKER_POOL_SIZE, // Pool Size
             0,  // Start Index
             CHAIN_ID
         );
@@ -1902,7 +1984,8 @@ async function main() {
         }
     }
 
-    await refreshConfigs();
+    console.log(`[Supervisor] 🧰 Worker pool size: ${WORKER_POOL_SIZE}`);
+    await refreshConfigs({ full: true });
 
     // Preload user positions for fast sell-skip checks
     await preloadUserPositions();
@@ -2003,7 +2086,12 @@ async function main() {
     }
 
     // Refresh configs loop
-    setInterval(refreshConfigs, 10000);
+    setInterval(() => {
+        void refreshConfigs();
+    }, CONFIG_REFRESH_INTERVAL_MS);
+    setInterval(() => {
+        void refreshConfigs({ full: true });
+    }, CONFIG_FULL_REFRESH_INTERVAL_MS);
 
     // Refresh position cache periodically (every 5 minutes)
     setInterval(preloadUserPositions, POSITION_CACHE_REFRESH_INTERVAL);

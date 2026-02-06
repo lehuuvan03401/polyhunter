@@ -305,6 +305,7 @@ model CopyTradingConfig {
   @@index([walletAddress])
   @@index([traderAddress])
   @@index([isActive])
+  @@index([updatedAt, isActive, autoExecute, channel])
 }
 
 // Individual copy trade record

@@ -421,3 +421,12 @@
   - Ran dual-supervisor real-event test with shared Redis; only one instance logged signals, confirming cross-instance dedup.
   - Added `frontend/scripts/verify/seed-supervisor-config.ts` to create/cleanup test config for dedup runs.
   - Added `frontend/scripts/verify/supervisor-load-model.ts` and recorded load model + synthetic simulation results for 10k-user assumptions.
+
+### Phase 5: Capacity Controls Proposal
+**Status:** complete
+- Actions taken:
+  - Created OpenSpec change `add-supervisor-capacity-controls` (proposal, tasks, design, spec deltas).
+  - Validated change with `openspec validate add-supervisor-capacity-controls --strict --no-interactive`.
+  - Implemented worker pool sizing + incremental/full config refresh + metrics.
+  - Added config refresh index and runbook capacity controls.
+  - Verified worker pool override, incremental refresh, and full refresh reconciliation (see `openspec/changes/add-supervisor-capacity-controls/verification.md`).
