@@ -133,6 +133,8 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 - 若平均执行延迟 250ms，20 workers/实例 → 单实例吞吐约 80/s
 - 建议实例数：8（均值）/ 16（2x headroom）/ 24（3x 峰值）
 
+相关部署步骤见：`docs/operations/deploy-supervisor-capacity-controls.md`
+
 ---
 
 ## 主网迁移步骤（新合约逻辑）

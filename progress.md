@@ -429,4 +429,6 @@
   - Validated change with `openspec validate add-supervisor-capacity-controls --strict --no-interactive`.
   - Implemented worker pool sizing + incremental/full config refresh + metrics.
   - Added config refresh index and runbook capacity controls.
+  - Created Prisma migration `frontend/prisma/migrations/20260206111203_add_config_refresh_index/`.
   - Verified worker pool override, incremental refresh, and full refresh reconciliation (see `openspec/changes/add-supervisor-capacity-controls/verification.md`).
+  - Added deployment checklist `docs/operations/deploy-supervisor-capacity-controls.md`.
