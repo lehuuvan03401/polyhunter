@@ -84,11 +84,19 @@ CopyExec 日志流畅输出：
 - `COPY_TRADING_RPC_URL` / `COPY_TRADING_RPC_URLS`：执行 RPC（支持多节点兜底）
 - `COPY_TRADING_WORKER_KEYS` / `COPY_TRADING_WORKER_INDEX`：多 Worker 分片
 - `COPY_TRADING_MAX_RETRY_ATTEMPTS`：失败重试次数
+- `COPY_TRADING_ASYNC_SETTLEMENT`：异步结算开关（启用后 push/reimburse 进入队列）
+- `COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS`：结算重试次数上限
+- `COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS`：结算重试退避基准（ms）
 
 建议在启动 worker 前运行就绪检查：
 ```
 npx tsx scripts/verify/copy-trading-readiness.ts
 ```
+
+若启用 `COPY_TRADING_ASYNC_SETTLEMENT=true`，订单会先执行、结算（push/reimburse）进入异步队列：
+- 交易记录可能出现 `SETTLEMENT_PENDING` 状态
+- 需要保证 worker 的结算恢复循环常驻运行
+- 关注队列指标（depth/lag/retry）以避免资产滞留
 
 ---
 

@@ -57,6 +57,8 @@ const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_US
 const MAX_TRADES_PER_WINDOW = Number(process.env.COPY_TRADING_MAX_TRADES_PER_WINDOW || '0');
 const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '600000');
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
+const ASYNC_SETTLEMENT = process.env.COPY_TRADING_ASYNC_SETTLEMENT === 'true'
+    || process.env.COPY_TRADING_ASYNC_SETTLEMENT === '1';
 const GUARDRAIL_CACHE_TTL_MS = parseInt(process.env.SUPERVISOR_GUARDRAIL_CACHE_TTL_MS || '5000', 10);
 const MARKET_META_TTL_MS = parseInt(process.env.SUPERVISOR_MARKET_META_TTL_MS || '300000', 10);
 const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10);
@@ -1714,6 +1716,7 @@ async function executeJobInternal(
 
         // 3. Execute
         let result: { success: boolean; orderId?: string; error?: string } = { success: false, error: 'UNKNOWN' };
+        let executionDetail: any = null;
 
         if (config.executionMode === 'EOA') {
             const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
@@ -1751,9 +1754,11 @@ async function executeJobInternal(
                 tradingService: worker.tradingService, // DYNAMIC SERVICE
                 overrides: overrides, // GAS OVERRIDES
                 executionMode: config.executionMode, // PROXY
+                deferSettlement: ASYNC_SETTLEMENT,
             };
 
             const proxyResult = await executionService.executeOrderWithProxy(baseParams);
+            executionDetail = proxyResult;
             result = {
                 success: proxyResult.success,
                 orderId: proxyResult.orderId,
@@ -1769,6 +1774,16 @@ async function executeJobInternal(
         // Fetch Metadata BEFORE Create
         const metadata = await getMarketMetadata(tokenId);
 
+        const isSettled = result.success && executionDetail
+            ? (executionDetail.settlementDeferred
+                ? false
+                : (side === 'BUY'
+                    ? Boolean(executionDetail.tokenPushTxHash)
+                    : Boolean(executionDetail.returnTransferTxHash)))
+            : result.success;
+        const status = result.success ? (isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING') : 'FAILED';
+        const errorMessage = result.success ? (isSettled ? null : 'Settlement Pending') : result.error;
+
         await prisma.copyTrade.create({
             data: {
                 configId: config.id,
@@ -1776,12 +1791,13 @@ async function executeJobInternal(
                 originalSide: side,
                 originalSize: originalSize,
                 originalPrice: approxPrice,
-            tokenId: tokenId,
-            copySize: adjustedCopyAmount,
-            copyPrice: approxPrice,
-            status: result.success ? 'EXECUTED' : 'FAILED',
-            txHash: result.orderId,
-            errorMessage: result.error,
+                tokenId: tokenId,
+                copySize: adjustedCopyAmount,
+                copyPrice: approxPrice,
+                status,
+                txHash: result.orderId,
+                errorMessage,
+                usedBotFloat: executionDetail?.usedBotFloat ?? false,
                 executedAt: new Date(),
                 marketSlug: metadata.marketSlug,
                 conditionId: metadata.conditionId,

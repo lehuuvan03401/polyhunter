@@ -22,7 +22,7 @@ const mockSigner = {
 // Mock ethers Contract
 const mockContract = {
     balanceOf: vi.fn(),
-    execute: vi.fn(),
+    executeOnProxy: vi.fn(),
     transfer: vi.fn(),
     safeTransferFrom: vi.fn(),
     getUserProxy: vi.fn(),
@@ -52,7 +52,7 @@ describe('CopyTradingExecutionService', () => {
         // Default Mock behaviors
         mockContract.balanceOf.mockResolvedValue(ethers.utils.parseUnits('1000', 6)); // Default 1000 USDC
         mockContract.getUserProxy.mockResolvedValue(VALID_PROXY_ADDRESS);
-        mockContract.execute.mockResolvedValue({ wait: () => Promise.resolve({ transactionHash: '0xFundTx' }) });
+        mockContract.executeOnProxy.mockResolvedValue({ wait: () => Promise.resolve({ transactionHash: '0xFundTx' }) });
         mockContract.transfer.mockResolvedValue({ wait: () => Promise.resolve({ transactionHash: '0xReturnTx' }) });
         mockContract.safeTransferFrom.mockResolvedValue({ wait: () => Promise.resolve({ transactionHash: '0xTokenTx' }) });
 
@@ -85,7 +85,12 @@ describe('CopyTradingExecutionService', () => {
 
         // 2. Transfer USDC From Proxy
         // method ID for transfer(address,uint256) is typically '0xa9059cbb'
-        expect(mockContract.execute).toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/^0xa9059cbb/));
+        expect(mockContract.executeOnProxy).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.stringMatching(/^0xa9059cbb/),
+            expect.anything()
+        );
 
         // 3. Execute Order (FOK)
         expect(mockTradingService.createMarketOrder).toHaveBeenCalledWith(expect.objectContaining({
@@ -117,7 +122,7 @@ describe('CopyTradingExecutionService', () => {
 
         // 1. Pull Tokens
         // For SELL, we call `transferTokensFromProxy` which calls `proxy.execute(CTF, safeTransferFromData)`
-        expect(mockContract.execute).toHaveBeenCalled();
+        expect(mockContract.executeOnProxy).toHaveBeenCalled();
 
         // 2. Execute Order (FOK)
         expect(mockTradingService.createMarketOrder).toHaveBeenCalledWith(expect.objectContaining({
@@ -172,7 +177,7 @@ describe('CopyTradingExecutionService', () => {
         expect(mockContract.safeTransferFrom).toHaveBeenCalled();
 
         // 5. Reimburse (Pull USDC)
-        expect(mockContract.execute).toHaveBeenCalledTimes(1); // Only 1 pull (reimbursement)
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(1); // Only 1 pull (reimbursement)
     });
 
     it('should use STANDARD BUY (Fallback) if Bot has NO funds', async () => {
@@ -208,7 +213,7 @@ describe('CopyTradingExecutionService', () => {
         // 4. (No Reimbursement needed in standard flow, or is it?)
         // Standard flow: Pull -> Trade -> Push.
         // So execute called ONCE (Pull).
-        expect(mockContract.execute).toHaveBeenCalledTimes(1);
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(1);
 
         // 5. Execute Order
         expect(mockTradingService.createMarketOrder).toHaveBeenCalled();
@@ -234,7 +239,7 @@ describe('CopyTradingExecutionService', () => {
         expect(mockContract.safeTransferFrom).toHaveBeenCalled();
 
         // 2. Reimburse (Pull USDC)
-        expect(mockContract.execute).toHaveBeenCalled();
+        expect(mockContract.executeOnProxy).toHaveBeenCalled();
     });
 
     it('should recover settlement for SELL: Push USDC', async () => {
@@ -305,4 +310,3 @@ describe('CopyTradingExecutionService', () => {
         });
     });
 });
-

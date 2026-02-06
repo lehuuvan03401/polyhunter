@@ -55,6 +55,9 @@
  * - COPY_TRADING_MAX_RETRY_ATTEMPTS: Max retry attempts for transient failures (default: 2)
  * - COPY_TRADING_RETRY_BACKOFF_MS: Base backoff for retries (default: 60000)
  * - COPY_TRADING_RETRY_INTERVAL_MS: Retry scan interval (default: 60000)
+ * - COPY_TRADING_ASYNC_SETTLEMENT: Defer settlement transfers to async queue (default: false)
+ * - COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS: Max settlement retry attempts (default: 5)
+ * - COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS: Base backoff for settlement retries (default: 60000)
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
@@ -119,6 +122,13 @@ const PROXY_CHECK_LIMIT = parseInt(process.env.COPY_TRADING_PROXY_CHECK_LIMIT ||
 const MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_MAX_RETRY_ATTEMPTS || '2', 10);
 const RETRY_BACKOFF_MS = parseInt(process.env.COPY_TRADING_RETRY_BACKOFF_MS || '60000', 10);
 const RETRY_INTERVAL_MS = parseInt(process.env.COPY_TRADING_RETRY_INTERVAL_MS || '60000', 10);
+const ASYNC_SETTLEMENT = process.env.COPY_TRADING_ASYNC_SETTLEMENT === 'true'
+    || process.env.COPY_TRADING_ASYNC_SETTLEMENT === '1';
+const SETTLEMENT_MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS || '5', 10);
+const SETTLEMENT_RETRY_BACKOFF_MS = parseInt(
+    process.env.COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS || process.env.COPY_TRADING_RETRY_BACKOFF_MS || '60000',
+    10
+);
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
@@ -1633,6 +1643,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             slippageMode: config.slippageType as 'FIXED' | 'AUTO',
                             orderType: 'market',
                             tradingService: proxyTradingService || undefined,
+                            deferSettlement: ASYNC_SETTLEMENT,
                         })).then(res => ({ ...res, execStart }));
                     }
                 }
@@ -1689,12 +1700,13 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             metrics.successes += 1;
                             metrics.totalLatencyMs += latency;
 
-                            let isSettled = false;
-                            if (copySide === 'BUY') {
-                                isSettled = Boolean(result.tokenPushTxHash);
-                            } else {
-                                isSettled = Boolean(result.returnTransferTxHash);
-                            }
+                            const isSettled = config.executionMode === 'EOA'
+                                ? true
+                                : (result.settlementDeferred
+                                    ? false
+                                    : (copySide === 'BUY'
+                                        ? Boolean(result.tokenPushTxHash)
+                                        : Boolean(result.returnTransferTxHash)));
 
                             // Settlement / Position Logic (Async - don't block loop)
                             (async () => {
@@ -1769,8 +1781,16 @@ async function recoverPendingTrades(): Promise<void> {
     if (!prisma) return;
 
     try {
+        const now = new Date();
         const pendingTrades = await claimCopyTrades({
-            where: { status: 'SETTLEMENT_PENDING' },
+            where: {
+                status: 'SETTLEMENT_PENDING',
+                retryCount: { lt: SETTLEMENT_MAX_RETRY_ATTEMPTS },
+                OR: [
+                    { nextRetryAt: null },
+                    { nextRetryAt: { lte: now } },
+                ],
+            },
             include: { config: true }, // Need wallet address
             orderBy: { executedAt: 'asc' },
             take: 10
@@ -1816,7 +1836,21 @@ async function recoverPendingTrades(): Promise<void> {
 
             if (!proxyAddress || !trade.tokenId || !priceForRecovery || priceForRecovery <= 0) {
                 console.warn(`   ⚠️ Recovery skipped due to missing data (proxy/token/price).`);
-                await releaseCopyTradeLock(trade.id);
+                const nextRetryCount = trade.retryCount + 1;
+                const retryAllowed = nextRetryCount <= SETTLEMENT_MAX_RETRY_ATTEMPTS;
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        status: 'SETTLEMENT_PENDING',
+                        errorMessage: 'SETTLEMENT_MISSING_DATA',
+                        retryCount: nextRetryCount,
+                        nextRetryAt: retryAllowed
+                            ? new Date(Date.now() + SETTLEMENT_RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1)))
+                            : null,
+                        lockedAt: null,
+                        lockedBy: null,
+                    }
+                });
                 continue;
             }
 
@@ -1838,13 +1872,28 @@ async function recoverPendingTrades(): Promise<void> {
                         executedAt: new Date(), // Or keep original?
                         txHash: result.txHash, // Update with settlement hash
                         errorMessage: null,
+                        nextRetryAt: null,
                         lockedAt: null,
                         lockedBy: null,
                     }
                 });
             } else {
-                console.error(`   ❌ Recovery Failed: ${result.error}`);
-                await releaseCopyTradeLock(trade.id);
+                const nextRetryCount = trade.retryCount + 1;
+                const retryAllowed = nextRetryCount <= SETTLEMENT_MAX_RETRY_ATTEMPTS;
+                console.error(`   ❌ Recovery Failed (attempt ${nextRetryCount}/${SETTLEMENT_MAX_RETRY_ATTEMPTS}): ${result.error}`);
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        status: 'SETTLEMENT_PENDING',
+                        errorMessage: result.error || 'SETTLEMENT_FAILED',
+                        retryCount: nextRetryCount,
+                        nextRetryAt: retryAllowed
+                            ? new Date(Date.now() + SETTLEMENT_RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1)))
+                            : null,
+                        lockedAt: null,
+                        lockedBy: null,
+                    }
+                });
             }
         }
 
@@ -2046,6 +2095,7 @@ async function retryFailedTrades(): Promise<void> {
                     maxSlippage: trade.config.maxSlippage,
                     slippageMode: trade.config.slippageType as 'FIXED' | 'AUTO',
                     orderType: 'limit',
+                    deferSettlement: ASYNC_SETTLEMENT,
                 }));
 
                 if (result.success) {
@@ -2053,12 +2103,11 @@ async function retryFailedTrades(): Promise<void> {
                     metrics.successes += 1;
                     metrics.totalLatencyMs += Date.now() - execStart;
 
-                    let isSettled = false;
-                    if (trade.originalSide === 'BUY') {
-                        isSettled = Boolean(result.tokenPushTxHash);
-                    } else {
-                        isSettled = Boolean(result.returnTransferTxHash);
-                    }
+                    const isSettled = result.settlementDeferred
+                        ? false
+                        : (trade.originalSide === 'BUY'
+                            ? Boolean(result.tokenPushTxHash)
+                            : Boolean(result.returnTransferTxHash));
 
                     const newStatus = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
 
@@ -2584,6 +2633,35 @@ function logMetricsSummary(): void {
     }
 }
 
+async function logSettlementQueueMetrics(): Promise<void> {
+    if (!prisma) return;
+    try {
+        const summary = await prisma.copyTrade.aggregate({
+            where: { status: 'SETTLEMENT_PENDING' },
+            _count: { _all: true },
+            _min: { executedAt: true },
+            _max: { retryCount: true },
+            _sum: { retryCount: true },
+        });
+
+        const depth = summary?._count?._all ?? 0;
+        if (depth === 0) {
+            console.log('   Settlement Queue: depth=0');
+            return;
+        }
+
+        const oldestAt = summary?._min?.executedAt;
+        const oldestLagMs = oldestAt ? Date.now() - new Date(oldestAt).getTime() : 0;
+        const retryTotal = summary?._sum?.retryCount || 0;
+        const retryMax = summary?._max?.retryCount || 0;
+        const retryAvg = depth > 0 ? retryTotal / depth : 0;
+
+        console.log(`   Settlement Queue: depth=${depth}, oldestLagMs=${oldestLagMs}, retryAvg=${retryAvg.toFixed(2)}, retryMax=${retryMax}`);
+    } catch (error) {
+        console.warn('[Metrics] Settlement queue metrics failed:', error);
+    }
+}
+
 async function checkBalanceAlerts(): Promise<void> {
     if (!executionService || !executionSigner) return;
 
@@ -2651,6 +2729,7 @@ process.on('SIGTERM', shutdown);
 async function start(): Promise<void> {
     console.log('🚀 Starting Copy Trading Worker...');
     console.log(`   API Base URL: ${API_BASE_URL}`);
+    console.log(`   Async Settlement: ${ASYNC_SETTLEMENT ? 'enabled' : 'disabled'}`);
     const workerSelection = selectWorkerKey();
     console.log(`   Trading Key: ${workerSelection ? 'Configured ✅' : 'Not configured ⚠️'}`);
     if (workerSelection && workerSelection.total > 1) {
@@ -2726,6 +2805,7 @@ async function start(): Promise<void> {
         if (!isRunning) return;
         displayStats();
         logMetricsSummary();
+        void logSettlementQueueMetrics();
         void checkBalanceAlerts();
         const prunedQuote = pruneExpired(quoteCache, QUOTE_CACHE_TTL_MS);
         const prunedPreflight = pruneExpired(preflightCache, PREFLIGHT_CACHE_TTL_MS);

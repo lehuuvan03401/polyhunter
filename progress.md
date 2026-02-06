@@ -434,3 +434,32 @@
   - Added deployment checklist `docs/operations/deploy-supervisor-capacity-controls.md`.
   - Added rollout SOP `docs/operations/sop-supervisor-capacity-controls.md`.
   - Recorded release notes in `docs/operations/release-notes.md`.
+
+### Phase 6: Execution Throughput Proposal
+- **Status:** complete
+- Actions taken:
+  - Created OpenSpec change `optimize-copy-execution-throughput` (proposal, tasks, design, spec deltas).
+  - Validated change with `openspec validate optimize-copy-execution-throughput --strict --no-interactive`.
+
+### Phase 7: Execution Throughput Implementation
+- **Status:** complete
+- Actions taken:
+  - Narrowed signer mutex to tx submission only via `runWithSignerMutex` in execution service.
+  - Added async settlement deferral toggle (`COPY_TRADING_ASYNC_SETTLEMENT`) with DB-backed recovery retries.
+  - Added settlement queue metrics (depth/lag/retry) to worker metrics interval.
+  - Updated supervisor/API handling of `SETTLEMENT_PENDING` and `usedBotFloat`.
+  - Updated runbook with async settlement notes and env vars.
+- Files modified:
+  - src/services/copy-trading-execution-service.ts
+  - scripts/copy-trading-worker.ts
+  - frontend/scripts/copy-trading-supervisor.ts
+  - frontend/app/api/copy-trading/execute/route.ts
+  - docs/operations/runbook.md
+  - src/services/copy-trading-execution-service.test.ts
+  - openspec/changes/optimize-copy-execution-throughput/tasks.md
+  - openspec/changes/optimize-copy-execution-throughput/verification.md
+
+### Phase 8: Execution Throughput Verification
+- **Status:** in_progress
+- Actions taken:
+  - Added verification checklist in `openspec/changes/optimize-copy-execution-throughput/verification.md`.

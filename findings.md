@@ -61,6 +61,7 @@
 | Config API redaction | Prevents encrypted secrets from being returned in API responses |
 | Planned change `add-contract-execution-guards` | On-chain allowlist + pause + executor binding + address validation |
 | Implemented contract execution guards | Proxy execution restricted to owner + bound executor; allowlists enforced in Proxy + Executor |
+| Async settlement queue via CopyTrade | SETTLEMENT_PENDING + retry/backoff + metrics; recovery loop handles deferred push/reimburse |
 
 ## Issues Encountered
 | Issue | Resolution |

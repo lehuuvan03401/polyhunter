@@ -24,6 +24,8 @@ const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .map((url) => url.trim())
     .filter(Boolean);
 const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
+const ASYNC_SETTLEMENT = process.env.COPY_TRADING_ASYNC_SETTLEMENT === 'true'
+    || process.env.COPY_TRADING_ASYNC_SETTLEMENT === '1';
 
 const PENDING_TRADES_TTL_MS = 20000;
 const pendingTradesCache = createTTLCache<any>();
@@ -508,18 +510,27 @@ export async function POST(request: NextRequest) {
                     maxSlippage: trade.config.maxSlippage,
                     slippageMode: trade.config.slippageType as 'FIXED' | 'AUTO',
                     orderType: orderMode as 'market' | 'limit',
+                    deferSettlement: ASYNC_SETTLEMENT,
                 });
 
                 // Update DB based on result
                 if (result.success) {
+                    const isSettled = result.settlementDeferred
+                        ? false
+                        : (trade.originalSide === 'BUY'
+                            ? Boolean(result.tokenPushTxHash)
+                            : Boolean(result.returnTransferTxHash));
+                    const status = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
+
                     const updatedTrade = await prisma.copyTrade.update({
                         where: { id: trade.id },
                         data: {
-                            status: 'EXECUTED',
+                            status,
                             executedAt: new Date(),
                             txHash: result.transactionHashes?.[0] || result.orderId,
                             usedBotFloat: (result as any).usedBotFloat ?? false,
                             executedBy: workerAddress,
+                            errorMessage: isSettled ? null : 'Settlement Pending',
                         },
                     });
 
@@ -531,6 +542,8 @@ export async function POST(request: NextRequest) {
                         returnTransferTxHash: result.returnTransferTxHash,
                         trade: updatedTrade,
                         useProxyFunds: result.useProxyFunds,
+                        settlementDeferred: result.settlementDeferred ?? false,
+                        settlementStatus: status,
                     });
                 } else {
                     await prisma.copyTrade.update({

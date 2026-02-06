@@ -50,6 +50,26 @@ Complete
 - [x] Record verification results
 - **Status:** complete
 
+### Phase 6: Execution Throughput Proposal
+- [x] Draft OpenSpec change proposal for mutex scope + async settlement
+- [x] Add spec deltas and tasks
+- [x] Run `openspec validate optimize-copy-execution-throughput --strict --no-interactive`
+- [x] Request approval to implement
+- **Status:** complete
+
+### Phase 7: Execution Throughput Implementation
+- [x] Narrow signer mutex scope to tx submission only
+- [x] Add async settlement queue + retry/backoff handling
+- [x] Emit settlement queue metrics (depth/lag/retry)
+- [x] Update runbook with async settlement notes
+- **Status:** complete
+
+### Phase 8: Execution Throughput Verification
+- [ ] Verify parallel CLOB orders are not blocked by signer mutex
+- [ ] Verify deferred settlement processing + retries
+- [ ] Record verification results
+- **Status:** in_progress
+
 ## Key Questions
 1. Do we need strict limits on WS address filter size?
 2. Should Redis be mandated in prod, or optional with warnings?
