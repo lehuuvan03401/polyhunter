@@ -35,4 +35,14 @@ Result:
 - INFO: Local Redis warned about password being supplied while `default` user has no password.
 
 ## 3) Queue backpressure saturation
-Status: PENDING (needs synthetic load generator or forced worker saturation).
+Status: PASS (synthetic load generator).
+Command:
+```
+DOTENV_CONFIG_PATH=frontend/.env.local SUPERVISOR_QUEUE_STRESS_COUNT=5200 \\
+  npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/queue-backpressure.ts
+```
+Result:
+- PASS: queue capped at 5000 entries.
+- PASS: drops observed when exceeding max size (200 dropped).
+- PASS: queue cleaned up after test (cleanup enabled by default).
+- INFO: Redis warning about password supplied for `default` user with no password.

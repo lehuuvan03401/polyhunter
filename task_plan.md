@@ -8,7 +8,7 @@
 Ship scaling improvements in `frontend/scripts/copy-trading-supervisor.ts` plus runbook updates.
 
 ## Current Phase
-Phase 2: Verification
+Complete
 
 ## Phases
 
@@ -28,8 +28,8 @@ Phase 2: Verification
 ### Phase 2: Verification
 - [x] Dry-run sanity check (single instance + mock/local)
 - [x] Multi-instance smoke (shared Redis + shard split)
-- [ ] Queue backpressure test (force saturation)
-- **Status:** in_progress
+- [x] Queue backpressure test (force saturation)
+- **Status:** complete
 
 ## Key Questions
 1. Do we need strict limits on WS address filter size?
@@ -44,3 +44,4 @@ Phase 2: Verification
 | Error | Attempt | Resolution |
 |---|---|---|
 | session-catchup failed (/scripts/session-catchup.py not found) | 5 | Proceeded without catchup; updated plan manually |
+| PrismaClientInitializationError in queue-backpressure script | 1 | Switched to `frontend/lib/prisma` adapter-backed client |
