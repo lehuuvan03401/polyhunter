@@ -58,6 +58,20 @@ const MAX_TRADES_PER_WINDOW = Number(process.env.COPY_TRADING_MAX_TRADES_PER_WIN
 const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '600000');
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 
+const SELFTEST_ENABLED = process.env.SUPERVISOR_SELFTEST === 'true';
+const SELFTEST_EXIT = process.env.SUPERVISOR_SELFTEST_EXIT === 'true';
+const SELFTEST_CREATE_CONFIG = process.env.SUPERVISOR_SELFTEST_CREATE_CONFIG !== 'false';
+const SELFTEST_CLEANUP = process.env.SUPERVISOR_SELFTEST_CLEANUP !== 'false';
+const SELFTEST_CONFIG_ID = process.env.SUPERVISOR_SELFTEST_CONFIG_ID || '';
+const SELFTEST_TOKEN_ID = process.env.SUPERVISOR_SELFTEST_TOKEN_ID
+    || (CHAIN_ID === 31337 || CHAIN_ID === 1337 ? 'mock-token-exec-path-1234567890' : '');
+const SELFTEST_SIDE = (process.env.SUPERVISOR_SELFTEST_SIDE || 'BUY').toUpperCase() as 'BUY' | 'SELL';
+const SELFTEST_PRICE = Number(process.env.SUPERVISOR_SELFTEST_PRICE || '0.5');
+const SELFTEST_SIZE = Number(process.env.SUPERVISOR_SELFTEST_SIZE || '10');
+const SELFTEST_TRADER = process.env.SUPERVISOR_SELFTEST_TRADER || '';
+const SELFTEST_WALLET = process.env.SUPERVISOR_SELFTEST_WALLET || '';
+const SELFTEST_EXECUTION_MODE = (process.env.SUPERVISOR_SELFTEST_EXECUTION_MODE || '').toUpperCase() as 'EOA' | 'PROXY' | '';
+
 // Env checks
 if (!process.env.TRADING_PRIVATE_KEY) {
     console.error("Missing TRADING_PRIVATE_KEY in .env");
@@ -829,6 +843,13 @@ async function refreshConfigs() {
 
 async function getMarketMetadata(tokenId: string) {
     try {
+        if (CHAIN_ID === 31337 || CHAIN_ID === 1337 || tokenId.startsWith('mock-')) {
+            return {
+                marketSlug: 'unknown-simulated',
+                conditionId: '0x0',
+                outcome: 'Yes'
+            };
+        }
         // Use MarketService to get CLOB Market info via Orderbook
         const book = await marketService.getTokenOrderbook(tokenId);
         if (!book.market) throw new Error("No market ID in orderbook");
@@ -1511,6 +1532,101 @@ async function main() {
 
     // Preload user positions for fast sell-skip checks
     await preloadUserPositions();
+
+    let selftestConfigId: string | null = null;
+    if (SELFTEST_ENABLED) {
+        let selectedConfig: ActiveConfig | undefined;
+        if (SELFTEST_CONFIG_ID) {
+            selectedConfig = activeConfigs.find((c) => c.id === SELFTEST_CONFIG_ID);
+        } else if (activeConfigs.length > 0) {
+            selectedConfig = activeConfigs[0];
+        }
+
+        if (!selectedConfig && SELFTEST_CREATE_CONFIG) {
+            const masterWallet = masterTradingService.getWallet();
+            const walletAddress = (SELFTEST_WALLET || masterWallet?.address || '').toLowerCase();
+            const traderAddress = (SELFTEST_TRADER || walletAddress || '').toLowerCase();
+            const executionMode = SELFTEST_EXECUTION_MODE || 'EOA';
+
+            if (!walletAddress || !traderAddress) {
+                console.warn('[Supervisor] Selftest skipped (missing wallet/trader address).');
+            } else if (executionMode === 'EOA' && !MASTER_PRIVATE_KEY) {
+                console.warn('[Supervisor] Selftest skipped (EOA requires TRADING_PRIVATE_KEY).');
+            } else {
+                let encryptedKey: string | null = null;
+                let iv: string | null = null;
+                if (executionMode === 'EOA' && MASTER_PRIVATE_KEY) {
+                    const encrypted = EncryptionService.encrypt(MASTER_PRIVATE_KEY);
+                    encryptedKey = encrypted.encryptedData;
+                    iv = encrypted.iv;
+                }
+
+                const created = await prisma.copyTradingConfig.create({
+                    data: {
+                        walletAddress,
+                        traderAddress,
+                        traderName: 'selftest',
+                        mode: 'PERCENTAGE',
+                        sizeScale: 0.1,
+                        fixedAmount: null,
+                        maxSizePerTrade: 100,
+                        minSizePerTrade: null,
+                        infiniteMode: false,
+                        takeProfit: null,
+                        stopLoss: null,
+                        direction: 'COPY',
+                        sideFilter: null,
+                        minTriggerSize: null,
+                        maxDaysOut: null,
+                        maxPerMarket: null,
+                        minLiquidity: null,
+                        minVolume: null,
+                        maxOdds: null,
+                        sellMode: 'SAME_PERCENT',
+                        sellFixedAmount: null,
+                        sellPercentage: null,
+                        isActive: true,
+                        autoExecute: true,
+                        channel: 'EVENT_LISTENER',
+                        executionMode: executionMode,
+                        encryptedKey,
+                        iv,
+                        apiKey: null,
+                        apiSecret: null,
+                        apiPassphrase: null,
+                    },
+                });
+
+                selftestConfigId = created.id;
+                await refreshConfigs();
+                selectedConfig = activeConfigs.find((c) => c.id === created.id);
+            }
+        }
+
+        if (selectedConfig) {
+            console.log('[Supervisor] 🧪 Running selftest trade...');
+            await processJob(
+                selectedConfig,
+                SELFTEST_SIDE,
+                SELFTEST_TOKEN_ID,
+                SELFTEST_PRICE,
+                (SELFTEST_TRADER || selectedConfig.traderAddress || selectedConfig.walletAddress),
+                SELFTEST_SIZE,
+                false
+            );
+        } else {
+            console.warn('[Supervisor] Selftest skipped (no active config).');
+        }
+
+        if (selftestConfigId && SELFTEST_CLEANUP) {
+            await prisma.copyTradingConfig.delete({ where: { id: selftestConfigId } }).catch(() => null);
+        }
+
+        if (SELFTEST_EXIT) {
+            console.log('[Supervisor] Selftest complete, exiting.');
+            process.exit(0);
+        }
+    }
 
     // Refresh configs loop
     setInterval(refreshConfigs, 10000);

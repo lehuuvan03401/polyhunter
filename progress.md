@@ -381,3 +381,10 @@
   - Initial run failed due to TS path alias resolution (`@/lib/prisma`) when using plain `tsx`.
   - Re-ran with `npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts`.
   - Supervisor booted in DRY_RUN: wallet fleet initialized, configs loaded, WS + TransferSingle listeners started.
+
+### Phase 7: Supervisor Selftest Trade
+- **Status:** complete
+- Actions taken:
+  - Added selftest harness to supervisor (`SUPERVISOR_SELFTEST=true`) with optional temp config creation/cleanup.
+  - Ran selftest in DRY_RUN + PROXY mode, confirmed guardrail gating and DRY_RUN logging path.
+  - Reduced local noise by short-circuiting market metadata lookup for mock/local tokens.
