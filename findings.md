@@ -91,3 +91,4 @@
 - Multi-worker dry-run started successfully, but no `SETTLEMENT_PENDING`/`FAILED` rows were claimed during the short run, so lock-claim behavior remains unobserved.
 - Added post-archive maintenance: `scripts/archive-data.ts` now runs `VACUUM (ANALYZE)` on CopyTrade/CommissionLog (can disable via `ARCHIVE_RUN_VACUUM=false`).
 - Deferred Redis cache adapter documented in `openspec/changes/optimize-db-design/design.md` for a future proposal.
+- Lock-claim verification: parallel claim scripts showed exclusivity (one claimed 2 rows, other 0) using seeded CopyTrade rows.

@@ -1766,7 +1766,7 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
 // ============================================================================
 
 async function recoverPendingTrades(): Promise<void> {
-    if (!executionService) return;
+    if (!prisma) return;
 
     try {
         const pendingTrades = await claimCopyTrades({
@@ -1777,6 +1777,12 @@ async function recoverPendingTrades(): Promise<void> {
         });
 
         if (pendingTrades.length === 0) return;
+
+        if (!executionService) {
+            console.log('[Recovery] Execution service unavailable; releasing claimed trades.');
+            await releaseClaimedTrades(pendingTrades);
+            return;
+        }
 
         console.log(`\n🚑 [Recovery] Found ${pendingTrades.length} pending settlements...`);
 
@@ -1810,10 +1816,7 @@ async function recoverPendingTrades(): Promise<void> {
 
             if (!proxyAddress || !trade.tokenId || !priceForRecovery || priceForRecovery <= 0) {
                 console.warn(`   ⚠️ Recovery skipped due to missing data (proxy/token/price).`);
-                await prisma.copyTrade.update({
-                    where: { id: trade.id },
-                    data: { lockedAt: null, lockedBy: null },
-                });
+                await releaseCopyTradeLock(trade.id);
                 continue;
             }
 
@@ -1841,10 +1844,7 @@ async function recoverPendingTrades(): Promise<void> {
                 });
             } else {
                 console.error(`   ❌ Recovery Failed: ${result.error}`);
-                await prisma.copyTrade.update({
-                    where: { id: trade.id },
-                    data: { lockedAt: null, lockedBy: null },
-                });
+                await releaseCopyTradeLock(trade.id);
             }
         }
 
@@ -1940,7 +1940,7 @@ async function recoverPendingDebts(): Promise<void> {
 // ============================================================================
 
 async function retryFailedTrades(): Promise<void> {
-    if (!executionService || !executionSigner || !activeWorkerKey) return;
+    if (!prisma) return;
 
     try {
         const now = new Date();
@@ -1962,12 +1962,15 @@ async function retryFailedTrades(): Promise<void> {
 
         console.log(`\n🔁 [Retry] Attempting ${failedTrades.length} failed trades...`);
 
+        if (!executionService || !executionSigner || !activeWorkerKey) {
+            console.log('[Retry] Execution service unavailable; releasing claimed trades.');
+            await releaseClaimedTrades(failedTrades);
+            return;
+        }
+
         for (const trade of failedTrades) {
             if (!trade.tokenId) {
-                await prisma.copyTrade.update({
-                    where: { id: trade.id },
-                    data: { lockedAt: null, lockedBy: null },
-                });
+                await releaseCopyTradeLock(trade.id);
                 continue;
             }
             const basePrice = trade.copyPrice ?? trade.originalPrice;
@@ -2186,6 +2189,22 @@ async function claimCopyTrades(options: {
     return prisma.copyTrade.findMany({
         where: { id: { in: ids }, lockedBy: lockOwner },
         include: options.include,
+    });
+}
+
+async function releaseCopyTradeLock(tradeId: string): Promise<void> {
+    if (!prisma) return;
+    await prisma.copyTrade.update({
+        where: { id: tradeId },
+        data: { lockedAt: null, lockedBy: null },
+    });
+}
+
+async function releaseClaimedTrades(trades: Array<{ id: string }>): Promise<void> {
+    if (!prisma || trades.length === 0) return;
+    await prisma.copyTrade.updateMany({
+        where: { id: { in: trades.map((trade) => trade.id) } },
+        data: { lockedAt: null, lockedBy: null },
     });
 }
 

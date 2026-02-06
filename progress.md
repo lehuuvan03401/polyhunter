@@ -330,6 +330,7 @@
   - Ran two workers in dry-run with DATABASE_URL; workers started and processed activity but no settlement-pending/failed rows were present, so lock-claim behavior not observed.
   - Implemented P2 post-archive maintenance (VACUUM/ANALYZE) in `scripts/archive-data.ts`.
   - Documented deferred Redis cache adapter in `openspec/changes/optimize-db-design/design.md`.
+  - Added lock-claim runbook + verification tooling (seed/claim scripts) and verified claim exclusivity (one process claimed 2 rows; the other claimed 0).
 
 ## Error Log (DB Proposals)
 | Timestamp | Error | Attempt | Resolution |
