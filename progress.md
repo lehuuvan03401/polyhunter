@@ -360,3 +360,10 @@
   - Confirmed EOA service address matches decrypted key and mock order success.
   - Confirmed proxy execution path returns mock success with fleet wallet.
 - Outputs recorded in `openspec/changes/fix-copy-trading-logic/verification.md`.
+
+### Phase 4: Supervisor EOA Fix
+- **Status:** complete
+- Actions taken:
+  - Implemented EOA execution path in `frontend/scripts/copy-trading-supervisor.ts` using user-specific `TradingService`.
+  - Added per-user TradingService cache + encrypted API credential decryption for EOA.
+  - Ensured EOA path bypasses proxy execution and does not enqueue into fleet queue.

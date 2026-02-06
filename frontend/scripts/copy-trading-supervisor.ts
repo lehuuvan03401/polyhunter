@@ -18,6 +18,7 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import path from 'path';
 import { ethers } from 'ethers';
+import { createHash } from 'crypto';
 import { EncryptionService } from '../../src/core/encryption.js'; // Import EncryptionService
 import { CONTRACT_ADDRESSES, CTF_ABI } from '../../src/core/contracts';
 import { CopyTradingExecutionService, ExecutionParams } from '../../src/services/copy-trading-execution-service';
@@ -170,6 +171,9 @@ interface ActiveConfig {
     executionMode: 'PROXY' | 'EOA';
     encryptedKey?: string;
     iv?: string;
+    apiKey?: string;
+    apiSecret?: string;
+    apiPassphrase?: string;
     // Filter Fields
     minLiquidity?: number;
     minVolume?: number;
@@ -179,6 +183,71 @@ interface ActiveConfig {
 let activeConfigs: ActiveConfig[] = [];
 let monitoredTraders: Set<string> = new Set();
 let isProcessing = false;
+
+class UserExecutionManager {
+    private services = new Map<string, { fingerprint: string; service: TradingService }>();
+
+    private buildFingerprint(config: ActiveConfig): string {
+        return createHash('sha256')
+            .update([
+                config.encryptedKey || '',
+                config.iv || '',
+                config.apiKey || '',
+                config.apiSecret || '',
+                config.apiPassphrase || '',
+            ].join('|'))
+            .digest('hex');
+    }
+
+    private decryptField(value: string): string {
+        const [iv, data] = value.split(':');
+        if (!iv || !data) {
+            throw new Error('Invalid encrypted field format');
+        }
+        return EncryptionService.decrypt(data, iv);
+    }
+
+    private async createService(config: ActiveConfig, credentials?: { key: string; secret: string; passphrase: string }): Promise<TradingService> {
+        const privateKey = EncryptionService.decrypt(config.encryptedKey!, config.iv!);
+        const limiter = new RateLimiter(); // Per-user limiter
+        const svc = new TradingService(limiter, cache, { privateKey, chainId: CHAIN_ID, credentials });
+        await svc.initialize();
+        return svc;
+    }
+
+    async getEOAService(config: ActiveConfig): Promise<TradingService | null> {
+        if (!config.encryptedKey || !config.iv) {
+            console.warn(`[Supervisor] EOA mode enabled for ${config.id} but missing keys.`);
+            return null;
+        }
+
+        const fingerprint = this.buildFingerprint(config);
+        const cached = this.services.get(config.id);
+        if (cached && cached.fingerprint === fingerprint) {
+            return cached.service;
+        }
+
+        try {
+            let credentials: { key: string; secret: string; passphrase: string } | undefined;
+            if (config.apiKey && config.apiSecret && config.apiPassphrase) {
+                credentials = {
+                    key: this.decryptField(config.apiKey),
+                    secret: this.decryptField(config.apiSecret),
+                    passphrase: this.decryptField(config.apiPassphrase),
+                };
+            }
+
+            const svc = await this.createService(config, credentials);
+            this.services.set(config.id, { fingerprint, service: svc });
+            return svc;
+        } catch (error) {
+            console.error(`[Supervisor] Failed to initialize EOA service for ${config.id}:`, error);
+            return null;
+        }
+    }
+}
+
+const userExecManager = new UserExecutionManager();
 
 function calculateCopySize(
     config: {
@@ -458,6 +527,9 @@ async function refreshConfigs() {
             executionMode: c.executionMode as 'PROXY' | 'EOA',
             encryptedKey: c.encryptedKey || undefined,
             iv: c.iv || undefined,
+            apiKey: c.apiKey || undefined,
+            apiSecret: c.apiSecret || undefined,
+            apiPassphrase: c.apiPassphrase || undefined,
             // Filter Fields
             minLiquidity: c.minLiquidity || undefined,
             minVolume: c.minVolume || undefined,
@@ -657,26 +729,21 @@ async function processJob(
 
     // 2. Try Checkout Worker OR EOA Signer
     let worker: WorkerContext | null = null;
-    let eoaSigner: ethers.Wallet | null = null;
-    let eoaTradingService: TradingService | null = null;
 
     if (config.executionMode === 'EOA') {
-        // EOA Mode: Decrypt and Create Wallet
-        if (config.encryptedKey && config.iv) {
-            try {
-                const privateKey = EncryptionService.decrypt(config.encryptedKey, config.iv);
-                const userWallet = new ethers.Wallet(privateKey, provider);
-                eoaSigner = userWallet;
-                worker = {
-                    address: userWallet.address,
-                    signer: userWallet,
-                    tradingService: masterTradingService
-                };
-            } catch (e) {
-                console.error(`[Supervisor] Decryption failed for user ${config.walletAddress}:`, e);
-                return;
-            }
+        // EOA Mode: Decrypt and Create User-Specific TradingService
+        const userService = await userExecManager.getEOAService(config);
+        if (!userService) {
+            console.warn(`[Supervisor] ❌ EOA service unavailable for ${config.walletAddress}.`);
+            return;
         }
+
+        const userWallet = userService.getWallet().connect(provider);
+        worker = {
+            address: userWallet.address,
+            signer: userWallet,
+            tradingService: userService
+        };
     } else {
         // Proxy Mode: Checkout Worker
         if (walletManager) {
@@ -697,6 +764,10 @@ async function processJob(
 
     // 3. If no worker AND no EOA, QUEUE IT
     if (!worker) {
+        if (config.executionMode === 'EOA') {
+            console.error(`[Supervisor] ❌ EOA execution skipped (no worker/service) for ${config.walletAddress}.`);
+            return;
+        }
         const queueOverrides = overrides;
         const queued = jobQueue.enqueue({
             config,
@@ -787,22 +858,53 @@ async function executeJobInternal(
         }
 
         // 3. Execute
-        const baseParams: ExecutionParams = {
-            tradeId: `auto-${Date.now()}-${config.id}`,
-            walletAddress: config.walletAddress, // User
-            tokenId: tokenId,
-            side: side,
-            amount: copyAmount,
-            price: approxPrice,
-            maxSlippage: config.maxSlippage,
-            slippageMode: config.slippageType,
-            signer: worker.signer, // DYNAMIC SIGNER
-            tradingService: worker.tradingService, // DYNAMIC SERVICE
-            overrides: overrides, // GAS OVERRIDES
-            executionMode: config.executionMode, // PROXY or EOA
-        };
+        let result: { success: boolean; orderId?: string; error?: string } = { success: false, error: 'UNKNOWN' };
 
-        const result = await executionService.executeOrderWithProxy(baseParams);
+        if (config.executionMode === 'EOA') {
+            const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
+            const execPrice = side === 'BUY'
+                ? approxPrice * (1 + fixedSlippage)
+                : approxPrice * (1 - fixedSlippage);
+            const orderAmount = side === 'BUY'
+                ? copyAmount
+                : (execPrice > 0 ? copyAmount / execPrice : 0);
+
+            const orderResult = await worker.tradingService.createMarketOrder({
+                tokenId,
+                side,
+                amount: orderAmount,
+                price: execPrice,
+                orderType: 'FOK',
+            });
+
+            result = {
+                success: orderResult.success,
+                orderId: orderResult.orderId,
+                error: orderResult.errorMsg,
+            };
+        } else {
+            const baseParams: ExecutionParams = {
+                tradeId: `auto-${Date.now()}-${config.id}`,
+                walletAddress: config.walletAddress, // User
+                tokenId: tokenId,
+                side: side,
+                amount: copyAmount,
+                price: approxPrice,
+                maxSlippage: config.maxSlippage,
+                slippageMode: config.slippageType,
+                signer: worker.signer, // DYNAMIC SIGNER
+                tradingService: worker.tradingService, // DYNAMIC SERVICE
+                overrides: overrides, // GAS OVERRIDES
+                executionMode: config.executionMode, // PROXY
+            };
+
+            const proxyResult = await executionService.executeOrderWithProxy(baseParams);
+            result = {
+                success: proxyResult.success,
+                orderId: proxyResult.orderId,
+                error: proxyResult.error,
+            };
+        }
 
         // Record metrics
         const latencyMs = Date.now() - startTime;
@@ -921,7 +1023,7 @@ async function executeJobInternal(
         console.error(`[Supervisor] 💥 Job Crashed for User ${config.walletAddress}:`, e.message);
     } finally {
         // 5. Checkin Worker AND Trigger Queue
-        if (walletManager && worker) {
+        if (walletManager && worker && config.executionMode !== 'EOA') {
             walletManager.checkinWorker(worker.address);
             // TRIGGER NEXT JOB
             checkQueue();
