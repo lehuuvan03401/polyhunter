@@ -338,3 +338,25 @@
 | Timestamp | Error | Attempt | Resolution |
 |---|---|---|---|
 | 2026-02-05 23:10 | session-catchup failed (/scripts/session-catchup.py not found) | 1 | Proceeded without catchup; updated plan/findings manually |
+
+## Session: 2026-02-06 (Fix Copy Trading Logic Verification)
+
+### Phase 1: Discovery
+- **Status:** in_progress
+- Actions taken:
+  - Attempted session-catchup; failed due to missing `CLAUDE_PLUGIN_ROOT` scripts.
+  - Replaced `task_plan.md` with verification-focused plan for EOA/Proxy execution paths.
+
+### Phase 2: Setup
+- **Status:** complete
+- Actions taken:
+  - Added `scripts/verify/copy-trading-execution-paths.ts` for EOA/Proxy path verification.
+  - Documented verification script usage in `scripts/verify/README.md`.
+
+### Phase 3: Validation
+- **Status:** complete (local mock)
+- Actions taken:
+  - Ran execution path verification with `CHAIN_ID=1337` and mock token bypass.
+  - Confirmed EOA service address matches decrypted key and mock order success.
+  - Confirmed proxy execution path returns mock success with fleet wallet.
+- Outputs recorded in `openspec/changes/fix-copy-trading-logic/verification.md`.

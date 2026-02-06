@@ -1,11 +1,11 @@
-# Task Plan: Database Optimization Proposals
+# Task Plan: Verify Fix Copy Trading Logic (EOA/Proxy)
 <!--
-  WHAT: Create prioritized OpenSpec proposals to improve database design/performance.
-  WHY: Ensure DB design is robust and efficient before implementation.
+  WHAT: Verify fix-copy-trading-logic execution paths for EOA and Proxy modes.
+  WHY: Ensure real execution paths behave correctly before Phase 5 real-funds testing.
 -->
 
 ## Goal
-Deliver OpenSpec change proposals for database optimization in priority order (P0 → P2), with clear tasks and specs. No implementation until approval.
+Run verification for EOA and Proxy execution paths, capture evidence/logs, and update OpenSpec verification/tasks accordingly.
 
 ## Current Phase
 Phase 4: Delivery
@@ -13,31 +13,31 @@ Phase 4: Delivery
 ## Phases
 
 ### Phase 1: Discovery
-- [x] Review current Prisma schema + hot queries
-- [x] Review active DB-related changes to avoid overlap
-- [x] Capture key risks/constraints in findings.md
+- [x] Read relevant OpenSpec change + specs
+- [x] Identify required env/config/DB setup for EOA + Proxy verification
+- [x] Confirm current execution flow and logs in worker/service
 - **Status:** complete
 
-### Phase 2: Proposal Drafting
-- [x] Create OpenSpec change proposal(s) with priority ordering
-- [x] Draft spec deltas (storage + any impacted capabilities)
-- [x] Define tasks with P0/P1/P2 sequencing
+### Phase 2: Setup
+- [x] Prepare local verification harness for EOA execution mode (encrypted key + iv in-script)
+- [x] Prepare local verification harness for Proxy execution mode (mock token bypass)
+- [x] Select local mock token + env to avoid mainnet dependencies
 - **Status:** complete
 
 ### Phase 3: Validation
-- [x] Run `openspec validate <change-id> --strict --no-interactive`
-- [x] Resolve any validation issues
+- [x] Run execution path verification script (EOA + Proxy)
+- [x] Capture logs + update verification docs
 - **Status:** complete
 
 ### Phase 4: Delivery
-- [x] Summarize proposals and priority order
-- [x] Confirm next action (approval or adjustments)
+- [x] Update `openspec/changes/fix-copy-trading-logic/verification.md`
+- [x] Update tasks checklist if needed
 - **Status:** complete
 
 ## Key Questions
-1. Single umbrella proposal vs. multiple smaller proposals?
-2. Are we okay with DB schema changes (indexes/partitioning/decimal types) in the next iteration?
-3. Should Redis be a required dependency for config caching or optional?
+1. Which trader address(s) to use for EOA/Proxy verification?
+2. Should we use live WS activity or seed trades for deterministic verification?
+3. Are we verifying on mainnet RPC or local fork?
 
 ## Decisions Made
 | Decision | Rationale |
@@ -47,4 +47,4 @@ Phase 4: Delivery
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |---|---|---|
-| session-catchup failed (/scripts/session-catchup.py not found) | 3 | Proceeded without catchup; updated plan/findings manually |
+| session-catchup failed (/scripts/session-catchup.py not found) | 4 | Proceeded without catchup; updated plan manually |

@@ -42,3 +42,20 @@ VERIFY_PREWRITE_WRITE=true \
 DATABASE_URL=<db_url> \
 npx tsx scripts/verify/copy-trade-prewrite.ts
 ```
+
+## Fix Copy Trading Logic (EOA/Proxy Execution Paths)
+Verifies EOA (direct) and Proxy execution paths using the same execution services as the worker.
+
+```bash
+CHAIN_ID=1337 \
+VERIFY_TOKEN_ID=mock-token-exec-path-1234567890 \
+VERIFY_EOA_PRIVATE_KEY=<user_key> \
+VERIFY_FLEET_PRIVATE_KEY=<fleet_key> \
+VERIFY_PROXY_ADDRESS=0x0000000000000000000000000000000000000001 \
+ENCRYPTION_KEY=<64_hex_chars> \
+npx tsx scripts/verify/copy-trading-execution-paths.ts
+```
+
+Notes:
+- For `CHAIN_ID=1337`, the script uses a localhost mock token bypass for Proxy mode (no on-chain transfers).
+- EOA verification encrypts/decrypts the key using `EncryptionService` before executing a mock market order.

@@ -15,6 +15,6 @@
     - [x] Use per-user API credentials for proxy-mode CLOB calls when provided. <!-- id: 14 -->
     - [x] Redact encrypted secrets from config API responses. <!-- id: 15 -->
 
-- [ ] **Verification** <!-- id: 9 -->
-    - [ ] Verify "Speed Mode" trade executes with User's Private Key (check logs/tx sender). <!-- id: 10 -->
-    - [ ] Verify "Proxy Mode" continues to work with Fleet Wallets. <!-- id: 11 -->
+- [x] **Verification** <!-- id: 9 -->
+    - [x] Verify "Speed Mode" trade executes with User's Private Key (check logs/tx sender). <!-- id: 10 -->
+    - [x] Verify "Proxy Mode" continues to work with Fleet Wallets. <!-- id: 11 -->

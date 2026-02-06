@@ -24,6 +24,9 @@
 - `CopyTrade` model already has unique `idempotencyKey`, default `PENDING` status, and unique `(configId, originalTxHash)` indexes, enabling a prewrite-before-execute flow without schema changes.
 - Frontend Prisma schema uses config-mode (no datasource url), so Prisma clients must be constructed with adapters (`@prisma/adapter-pg`) rather than default URL-based construction.
 - `fix-copy-trading-logic` change proposal is still `draft`; additional optimizations (EOA-specific guardrails/preflight, per-user creds in proxy mode, global circuit breaker) should be added to the change before implementation.
+- `TradingService` mocks market orders and orderbook calls when `chainId` is `1337` or `31337`, enabling local-path verification without hitting CLOB.
+- `CopyTradingExecutionService` treats chain IDs `137`, `1337`, and `31337` as polygon for contract addresses, but EOA preflight selects `amoy` addresses whenever `CHAIN_ID !== 137`.
+- Proxy execution has a localhost bypass: if `chainId === 1337` and `tokenId` is a non-`0x` string longer than 15 chars, `executeOrderWithProxy` returns mock success before on-chain steps.
 
 ## Technical Decisions
 | Decision | Rationale |
