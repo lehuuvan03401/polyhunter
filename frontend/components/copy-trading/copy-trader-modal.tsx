@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useCopyTradingStore } from '@/lib/copy-trading-store';
 import { usePrivy } from '@privy-io/react-auth';
 import { useProxy } from '@/lib/contracts/useProxy';
+import { useTranslations } from 'next-intl';
 
 interface CopyTraderModalProps {
     isOpen: boolean;
@@ -25,6 +26,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const router = useRouter();
     const { user, authenticated } = usePrivy();
     const { hasProxy, stats, isExecutorAuthorized, isLoading: proxyLoading } = useProxy();
+    const t = useTranslations('CopyTrader');
     const addConfig = useCopyTradingStore((state) => state.addConfig);
     const [isStarting, setIsStarting] = React.useState(false);
 
@@ -182,9 +184,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
             toast.success(
                 <div className="flex flex-col gap-1">
-                    <span className="font-medium">Copy Trading Started</span>
+                    <span className="font-medium">{t('toast.started')}</span>
                     <span className="text-xs text-muted-foreground">
-                        Following {traderName || traderAddress.slice(0, 10)}... trades will be detected
+                        {t('toast.following', { name: traderName || traderAddress.slice(0, 10) })}
                     </span>
                 </div>
             );
@@ -193,7 +195,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
         } catch (error) {
             console.error('Failed to start copy trading:', error);
             const errorMsg = error instanceof Error ? error.message : 'Please try again.';
-            toast.error(`Failed to start copying: ${errorMsg}`);
+            toast.error(t('toast.error', { error: errorMsg }));
         } finally {
             setIsStarting(false);
         }
@@ -219,7 +221,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                     <Copy className="h-5 w-5 text-blue-500" />
                                 </div>
                                 <div className="min-w-0">
-                                    <h2 className="text-lg font-bold text-white leading-tight truncate">Copy {(traderAddress || '').slice(0, 6)}...{(traderAddress || '').slice(-4)}</h2>
+                                    <h2 className="text-lg font-bold text-white leading-tight truncate">
+                                        {t('title', { address: `${(traderAddress || '').slice(0, 6)}...${(traderAddress || '').slice(-4)}` })}
+                                    </h2>
                                     <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">{traderAddress}</div>
                                 </div>
                             </div>
@@ -233,7 +237,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             !isAdvancedMode ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
                                         )}
                                     >
-                                        Simple
+                                        {t('mode.simple')}
                                     </button>
                                     <button
                                         onClick={() => setIsAdvancedMode(true)}
@@ -242,7 +246,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             isAdvancedMode ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
                                         )}
                                     >
-                                        Pro
+                                        {t('mode.pro')}
                                     </button>
                                 </div>
                                 <button onClick={onClose} className="text-muted-foreground hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5">
@@ -260,26 +264,26 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                 <div className="text-xs">
                                     {!hasProxy ? (
                                         <>
-                                            <span className="text-yellow-400 font-medium">Proxy Required</span>
+                                            <span className="text-yellow-400 font-medium">{t('warnings.proxyRequired')}</span>
                                             <p className="text-muted-foreground mt-1">
-                                                Create a Proxy wallet to enable copy trading.
-                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Set up Proxy →</a>
+                                                {t('warnings.createProxy')}
+                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">{t('warnings.setupProxy')}</a>
                                             </p>
                                         </>
                                     ) : !hasEnoughFunds ? (
                                         <>
-                                            <span className="text-yellow-400 font-medium">Deposit Required</span>
+                                            <span className="text-yellow-400 font-medium">{t('warnings.depositRequired')}</span>
                                             <p className="text-muted-foreground mt-1">
-                                                Proxy balance: ${proxyBalance.toFixed(2)}. Need at least ${minRequired} to start.
-                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Deposit USDC →</a>
+                                                {t('warnings.depositDesc', { balance: proxyBalance.toFixed(2), min: minRequired })}
+                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">{t('warnings.depositLink')}</a>
                                             </p>
                                         </>
                                     ) : (
                                         <>
-                                            <span className="text-yellow-400 font-medium">Bot Authorization Required</span>
+                                            <span className="text-yellow-400 font-medium">{t('warnings.botAuthRequired')}</span>
                                             <p className="text-muted-foreground mt-1">
-                                                Authorize the trading bot to execute copy trades for you.
-                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">Authorize Bot →</a>
+                                                {t('warnings.authDesc')}
+                                                <a href="/dashboard/proxy" className="text-blue-400 ml-1 hover:underline">{t('warnings.authLink')}</a>
                                             </p>
                                         </>
                                     )}
@@ -292,9 +296,9 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     {isAdvancedMode && (
                         <div className="flex border-b border-white/5 bg-[#141517]">
                             {[
-                                { id: 'Mode', icon: Settings },
-                                { id: 'Filters', icon: Filter },
-                                { id: 'Sells', icon: TrendingUp }
+                                { id: 'Mode', label: t('tabs.mode'), icon: Settings },
+                                { id: 'Filters', label: t('tabs.filters'), icon: Filter },
+                                { id: 'Sells', label: t('tabs.sells'), icon: TrendingUp }
                             ].map((tab) => (
                                 <button
                                     key={tab.id}
@@ -305,7 +309,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                     )}
                                 >
                                     <tab.icon className="h-4 w-4" />
-                                    {tab.id}
+                                    {tab.label}
                                     {activeTab === tab.id && (
                                         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
                                     )}
@@ -321,7 +325,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             <div className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-4">
                                 {/* Preset Buttons */}
                                 <div>
-                                    <div className="text-xs font-bold text-white mb-2">Risk Profile</div>
+                                    <div className="text-xs font-bold text-white mb-2">{t('form.riskProfile')}</div>
                                     <div className="grid grid-cols-3 gap-2">
                                         <button
                                             onClick={() => { setSharePercent('5'); setMaxPerTrade('50'); }}
@@ -332,7 +336,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
                                         >
-                                            🛡️ Conservative
+                                            🛡️ {t('form.conservative')}
                                         </button>
                                         <button
                                             onClick={() => { setSharePercent('10'); setMaxPerTrade('100'); }}
@@ -343,7 +347,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
                                         >
-                                            ⚖️ Moderate
+                                            ⚖️ {t('form.moderate')}
                                         </button>
                                         <button
                                             onClick={() => { setSharePercent('20'); setMaxPerTrade('200'); }}
@@ -354,7 +358,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     : "bg-[#2c2d33] text-muted-foreground hover:bg-[#383a42] hover:text-white"
                                             )}
                                         >
-                                            🚀 Aggressive
+                                            🚀 {t('form.aggressive')}
                                         </button>
                                     </div>
                                 </div>
@@ -362,7 +366,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                 {/* Two Column Inputs */}
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <div className="text-xs font-bold text-white mb-1.5">Copy % of Trader</div>
+                                        <div className="text-xs font-bold text-white mb-1.5">{t('form.sharePercent')}</div>
                                         <div className="relative">
                                             <input
                                                 type="number"
@@ -376,7 +380,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         </div>
                                     </div>
                                     <div>
-                                        <div className="text-xs font-bold text-white mb-1.5">Max per Trade</div>
+                                        <div className="text-xs font-bold text-white mb-1.5">{t('form.maxPerTrade')}</div>
                                         <div className="relative">
                                             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
                                             <input
@@ -392,14 +396,18 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
                                 {/* Explanation */}
                                 <div className="text-xs text-muted-foreground bg-white/5 p-2.5 rounded-lg leading-relaxed">
-                                    Copy <strong className="text-white">{sharePercent}%</strong> of what the trader invests, up to <strong className="text-white">${maxPerTrade}</strong> max per trade. Min $0.1 per trade.
+                                    {t.rich('preview.text', {
+                                        sharePercent: sharePercent,
+                                        maxPerTrade: maxPerTrade,
+                                        strong: (chunks) => <strong className="text-white">{chunks}</strong>
+                                    })}
                                 </div>
                             </div>
 
                             {/* Execution Mode Selector (Simple Mode) */}
                             <div className="space-y-3">
                                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                                    <Zap className="h-3.5 w-3.5" /> Execution Speed
+                                    <Zap className="h-3.5 w-3.5" /> {t('form.executionSpeed')}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3 bg-[#25262b] p-1 rounded-xl border border-[#2c2d33]">
                                     <button
@@ -411,8 +419,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                 : "text-muted-foreground hover:text-white hover:bg-white/5"
                                         )}
                                     >
-                                        <div className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Security Mode</div>
-                                        <div className="text-[10px] font-normal opacity-80">Non-Custodial (Proxy)</div>
+                                        <div className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> {t('form.securityMode')}</div>
+                                        <div className="text-[10px] font-normal opacity-80">{t('form.nonCustodial')}</div>
                                     </button>
                                     <button
                                         onClick={() => setExecutionMode('EOA')}
@@ -423,8 +431,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                 : "text-muted-foreground hover:text-white hover:bg-white/5"
                                         )}
                                     >
-                                        <div className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5" /> Speed Mode</div>
-                                        <div className="text-[10px] font-normal opacity-80">Custodial (Direct Key)</div>
+                                        <div className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5" /> {t('form.speedMode')}</div>
+                                        <div className="text-[10px] font-normal opacity-80">{t('form.custodial')}</div>
                                     </button>
                                 </div>
 
@@ -434,17 +442,16 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         <div className="flex items-start gap-2">
                                             <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
                                             <div className="text-xs text-yellow-200/80 leading-relaxed">
-                                                <b>Warning:</b> Speed Mode requires your private key to sign transactions instantly without a proxy.
-                                                Please use a dedicated trading wallet with limited funds. Keys are encrypted.
+                                                <b>{t('form.warning')}</b> {t('form.privateKeyWarning')}
                                             </div>
                                         </div>
                                         <div>
-                                            <div className="text-xs font-bold text-white mb-1.5">Private Key (0x...)</div>
+                                            <div className="text-xs font-bold text-white mb-1.5">{t('form.privateKey')}</div>
                                             <input
                                                 type="password"
                                                 value={privateKeyInput}
                                                 onChange={(e) => handlePrivateKeyChange(e.target.value)}
-                                                placeholder="0x..."
+                                                placeholder={t('form.privateKeyPlaceholder')}
                                                 className={cn(
                                                     "w-full bg-[#1a1b1e] border rounded-lg px-3 py-2.5 text-sm font-mono text-white focus:outline-none transition-colors placeholder:text-muted-foreground/30",
                                                     privateKeyError ? "border-red-500" : "border-yellow-500/30 focus:border-yellow-500"
@@ -462,20 +469,32 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 space-y-3">
                                 <div className="flex items-center gap-2 text-white font-bold text-sm">
                                     <ShieldCheck className="h-4 w-4 text-green-500" />
-                                    Smart Proportional Copying
+                                    {t('preview.smartCopy')}
                                 </div>
                                 <div className="space-y-2 text-xs text-muted-foreground">
                                     <div className="flex items-start gap-2">
                                         <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
-                                        <span>Copies <b>proportionally</b> based on trader&apos;s conviction level.</span>
+                                        <span>
+                                            {t.rich('preview.smartCopyPoints.1', {
+                                                b: (chunks) => <b>{chunks}</b>
+                                            })}
+                                        </span>
                                     </div>
                                     <div className="flex items-start gap-2">
                                         <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
-                                        <span>Your max per trade <b>protects</b> you from oversized positions.</span>
+                                        <span>
+                                            {t.rich('preview.smartCopyPoints.2', {
+                                                b: (chunks) => <b>{chunks}</b>
+                                            })}
+                                        </span>
                                     </div>
                                     <div className="flex items-start gap-2">
                                         <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5" />
-                                        <span>If the trader sells, we <b>sell everything</b> instantly.</span>
+                                        <span>
+                                            {t.rich('preview.smartCopyPoints.3', {
+                                                b: (chunks) => <b>{chunks}</b>
+                                            })}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -483,15 +502,15 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             {/* Max Loss Protection - Coming Soon */}
                             <div>
                                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                                    Max Loss Protection
-                                    <span className="text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-500 rounded">Coming Soon</span>
+                                    {t('form.maxLossProtection')}
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-500 rounded">{t('form.comingSoon')}</span>
                                 </div>
                                 <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-3 opacity-50 cursor-not-allowed flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
                                         <AlertTriangle className="h-4 w-4 text-red-500" />
                                     </div>
                                     <div className="flex-1 text-sm text-muted-foreground">
-                                        Auto stop-loss protection will be available soon
+                                        {t('form.autoStopLoss')}
                                     </div>
                                 </div>
                             </div>
@@ -499,7 +518,11 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             {/* Trade Preview */}
                             <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3">
                                 <div className="text-xs text-blue-300">
-                                    💡 <strong>Preview:</strong> If trader buys $1,000 → you copy <strong>${Math.min(Number(sharePercent) * 10, Number(maxPerTrade) || 100)}</strong> | If trader buys $500 → you copy <strong>${Math.min(Number(sharePercent) * 5, Number(maxPerTrade) || 100)}</strong>
+                                    {t.rich('preview.dynamicPreview', {
+                                        amount1000: Math.min(Number(sharePercent) * 10, Number(maxPerTrade) || 100).toFixed(0),
+                                        amount500: Math.min(Number(sharePercent) * 5, Number(maxPerTrade) || 100).toFixed(0),
+                                        strong: (chunks) => <strong>${chunks}</strong>
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -514,31 +537,38 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             {activeTab === 'Mode' && (
                                 <>
                                     <div className="space-y-4">
-                                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Copy Mode</div>
+                                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t('form.copyMode')}</div>
                                         <div className="grid grid-cols-3 gap-3">
-                                            {(['% Shares', 'Range', 'Fixed $'] as CopyMode[]).map((mode) => (
-                                                <button
-                                                    key={mode}
-                                                    onClick={() => setCopyMode(mode)}
-                                                    className={cn(
-                                                        "flex flex-col items-center justify-center p-3 rounded-xl border transition-all gap-1.5",
-                                                        copyMode === mode
-                                                            ? "bg-blue-600/10 border-blue-500 text-blue-400"
-                                                            : "bg-[#25262b] border-[#2c2d33] text-muted-foreground hover:border-white/20 hover:text-white"
-                                                    )}
-                                                >
-                                                    {mode === '% Shares' && <RefreshCcw className="h-4 w-4" />}
-                                                    {mode === 'Range' && <AlertTriangle className="h-4 w-4" />} {/* Using AlertTriangle as placeholder icon */}
-                                                    {mode === 'Fixed $' && <div className="h-4 w-4 flex items-center justify-center font-bold text-xs border border-current rounded-full">$</div>}
-                                                    <span className="text-xs font-medium">{mode}</span>
-                                                </button>
-                                            ))}
+                                            {(['% Shares', 'Range', 'Fixed $'] as CopyMode[]).map((mode) => {
+                                                const modeLabels: Record<CopyMode, string> = {
+                                                    '% Shares': t('mode.shares'),
+                                                    'Range': t('mode.range'),
+                                                    'Fixed $': t('mode.fixed')
+                                                };
+                                                return (
+                                                    <button
+                                                        key={mode}
+                                                        onClick={() => setCopyMode(mode)}
+                                                        className={cn(
+                                                            "flex flex-col items-center justify-center p-3 rounded-xl border transition-all gap-1.5",
+                                                            copyMode === mode
+                                                                ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                                                                : "bg-[#25262b] border-[#2c2d33] text-muted-foreground hover:border-white/20 hover:text-white"
+                                                        )}
+                                                    >
+                                                        {mode === '% Shares' && <RefreshCcw className="h-4 w-4" />}
+                                                        {mode === 'Range' && <AlertTriangle className="h-4 w-4" />} {/* Using AlertTriangle as placeholder icon */}
+                                                        {mode === 'Fixed $' && <div className="h-4 w-4 flex items-center justify-center font-bold text-xs border border-current rounded-full">$</div>}
+                                                        <span className="text-xs font-medium">{modeLabels[mode]}</span>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
 
                                         {copyMode === '% Shares' && (
                                             <div className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-3">
                                                 <div className="flex justify-between items-center text-sm">
-                                                    <span className="font-bold text-white">% of Trader&apos;s Shares</span>
+                                                    <span className="font-bold text-white">{t('form.sharePercent')}</span>
                                                 </div>
                                                 <div className="relative">
                                                     <input
@@ -551,7 +581,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">%</div>
                                                 </div>
                                                 <div className="text-xs text-muted-foreground">
-                                                    Buy {sharePercent}% of trader&apos;s shares each trade
+                                                    {t('form.sharePercent')}
                                                 </div>
                                                 <div className="grid grid-cols-4 gap-2">
                                                     {['50%', '75%', '100%', '150%'].map((p) => (
@@ -571,7 +601,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             <div className="p-4 rounded-xl border border-purple-500/20 bg-purple-500/5 space-y-3">
                                                 <div className="space-y-3">
                                                     <div>
-                                                        <div className="text-xs font-bold text-white mb-1.5">% of Trader&apos;s Shares</div>
+                                                        <div className="text-xs font-bold text-white mb-1.5">{t('form.sharePercent')}</div>
                                                         <div className="relative">
                                                             <input
                                                                 type="number"
@@ -585,7 +615,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div>
-                                                            <div className="text-xs font-bold text-white mb-1.5">Min $ per Trade</div>
+                                                            <div className="text-xs font-bold text-white mb-1.5">{t('form.minPerTrade')}</div>
                                                             <div className="relative">
                                                                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
                                                                 <input
@@ -598,7 +628,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                             </div>
                                                         </div>
                                                         <div>
-                                                            <div className="text-xs font-bold text-white mb-1.5">Max $ per Trade</div>
+                                                            <div className="text-xs font-bold text-white mb-1.5">{t('form.maxPerTradeLabel')}</div>
                                                             <div className="relative">
                                                                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
                                                                 <input
@@ -612,7 +642,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                         </div>
                                                     </div>
                                                     <div className="text-xs text-muted-foreground bg-white/5 p-2 rounded-lg">
-                                                        Trade {sharePercent}% of trader&apos;s shares, clamped between ${rangeMin} and ${rangeMax}
+                                                        {t('preview.rangeText', { sharePercent, rangeMin, rangeMax })}
                                                     </div>
                                                 </div>
                                             </div>
@@ -621,7 +651,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         {copyMode === 'Fixed $' && (
                                             <div className="p-4 rounded-xl border border-green-500/20 bg-green-500/5 space-y-3">
                                                 <div>
-                                                    <div className="text-xs font-bold text-white mb-1.5">Fixed Amount Per Trade</div>
+                                                    <div className="text-xs font-bold text-white mb-1.5">{t('form.fixedAmountPerTrade')}</div>
                                                     <div className="relative">
                                                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
                                                         <input
@@ -634,7 +664,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     </div>
                                                 </div>
                                                 <div className="text-xs text-muted-foreground min-h-[32px] flex items-center">
-                                                    Every trade uses exactly ${fixedAmount}, regardless of trader&apos;s bet size
+                                                    {t('preview.fixedText', { fixedAmount })}
                                                 </div>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     {['1', '5', '10', '25', '50', '100'].map((amount) => (
@@ -651,7 +681,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     ))}
                                                 </div>
                                                 <div className="text-xs text-muted-foreground bg-white/5 p-2 rounded-lg">
-                                                    Example: If trader buys $500, you still buy only ${fixedAmount}
+                                                    {t('preview.example', { fixedAmount })}
                                                 </div>
                                             </div>
                                         )}
@@ -663,12 +693,12 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                             <div className="space-y-1">
                                                 <div className="flex items-center gap-2">
                                                     <div className="font-bold text-white flex items-center gap-2">
-                                                        <RefreshCcw className="h-3.5 w-3.5" /> Infinite Mode
+                                                        <RefreshCcw className="h-3.5 w-3.5" /> {t('form.infiniteMode')}
                                                     </div>
-                                                    <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-bold uppercase">Recommended</span>
+                                                    <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-bold uppercase">{t('form.recommended')}</span>
                                                 </div>
                                                 <div className="text-xs text-muted-foreground max-w-[240px]">
-                                                    Copytrading normally stops indefinitely if you run out of funds, but Infinite Mode pauses and retries.
+                                                    {t('preview.infiniteModeDesc')}
                                                 </div>
                                             </div>
                                             <button
@@ -681,32 +711,32 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
                                         <div>
                                             <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                                                <ShieldCheck className="h-3.5 w-3.5" /> Risk Management
+                                                <ShieldCheck className="h-3.5 w-3.5" /> {t('form.riskManagement')}
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-3 hover:border-green-500/30 transition-colors group">
                                                     <div className="text-xs font-bold text-white mb-2 flex items-center gap-1.5">
-                                                        <div className="w-2 h-2 rounded-full bg-green-500" /> Take Profit ($)
+                                                        <div className="w-2 h-2 rounded-full bg-green-500" /> {t('form.takeProfit')}
                                                     </div>
                                                     <input
                                                         type="number"
                                                         min="0"
-                                                        placeholder="No limit"
+                                                        placeholder={t('form.noLimit')}
                                                         className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 transition-colors"
                                                     />
-                                                    <div className="text-[10px] text-muted-foreground mt-1.5">Auto-pause at this profit</div>
+                                                    <div className="text-[10px] text-muted-foreground mt-1.5">{t('form.autoPauseProfit')}</div>
                                                 </div>
                                                 <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-3 hover:border-red-500/30 transition-colors">
                                                     <div className="text-xs font-bold text-white mb-2 flex items-center gap-1.5">
-                                                        <div className="w-2 h-2 rounded-full bg-red-500" /> Stop Loss ($)
+                                                        <div className="w-2 h-2 rounded-full bg-red-500" /> {t('form.stopLoss')}
                                                     </div>
                                                     <input
                                                         type="number"
                                                         min="0"
-                                                        placeholder="No limit"
+                                                        placeholder={t('form.noLimit')}
                                                         className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
                                                     />
-                                                    <div className="text-[10px] text-muted-foreground mt-1.5">Auto-pause at this loss</div>
+                                                    <div className="text-[10px] text-muted-foreground mt-1.5">{t('form.autoPauseLoss')}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -715,7 +745,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         {/* Slippage Settings */}
                                         <div>
                                             <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                                                <Zap className="h-3.5 w-3.5" /> Slippage
+                                                <Zap className="h-3.5 w-3.5" /> {t('form.slippage')}
                                             </div>
                                             <div className="bg-[#25262b] border border-[#2c2d33] rounded-xl p-4 space-y-4">
                                                 <div className="flex bg-[#1a1b1e] p-1 rounded-lg border border-[#2c2d33]">
@@ -726,7 +756,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                             slippageMode === 'AUTO' ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-white"
                                                         )}
                                                     >
-                                                        Auto (Dynamic)
+                                                        {t('form.auto')}
                                                     </button>
                                                     <button
                                                         onClick={() => setSlippageMode('FIXED')}
@@ -735,18 +765,18 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                             slippageMode === 'FIXED' ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-white"
                                                         )}
                                                     >
-                                                        Fixed
+                                                        {t('form.fixed')}
                                                     </button>
                                                 </div>
 
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1.5">
                                                         <span className="font-bold text-white">
-                                                            {slippageMode === 'AUTO' ? 'Max Allowed Slippage' : 'Fixed Slippage'} (%)
+                                                            {slippageMode === 'AUTO' ? t('form.maxAllowedSlippage') : t('form.fixedSlippage')} (%)
                                                         </span>
                                                         {slippageMode === 'AUTO' && (
                                                             <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded flex items-center">
-                                                                Recommended
+                                                                {t('form.recommended')}
                                                             </span>
                                                         )}
                                                     </div>
@@ -763,15 +793,15 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                     </div>
                                                     <div className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
                                                         {slippageMode === 'AUTO'
-                                                            ? "Slippage is calculated dynamically based on liquidity. Trade will fail if impact exceeds this value."
-                                                            : "Trade will execute with exactly this slippage tolerance."}
+                                                            ? t('preview.slippageAuto')
+                                                            : t('preview.slippageFixed')}
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div>
-                                            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Direction</div>
+                                            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">{t('form.direction')}</div>
                                             <div className="grid grid-cols-2 gap-3 bg-[#25262b] p-1 rounded-xl border border-[#2c2d33]">
                                                 <button
                                                     onClick={() => setCopyDirection('Copy')}
@@ -780,7 +810,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                         copyDirection === 'Copy' ? "bg-green-500/10 text-green-500 border border-green-500/20" : "text-muted-foreground hover:text-white"
                                                     )}
                                                 >
-                                                    <Copy className="h-3.5 w-3.5" /> Copy
+                                                    <Copy className="h-3.5 w-3.5" /> {t('form.copy')}
                                                 </button>
                                                 <button
                                                     onClick={() => setCopyDirection('Counter')}
@@ -789,7 +819,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                         copyDirection === 'Counter' ? "bg-red-500/10 text-red-500 border border-red-500/20" : "text-muted-foreground hover:text-white"
                                                     )}
                                                 >
-                                                    <RefreshCcw className="h-3.5 w-3.5" /> Counter
+                                                    <RefreshCcw className="h-3.5 w-3.5" /> {t('form.counter')}
                                                 </button>
                                             </div>
                                         </div>
@@ -802,87 +832,87 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                 <div className="space-y-4">
                                     {/* Max Days Out */}
                                     <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white">Max Days Out</label>
+                                        <label className="text-xs font-bold text-white">{t('form.maxDaysOut')}</label>
                                         <input
                                             type="number"
                                             min="0"
-                                            placeholder="No limit"
+                                            placeholder={t('form.noLimit')}
                                             value={maxDaysOut}
                                             onChange={(e) => setMaxDaysOut(e.target.value)}
                                             className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">Only copy trades on markets ending within X days</div>
+                                        <div className="text-[10px] text-muted-foreground leading-snug">{t('preview.maxDaysOutDesc')}</div>
                                     </div>
 
                                     {/* Max Per Market */}
                                     <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white">Max Per Market ($)</label>
+                                        <label className="text-xs font-bold text-white">{t('form.maxPerMarket')}</label>
                                         <input
                                             type="number"
                                             min="0"
-                                            placeholder="No limit"
+                                            placeholder={t('form.noLimit')}
                                             value={maxPerMarket}
                                             onChange={(e) => setMaxPerMarket(e.target.value)}
                                             className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">Limit total investment per market to prevent over-exposure</div>
+                                        <div className="text-[10px] text-muted-foreground leading-snug">{t('preview.maxPerMarketDesc')}</div>
                                     </div>
 
                                     {/* Min Liquidity */}
                                     <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white">Min Liquidity ($)</label>
+                                        <label className="text-xs font-bold text-white">{t('form.minLiquidity')}</label>
                                         <input
                                             type="number"
                                             min="0"
-                                            placeholder="No limit"
+                                            placeholder={t('form.noLimit')}
                                             value={minLiquidity}
                                             onChange={(e) => setMinLiquidity(e.target.value)}
                                             className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">Only copy trades on markets with sufficient liquidity</div>
+                                        <div className="text-[10px] text-muted-foreground leading-snug">{t('preview.minLiquidityDesc')}</div>
                                     </div>
 
                                     {/* Min Volume */}
                                     <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white">Min Volume ($)</label>
+                                        <label className="text-xs font-bold text-white">{t('form.minVolume')}</label>
                                         <input
                                             type="number"
                                             min="0"
-                                            placeholder="No limit"
+                                            placeholder={t('form.noLimit')}
                                             value={minVolume}
                                             onChange={(e) => setMinVolume(e.target.value)}
                                             className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">Require minimum trading volume for active markets</div>
+                                        <div className="text-[10px] text-muted-foreground leading-snug">{t('preview.minVolumeDesc')}</div>
                                     </div>
 
                                     {/* Max Odds */}
                                     <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white">Max Odds (%)</label>
+                                        <label className="text-xs font-bold text-white">{t('form.maxOdds')}</label>
                                         <input
                                             type="number"
                                             min="0"
                                             max="100"
-                                            placeholder="e.g. 80"
+                                            placeholder={t('form.eg80')}
                                             value={maxOdds}
                                             onChange={(e) => setMaxOdds(e.target.value)}
                                             className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">Avoid copying trades on very likely outcomes (e.g., 80 = skip trades above 80%)</div>
+                                        <div className="text-[10px] text-muted-foreground leading-snug">{t('preview.maxOddsDesc')}</div>
                                     </div>
 
                                     {/* Min Trigger */}
                                     <div className="bg-[#25262b] border border-[#2c2d33] p-4 rounded-xl space-y-2">
-                                        <label className="text-xs font-bold text-white">Min Trigger ($)</label>
+                                        <label className="text-xs font-bold text-white">{t('form.minTrigger')}</label>
                                         <input
                                             type="number"
                                             min="0"
-                                            placeholder="No limit"
+                                            placeholder={t('form.noLimit')}
                                             value={minTrigger}
                                             onChange={(e) => setMinTrigger(e.target.value)}
                                             className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <div className="text-[10px] text-muted-foreground leading-snug">Minimum amount trader must trade to trigger your copy</div>
+                                        <div className="text-[10px] text-muted-foreground leading-snug">{t('preview.minTriggerDesc')}</div>
                                     </div>
                                 </div>
                             )}
@@ -891,7 +921,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             {activeTab === 'Sells' && (
                                 <div className="space-y-4">
                                     <p className="text-sm text-muted-foreground bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg">
-                                        Configure how your copy trades handle sell orders.
+                                        {t('sell.header')}
                                     </p>
 
                                     <button
@@ -899,10 +929,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         className={cn("w-full text-left p-4 rounded-xl border transition-all space-y-1 block", sellMode === 'Same %' ? "bg-blue-600/10 border-blue-500" : "bg-[#25262b] border-[#2c2d33] hover:border-blue-500/30")}
                                     >
                                         <div className={cn("font-bold text-sm flex items-center gap-2", sellMode === 'Same %' ? "text-blue-400" : "text-white")}>
-                                            <RefreshCcw className="h-4 w-4" /> Same % as Trader
+                                            <RefreshCcw className="h-4 w-4" /> {t('sell.samePercent')}
                                         </div>
                                         <div className="text-xs text-muted-foreground leading-relaxed">
-                                            When trader sells 20% of their position, you sell 20% of yours. Recommended setting.
+                                            {t('sell.samePercentDesc')}
                                         </div>
                                     </button>
 
@@ -911,15 +941,15 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         className={cn("w-full text-left p-4 rounded-xl border transition-all space-y-1 block", sellMode === 'Fixed Amount' ? "bg-green-600/10 border-green-500" : "bg-[#25262b] border-[#2c2d33] hover:border-green-500/30")}
                                     >
                                         <div className={cn("font-bold text-sm flex items-center gap-2", sellMode === 'Fixed Amount' ? "text-green-400" : "text-white")}>
-                                            <div className="h-4 w-4 rounded-full border border-current flex items-center justify-center text-[10px]">$</div> Fixed Amount
+                                            <div className="h-4 w-4 rounded-full border border-current flex items-center justify-center text-[10px]">$</div> {t('sell.fixedAmount')}
                                         </div>
                                         <div className="text-xs text-muted-foreground leading-relaxed">
-                                            Always sell a fixed dollar amount when trader sells
+                                            {t('sell.fixedAmountDesc')}
                                         </div>
 
                                         {sellMode === 'Fixed Amount' && (
                                             <div className="mt-3 pt-3 border-t border-green-500/20" onClick={e => e.stopPropagation()}>
-                                                <div className="text-xs font-medium text-white mb-1.5">Sell Amount</div>
+                                                <div className="text-xs font-medium text-white mb-1.5">{t('sell.sellAmount')}</div>
                                                 <div className="relative">
                                                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</div>
                                                     <input
@@ -928,7 +958,7 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                         value={sellFixedAmount}
                                                         onChange={(e) => setSellFixedAmount(e.target.value)}
                                                         className="w-full bg-[#1a1b1e] border border-green-500/30 rounded-lg pl-6 pr-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
-                                                        placeholder="25"
+                                                        placeholder={t('form.eg25')}
                                                     />
                                                 </div>
                                             </div>
@@ -940,15 +970,15 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                         className={cn("w-full text-left p-4 rounded-xl border transition-all space-y-1 block", sellMode === 'Custom %' ? "bg-purple-600/10 border-purple-500" : "bg-[#25262b] border-[#2c2d33] hover:border-purple-500/30")}
                                     >
                                         <div className={cn("font-bold text-sm flex items-center gap-2", sellMode === 'Custom %' ? "text-purple-400" : "text-white")}>
-                                            <Settings className="h-4 w-4" /> Custom % of Position
+                                            <Settings className="h-4 w-4" /> {t('sell.customPercent')}
                                         </div>
                                         <div className="text-xs text-muted-foreground leading-relaxed">
-                                            Sell a custom percentage of your position when trader sells any amount
+                                            {t('sell.customPercentDesc')}
                                         </div>
 
                                         {sellMode === 'Custom %' && (
                                             <div className="mt-3 pt-3 border-t border-purple-500/20" onClick={e => e.stopPropagation()}>
-                                                <div className="text-xs font-medium text-white mb-1.5">Sell Percentage</div>
+                                                <div className="text-xs font-medium text-white mb-1.5">{t('sell.sellPercentage')}</div>
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="number"
@@ -957,11 +987,11 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                                         value={sellPercentage}
                                                         onChange={(e) => setSellPercentage(e.target.value)}
                                                         className="w-full bg-[#1a1b1e] border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
-                                                        placeholder="25"
+                                                        placeholder={t('form.eg25')}
                                                     />
                                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">%</div>
                                                 </div>
-                                                <div className="text-[10px] text-muted-foreground mt-1.5">Always sell X% when they sell any amount</div>
+                                                <div className="text-[10px] text-muted-foreground mt-1.5">{t('sell.customPercentHelper')}</div>
                                             </div>
                                         )}
                                     </button>
@@ -983,12 +1013,12 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <div className={cn("text-xs font-bold transition-colors", autoExecute ? "text-yellow-500" : "text-white")}>
-                                            Hands-Free Mode
+                                            {t('form.handsFree')}
                                         </div>
-                                        {autoExecute && <span className="text-[8px] uppercase tracking-wider font-bold bg-yellow-500 text-black px-1.5 rounded-sm">Beta</span>}
+                                        {autoExecute && <span className="text-[8px] uppercase tracking-wider font-bold bg-yellow-500 text-black px-1.5 rounded-sm">{t('form.beta')}</span>}
                                     </div>
                                     <div className="text-[10px] text-muted-foreground leading-snug">
-                                        {autoExecute ? "Trades execute instantly via RPC events (Full Auto)" : "Trades require your manual confirmation"}
+                                        {autoExecute ? t('form.handsFreeDesc') : t('form.manualDesc')}
                                     </div>
                                 </div>
                             </div>
@@ -1004,14 +1034,14 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                     {/* Footer */}
                     <div className="p-4 border-t border-white/5 bg-[#141517]">
                         <div className="flex justify-center gap-6 text-[10px] text-muted-foreground mb-3 font-medium">
-                            <span className="flex items-center gap-1.5"><Fuel className="h-3 w-3" /> Gas sponsored</span>
-                            <span className="flex items-center gap-1.5"><Zap className="h-3 w-3 text-yellow-500" /> Instant</span>
-                            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-green-500" /> Non-custodial</span>
+                            <span className="flex items-center gap-1.5"><Fuel className="h-3 w-3" /> {t('footer.gas')}</span>
+                            <span className="flex items-center gap-1.5"><Zap className="h-3 w-3 text-yellow-500" /> {t('footer.instant')}</span>
+                            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-green-500" /> {t('footer.nonCustodial')}</span>
                         </div>
 
                         <div className="text-[10px] text-yellow-500 text-center mb-4 flex items-center justify-center gap-1.5 bg-yellow-500/5 py-1.5 rounded-lg border border-yellow-500/10">
                             <AlertTriangle className="h-3 w-3" />
-                            Min 5 shares and/or $1 per order required
+                            {t('footer.minReq')}
                         </div>
 
                         <button
@@ -1022,10 +1052,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
                             {isStarting ? (
                                 <>
                                     <Loader2 className="h-4 w-4 animate-spin" />
-                                    Starting...
+                                    {t('form.starting')}
                                 </>
                             ) : (
-                                'Start Copying'
+                                t('form.startCopying')
                             )}
                         </button>
                     </div>

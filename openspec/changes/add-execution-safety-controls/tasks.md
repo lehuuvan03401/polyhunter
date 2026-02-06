@@ -7,5 +7,5 @@
 
 ## 2. Verification
 - [x] Add/adjust tests for guardrail evaluation and persistence
-- [ ] Validate guardrail events appear when limits are violated
-- [ ] Confirm dry-run mode blocks execution while logging guardrail events
+- [x] Validate guardrail events appear when limits are violated
+- [x] Confirm dry-run mode blocks execution while logging guardrail events

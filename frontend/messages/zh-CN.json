@@ -1025,5 +1025,131 @@
                 "button": "探索排行榜"
             }
         }
+    },
+    "CopyTrader": {
+        "title": "跟单 {address}",
+        "tabs": {
+            "mode": "模式",
+            "filters": "过滤",
+            "sells": "卖出"
+        },
+        "mode": {
+            "simple": "简易",
+            "pro": "专业",
+            "shares": "% 份额",
+            "range": "范围",
+            "fixed": "固定 $"
+        },
+        "form": {
+            "copyMode": "跟单模式",
+            "sharePercent": "占交易员份额 %",
+            "maxPerTrade": "每笔最大金额",
+            "fixedAmount": "固定金额",
+            "infiniteMode": "无限模式",
+            "riskProfile": "风险偏好",
+            "conservative": "保守",
+            "moderate": "稳健",
+            "aggressive": "激进",
+            "minPerTrade": "每笔最小金额 ($)",
+            "maxPerTradeLabel": "每笔最大金额 ($)",
+            "fixedAmountPerTrade": "每笔固定金额",
+            "slippage": "滑点",
+            "auto": "自动 (动态)",
+            "fixed": "固定",
+            "maxAllowedSlippage": "最大允许滑点",
+            "fixedSlippage": "固定滑点",
+            "recommended": "推荐",
+            "executionSpeed": "执行速度",
+            "securityMode": "安全模式",
+            "nonCustodial": "非托管 (代理)",
+            "speedMode": "极速模式",
+            "custodial": "托管 (直接私钥)",
+            "privateKey": "私钥 (0x...)",
+            "privateKeyPlaceholder": "0x...",
+            "warning": "警告：",
+            "privateKeyWarning": "极速模式需要您的私钥以便在没有代理的情况下立即签署交易。请使用资金有限的专用交易钱包。密钥已加密。",
+            "maxLossProtection": "最大亏损保护",
+            "comingSoon": "即将推出",
+            "autoStopLoss": "自动止损保护即将推出",
+            "takeProfit": "止盈 ($)",
+            "stopLoss": "止损 ($)",
+            "autoPauseProfit": "盈利达到此值时自动暂停",
+            "autoPauseLoss": "亏损达到此值时自动暂停",
+            "direction": "方向",
+            "copy": "跟随",
+            "counter": "反向",
+            "riskManagement": "风险管理",
+            "maxDaysOut": "最大天数",
+            "maxPerMarket": "每市场最大金额 ($)",
+            "minLiquidity": "最小流动性 ($)",
+            "minVolume": "最小交易量 ($)",
+            "maxOdds": "最大赔率 (%)",
+            "minTrigger": "最小触发金额 ($)",
+            "handsFree": "免提模式",
+            "beta": "测试版",
+            "handsFreeDesc": "通过 RPC 事件即时执行交易 (全自动)",
+            "manualDesc": "交易需要您的手动确认",
+            "starting": "启动中...",
+            "startCopying": "开始跟单",
+            "noLimit": "无限制",
+            "eg80": "例如 80",
+            "eg25": "25"
+        },
+        "preview": {
+            "text": "复制交易员投资额的 {sharePercent}%，每笔交易上限为 ${maxPerTrade}。每笔至少 $0.1。",
+            "rangeText": "交易交易员份额的 {sharePercent}%，金额限制在 ${rangeMin} 到 ${rangeMax} 之间",
+            "fixedText": "每笔固定使用 ${fixedAmount}，无论交易员下注多少",
+            "infiniteModeDesc": "如果资金不足，跟单交易通常会无限期停止，但无限模式会暂停并重试。",
+            "smartCopy": "智能比例跟单",
+            "smartCopyPoints": {
+                "1": "根据交易员的信心水平按比例复制。",
+                "2": "您的每笔最大金额可保护您免受过大仓位的影响。",
+                "3": "如果交易员卖出，我们会立即卖出所有。"
+            },
+            "example": "例如：如果交易员买入 $500，您仍然只买入 ${fixedAmount}",
+            "dynamicPreview": "如果交易员买入 $1,000 → 您跟单 ${amount1000} | 如果交易员买入 $500 → 您跟单 ${amount500}",
+            "slippageAuto": "滑点根据流动性动态计算。如果影响超过此值，交易将失败。",
+            "slippageFixed": "交易将以完全符合此滑点容忍度执行。",
+            "maxDaysOutDesc": "仅复制 X 天内结束的市场交易",
+            "maxPerMarketDesc": "限制每个市场的总投资以防止过度风险",
+            "minLiquidityDesc": "仅复制流动性充足的市场交易",
+            "minVolumeDesc": "要求活跃市场的最低交易量",
+            "maxOddsDesc": "避免复制极有可能的结果 (例如 80 = 跳过高于 80% 的交易)",
+            "minTriggerDesc": "交易员必须交易的最小金额才能触发跟单"
+        },
+        "warnings": {
+            "proxyRequired": "需要代理",
+            "depositRequired": "需要存款",
+            "botAuthRequired": "需要机器人授权",
+            "createProxy": "创建代理钱包以启用跟单交易。",
+            "depositDesc": "代理余额：${balance}。需要至少 ${min} 才能开始。",
+            "authDesc": "授权交易机器人为您执行跟单交易。",
+            "setupProxy": "设置代理 →",
+            "depositLink": "存入 USDC →",
+            "authLink": "授权机器人 →"
+        },
+        "toast": {
+            "started": "跟单交易已开始",
+            "following": "正在跟随 {name}... 将检测交易",
+            "error": "开始跟单失败：{error}"
+        },
+        "sell": {
+            "header": "配置跟单交易如何处理卖单。",
+            "samePercent": "与交易员相同 %",
+            "samePercentDesc": "当交易员卖出 20% 持仓时，您也卖出 20%。推荐设置。",
+            "fixedAmount": "固定金额",
+            "fixedAmountDesc": "当交易员卖出时，总是卖出固定金额",
+            "sellAmount": "卖出金额",
+            "customPercent": "自定义持仓 %",
+            "customPercentDesc": "当交易员卖出任何金额时，卖出自定义百分比的持仓",
+            "sellPercentage": "卖出百分比",
+            "customPercentHelper": "当他们卖出任何金额时，总是卖出 X%"
+        },
+        "footer": {
+            "gas": "Gas 费全免",
+            "instant": "即时",
+            "nonCustodial": "非托管",
+            "minReq": "每笔订单至少需 5 股或 $1"
+        }
     }
 }

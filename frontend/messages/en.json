@@ -1024,5 +1024,131 @@
                 "button": "Explore Leaderboard"
             }
         }
+    },
+    "CopyTrader": {
+        "title": "Copy {address}",
+        "tabs": {
+            "mode": "Mode",
+            "filters": "Filters",
+            "sells": "Sells"
+        },
+        "mode": {
+            "simple": "Simple",
+            "pro": "Pro",
+            "shares": "% Shares",
+            "range": "Range",
+            "fixed": "Fixed $"
+        },
+        "form": {
+            "copyMode": "Copy Mode",
+            "sharePercent": "% of Trader's Shares",
+            "maxPerTrade": "Max per Trade",
+            "fixedAmount": "Fixed Amount",
+            "infiniteMode": "Infinite Mode",
+            "riskProfile": "Risk Profile",
+            "conservative": "Conservative",
+            "moderate": "Moderate",
+            "aggressive": "Aggressive",
+            "minPerTrade": "Min $ per Trade",
+            "maxPerTradeLabel": "Max $ per Trade",
+            "fixedAmountPerTrade": "Fixed Amount Per Trade",
+            "slippage": "Slippage",
+            "auto": "Auto (Dynamic)",
+            "fixed": "Fixed",
+            "maxAllowedSlippage": "Max Allowed Slippage",
+            "fixedSlippage": "Fixed Slippage",
+            "recommended": "Recommended",
+            "executionSpeed": "Execution Speed",
+            "securityMode": "Security Mode",
+            "nonCustodial": "Non-Custodial (Proxy)",
+            "speedMode": "Speed Mode",
+            "custodial": "Custodial (Direct Key)",
+            "privateKey": "Private Key (0x...)",
+            "privateKeyPlaceholder": "0x...",
+            "warning": "Warning:",
+            "privateKeyWarning": "Speed Mode requires your private key to sign transactions instantly without a proxy. Please use a dedicated trading wallet with limited funds. Keys are encrypted.",
+            "maxLossProtection": "Max Loss Protection",
+            "comingSoon": "Coming Soon",
+            "autoStopLoss": "Auto stop-loss protection will be available soon",
+            "takeProfit": "Take Profit ($)",
+            "stopLoss": "Stop Loss ($)",
+            "autoPauseProfit": "Auto-pause at this profit",
+            "autoPauseLoss": "Auto-pause at this loss",
+            "direction": "Direction",
+            "copy": "Copy",
+            "counter": "Counter",
+            "riskManagement": "Risk Management",
+            "maxDaysOut": "Max Days Out",
+            "maxPerMarket": "Max Per Market ($)",
+            "minLiquidity": "Min Liquidity ($)",
+            "minVolume": "Min Volume ($)",
+            "maxOdds": "Max Odds (%)",
+            "minTrigger": "Min Trigger ($)",
+            "handsFree": "Hands-Free Mode",
+            "beta": "Beta",
+            "handsFreeDesc": "Trades execute instantly via RPC events (Full Auto)",
+            "manualDesc": "Trades require your manual confirmation",
+            "starting": "Starting...",
+            "startCopying": "Start Copying",
+            "noLimit": "No limit",
+            "eg80": "e.g. 80",
+            "eg25": "25"
+        },
+        "preview": {
+            "text": "Copy {sharePercent}% of what the trader invests, up to ${maxPerTrade} max per trade. Min $0.1 per trade.",
+            "rangeText": "Trade {sharePercent}% of trader's shares, clamped between ${rangeMin} and ${rangeMax}",
+            "fixedText": "Every trade uses exactly ${fixedAmount}, regardless of trader's bet size",
+            "infiniteModeDesc": "Copytrading normally stops indefinitely if you run out of funds, but Infinite Mode pauses and retries.",
+            "smartCopy": "Smart Proportional Copying",
+            "smartCopyPoints": {
+                "1": "Copies proportionally based on trader's conviction level.",
+                "2": "Your max per trade protects you from oversized positions.",
+                "3": "If the trader sells, we sell everything instantly."
+            },
+            "example": "Example: If trader buys $500, you still buy only ${fixedAmount}",
+            "dynamicPreview": "If trader buys $1,000 → you copy ${amount1000} | If trader buys $500 → you copy ${amount500}",
+            "slippageAuto": "Slippage is calculated dynamically based on liquidity. Trade will fail if impact exceeds this value.",
+            "slippageFixed": "Trade will execute with exactly this slippage tolerance.",
+            "maxDaysOutDesc": "Only copy trades on markets ending within X days",
+            "maxPerMarketDesc": "Limit total investment per market to prevent over-exposure",
+            "minLiquidityDesc": "Only copy trades on markets with sufficient liquidity",
+            "minVolumeDesc": "Require minimum trading volume for active markets",
+            "maxOddsDesc": "Avoid copying trades on very likely outcomes (e.g., 80 = skip trades above 80%)",
+            "minTriggerDesc": "Minimum amount trader must trade to trigger your copy"
+        },
+        "warnings": {
+            "proxyRequired": "Proxy Required",
+            "depositRequired": "Deposit Required",
+            "botAuthRequired": "Bot Authorization Required",
+            "createProxy": "Create a Proxy wallet to enable copy trading.",
+            "depositDesc": "Proxy balance: ${balance}. Need at least ${min} to start.",
+            "authDesc": "Authorize the trading bot to execute copy trades for you.",
+            "setupProxy": "Set up Proxy →",
+            "depositLink": "Deposit USDC →",
+            "authLink": "Authorize Bot →"
+        },
+        "toast": {
+            "started": "Copy Trading Started",
+            "following": "Following {name}... trades will be detected",
+            "error": "Failed to start copying: {error}"
+        },
+        "sell": {
+            "header": "Configure how your copy trades handle sell orders.",
+            "samePercent": "Same % as Trader",
+            "samePercentDesc": "When trader sells 20% of their position, you sell 20% of yours. Recommended setting.",
+            "fixedAmount": "Fixed Amount",
+            "fixedAmountDesc": "Always sell a fixed dollar amount when trader sells",
+            "sellAmount": "Sell Amount",
+            "customPercent": "Custom % of Position",
+            "customPercentDesc": "Sell a custom percentage of your position when trader sells any amount",
+            "sellPercentage": "Sell Percentage",
+            "customPercentHelper": "Always sell X% when they sell any amount"
+        },
+        "footer": {
+            "gas": "Gas sponsored",
+            "instant": "Instant",
+            "nonCustodial": "Non-custodial",
+            "minReq": "Min 5 shares and/or $1 per order required"
+        }
     }
 }
