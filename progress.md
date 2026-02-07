@@ -483,3 +483,4 @@
   - Added ledger recording, cap checks, flush loop, and metrics in worker.
   - Added verification script `scripts/verify/reimbursement-ledger-flow.ts`.
   - Updated runbook and env example with ledger settings.
+  - Verified local fork batch reimbursement flush via `scripts/verify/reimbursement-ledger-flow.ts` (tx hash recorded in verification doc).

@@ -17,7 +17,7 @@ Phase 2: Verification (in_progress)
 - [x] 1.6 Update runbook + env.example
 
 ### Phase 2: Verification
-- [ ] 2.1 Local fork: create ledger entries, flush batch reimbursement
+- [x] 2.1 Local fork: create ledger entries, flush batch reimbursement
 - [ ] 2.2 Confirm retry/backoff on failure
 
 ### Phase 3: Wrap-up
