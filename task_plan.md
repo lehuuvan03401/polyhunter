@@ -65,10 +65,10 @@ Complete
 - **Status:** complete
 
 ### Phase 8: Execution Throughput Verification
-- [ ] Verify parallel CLOB orders are not blocked by signer mutex
-- [ ] Verify deferred settlement processing + retries
-- [ ] Record verification results
-- **Status:** in_progress
+- [x] Verify parallel CLOB orders are not blocked by signer mutex
+- [x] Verify deferred settlement processing + retries
+- [x] Record verification results
+- **Status:** complete
 
 ## Key Questions
 1. Do we need strict limits on WS address filter size?
