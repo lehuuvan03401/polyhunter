@@ -62,6 +62,7 @@
 | Planned change `add-contract-execution-guards` | On-chain allowlist + pause + executor binding + address validation |
 | Implemented contract execution guards | Proxy execution restricted to owner + bound executor; allowlists enforced in Proxy + Executor |
 | Async settlement queue via CopyTrade | SETTLEMENT_PENDING + retry/backoff + metrics; recovery loop handles deferred push/reimburse |
+| Batched reimbursement ledger | Record float reimbursements post-prewrite, flush by proxy thresholds with cap-based float disable |
 
 ## Issues Encountered
 | Issue | Resolution |

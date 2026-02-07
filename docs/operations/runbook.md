@@ -87,6 +87,14 @@ CopyExec 日志流畅输出：
 - `COPY_TRADING_ASYNC_SETTLEMENT`：异步结算开关（启用后 push/reimburse 进入队列）
 - `COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS`：结算重试次数上限
 - `COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS`：结算重试退避基准（ms）
+- `COPY_TRADING_LEDGER_ENABLED`：启用报销账本（Bot 浮动资金批量报销）
+- `COPY_TRADING_LEDGER_FLUSH_AMOUNT`：账本累计达到该金额时触发批量报销
+- `COPY_TRADING_LEDGER_MAX_AGE_MS`：账本单条最大等待时长
+- `COPY_TRADING_LEDGER_OUTSTANDING_CAP`：单代理累计欠账上限，超过则禁用 float
+- `COPY_TRADING_LEDGER_FLUSH_INTERVAL_MS`：账本刷新间隔
+- `COPY_TRADING_LEDGER_MAX_RETRY_ATTEMPTS`：账本重试上限
+- `COPY_TRADING_LEDGER_RETRY_BACKOFF_MS`：账本重试退避基准（ms）
+- `COPY_TRADING_LEDGER_CLAIM_BATCH`：账本单次领取/处理的最大条数
 
 建议在启动 worker 前运行就绪检查：
 ```
@@ -97,6 +105,11 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 - 交易记录可能出现 `SETTLEMENT_PENDING` 状态
 - 需要保证 worker 的结算恢复循环常驻运行
 - 关注队列指标（depth/lag/retry）以避免资产滞留
+
+若启用 `COPY_TRADING_LEDGER_ENABLED=true`，Bot float 的报销会进入账本批量结算：
+- 浮动资金会按金额/时长阈值批量报销，减少链上 TX
+- 若 `OUTSTANDING_CAP` 超过上限，float 会自动关闭并走 Proxy 直扣
+- 关注账本指标（depth/outstanding/lag/retry）避免报销积压
 
 ---
 

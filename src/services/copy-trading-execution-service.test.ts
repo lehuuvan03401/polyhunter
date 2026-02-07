@@ -7,6 +7,8 @@ import { ethers } from 'ethers';
 const mockTradingService = {
     createMarketOrder: vi.fn(),
     getOrderBook: vi.fn(),
+    getBalanceAllowance: vi.fn(),
+    verifyAndApproveAllowance: vi.fn(),
 } as unknown as TradingService;
 
 // Use valid addresses
@@ -61,6 +63,8 @@ describe('CopyTradingExecutionService', () => {
             orderId: '0xOrder',
             transactionHashes: ['0xOrderTx']
         });
+        mockTradingService.getBalanceAllowance = vi.fn().mockResolvedValue({ allowance: '1000000000' });
+        mockTradingService.verifyAndApproveAllowance = vi.fn().mockResolvedValue(true);
     });
 
     it('should execute BUY order: Pull USDC -> Execute FOK -> Push Tokens', async () => {
@@ -176,8 +180,87 @@ describe('CopyTradingExecutionService', () => {
         // 4. Push Tokens (safeTransferFrom)
         expect(mockContract.safeTransferFrom).toHaveBeenCalled();
 
-        // 5. Reimburse (Pull USDC)
-        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(1); // Only 1 pull (reimbursement)
+        // 5. Reimburse deferred by SmartBuffer (no reimbursement tx)
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(0);
+    });
+
+    it('should reimburse when float used and buffer is low', async () => {
+        // Bot has 120 USDC, amount is 100 -> projected balance 20 (below buffer)
+        mockContract.balanceOf.mockImplementation(async (address) => {
+            if (address === VALID_BOT_ADDRESS) return ethers.utils.parseUnits('120', 6);
+            return ethers.utils.parseUnits('500', 6);
+        });
+
+        const params: ExecutionParams = {
+            tradeId: 't4b',
+            walletAddress: VALID_USER_ADDRESS,
+            tokenId: '123456',
+            side: 'BUY',
+            amount: 100,
+            price: 0.5,
+            proxyAddress: VALID_PROXY_ADDRESS
+        };
+
+        const result = await service.executeOrderWithProxy(params);
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+        expect(result.usedBotFloat).toBe(true);
+        expect(mockContract.safeTransferFrom).toHaveBeenCalled();
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should defer reimbursement when ledger batching is enabled', async () => {
+        mockContract.balanceOf.mockImplementation(async (address) => {
+            if (address === VALID_BOT_ADDRESS) return ethers.utils.parseUnits('120', 6);
+            return ethers.utils.parseUnits('500', 6);
+        });
+
+        const params: ExecutionParams = {
+            tradeId: 't4c',
+            walletAddress: VALID_USER_ADDRESS,
+            tokenId: '123456',
+            side: 'BUY',
+            amount: 100,
+            price: 0.5,
+            proxyAddress: VALID_PROXY_ADDRESS,
+            deferReimbursement: true
+        };
+
+        const result = await service.executeOrderWithProxy(params);
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+        expect(result.usedBotFloat).toBe(true);
+        expect(mockContract.safeTransferFrom).toHaveBeenCalled();
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(0);
+    });
+
+    it('should disable float when allowBotFloat is false', async () => {
+        mockContract.balanceOf.mockImplementation(async (address) => {
+            if (address === VALID_BOT_ADDRESS) return ethers.utils.parseUnits('1000', 6);
+            if (address === VALID_PROXY_ADDRESS) return ethers.utils.parseUnits('1000', 6);
+            return ethers.utils.parseUnits('0', 6);
+        });
+
+        const params: ExecutionParams = {
+            tradeId: 't4d',
+            walletAddress: VALID_USER_ADDRESS,
+            tokenId: '123456',
+            side: 'BUY',
+            amount: 100,
+            price: 0.5,
+            proxyAddress: VALID_PROXY_ADDRESS,
+            allowBotFloat: false
+        };
+
+        const result = await service.executeOrderWithProxy(params);
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+        expect(result.usedBotFloat).toBe(false);
+        // Standard pull path should call executeOnProxy once (proxy pull)
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(1);
     });
 
     it('should use STANDARD BUY (Fallback) if Bot has NO funds', async () => {
@@ -240,6 +323,25 @@ describe('CopyTradingExecutionService', () => {
 
         // 2. Reimburse (Pull USDC)
         expect(mockContract.executeOnProxy).toHaveBeenCalled();
+    });
+
+    it('should recover settlement for BUY and defer reimbursement when ledger enabled', async () => {
+        const result = await service.recoverSettlement(
+            VALID_PROXY_ADDRESS,
+            'BUY',
+            '123456',
+            100, // Amount
+            0.5, // Price
+            true, // usedBotFloat
+            true // deferReimbursement
+        );
+
+        if (!result.success) console.error(result.error);
+        expect(result.success).toBe(true);
+
+        // Push tokens happens, reimbursement should be skipped
+        expect(mockContract.safeTransferFrom).toHaveBeenCalled();
+        expect(mockContract.executeOnProxy).toHaveBeenCalledTimes(0);
     });
 
     it('should recover settlement for SELL: Push USDC', async () => {

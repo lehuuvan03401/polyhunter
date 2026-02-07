@@ -59,3 +59,19 @@ npx tsx scripts/verify/copy-trading-execution-paths.ts
 Notes:
 - For `CHAIN_ID=1337`, the script uses a localhost mock token bypass for Proxy mode (no on-chain transfers).
 - EOA verification encrypts/decrypts the key using `EncryptionService` before executing a mock market order.
+
+## Reimbursement Ledger (Batched Flush)
+Creates two ledger entries and performs a single batched reimbursement on a local fork.
+
+```bash
+DATABASE_URL=<db_url> \
+TRADING_PRIVATE_KEY=<worker_key> \
+NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545 \
+NEXT_PUBLIC_CHAIN_ID=1337 \
+NEXT_PUBLIC_PROXY_FACTORY_ADDRESS=<local_factory> \
+NEXT_PUBLIC_EXECUTOR_ADDRESS=<local_executor> \
+NEXT_PUBLIC_USDC_ADDRESS=<local_usdc> \
+NEXT_PUBLIC_CTF_ADDRESS=<local_ctf> \
+TEST_WALLET_ADDRESS=<proxy_owner_wallet> \
+npx tsx scripts/verify/reimbursement-ledger-flow.ts
+```

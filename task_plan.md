@@ -1,86 +1,39 @@
-# Task Plan: Scale Copy Trading Supervisor Implementation
-<!--
-  WHAT: Implement scaling improvements for copy-trading supervisor.
-  WHY: Support large user volume and high fan-out with multi-instance safety.
--->
+# Task Plan: Batched Reimbursement Ledger (add-batched-reimbursement-ledger)
 
 ## Goal
-Ship scaling improvements in `frontend/scripts/copy-trading-supervisor.ts` plus runbook updates.
+Reduce reimbursement TX volume by batching bot float reimbursements while keeping exposure capped and observable.
 
 ## Current Phase
-Complete
+Phase 2: Verification (in_progress)
 
 ## Phases
 
 ### Phase 1: Implementation
-- [x] Add address-filtered WS subscription (fallback to all-activity when needed)
-- [x] Add bounded fan-out concurrency for subscriber dispatch
-- [x] Add durable queue + backpressure with drop metrics
-- [x] Add shared dedup store (txHash + logIndex)
-- [x] Add market metadata cache + prefetch
-- [x] Add guardrail counters cache + post-exec increments
-- [x] Add sharded ownership to avoid duplicate processing
-- [x] Add queue/dedup metrics and queue drain loop
-- [x] Add Redis optional shared stores + shutdown cleanup
-- [x] Update runbook with scaling knobs
-- **Status:** complete
+- [x] 1.1 Add ReimbursementLedger model + migration
+- [x] 1.2 Add ledger controls to execution service (defer reimbursement + float allow flag)
+- [x] 1.3 Add ledger recording, cap checks, and flush loop in worker
+- [x] 1.4 Add ledger metrics + env config
+- [x] 1.5 Add verification script
+- [x] 1.6 Update runbook + env.example
 
 ### Phase 2: Verification
-- [x] Dry-run sanity check (single instance + mock/local)
-- [x] Multi-instance smoke (shared Redis + shard split)
-- [x] Queue backpressure test (force saturation)
-- [x] Real-event dual supervisor dedup test
-- **Status:** complete
+- [ ] 2.1 Local fork: create ledger entries, flush batch reimbursement
+- [ ] 2.2 Confirm retry/backoff on failure
 
-### Phase 3: Load Modeling
-- [x] Model capacity for 10k users / 10 follows / 5k trades per user per day
-- [x] Run synthetic load simulation and record throughput/latency
-- [x] Update verification + tasks to reflect load test results
-- **Status:** complete
+### Phase 3: Wrap-up
+- [x] 3.1 Update OpenSpec tasks checklist
+- [x] 3.2 Update progress log
 
-### Phase 4: Capacity Controls Proposal
-- [x] Draft OpenSpec change proposal for worker pool + config refresh
-- [x] Add spec deltas and tasks
-- [x] Run `openspec validate add-supervisor-capacity-controls --strict --no-interactive`
-- [x] Request approval to implement
-- [x] Implement tasks + verification
-- **Status:** complete
-
-### Phase 5: Capacity Controls Delivery
-- [x] Record verification results
-- **Status:** complete
-
-### Phase 6: Execution Throughput Proposal
-- [x] Draft OpenSpec change proposal for mutex scope + async settlement
-- [x] Add spec deltas and tasks
-- [x] Run `openspec validate optimize-copy-execution-throughput --strict --no-interactive`
-- [x] Request approval to implement
-- **Status:** complete
-
-### Phase 7: Execution Throughput Implementation
-- [x] Narrow signer mutex scope to tx submission only
-- [x] Add async settlement queue + retry/backoff handling
-- [x] Emit settlement queue metrics (depth/lag/retry)
-- [x] Update runbook with async settlement notes
-- **Status:** complete
-
-### Phase 8: Execution Throughput Verification
-- [x] Verify parallel CLOB orders are not blocked by signer mutex
-- [x] Verify deferred settlement processing + retries
-- [x] Record verification results
-- **Status:** complete
-
-## Key Questions
-1. Do we need strict limits on WS address filter size?
-2. Should Redis be mandated in prod, or optional with warnings?
-
-## Decisions Made
+## Decisions
 | Decision | Rationale |
 |---|---|
-| Use Redis when available; fallback to memory | Keeps local/dev simple while enabling shared stores for prod |
+| Record ledger entries in worker after prewrite | Execution service runs before trade ID exists; worker has DB + trade ID |
+| Use deferReimbursement flag to skip immediate reimburse | Keeps existing settlement flow intact when ledger disabled |
+| Enforce float cap in worker before execution | Worker can query ledger sums safely |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |---|---|---|
-| session-catchup failed (/scripts/session-catchup.py not found) | 5 | Proceeded without catchup; updated plan manually |
-| PrismaClientInitializationError in queue-backpressure script | 1 | Switched to `frontend/lib/prisma` adapter-backed client |
+| session-catchup.py missing (CLAUDE_PLUGIN_ROOT unset) | 1 | Proceeded without catchup |
+| Prisma migrate failed (schema not found from repo root) | 1 | Ran migration from `frontend` with DATABASE_URL |
+| Prisma validation error (missing opposite relation) | 1 | Added `reimbursementLedger` relation to CopyTrade |

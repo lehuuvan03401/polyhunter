@@ -468,3 +468,18 @@
   - Verified async settlement flow via `scripts/verify/async-settlement-flow.ts` (SETTLEMENT_PENDING → EXECUTED).
   - Added `contracts/scripts/add-worker.ts` to whitelist worker on local executor (required for fork tests).
   - Forced settlement failure by removing worker allowlist; recovery loop incremented retryCount/nextRetryAt (Unauthorized Worker).
+
+### Phase 9: Batched Reimbursement Ledger Proposal
+- **Status:** complete
+- Actions taken:
+  - Created OpenSpec change `add-batched-reimbursement-ledger` (proposal, tasks, design, spec deltas).
+  - Validated change with `openspec validate add-batched-reimbursement-ledger --strict --no-interactive`.
+
+### Phase 10: Batched Reimbursement Ledger Implementation
+- **Status:** in_progress
+- Actions taken:
+  - Added `ReimbursementLedger` model with relation to `CopyTrade` and generated migration.
+  - Added ledger controls to execution service (allowBotFloat + deferReimbursement).
+  - Added ledger recording, cap checks, flush loop, and metrics in worker.
+  - Added verification script `scripts/verify/reimbursement-ledger-flow.ts`.
+  - Updated runbook and env example with ledger settings.

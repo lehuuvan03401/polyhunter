@@ -347,6 +347,7 @@ model CopyTrade {
   detectedAt DateTime  @default(now())
   executedAt DateTime?
   expiresAt  DateTime? // For PENDING trades
+  reimbursementLedger ReimbursementLedger?
 
   @@unique([configId, originalTxHash])
   @@index([configId])
@@ -393,6 +394,33 @@ model DebtRecord {
   @@index([proxyAddress])
   @@index([botAddress])
   @@index([status])
+}
+
+// Reimbursement Ledger for batched bot float reimbursements
+model ReimbursementLedger {
+  id           String    @id @default(cuid())
+  copyTradeId  String
+  copyTrade    CopyTrade @relation(fields: [copyTradeId], references: [id], onDelete: Cascade)
+  proxyAddress String
+  botAddress   String
+  amount       Float
+  currency     String // e.g. "USDC"
+  status       String // "PENDING", "SETTLED", "FAILED"
+  retryCount   Int       @default(0)
+  nextRetryAt  DateTime?
+  errorLog     String?
+  txHash       String?
+  lockedAt     DateTime?
+  lockedBy     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  settledAt    DateTime?
+
+  @@unique([copyTradeId])
+  @@index([proxyAddress, botAddress, status])
+  @@index([status, nextRetryAt])
+  @@index([lockedAt])
+  @@index([createdAt])
 }
 
 // Guardrail events for audit/monitoring

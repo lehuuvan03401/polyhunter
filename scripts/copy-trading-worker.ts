@@ -58,6 +58,14 @@
  * - COPY_TRADING_ASYNC_SETTLEMENT: Defer settlement transfers to async queue (default: false)
  * - COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS: Max settlement retry attempts (default: 5)
  * - COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS: Base backoff for settlement retries (default: 60000)
+ * - COPY_TRADING_LEDGER_ENABLED: Enable batched reimbursement ledger (default: false)
+ * - COPY_TRADING_LEDGER_FLUSH_AMOUNT: Flush ledger when outstanding >= amount (default: 100)
+ * - COPY_TRADING_LEDGER_MAX_AGE_MS: Max age before flush (default: 300000)
+ * - COPY_TRADING_LEDGER_OUTSTANDING_CAP: Cap outstanding float before disabling float (default: 0 = no cap)
+ * - COPY_TRADING_LEDGER_FLUSH_INTERVAL_MS: Ledger flush loop interval (default: 60000)
+ * - COPY_TRADING_LEDGER_MAX_RETRY_ATTEMPTS: Ledger retry max (default: 5)
+ * - COPY_TRADING_LEDGER_RETRY_BACKOFF_MS: Ledger retry backoff base (default: 60000)
+ * - COPY_TRADING_LEDGER_CLAIM_BATCH: Ledger claim batch size (default: 50)
  */
 
 import { RealtimeServiceV2 } from '../src/services/realtime-service-v2.js';
@@ -129,6 +137,16 @@ const SETTLEMENT_RETRY_BACKOFF_MS = parseInt(
     process.env.COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS || process.env.COPY_TRADING_RETRY_BACKOFF_MS || '60000',
     10
 );
+const LEDGER_ENABLED = process.env.COPY_TRADING_LEDGER_ENABLED === 'true'
+    || process.env.COPY_TRADING_LEDGER_ENABLED === '1';
+const LEDGER_FLUSH_AMOUNT = Number(process.env.COPY_TRADING_LEDGER_FLUSH_AMOUNT || '100');
+const LEDGER_MAX_AGE_MS = parseInt(process.env.COPY_TRADING_LEDGER_MAX_AGE_MS || '300000', 10);
+const LEDGER_OUTSTANDING_CAP = Number(process.env.COPY_TRADING_LEDGER_OUTSTANDING_CAP || '0');
+const LEDGER_FLUSH_INTERVAL_MS = parseInt(process.env.COPY_TRADING_LEDGER_FLUSH_INTERVAL_MS || '60000', 10);
+const LEDGER_MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_LEDGER_MAX_RETRY_ATTEMPTS || '5', 10);
+const LEDGER_RETRY_BACKOFF_MS = parseInt(process.env.COPY_TRADING_LEDGER_RETRY_BACKOFF_MS || '60000', 10);
+const LEDGER_CLAIM_BATCH = parseInt(process.env.COPY_TRADING_LEDGER_CLAIM_BATCH || '50', 10);
+const LEDGER_OUTSTANDING_TTL_MS = 5000;
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
@@ -187,6 +205,7 @@ const preflightStats = {
     misses: 0,
     inflightHits: 0,
 };
+const ledgerOutstandingCache = new Map<string, { amount: number; fetchedAt: number }>();
 
 if (PRICE_TTL_MS > 5000) {
     console.warn(`[Worker] COPY_TRADING_PRICE_TTL_MS capped to 5000ms (was ${PRICE_TTL_MS}).`);
@@ -470,6 +489,76 @@ async function timeStage<T>(stage: StageKey, fn: () => Promise<T>): Promise<T> {
         return await fn();
     } finally {
         recordStage(stage, Date.now() - start);
+    }
+}
+
+function ledgerCacheKey(proxyAddress: string, botAddress: string): string {
+    return `${proxyAddress.toLowerCase()}:${botAddress.toLowerCase()}`;
+}
+
+async function getOutstandingLedgerAmount(proxyAddress: string, botAddress: string): Promise<number> {
+    if (!prisma) return 0;
+    const key = ledgerCacheKey(proxyAddress, botAddress);
+    const cached = ledgerOutstandingCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < LEDGER_OUTSTANDING_TTL_MS) {
+        return cached.amount;
+    }
+    const summary = await prisma.reimbursementLedger.aggregate({
+        where: {
+            proxyAddress,
+            botAddress,
+            status: 'PENDING',
+        },
+        _sum: { amount: true },
+    });
+    const amount = summary?._sum?.amount || 0;
+    ledgerOutstandingCache.set(key, { amount, fetchedAt: Date.now() });
+    return amount;
+}
+
+async function shouldAllowBotFloat(proxyAddress: string, amount: number): Promise<boolean> {
+    if (!LEDGER_ENABLED) return true;
+    if (!activeWorkerAddress) return true;
+    if (LEDGER_OUTSTANDING_CAP <= 0) return true;
+    try {
+        const outstanding = await getOutstandingLedgerAmount(proxyAddress, activeWorkerAddress);
+        const projected = outstanding + amount;
+        if (projected > LEDGER_OUTSTANDING_CAP) {
+            console.warn(`[Ledger] Float cap exceeded for ${proxyAddress.slice(0, 8)}: ${projected.toFixed(2)} > ${LEDGER_OUTSTANDING_CAP}`);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.warn('[Ledger] Failed to check outstanding amount; disabling float for safety.', error);
+        return false;
+    }
+}
+
+async function recordReimbursementLedgerEntry(params: {
+    copyTradeId: string;
+    proxyAddress: string;
+    botAddress: string;
+    amount: number;
+    currency: string;
+}): Promise<void> {
+    if (!prisma || !LEDGER_ENABLED) return;
+    try {
+        await prisma.reimbursementLedger.create({
+            data: {
+                copyTradeId: params.copyTradeId,
+                proxyAddress: params.proxyAddress,
+                botAddress: params.botAddress,
+                amount: params.amount,
+                currency: params.currency,
+                status: 'PENDING',
+            },
+        });
+        ledgerOutstandingCache.delete(ledgerCacheKey(params.proxyAddress, params.botAddress));
+    } catch (e: any) {
+        if (e?.code === 'P2002') {
+            return;
+        }
+        console.error('[Ledger] Failed to create ledger entry:', e);
     }
 }
 
@@ -1545,6 +1634,11 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                         || (!isEOA && !proxyAddress ? 'NO_PROXY' : undefined)
                         || 'CHECKS_FAILED');
 
+                let allowBotFloat = true;
+                if (shouldExecuteCandidate && !isEOA && copySide === 'BUY' && proxyAddress) {
+                    allowBotFloat = await shouldAllowBotFloat(proxyAddress, adjustedCopySize);
+                }
+
                 // ========================================
                 // Async Prewrite (Fire-and-Forget)
                 // ========================================
@@ -1644,6 +1738,8 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                             orderType: 'market',
                             tradingService: proxyTradingService || undefined,
                             deferSettlement: ASYNC_SETTLEMENT,
+                            allowBotFloat,
+                            deferReimbursement: LEDGER_ENABLED,
                         })).then(res => ({ ...res, execStart }));
                     }
                 }
@@ -1719,17 +1815,30 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                                 } catch (e) { console.warn('Position update failed', e); }
                             })();
 
-                            await timeStage('persistence', () => prisma.copyTrade.update({
-                                where: { id: copyTrade.id },
-                                data: {
-                                    status: isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING',
-                                    executedAt: new Date(),
-                                    txHash: result.transactionHashes?.[0] || result.orderId,
-                                    errorMessage: isSettled ? null : "Settlement Pending",
-                                    usedBotFloat: result.usedBotFloat ?? false,
-                                    executedBy: activeWorkerAddress ?? undefined
-                                },
-                            }));
+                            const shouldRecordLedger = LEDGER_ENABLED && copySide === 'BUY' && result.usedBotFloat;
+                            const ledgerProxy = result.proxyAddress || proxyAddress;
+                            await timeStage('persistence', async () => {
+                                await prisma.copyTrade.update({
+                                    where: { id: copyTrade.id },
+                                    data: {
+                                        status: isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING',
+                                        executedAt: new Date(),
+                                        txHash: result.transactionHashes?.[0] || result.orderId,
+                                        errorMessage: isSettled ? null : "Settlement Pending",
+                                        usedBotFloat: result.usedBotFloat ?? false,
+                                        executedBy: activeWorkerAddress ?? undefined
+                                    },
+                                });
+                                if (shouldRecordLedger && ledgerProxy && activeWorkerAddress) {
+                                    await recordReimbursementLedgerEntry({
+                                        copyTradeId: copyTrade.id,
+                                        proxyAddress: ledgerProxy,
+                                        botAddress: activeWorkerAddress,
+                                        amount: adjustedCopySize,
+                                        currency: 'USDC',
+                                    });
+                                }
+                            });
                             stats.tradesExecuted++;
                             console.log(`   ✅ [FastTrack] Executed! Order: ${result.orderId} (${latency}ms)`);
 
@@ -1860,7 +1969,8 @@ async function recoverPendingTrades(): Promise<void> {
                 trade.tokenId,
                 trade.copySize,
                 priceForRecovery, // use executed price when available
-                trade.usedBotFloat === true
+                trade.usedBotFloat === true,
+                LEDGER_ENABLED
             );
 
             if (result.success) {
@@ -1984,6 +2094,149 @@ async function recoverPendingDebts(): Promise<void> {
     }
 }
 
+// ============================================================================ 
+// Reimbursement Ledger Flush
+// ============================================================================
+
+async function claimReimbursementLedgerEntries(options: {
+    where: Record<string, any>;
+    orderBy?: Record<string, any>;
+    take: number;
+}): Promise<any[]> {
+    if (!prisma) return [];
+
+    const now = new Date();
+    const lockOwnerBase = activeWorkerAddress || 'worker';
+    const lockOwner = `${lockOwnerBase}-ledger-${process.pid}-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+    const staleBefore = new Date(now.getTime() - COPY_TRADE_LOCK_TTL_MS);
+    const lockClause = { OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }] };
+
+    const candidates = await prisma.reimbursementLedger.findMany({
+        where: { AND: [options.where, lockClause] },
+        orderBy: options.orderBy,
+        take: options.take,
+        select: { id: true },
+    });
+
+    if (candidates.length === 0) return [];
+
+    const ids = candidates.map((c: any) => c.id);
+    await prisma.reimbursementLedger.updateMany({
+        where: { AND: [{ id: { in: ids } }, options.where, lockClause] },
+        data: { lockedAt: now, lockedBy: lockOwner },
+    });
+
+    return prisma.reimbursementLedger.findMany({
+        where: { id: { in: ids }, lockedBy: lockOwner },
+    });
+}
+
+async function releaseReimbursementLedgerEntries(entries: Array<{ id: string }>): Promise<void> {
+    if (!prisma || entries.length === 0) return;
+    await prisma.reimbursementLedger.updateMany({
+        where: { id: { in: entries.map((entry) => entry.id) } },
+        data: { lockedAt: null, lockedBy: null },
+    });
+}
+
+async function flushReimbursementLedger(): Promise<void> {
+    if (!LEDGER_ENABLED || !prisma || !executionService || !executionSigner || !activeWorkerAddress) return;
+
+    const now = new Date();
+    const pendingEntries = await claimReimbursementLedgerEntries({
+        where: {
+            status: 'PENDING',
+            botAddress: activeWorkerAddress,
+            retryCount: { lt: LEDGER_MAX_RETRY_ATTEMPTS },
+            OR: [
+                { nextRetryAt: null },
+                { nextRetryAt: { lte: now } },
+            ],
+        },
+        orderBy: { createdAt: 'asc' },
+        take: LEDGER_CLAIM_BATCH,
+    });
+
+    if (pendingEntries.length === 0) return;
+
+    console.log(`\n[Ledger] Found ${pendingEntries.length} pending reimbursements...`);
+
+    const grouped = new Map<string, { entries: any[]; total: number; oldest: Date }>();
+    for (const entry of pendingEntries) {
+        const key = entry.proxyAddress.toLowerCase();
+        const existing = grouped.get(key);
+        if (existing) {
+            existing.entries.push(entry);
+            existing.total += entry.amount;
+            if (entry.createdAt && entry.createdAt < existing.oldest) {
+                existing.oldest = entry.createdAt;
+            }
+        } else {
+            grouped.set(key, { entries: [entry], total: entry.amount, oldest: entry.createdAt || now });
+        }
+    }
+
+    for (const [proxyKey, group] of grouped.entries()) {
+        const ageMs = now.getTime() - group.oldest.getTime();
+        const shouldFlush = LEDGER_FLUSH_AMOUNT <= 0
+            || group.total >= LEDGER_FLUSH_AMOUNT
+            || ageMs >= LEDGER_MAX_AGE_MS;
+
+        if (!shouldFlush) {
+            await releaseReimbursementLedgerEntries(group.entries);
+            continue;
+        }
+
+        const proxyAddress = group.entries[0]?.proxyAddress;
+        if (!proxyAddress) {
+            await releaseReimbursementLedgerEntries(group.entries);
+            continue;
+        }
+
+        console.log(`[Ledger] Flushing ${group.entries.length} entries for ${proxyKey.slice(0, 8)}: $${group.total.toFixed(2)}`);
+        const result = await executionService.transferFromProxy(proxyAddress, group.total, executionSigner);
+
+        if (result.success) {
+            await prisma.reimbursementLedger.updateMany({
+                where: { id: { in: group.entries.map((entry) => entry.id) } },
+                data: {
+                    status: 'SETTLED',
+                    settledAt: new Date(),
+                    txHash: result.txHash,
+                    errorLog: null,
+                    nextRetryAt: null,
+                    lockedAt: null,
+                    lockedBy: null,
+                },
+            });
+            ledgerOutstandingCache.delete(ledgerCacheKey(proxyAddress, activeWorkerAddress));
+            console.log(`[Ledger] ✅ Settled batch ${result.txHash}`);
+        } else {
+            const maxRetryCount = Math.max(...group.entries.map((entry) => entry.retryCount || 0));
+            const nextRetryCount = maxRetryCount + 1;
+            const retryAllowed = nextRetryCount <= LEDGER_MAX_RETRY_ATTEMPTS;
+            const nextRetryAt = retryAllowed
+                ? new Date(Date.now() + LEDGER_RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1)))
+                : null;
+            const status = retryAllowed ? 'PENDING' : 'FAILED';
+
+            await prisma.reimbursementLedger.updateMany({
+                where: { id: { in: group.entries.map((entry) => entry.id) } },
+                data: {
+                    status,
+                    errorLog: result.error || 'LEDGER_FLUSH_FAILED',
+                    nextRetryAt,
+                    lockedAt: null,
+                    lockedBy: null,
+                    retryCount: { increment: 1 },
+                },
+            });
+            ledgerOutstandingCache.delete(ledgerCacheKey(proxyAddress, activeWorkerAddress));
+            console.warn(`[Ledger] ❌ Flush failed (attempt ${nextRetryCount}/${LEDGER_MAX_RETRY_ATTEMPTS}): ${result.error}`);
+        }
+    }
+}
+
 // ============================================================================
 // Retry Handler
 // ============================================================================
@@ -2081,6 +2334,11 @@ async function retryFailedTrades(): Promise<void> {
                 continue;
             }
 
+            let allowBotFloat = true;
+            if (trade.originalSide === 'BUY' && proxyAddress) {
+                allowBotFloat = await shouldAllowBotFloat(proxyAddress, trade.copySize);
+            }
+
             const execStart = Date.now();
             try {
                 const result = await timeStage('execution', () => executionService.executeOrderWithProxy({
@@ -2096,6 +2354,8 @@ async function retryFailedTrades(): Promise<void> {
                     slippageMode: trade.config.slippageType as 'FIXED' | 'AUTO',
                     orderType: 'limit',
                     deferSettlement: ASYNC_SETTLEMENT,
+                    allowBotFloat,
+                    deferReimbursement: LEDGER_ENABLED,
                 }));
 
                 if (result.success) {
@@ -2147,6 +2407,15 @@ async function retryFailedTrades(): Promise<void> {
                             lockedBy: null,
                         },
                     }));
+                    if (LEDGER_ENABLED && trade.originalSide === 'BUY' && result.usedBotFloat && proxyAddress && activeWorkerAddress) {
+                        await recordReimbursementLedgerEntry({
+                            copyTradeId: trade.id,
+                            proxyAddress,
+                            botAddress: activeWorkerAddress,
+                            amount: finalCopySize,
+                            currency: 'USDC',
+                        });
+                    }
                     stats.tradesExecuted++;
                     console.log(`   ✅ Retry executed ${trade.id}`);
                 } else {
@@ -2662,6 +2931,36 @@ async function logSettlementQueueMetrics(): Promise<void> {
     }
 }
 
+async function logLedgerMetrics(): Promise<void> {
+    if (!prisma || !LEDGER_ENABLED) return;
+    try {
+        const summary = await prisma.reimbursementLedger.aggregate({
+            where: { status: 'PENDING' },
+            _count: { _all: true },
+            _min: { createdAt: true },
+            _max: { retryCount: true },
+            _sum: { retryCount: true, amount: true },
+        });
+
+        const depth = summary?._count?._all ?? 0;
+        if (depth === 0) {
+            console.log('   Ledger Queue: depth=0');
+            return;
+        }
+
+        const oldestAt = summary?._min?.createdAt;
+        const oldestLagMs = oldestAt ? Date.now() - new Date(oldestAt).getTime() : 0;
+        const retryTotal = summary?._sum?.retryCount || 0;
+        const retryMax = summary?._max?.retryCount || 0;
+        const retryAvg = depth > 0 ? retryTotal / depth : 0;
+        const outstanding = summary?._sum?.amount || 0;
+
+        console.log(`   Ledger Queue: depth=${depth}, outstanding=$${outstanding.toFixed(2)}, oldestLagMs=${oldestLagMs}, retryAvg=${retryAvg.toFixed(2)}, retryMax=${retryMax}`);
+    } catch (error) {
+        console.warn('[Metrics] Ledger metrics failed:', error);
+    }
+}
+
 async function checkBalanceAlerts(): Promise<void> {
     if (!executionService || !executionSigner) return;
 
@@ -2730,6 +3029,7 @@ async function start(): Promise<void> {
     console.log('🚀 Starting Copy Trading Worker...');
     console.log(`   API Base URL: ${API_BASE_URL}`);
     console.log(`   Async Settlement: ${ASYNC_SETTLEMENT ? 'enabled' : 'disabled'}`);
+    console.log(`   Reimbursement Ledger: ${LEDGER_ENABLED ? 'enabled' : 'disabled'}`);
     const workerSelection = selectWorkerKey();
     console.log(`   Trading Key: ${workerSelection ? 'Configured ✅' : 'Not configured ⚠️'}`);
     if (workerSelection && workerSelection.total > 1) {
@@ -2806,6 +3106,7 @@ async function start(): Promise<void> {
         displayStats();
         logMetricsSummary();
         void logSettlementQueueMetrics();
+        void logLedgerMetrics();
         void checkBalanceAlerts();
         const prunedQuote = pruneExpired(quoteCache, QUOTE_CACHE_TTL_MS);
         const prunedPreflight = pruneExpired(preflightCache, PREFLIGHT_CACHE_TTL_MS);
@@ -2838,6 +3139,14 @@ async function start(): Promise<void> {
         if (!isRunning) return;
         await recoverPendingDebts();
     }, DEBT_RECOVERY_INTERVAL_MS);
+
+    // Set up periodic ledger flush task
+    if (LEDGER_ENABLED) {
+        setInterval(async () => {
+            if (!isRunning) return;
+            await flushReimbursementLedger();
+        }, LEDGER_FLUSH_INTERVAL_MS);
+    }
 
     // Periodic settlement reconciliation (in case WS missed or redemption failed)
     setInterval(async () => {

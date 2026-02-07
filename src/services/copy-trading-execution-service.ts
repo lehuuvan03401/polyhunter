@@ -30,6 +30,8 @@ export interface ExecutionParams {
     overrides?: ethers.Overrides; // Gas overrides for On-Chain txs
     executionMode?: 'PROXY' | 'EOA'; // Execution Mode
     deferSettlement?: boolean; // Optional: defer settlement transfers (async queue)
+    allowBotFloat?: boolean; // Optional: disable float usage (force proxy-funded path)
+    deferReimbursement?: boolean; // Optional: defer reimbursement (ledger batching)
 }
 
 export interface ExecutionResult {
@@ -179,6 +181,11 @@ export class CopyTradingExecutionService {
         if (typeof params.deferSettlement === 'boolean') return params.deferSettlement;
         const flag = process.env.COPY_TRADING_ASYNC_SETTLEMENT;
         return flag === 'true' || flag === '1';
+    }
+
+    private shouldDeferReimbursementFlag(flag?: boolean): boolean {
+        if (typeof flag === 'boolean') return flag;
+        return false;
     }
 
     private getChainAddresses() {
@@ -477,6 +484,7 @@ export class CopyTradingExecutionService {
     async executeOrderWithProxy(params: ExecutionParams): Promise<ExecutionResult> {
         const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02, signer, tradingService } = params;
         const execService = tradingService || this.tradingService;
+        const allowBotFloat = params.allowBotFloat !== false;
 
         console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches (No Mutex)...`);
 
@@ -497,7 +505,7 @@ export class CopyTradingExecutionService {
             : this.resolveProxyAddress(walletAddress, signer);
 
         // B. Check Bot Balance (Float Strategy)
-        const botBalancePromise = side === 'BUY' ? this.getBotUsdcBalance(signer) : Promise.resolve(0);
+        const botBalancePromise = side === 'BUY' && allowBotFloat ? this.getBotUsdcBalance(signer) : Promise.resolve(0);
 
         // C. Fetch Orderbook (Auto Slippage)
         const orderBookPromise = params.slippageMode === 'AUTO'
@@ -586,7 +594,7 @@ export class CopyTradingExecutionService {
             await this.runWithProxyMutex(proxyAddress, 'funds', async () => {
                 if (side === 'BUY') {
                     // FLOAT STRATEGY
-                    if (botBalance >= amount) {
+                    if (allowBotFloat && botBalance >= amount) {
                         console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
                         usedBotFloat = true;
                         return;
@@ -679,6 +687,7 @@ export class CopyTradingExecutionService {
         }
 
         const deferSettlement = this.shouldDeferSettlement(params);
+        const deferReimbursement = this.shouldDeferReimbursementFlag(params.deferReimbursement);
         let returnTransferTxHash: string | undefined;
         let tokenPushTxHash: string | undefined;
 
@@ -692,6 +701,11 @@ export class CopyTradingExecutionService {
                     const sharesBought = amount / price;
                     const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
                     if (pushResult.success) tokenPushTxHash = pushResult.txHash;
+
+                    if (deferReimbursement) {
+                        console.log('[CopyExec] ⏱️ Deferring reimbursement (ledger batching enabled).');
+                        return;
+                    }
 
                     // Reimburse Bot (Smart Buffer Strategy)
                     // 策略优化：如果 Bot 余额还很充裕 (Buffer > 50 USDC)，暂不发起链上报销。
@@ -763,7 +777,8 @@ export class CopyTradingExecutionService {
         tokenId: string,
         amount: number, // Total amount (USDC value for SELL, USDC cost for BUY)
         price: number,
-        usedBotFloat: boolean
+        usedBotFloat: boolean,
+        deferReimbursement?: boolean
     ): Promise<{ success: boolean; txHash?: string; error?: string }> {
         console.log(`[CopyExec] 🚑 Recovering settlement for ${side} trade...`);
         try {
@@ -783,7 +798,8 @@ export class CopyTradingExecutionService {
                 }
 
                 // 2. Reimburse (if float)
-                if (usedBotFloat) {
+                const shouldDeferReimbursement = this.shouldDeferReimbursementFlag(deferReimbursement);
+                if (usedBotFloat && !shouldDeferReimbursement) {
                     console.log(`[CopyExec] 🚑 Retry Reimbursement...`);
                     const reimbursement = await this.runWithProxyMutex(proxyAddress, 'recovery-reimburse', async () => {
                         return this.transferFromProxy(proxyAddress, amount);
@@ -795,6 +811,9 @@ export class CopyTradingExecutionService {
                     }
                 }
 
+                if (usedBotFloat && shouldDeferReimbursement) {
+                    console.log('[CopyExec] ⏱️ Reimbursement deferred (ledger batching enabled).');
+                }
                 return { success: true, txHash: pushResult.txHash };
 
             } else { // SELL
