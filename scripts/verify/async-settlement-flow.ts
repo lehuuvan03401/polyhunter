@@ -109,6 +109,15 @@ async function main(): Promise<void> {
 
     console.log(`[Verify] Created SETTLEMENT_PENDING trade ${trade.id}.`);
 
+    if (process.env.SKIP_RECOVERY === 'true') {
+        console.log('[Verify] SKIP_RECOVERY enabled; leaving trade in SETTLEMENT_PENDING.');
+        const txMonitor = (executionService as any).txMonitor;
+        if (txMonitor?.stop) {
+            txMonitor.stop();
+        }
+        process.exit(0);
+    }
+
     console.log('[Verify] Running settlement recovery...');
     const recovery = await executionService.recoverSettlement(
         proxyAddress,
