@@ -484,3 +484,9 @@
   - Added verification script `scripts/verify/reimbursement-ledger-flow.ts`.
   - Updated runbook and env example with ledger settings.
   - Verified local fork batch reimbursement flush via `scripts/verify/reimbursement-ledger-flow.ts` (tx hash recorded in verification doc).
+
+### Phase 11: Mainnet Readiness Verification
+- **Status:** in_progress
+- Actions taken:
+  - Ran `scripts/verify/copy-trading-readiness.ts` using mainnet env (`env:mainnet` + secrets).
+  - Readiness failed with `NO_PROXY` for execution wallet; needs proxy creation before re-run.

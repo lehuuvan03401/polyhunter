@@ -24,6 +24,11 @@ Phase 2: Verification (in_progress)
 - [x] 3.1 Update OpenSpec tasks checklist
 - [x] 3.2 Update progress log
 
+### Phase 4: Mainnet Readiness Verification
+- [x] 4.1 Run `copy-trading-readiness` against mainnet env
+- [ ] 4.2 Create proxy for execution wallet (if missing)
+- [ ] 4.3 Re-run readiness check and capture results
+
 ## Decisions
 | Decision | Rationale |
 |---|---|

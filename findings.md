@@ -16,6 +16,7 @@
 - Active changes still missing verification: `add-execution-safety-controls` (guardrail events + dry-run) and `fix-copy-trading-logic` (EOA/proxy execution verification).
 - `copy-trading` spec includes price TTL=5s, debt logging on reimbursement failure, txHash-based dedup (60s), and pre-sell balance verification requirements.
 - `copy-execution` spec requires debt records on float reimbursement failures and periodic recovery.
+- Mainnet readiness check currently fails with `NO_PROXY` for the execution wallet; proxy creation required before real-funds readiness passes.
 - Existing change `optimize-real-copy-trading` focuses on WS-based low-latency execution and sim realism; it does not cover idempotency/write-before-execute.
 - `copy-trading` spec currently defines Event Deduplication strictly by txHash within 60s; any changes must modify that requirement text directly.
 - Existing change `update-real-copy-trading-safety` already proposes DB-level idempotency and guardrails; should reuse/extend instead of duplicating.

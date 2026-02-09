@@ -1,0 +1,14 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY src ./src
+COPY scripts ./scripts
+COPY tsconfig.json ./
+COPY vitest.config.ts ./
+COPY vitest.integration.config.ts ./
+
+CMD ["npm", "run", "copy-worker"]

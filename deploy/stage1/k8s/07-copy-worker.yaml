@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: copy-worker
+  namespace: polyhunter-stage1
+spec:
+  serviceName: copy-worker
+  replicas: 4
+  selector:
+    matchLabels:
+      app: copy-worker
+  template:
+    metadata:
+      labels:
+        app: copy-worker
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: copy-worker
+          image: ghcr.io/your-org/polyhunter-worker:stage1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-lc"]
+          args:
+            - |
+              ordinal="${HOSTNAME##*-}"
+              export COPY_TRADING_WORKER_INDEX="$ordinal"
+              echo "Starting copy worker index=$COPY_TRADING_WORKER_INDEX"
+              npm run copy-worker
+          envFrom:
+            - configMapRef:
+                name: polyhunter-config
+            - secretRef:
+                name: polyhunter-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
