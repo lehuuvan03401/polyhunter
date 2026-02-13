@@ -1,6 +1,8 @@
 # poly-sdk 架构设计 v2
 
 > Service 层职责划分与方法清单
+>
+> 仓库目录与脚本边界说明见：`docs/architecture/repository-structure.md`
 
 ---
 
