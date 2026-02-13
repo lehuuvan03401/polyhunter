@@ -264,6 +264,14 @@ export function useProxy(): UseProxyReturn {
 
         try {
             const { provider } = await getSignerAndProvider();
+            const code = await provider.getCode(ADDRESSES.proxyFactory);
+            if (!code || code === '0x') {
+                setHasProxy(false);
+                setProxyAddress(null);
+                setError(`ProxyFactory not deployed at ${ADDRESSES.proxyFactory} on chain ${targetChainId}`);
+                return null;
+            }
+
             const factory = new ethers.Contract(ADDRESSES.proxyFactory, PROXY_FACTORY_ABI, provider);
 
             const address = await factory.getUserProxy(walletAddress);
@@ -271,15 +279,21 @@ export function useProxy(): UseProxyReturn {
 
             setHasProxy(exists);
             setProxyAddress(exists ? address : null);
+            setError(null);
             return exists ? address : null;
         } catch (err: any) {
-            // Only log unexpected errors, not wallet connection issues
-            if (err?.message !== 'Wallet not ready' && err?.message !== 'No wallet connected') {
-                console.error('Error fetching proxy address:', err);
+            const message = typeof err?.message === 'string' ? err.message : '';
+
+            if (message !== 'Wallet not ready' && message !== 'No wallet connected') {
+                if (message.includes('CALL_EXCEPTION') && message.includes('getUserProxy')) {
+                    setError(`Invalid ProxyFactory address for chain ${targetChainId}: ${ADDRESSES.proxyFactory}`);
+                } else {
+                    console.error('Error fetching proxy address:', err);
+                }
             }
             return null;
         }
-    }, [walletAddress, wallets, authenticated, getSignerAndProvider]);
+    }, [walletAddress, wallets, authenticated, getSignerAndProvider, targetChainId]);
 
     /**
      * Fetch proxy stats from contract

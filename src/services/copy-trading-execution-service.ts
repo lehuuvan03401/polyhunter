@@ -306,7 +306,7 @@ export class CopyTradingExecutionService {
             ]);
 
             // Call: executor.executeOnProxy(proxyAddress, usdcAddress, transferData)
-            const tx = await this.runWithSignerMutex(executionSigner, 'proxy-push', () => executor.executeOnProxy(
+            const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'proxy-push', () => executor.executeOnProxy(
                 proxyAddress,
                 addresses.usdc,
                 transferData,
@@ -333,7 +333,7 @@ export class CopyTradingExecutionService {
             const amountWei = ethers.utils.parseUnits(amount.toFixed(decimals), decimals);
 
             console.log(`[CopyExec] Returning funds to Proxy...`);
-            const tx = await this.runWithSignerMutex(executionSigner, 'return', () => token.transfer(proxyAddress, amountWei, overrides || {}));
+            const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'return', () => token.transfer(proxyAddress, amountWei, overrides || {}));
             await this.trackTx(tx, executionSigner);
             const receipt = await tx.wait();
 
@@ -373,7 +373,7 @@ export class CopyTradingExecutionService {
             ]);
 
             // Call: executor.executeOnProxy(...)
-            const tx = await this.runWithSignerMutex(executionSigner, 'token-pull', () => executor.executeOnProxy(
+            const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'token-pull', () => executor.executeOnProxy(
                 proxyAddress,
                 CONTRACT_ADDRESSES.ctf,
                 transferData,
@@ -406,7 +406,7 @@ export class CopyTradingExecutionService {
             // safeTransferFrom(from, to, id, amount, data)
             // Bot is signer, so we can call directly.
             const botAddress = await executionSigner.getAddress();
-            const tx = await this.runWithSignerMutex(executionSigner, 'token-push', () => ctf.safeTransferFrom(
+            const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'token-push', () => ctf.safeTransferFrom(
                 botAddress,
                 proxyAddress,
                 tokenId,
@@ -867,7 +867,7 @@ export class CopyTradingExecutionService {
 
             // Execute on Proxy (proxy-scoped)
             const tx = await this.runWithProxyMutex(proxyAddress, 'redeem', async () => {
-                return this.runWithSignerMutex(executionSigner, 'redeem', () => executor.executeOnProxy(
+                return this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'redeem', () => executor.executeOnProxy(
                     proxyAddress,
                     CONTRACT_ADDRESSES.ctf,
                     cancelData,

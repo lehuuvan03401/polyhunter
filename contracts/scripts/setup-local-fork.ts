@@ -2,9 +2,10 @@
 import { ethers, network } from 'hardhat';
 import * as dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Load env from frontend root
-// Load env from frontend root
+// Load env from frontend root (.env.local takes precedence)
+dotenv.config({ path: path.resolve(__dirname, "../../frontend/.env.local") });
 dotenv.config({ path: path.resolve(__dirname, "../../frontend/.env") });
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -76,6 +77,10 @@ async function main() {
             method: "hardhat_impersonateAccount",
             params: [IMPERSONATE_USDC_WHALE],
         });
+        await network.provider.request({
+            method: "hardhat_setBalance",
+            params: [IMPERSONATE_USDC_WHALE, ethers.toBeHex(ethers.parseEther("1"))],
+        });
         const whaleSigner = await ethers.getSigner(IMPERSONATE_USDC_WHALE);
 
         // ERC20 ABI Subset
@@ -86,6 +91,10 @@ async function main() {
 
         const fundAmount = ethers.parseUnits("100000", 6); // 100000 USDC
         await usdc.transfer(userProxy, fundAmount);
+        await network.provider.request({
+            method: "hardhat_stopImpersonatingAccount",
+            params: [IMPERSONATE_USDC_WHALE],
+        });
         console.log(`✅ Funded Proxy with 100000 USDC`);
     } catch (e: any) {
         console.warn("⚠️ Failed to fund USDC (Are you on a Fork?):", e.message);
@@ -99,18 +108,21 @@ async function main() {
 
     // Automate .env update
     try {
-        const fs = require('fs');
-        const envPath = path.resolve(__dirname, "../../frontend/.env"); // relative to contracts/scripts/
+        const envLocalPath = path.resolve(__dirname, "../../frontend/.env.local");
+        const envPath = path.resolve(__dirname, "../../frontend/.env");
+        const targetEnvPath = fs.existsSync(envLocalPath) ? envLocalPath : envPath;
 
         let envContent = "";
-        if (fs.existsSync(envPath)) {
-            envContent = fs.readFileSync(envPath, 'utf8');
+        if (fs.existsSync(targetEnvPath)) {
+            envContent = fs.readFileSync(targetEnvPath, 'utf8');
         }
 
         const updates = {
             "NEXT_PUBLIC_PROXY_FACTORY_ADDRESS": factoryAddress,
             "NEXT_PUBLIC_TREASURY_ADDRESS": treasuryAddress,
-            "NEXT_PUBLIC_EXECUTOR_ADDRESS": executorAddress
+            "NEXT_PUBLIC_EXECUTOR_ADDRESS": executorAddress,
+            "TREASURY_ADDRESS": treasuryAddress,
+            "NEXT_PUBLIC_USDC_ADDRESS": USDC_ADDRESS,
         };
 
         for (const [key, value] of Object.entries(updates)) {
@@ -123,8 +135,8 @@ async function main() {
             }
         }
 
-        fs.writeFileSync(envPath, envContent);
-        console.log(`🤖 Auto-updated .env with Factory and Treasury addresses`);
+        fs.writeFileSync(targetEnvPath, envContent);
+        console.log(`🤖 Auto-updated ${path.basename(targetEnvPath)} with local contract addresses`);
     } catch (e: any) {
         console.warn(`⚠️ Failed to auto-update .env: ${e.message}`);
     }
