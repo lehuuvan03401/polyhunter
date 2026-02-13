@@ -13,12 +13,12 @@
 
 import 'dotenv/config';
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import path from 'path';
 import { ethers } from 'ethers';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { EncryptionService } from '../../src/core/encryption.js'; // Import EncryptionService
 import { CONTRACT_ADDRESSES, CTF_ABI, ERC20_ABI, USDC_DECIMALS } from '../../src/core/contracts';
 import { CopyTradingExecutionService, ExecutionParams } from '../../src/services/copy-trading-execution-service';
@@ -31,7 +31,7 @@ import { TaskQueue } from '../../src/core/task-queue';
 import { DebtManager } from '../../src/core/debt-manager';
 import { MarketService } from '../../src/services/market-service';
 import { GammaApiClient } from '../../src/clients/gamma-api';
-import { DataApiClient } from '../../src/clients/data-api';
+import { DataApiClient, type Activity as DataActivity } from '../../src/clients/data-api';
 
 import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
 import { AffiliateEngine } from '../lib/services/affiliate-engine';
@@ -73,6 +73,17 @@ const SHARD_COUNT = Math.max(1, parseInt(process.env.SUPERVISOR_SHARD_COUNT || '
 const SHARD_INDEX = Math.max(0, parseInt(process.env.SUPERVISOR_SHARD_INDEX || '0', 10));
 const SHARD_INDEX_EFFECTIVE = SHARD_INDEX % SHARD_COUNT;
 const REDIS_URL = process.env.SUPERVISOR_REDIS_URL || process.env.REDIS_URL || '';
+const SIGNAL_MODE_RAW = (process.env.COPY_TRADING_SIGNAL_MODE || 'HYBRID').toUpperCase();
+const SIGNAL_MODE = SIGNAL_MODE_RAW === 'WS_ONLY' || SIGNAL_MODE_RAW === 'POLLING_ONLY' || SIGNAL_MODE_RAW === 'HYBRID'
+    ? SIGNAL_MODE_RAW
+    : 'HYBRID';
+const POLLING_BASE_INTERVAL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_POLLING_BASE_INTERVAL_MS || '5000', 10));
+const POLLING_MAX_INTERVAL_MS = Math.max(POLLING_BASE_INTERVAL_MS, parseInt(process.env.SUPERVISOR_POLLING_MAX_INTERVAL_MS || '10000', 10));
+const POLLING_LIMIT = Math.max(10, Math.min(500, parseInt(process.env.SUPERVISOR_POLLING_LIMIT || '200', 10)));
+const POLLING_LOOKBACK_SECONDS = Math.max(10, parseInt(process.env.SUPERVISOR_POLLING_LOOKBACK_SECONDS || '90', 10));
+const WS_UNHEALTHY_THRESHOLD_MS = Math.max(5000, parseInt(process.env.SUPERVISOR_WS_UNHEALTHY_THRESHOLD_MS || '30000', 10));
+const SIGNAL_SOURCE_WINDOW_MS = Math.max(30000, parseInt(process.env.SUPERVISOR_SIGNAL_SOURCE_WINDOW_MS || '120000', 10));
+const SIGNAL_CURSOR_SOURCE = 'data_api_activity';
 
 const SELFTEST_ENABLED = process.env.SUPERVISOR_SELFTEST === 'true';
 const SELFTEST_EXIT = process.env.SUPERVISOR_SELFTEST_EXIT === 'true';
@@ -98,6 +109,18 @@ if (!process.env.DATABASE_URL) {
     process.exit(1);
 }
 
+function isWsSignalEnabled(): boolean {
+    return SIGNAL_MODE === 'WS_ONLY' || SIGNAL_MODE === 'HYBRID';
+}
+
+function isPollingSignalEnabled(): boolean {
+    return SIGNAL_MODE === 'POLLING_ONLY' || SIGNAL_MODE === 'HYBRID';
+}
+
+function isPollingOnlyMode(): boolean {
+    return SIGNAL_MODE === 'POLLING_ONLY';
+}
+
 // Global Master Key (for backup / initialization)
 const MASTER_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 // For Fleet, we ideally want a Mnemonic. 
@@ -114,6 +137,7 @@ if (DRY_RUN) {
     console.log('[Supervisor] ⚠️ DRY_RUN MODE ENABLED - No trades will be executed');
 }
 console.log(`[Supervisor] 🌍 Network: ${process.env.NEXT_PUBLIC_NETWORK}`);
+console.log(`[Supervisor] 📡 Signal mode: ${SIGNAL_MODE}`);
 console.log(`[Supervisor] 🔌 RPC: ${RPC_URL}`);
 console.log(`[Supervisor] 🏭 ProxyFactory: ${CONTRACT_ADDRESSES.polygon.proxyFactory}`);
 console.log(`[Supervisor] 🏢 Executor: ${CONTRACT_ADDRESSES.polygon.executor}`);
@@ -180,6 +204,14 @@ async function shutdown(signal: string) {
     // 2. Close WebSocket
     console.log("[Supervisor] 🔌 Disconnecting WebSocket...");
     try {
+        if (pollingLoopTimer) {
+            clearTimeout(pollingLoopTimer);
+            pollingLoopTimer = null;
+        }
+        if (activitySubscription) {
+            activitySubscription.unsubscribe();
+            activitySubscription = null;
+        }
         // Assuming disconnect type exists on V2, if not we rely on process exit
         // realtimeService.disconnect(); 
     } catch (e) {
@@ -247,6 +279,18 @@ const configRefreshStats = {
 };
 let monitoredTraders: Set<string> = new Set();
 let ownedTraders: Set<string> = new Set();
+let ownedTradersCursorSignature = '';
+let pollingLoopTimer: NodeJS.Timeout | null = null;
+let pollingLoopRunning = false;
+let pollingIntervalMs = POLLING_BASE_INTERVAL_MS;
+let signalCursorStoreAvailable = true;
+
+interface SignalCursorState {
+    cursor: number;
+    cursorTxHash: string | null;
+}
+
+const signalCursorCache = new Map<string, SignalCursorState>();
 
 class UserExecutionManager {
     private services = new Map<string, { fingerprint: string; service: TradingService }>();
@@ -423,6 +467,95 @@ const queueStats = {
 };
 let isDrainingQueue = false;
 
+interface SourceWindowEntry {
+    firstSeenAt: number;
+    ws: boolean;
+    polling: boolean;
+}
+
+type SignalSource = 'ws' | 'polling' | 'chain' | 'mempool';
+
+const signalHealth = {
+    wsLastEventAt: 0,
+    pollLastRunAt: 0,
+    pollLastEventAt: 0,
+    pollLagMs: 0,
+    wsLastEventAgeMs: 0,
+    sourceMismatchRate: 0,
+    wsDegraded: false,
+};
+
+const signalSourceWindow = new Map<string, SourceWindowEntry>();
+const sourceStats = {
+    wsEvents: 0,
+    pollingEvents: 0,
+    closedWsOnly: 0,
+    closedPollingOnly: 0,
+    closedBoth: 0,
+};
+
+function recordSignalSource(key: string, source: SignalSource) {
+    if (source === 'ws') {
+        sourceStats.wsEvents += 1;
+        signalHealth.wsLastEventAt = Date.now();
+    } else if (source === 'polling') {
+        sourceStats.pollingEvents += 1;
+        signalHealth.pollLastEventAt = Date.now();
+    } else {
+        return;
+    }
+
+    const now = Date.now();
+    const existing = signalSourceWindow.get(key);
+    if (existing) {
+        if (source === 'ws') existing.ws = true;
+        if (source === 'polling') existing.polling = true;
+        return;
+    }
+
+    signalSourceWindow.set(key, {
+        firstSeenAt: now,
+        ws: source === 'ws',
+        polling: source === 'polling',
+    });
+}
+
+function flushSignalSourceWindow(now = Date.now()) {
+    for (const [key, entry] of signalSourceWindow.entries()) {
+        if (now - entry.firstSeenAt < SIGNAL_SOURCE_WINDOW_MS) continue;
+        if (entry.ws && entry.polling) sourceStats.closedBoth += 1;
+        else if (entry.ws) sourceStats.closedWsOnly += 1;
+        else if (entry.polling) sourceStats.closedPollingOnly += 1;
+        signalSourceWindow.delete(key);
+    }
+}
+
+function evaluateWsHealth() {
+    if (!isWsSignalEnabled()) {
+        signalHealth.wsLastEventAgeMs = 0;
+        signalHealth.wsDegraded = false;
+        return;
+    }
+
+    const now = Date.now();
+    signalHealth.wsLastEventAgeMs = signalHealth.wsLastEventAt > 0
+        ? (now - signalHealth.wsLastEventAt)
+        : Number.MAX_SAFE_INTEGER;
+    const unhealthy = signalHealth.wsLastEventAgeMs > WS_UNHEALTHY_THRESHOLD_MS;
+
+    if (SIGNAL_MODE !== 'HYBRID') return;
+    if (unhealthy && !signalHealth.wsDegraded) {
+        signalHealth.wsDegraded = true;
+        console.warn(`[Supervisor] ⚠️ WS unhealthy (${signalHealth.wsLastEventAgeMs}ms without event). Polling remains active.`);
+        return;
+    }
+
+    if (!unhealthy && signalHealth.wsDegraded) {
+        signalHealth.wsDegraded = false;
+        console.log('[Supervisor] ✅ WS recovered. Hybrid fast-path restored.');
+    }
+}
+
 function recordExecution(success: boolean, latencyMs: number): void {
     metrics.totalExecutions++;
     if (success) metrics.successfulExecutions++;
@@ -432,6 +565,12 @@ function recordExecution(success: boolean, latencyMs: number): void {
 
 async function logMetricsSummary(): Promise<void> {
     try {
+        flushSignalSourceWindow();
+        evaluateWsHealth();
+        const closedTotal = sourceStats.closedWsOnly + sourceStats.closedPollingOnly + sourceStats.closedBoth;
+        signalHealth.sourceMismatchRate = closedTotal > 0
+            ? (sourceStats.closedWsOnly + sourceStats.closedPollingOnly) / closedTotal
+            : 0;
         const duration = (Date.now() - metrics.lastResetAt) / 1000 / 60; // minutes
         const avgLatency = metrics.totalExecutions > 0
             ? (metrics.totalLatencyMs / metrics.totalExecutions / 1000).toFixed(2)
@@ -448,6 +587,8 @@ async function logMetricsSummary(): Promise<void> {
         console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: ${metrics.totalExecutions} executions, ${successRate}% success, ${avgLatency}s avg latency`);
         console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
         console.log(`[Metrics] 🧾 Dedup: hits=${dedupStats.hits} misses=${dedupStats.misses}`);
+        console.log(`[Metrics] 📡 Signal: mode=${SIGNAL_MODE} poll_lag_ms=${signalHealth.pollLagMs} ws_last_event_age_ms=${signalHealth.wsLastEventAgeMs} source_mismatch_rate=${signalHealth.sourceMismatchRate.toFixed(4)} ws_degraded=${signalHealth.wsDegraded}`);
+        console.log(`[Metrics] 📡 Source counts: ws=${sourceStats.wsEvents} polling=${sourceStats.pollingEvents} both=${sourceStats.closedBoth} ws_only=${sourceStats.closedWsOnly} polling_only=${sourceStats.closedPollingOnly}`);
         if (configRefreshStats.lastRunAt) {
             console.log(`[Metrics] 🧭 Config refresh: mode=${configRefreshStats.lastMode} fetched=${configRefreshStats.lastFetched} duration=${configRefreshStats.lastDurationMs}ms at=${new Date(configRefreshStats.lastRunAt).toISOString()}`);
         }
@@ -466,6 +607,11 @@ async function logMetricsSummary(): Promise<void> {
         queueStats.maxDepth = queueDepth;
         dedupStats.hits = 0;
         dedupStats.misses = 0;
+        sourceStats.wsEvents = 0;
+        sourceStats.pollingEvents = 0;
+        sourceStats.closedBoth = 0;
+        sourceStats.closedWsOnly = 0;
+        sourceStats.closedPollingOnly = 0;
     } catch (error) {
         console.warn('[Supervisor] Metrics summary failed:', error);
     }
@@ -988,8 +1134,11 @@ function buildDedupKey(params: { txHash: string; logIndex?: number; tokenId?: st
     return params.txHash;
 }
 
-async function isEventDuplicate(params: { txHash: string; logIndex?: number; tokenId?: string; side?: string }): Promise<boolean> {
+async function isEventDuplicate(params: { txHash: string; logIndex?: number; tokenId?: string; side?: string; source?: SignalSource }): Promise<boolean> {
     const key = buildDedupKey(params);
+    if (params.source) {
+        recordSignalSource(key, params.source);
+    }
     const allowed = await dedupStore.checkAndSet(key, DEDUP_TTL_MS);
     if (!allowed) {
         dedupStats.hits += 1;
@@ -1084,6 +1233,15 @@ function buildActivitySubscriptionKey(addresses: string[], filtered: boolean): s
 }
 
 function subscribeToActivityIfNeeded(): void {
+    if (!isWsSignalEnabled()) {
+        if (activitySubscription) {
+            activitySubscription.unsubscribe();
+            activitySubscription = null;
+        }
+        activitySubscriptionKey = 'disabled';
+        return;
+    }
+
     const sortedAddresses = Array.from(ownedTraders).map((addr) => addr.toLowerCase()).sort();
     const shouldFilter = WS_ADDRESS_FILTER && sortedAddresses.length > 0;
     const nextKey = buildActivitySubscriptionKey(sortedAddresses, shouldFilter);
@@ -1113,6 +1271,280 @@ function subscribeToActivityIfNeeded(): void {
     );
     activitySubscriptionKey = nextKey;
     console.log(`[Supervisor] 🎧 Activity subscription: filtered (${sortedAddresses.length} traders)`);
+}
+
+function getTraderCursorScope(traderAddress: string): string {
+    return `trader:${traderAddress.toLowerCase()}`;
+}
+
+async function loadSignalCursor(scope: string): Promise<SignalCursorState | null> {
+    const cached = signalCursorCache.get(scope);
+    if (cached) return cached;
+    if (!signalCursorStoreAvailable) return null;
+
+    try {
+        const rows = await prisma.$queryRaw<Array<{ scope: string; cursor: number; cursorTxHash: string | null }>>`
+            SELECT "scope", "cursor", "cursorTxHash"
+            FROM "SignalCursor"
+            WHERE "scope" = ${scope} AND "source" = ${SIGNAL_CURSOR_SOURCE}
+            LIMIT 1
+        `;
+        const row = rows[0];
+        if (!row) return null;
+        const state: SignalCursorState = {
+            cursor: Number(row.cursor || 0),
+            cursorTxHash: row.cursorTxHash || null,
+        };
+        signalCursorCache.set(scope, state);
+        return state;
+    } catch (error) {
+        signalCursorStoreAvailable = false;
+        console.warn('[Supervisor] ⚠️ Failed to read signal cursor. Falling back to in-memory cursor state.', error);
+        return null;
+    }
+}
+
+async function persistSignalCursor(scope: string, state: SignalCursorState): Promise<void> {
+    signalCursorCache.set(scope, state);
+    if (!signalCursorStoreAvailable) return;
+
+    try {
+        await prisma.$executeRaw`
+            INSERT INTO "SignalCursor" ("id", "scope", "source", "cursor", "cursorTxHash", "createdAt", "updatedAt")
+            VALUES (${randomUUID()}, ${scope}, ${SIGNAL_CURSOR_SOURCE}, ${state.cursor}, ${state.cursorTxHash}, NOW(), NOW())
+            ON CONFLICT ("scope")
+            DO UPDATE SET
+                "source" = EXCLUDED."source",
+                "cursor" = EXCLUDED."cursor",
+                "cursorTxHash" = EXCLUDED."cursorTxHash",
+                "updatedAt" = NOW()
+        `;
+    } catch (error) {
+        signalCursorStoreAvailable = false;
+        console.warn('[Supervisor] ⚠️ Failed to persist signal cursor table. Falling back to in-memory cursor state.', error);
+    }
+}
+
+async function syncPollingCursorsForOwnedTraders(options: { reloadFromStore?: boolean } = {}): Promise<void> {
+    if (!isPollingSignalEnabled()) return;
+
+    const traders = Array.from(ownedTraders);
+    if (traders.length === 0) return;
+
+    const scopes = traders.map((trader) => getTraderCursorScope(trader));
+    let loaded = 0;
+    let initialized = 0;
+
+    if (signalCursorStoreAvailable && options.reloadFromStore) {
+        try {
+            const rows = await prisma.$queryRaw<Array<{ scope: string; cursor: number; cursorTxHash: string | null }>>`
+                SELECT "scope", "cursor", "cursorTxHash"
+                FROM "SignalCursor"
+                WHERE "source" = ${SIGNAL_CURSOR_SOURCE}
+                  AND "scope" IN (${Prisma.join(scopes)})
+            `;
+
+            for (const row of rows) {
+                signalCursorCache.set(row.scope, {
+                    cursor: Number(row.cursor || 0),
+                    cursorTxHash: row.cursorTxHash || null,
+                });
+            }
+            loaded = rows.length;
+        } catch (error) {
+            signalCursorStoreAvailable = false;
+            console.warn('[Supervisor] ⚠️ Failed to preload signal cursors. Falling back to in-memory cursor state.', error);
+        }
+    }
+
+    const seedCursor = Math.floor(Date.now() / 1000) - POLLING_LOOKBACK_SECONDS;
+    for (const scope of scopes) {
+        if (signalCursorCache.has(scope)) continue;
+        initialized += 1;
+        await persistSignalCursor(scope, {
+            cursor: seedCursor,
+            cursorTxHash: null,
+        });
+    }
+
+    if (loaded > 0 || initialized > 0) {
+        console.log(`[Supervisor] 📍 Polling cursors synced: loaded=${loaded}, initialized=${initialized}, ownedTraders=${traders.length}`);
+    }
+}
+
+async function handlePolledActivityTrade(traderAddress: string, trade: DataActivity): Promise<boolean> {
+    if (!trade.transactionHash || !trade.asset || !trade.side) return false;
+    const side = trade.side;
+    const tokenId = trade.asset;
+    const size = Number(trade.size || 0);
+    const price = Number(trade.price || 0);
+
+    if (size <= 0 || price <= 0) return false;
+
+    if (await isEventDuplicate({ txHash: trade.transactionHash, tokenId, side, source: 'polling' })) return false;
+
+    const subscribers = activeConfigs.filter((config) => config.traderAddress.toLowerCase() === traderAddress);
+    if (subscribers.length === 0) return false;
+
+    console.log(`[Supervisor] 🛰️ POLL DETECTED: ${traderAddress} ${side} ${tokenId} ($${price})`);
+
+    await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
+        await processJob(sub, side, tokenId, price, traderAddress, size);
+    });
+    return true;
+}
+
+async function pollTraderActivity(traderAddress: string): Promise<{ fetched: number; processed: number; newestTimestamp: number; newestTxHash: string | null }> {
+    const normalizedTrader = traderAddress.toLowerCase();
+    const scope = getTraderCursorScope(normalizedTrader);
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    let state = signalCursorCache.get(scope);
+    if (!state) {
+        state = await loadSignalCursor(scope) || {
+            cursor: nowSec - POLLING_LOOKBACK_SECONDS,
+            cursorTxHash: null,
+        };
+        signalCursorCache.set(scope, state);
+    }
+
+    const startCursor = Math.max(0, state.cursor - POLLING_LOOKBACK_SECONDS);
+    let offset = 0;
+    let fetched = 0;
+    let processed = 0;
+    let newestTimestamp = state.cursor;
+    let newestTxHash = state.cursorTxHash;
+    let resumeReached = !state.cursorTxHash;
+
+    while (true) {
+        const page = await dataApi.getActivity(normalizedTrader, {
+            type: 'TRADE',
+            start: startCursor,
+            limit: POLLING_LIMIT,
+            offset,
+            sortBy: 'TIMESTAMP',
+            sortDirection: 'ASC',
+        });
+
+        if (page.length === 0) break;
+        fetched += page.length;
+
+        for (const activity of page) {
+            if (activity.type !== 'TRADE') continue;
+            const timestamp = Number(activity.timestamp || 0);
+            if (!Number.isFinite(timestamp) || timestamp <= 0) continue;
+            if (timestamp < state.cursor) continue;
+            if (timestamp === state.cursor) {
+                if (!state.cursorTxHash) continue;
+                if (!resumeReached) {
+                    if (activity.transactionHash === state.cursorTxHash) {
+                        resumeReached = true;
+                    }
+                    continue;
+                }
+            }
+
+            const handled = await handlePolledActivityTrade(normalizedTrader, activity);
+            if (handled) {
+                processed += 1;
+            }
+
+            if (
+                timestamp > newestTimestamp
+                || (timestamp === newestTimestamp && activity.transactionHash && activity.transactionHash !== newestTxHash)
+            ) {
+                newestTimestamp = timestamp;
+                newestTxHash = activity.transactionHash || null;
+            }
+        }
+
+        if (page.length < POLLING_LIMIT || offset >= 10000) break;
+        offset += POLLING_LIMIT;
+    }
+
+    const hasCursorAdvance = newestTimestamp > state.cursor
+        || (newestTimestamp === state.cursor && newestTxHash !== state.cursorTxHash);
+    if (hasCursorAdvance) {
+        await persistSignalCursor(scope, {
+            cursor: newestTimestamp,
+            cursorTxHash: newestTxHash,
+        });
+    }
+
+    return { fetched, processed, newestTimestamp, newestTxHash };
+}
+
+async function pollOwnedTradersOnce(): Promise<{ fetched: number; processed: number; maxLagMs: number }> {
+    const traders = Array.from(ownedTraders);
+    signalHealth.pollLastRunAt = Date.now();
+    if (traders.length === 0) {
+        if (signalHealth.pollLastEventAt > 0) {
+            signalHealth.pollLagMs = Date.now() - signalHealth.pollLastEventAt;
+        }
+        return { fetched: 0, processed: 0, maxLagMs: signalHealth.pollLagMs };
+    }
+
+    let totalFetched = 0;
+    let totalProcessed = 0;
+    let newestTimestamp = 0;
+    const pollConcurrency = Math.max(1, Math.min(FANOUT_CONCURRENCY, 12));
+
+    await runWithConcurrency(traders, pollConcurrency, async (traderAddress) => {
+        try {
+            const result = await pollTraderActivity(traderAddress);
+            totalFetched += result.fetched;
+            totalProcessed += result.processed;
+            newestTimestamp = Math.max(newestTimestamp, result.newestTimestamp);
+        } catch (error) {
+            console.warn(`[Supervisor] Polling failed for trader ${traderAddress}:`, error);
+        }
+    });
+
+    if (newestTimestamp > 0) {
+        signalHealth.pollLagMs = Math.max(0, Date.now() - newestTimestamp * 1000);
+    } else if (signalHealth.pollLastEventAt > 0) {
+        signalHealth.pollLagMs = Date.now() - signalHealth.pollLastEventAt;
+    }
+
+    return { fetched: totalFetched, processed: totalProcessed, maxLagMs: signalHealth.pollLagMs };
+}
+
+function schedulePollingLoop(delayMs: number): void {
+    if (isShuttingDown || !isPollingSignalEnabled()) return;
+    if (pollingLoopTimer) {
+        clearTimeout(pollingLoopTimer);
+        pollingLoopTimer = null;
+    }
+
+    pollingLoopTimer = setTimeout(() => {
+        void startPollingLoop();
+    }, delayMs);
+}
+
+async function startPollingLoop(): Promise<void> {
+    if (!isPollingSignalEnabled() || isShuttingDown) return;
+    if (pollingLoopRunning) return;
+    pollingLoopRunning = true;
+
+    try {
+        evaluateWsHealth();
+        await syncPollingCursorsForOwnedTraders();
+        const cycle = await pollOwnedTradersOnce();
+        if (cycle.processed > 0) {
+            console.log(`[Supervisor] 🛰️ Poll cycle: fetched=${cycle.fetched} processed=${cycle.processed} lag=${cycle.maxLagMs}ms`);
+        }
+        if (isPollingOnlyMode() || signalHealth.wsDegraded || cycle.processed > 0) {
+            pollingIntervalMs = POLLING_BASE_INTERVAL_MS;
+        } else {
+            pollingIntervalMs = Math.min(POLLING_MAX_INTERVAL_MS, pollingIntervalMs + 1000);
+        }
+    } catch (error) {
+        pollingIntervalMs = Math.min(POLLING_MAX_INTERVAL_MS, pollingIntervalMs * 2);
+        console.error('[Supervisor] Polling loop error:', error);
+    } finally {
+        pollingLoopRunning = false;
+        schedulePollingLoop(pollingIntervalMs);
+    }
 }
 
 // --- HELPERS ---
@@ -1205,6 +1637,7 @@ async function refreshConfigs(options: { full?: boolean } = {}) {
         activeConfigs = Array.from(configCache.values());
         monitoredTraders = new Set(activeConfigs.map(c => c.traderAddress.toLowerCase()));
         ownedTraders = new Set(Array.from(monitoredTraders).filter(ownsTrader));
+        const ownedTradersSignature = Array.from(ownedTraders).sort().join(',');
 
         const stats = walletManager ? walletManager.getStats() : { total: 1, available: 1 };
         const shardInfo = SHARD_COUNT > 1 ? ` Shard ${SHARD_INDEX_EFFECTIVE + 1}/${SHARD_COUNT} (${ownedTraders.size}/${monitoredTraders.size} traders)` : '';
@@ -1224,6 +1657,10 @@ async function refreshConfigs(options: { full?: boolean } = {}) {
         }
 
         subscribeToActivityIfNeeded();
+        if (isPollingSignalEnabled() && ownedTradersSignature !== ownedTradersCursorSignature) {
+            ownedTradersCursorSignature = ownedTradersSignature;
+            await syncPollingCursorsForOwnedTraders({ reloadFromStore: true });
+        }
 
     } catch (e) {
         console.error("[Supervisor] Config refresh failed:", e);
@@ -1342,7 +1779,7 @@ async function handleTransfer(
 
         if (!trader || !side) return;
 
-        if (await isEventDuplicate({ txHash, logIndex: event.logIndex, tokenId, side })) {
+        if (await isEventDuplicate({ txHash, logIndex: event.logIndex, tokenId, side, source: 'chain' })) {
             return;
         }
 
@@ -1412,7 +1849,7 @@ const handleSniffedTx = async (
 
         if (!trader || !side) return;
 
-        if (await isEventDuplicate({ txHash, tokenId, side })) {
+        if (await isEventDuplicate({ txHash, tokenId, side, source: 'mempool' })) {
             return;
         }
 
@@ -1929,7 +2366,7 @@ async function handleActivityTrade(trade: ActivityTrade) {
         const size = trade.size;
         const price = trade.price;
 
-        if (await isEventDuplicate({ txHash: trade.transactionHash, tokenId, side })) return;
+        if (await isEventDuplicate({ txHash: trade.transactionHash, tokenId, side, source: 'ws' })) return;
 
         console.log(`[Supervisor] ⚡ WS DETECTED: ${traderAddress} ${side} ${tokenId} ($${price})`);
 
@@ -1952,6 +2389,10 @@ async function handleActivityTrade(trade: ActivityTrade) {
 }
 
 function startActivityListener() {
+    if (!isWsSignalEnabled()) {
+        console.log('[Supervisor] 📡 WS signal source disabled by COPY_TRADING_SIGNAL_MODE.');
+        return;
+    }
     console.log("[Supervisor] 🔌 Connecting Activity WebSocket...");
     realtimeService.connect();
     subscribeToActivityIfNeeded();
@@ -2136,25 +2577,34 @@ async function main() {
     }, QUEUE_DRAIN_INTERVAL_MS);
 
     // Start Listeners
-    // Always start listeners - monitoredTraders might be populated later via refreshConfigs
-    // A. WebSocket (Primary - <500ms)
-    startActivityListener();
+    if (isPollingSignalEnabled()) {
+        console.log('[Supervisor] 🛰️ Starting polling signal loop...');
+        void startPollingLoop();
+    }
 
-    // B. Chain Events (Fallback - ~2s)
-    console.log(`[Supervisor] 🎧 Listening for TransferSingle events on ${CONTRACT_ADDRESSES.ctf}...`);
-    const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
-    ctf.on("TransferSingle", handleTransfer);
+    if (!isPollingOnlyMode()) {
+        // Always start listeners - monitoredTraders might be populated later via refreshConfigs
+        // A. WebSocket (Primary - <500ms)
+        startActivityListener();
 
-    // C. Mempool (Optional / Legacy)
-    if (process.env.ENABLE_MEMPOOL === 'true') {
-        mempoolDetector = new MempoolDetector(
-            provider,
-            monitoredTraders,
-            (tx: any) => {
-                console.log(`[Mempool] Signal: ${tx.hash}`);
-            }
-        );
-        mempoolDetector.start();
+        // B. Chain Events (Fallback - ~2s)
+        console.log(`[Supervisor] 🎧 Listening for TransferSingle events on ${CONTRACT_ADDRESSES.ctf}...`);
+        const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, provider);
+        ctf.on("TransferSingle", handleTransfer);
+
+        // C. Mempool (Optional / Legacy)
+        if (process.env.ENABLE_MEMPOOL === 'true') {
+            mempoolDetector = new MempoolDetector(
+                provider,
+                monitoredTraders,
+                (tx: any) => {
+                    console.log(`[Mempool] Signal: ${tx.hash}`);
+                }
+            );
+            mempoolDetector.start();
+        }
+    } else {
+        console.log('[Supervisor] 📡 POLLING_ONLY mode: WS/chain/mempool listeners disabled.');
     }
 
     // Keep alive

@@ -379,6 +379,19 @@ model SyncLog {
   @@index([startedAt])
 }
 
+// Persistent cursor for signal ingestion polling
+model SignalCursor {
+  id           String   @id @default(cuid())
+  scope        String   @unique // e.g. "trader:0xabc..."
+  source       String // e.g. "data_api_activity"
+  cursor       Int // Unix seconds
+  cursorTxHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([source])
+}
+
 // Debt Record for tracking failed reimbursements
 model DebtRecord {
   id           String    @id @default(cuid())
