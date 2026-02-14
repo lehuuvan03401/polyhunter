@@ -18,11 +18,11 @@
 - [x] 3.5 Enforce pause of new guaranteed subscriptions when reserve coverage ratio is below threshold.
 
 ## 4. Frontend Experience
-- [ ] 4.1 Add `托管理财` entry and product marketplace page.
-- [ ] 4.2 Build product detail page with terms, drawdown policy, guarantee clause, and fee split.
-- [ ] 4.3 Build subscription flow modal/form with explicit risk/terms confirmations.
-- [ ] 4.4 Build `我的托管` dashboard for NAV, drawdown, timeline, and settlement history.
-- [ ] 4.5 Implement disclosure policy rendering (realtime vs delayed details).
+- [x] 4.1 Add `托管理财` entry and product marketplace page.
+- [x] 4.2 Build product detail page with terms, drawdown policy, guarantee clause, and fee split.
+- [x] 4.3 Build subscription flow modal/form with explicit risk/terms confirmations.
+- [x] 4.4 Build `我的托管` dashboard for NAV, drawdown, timeline, and settlement history.
+- [x] 4.5 Implement disclosure policy rendering (realtime vs delayed details).
 
 ## 5. Validation
 - [ ] 5.1 Unit tests for HWM fee, guarantee shortfall, and settlement math.

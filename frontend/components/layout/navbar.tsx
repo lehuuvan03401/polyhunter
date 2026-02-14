@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Link, usePathname } from '@/i18n/routing';
 import { cn } from '@/lib/utils';
-import { LineChart, LayoutDashboard, Wallet, Search, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { ethers } from 'ethers';
 import { useTranslations } from 'next-intl';
 import { LanguageSwitcher } from '../language-switcher';
@@ -14,7 +14,7 @@ import { UserMenu } from './user-menu';
 export function Navbar() {
     const t = useTranslations('Navbar');
     const pathname = usePathname();
-    const { login, authenticated, user, logout, ready, isLoggingIn } = usePrivyLogin();
+    const { login, authenticated, user, ready, isLoggingIn } = usePrivyLogin();
     const [usdcBalance, setUsdcBalance] = React.useState<number | null>(null);
 
     // Fetch USDC balance when authenticated
@@ -51,10 +51,6 @@ export function Navbar() {
         const interval = setInterval(fetchBalance, 30000);
         return () => clearInterval(interval);
     }, [authenticated, user?.wallet?.address]);
-
-    const truncateAddress = (address: string) => {
-        return `${address.slice(0, 6)}...${address.slice(-4)}`;
-    };
 
     return (
         <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -98,6 +94,9 @@ export function Navbar() {
                             <Link key="portfolio" href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('portfolio')}
                             </Link>
+                            <Link key="managed-wealth" href="/managed-wealth" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/managed-wealth") ? "text-foreground" : "text-muted-foreground")}>
+                                {t('managedWealth')}
+                            </Link>
 
                         </>
                     ) : (
@@ -108,6 +107,9 @@ export function Navbar() {
                             </Link>
                             <Link key="affiliate-guest" href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('affiliates')}
+                            </Link>
+                            <Link key="managed-wealth-guest" href="/managed-wealth" className={cn("transition-colors hover:text-foreground/80", pathname.startsWith("/managed-wealth") ? "text-foreground" : "text-muted-foreground")}>
+                                {t('managedWealth')}
                             </Link>
                         </>
                     )}
