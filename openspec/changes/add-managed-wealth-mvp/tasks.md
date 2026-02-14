@@ -27,5 +27,5 @@
 ## 5. Validation
 - [x] 5.1 Unit tests for HWM fee, guarantee shortfall, and settlement math.
 - [x] 5.2 Integration tests for subscribe -> run -> mature -> settle lifecycle.
-- [ ] 5.3 E2E tests for user subscription flow and settlement visibility.
+- [x] 5.3 E2E tests for user subscription flow and settlement visibility.
 - [x] 5.4 Add runbook section for reserve-fund operations and emergency controls.

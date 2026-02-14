@@ -5,6 +5,12 @@ import { useCallback, useEffect, useState } from 'react';
 
 let loginInFlight: Promise<void> | null = null;
 const loginListeners = new Set<(value: boolean) => void>();
+type PrivyWindow = Window & {
+    privy?: {
+        login?: () => Promise<void>;
+        [key: string]: unknown;
+    };
+};
 
 function notifyLoginListeners(value: boolean) {
     for (const listener of loginListeners) {
@@ -15,6 +21,8 @@ function notifyLoginListeners(value: boolean) {
 export function usePrivyLogin() {
     const privy = usePrivy();
     const [isLoggingIn, setIsLoggingIn] = useState<boolean>(Boolean(loginInFlight));
+    const mockAuthEnabled = process.env.NEXT_PUBLIC_E2E_MOCK_AUTH === 'true';
+    const mockWalletAddress = (process.env.NEXT_PUBLIC_E2E_MOCK_WALLET || '').toLowerCase();
 
     useEffect(() => {
         loginListeners.add(setIsLoggingIn);
@@ -35,15 +43,35 @@ export function usePrivyLogin() {
 
         loginInFlight = loginPromise;
         return loginPromise;
-    }, [privy.authenticated, privy.ready, privy.login]);
+    }, [privy]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        (window as any).privy = {
-            ...(window as any).privy,
+        const globalWindow = window as PrivyWindow;
+        globalWindow.privy = {
+            ...(globalWindow.privy ?? {}),
             login: guardedLogin,
         };
     }, [guardedLogin]);
+
+    if (mockAuthEnabled && mockWalletAddress) {
+        const mockUser = {
+            ...((privy.user as Record<string, unknown> | null) ?? {}),
+            wallet: {
+                ...((privy.user as { wallet?: Record<string, unknown> } | null)?.wallet ?? {}),
+                address: mockWalletAddress,
+            },
+        } as typeof privy.user;
+
+        return {
+            ...privy,
+            ready: true,
+            authenticated: true,
+            user: mockUser,
+            login: async () => {},
+            isLoggingIn: false,
+        };
+    }
 
     return { ...privy, login: guardedLogin, isLoggingIn };
 }
