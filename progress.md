@@ -520,3 +520,31 @@
 - Actions taken:
   - Ran `scripts/verify/copy-trading-readiness.ts` using mainnet env (`env:mainnet` + secrets).
   - Readiness failed with `NO_PROXY` for execution wallet; needs proxy creation before re-run.
+
+## Session: 2026-02-14
+
+### Phase: Managed Wealth Brainstorming & Spec Packaging
+- **Status:** complete
+- Actions taken:
+  - Loaded brainstorming skill instructions and followed hard-gate (design-first, no implementation changes).
+  - Explored project context: agent templates, copy-trading modal, API routes, Prisma models, and OpenSpec specs.
+  - Conducted iterative single-question clarifications with product owner to lock key product constraints.
+  - Presented and confirmed four design sections (product definition, architecture/data model, rules, API/UI/testing).
+  - Wrote final design document: `docs/plans/2026-02-14-managed-wealth-design.md`.
+  - Committed design doc to git.
+  - Created OpenSpec proposal `add-managed-wealth-mvp` with proposal/tasks/design/spec delta.
+  - Validated proposal strictly with OpenSpec CLI.
+- Files created/modified:
+  - docs/plans/2026-02-14-managed-wealth-design.md (created)
+  - openspec/changes/add-managed-wealth-mvp/proposal.md (created)
+  - openspec/changes/add-managed-wealth-mvp/tasks.md (created)
+  - openspec/changes/add-managed-wealth-mvp/design.md (created)
+  - openspec/changes/add-managed-wealth-mvp/specs/managed-wealth/spec.md (created)
+  - task_plan.md (modified)
+  - findings.md (modified)
+  - progress.md (modified)
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| OpenSpec strict validation | `openspec validate add-managed-wealth-mvp --strict --no-interactive` | Proposal passes validation | Change is valid | ✓ |

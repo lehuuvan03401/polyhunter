@@ -116,3 +116,16 @@
 - Added post-archive maintenance: `scripts/archive-data.ts` now runs `VACUUM (ANALYZE)` on CopyTrade/CommissionLog (can disable via `ARCHIVE_RUN_VACUUM=false`).
 - Deferred Redis cache adapter documented in `openspec/changes/optimize-db-design/design.md` for a future proposal.
 - Lock-claim verification: parallel claim scripts showed exclusivity (one claimed 2 rows, other 0) using seeded CopyTrade rows.
+
+## Managed Wealth Brainstorming Findings (2026-02-14)
+- Product owner selected isolated per-user capital (no pooled-fund MVP).
+- Product owner selected mixed terms with 9 buckets: 1/3/7/15/30/60/90/180/365 days.
+- Guarantee policy: conservative only supports principal/minimum-yield guarantee; moderate/aggressive are non-guaranteed.
+- Guarantee funding source: platform reserve fund ledger.
+- Disclosure policy default: transparent by default; delayed detail disclosure allowed.
+- Revenue model: all strategies use profit-sharing, with strategy-specific rates.
+- Delivery strategy: MVP must be simulated first before any real-fund rollout.
+- Output artifacts created:
+  - `docs/plans/2026-02-14-managed-wealth-design.md`
+  - `openspec/changes/add-managed-wealth-mvp/*`
+- OpenSpec validation status: `openspec validate add-managed-wealth-mvp --strict --no-interactive` passed.

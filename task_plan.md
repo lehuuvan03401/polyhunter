@@ -38,3 +38,18 @@ Phase 2: Verification (in_progress)
 | Error | Attempt | Resolution |
 |---|---|---|
 | None yet for this phase | - | - |
+
+---
+
+## Ad-hoc Plan: Managed Wealth Brainstorming (2026-02-14)
+
+### Goal
+Finalize a spec-ready managed wealth feature design (simulated MVP) for non-professional users and prepare OpenSpec proposal artifacts.
+
+### Steps
+- [x] Explore current agent/copy-trading context and model constraints.
+- [x] Run one-question-at-a-time requirement clarification with product owner.
+- [x] Produce and confirm sectioned design (product, architecture, rules, API/UI, testing).
+- [x] Write design doc to `docs/plans/2026-02-14-managed-wealth-design.md`.
+- [x] Scaffold OpenSpec change `add-managed-wealth-mvp` and validate strict.
+- [ ] Hand off implementation-phase execution plan (engineering sprint breakdown).
