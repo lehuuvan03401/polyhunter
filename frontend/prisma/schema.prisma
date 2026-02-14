@@ -215,6 +215,43 @@ enum StrategyProfile {
   AGGRESSIVE // High slippage (5%), high risk
 }
 
+// Disclosure policy for managed products
+enum ManagedDisclosurePolicy {
+  TRANSPARENT
+  DELAYED
+}
+
+// Managed subscription lifecycle state
+enum ManagedSubscriptionStatus {
+  PENDING
+  RUNNING
+  MATURED
+  SETTLED
+  CANCELLED
+}
+
+// Managed settlement state
+enum ManagedSettlementStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// Managed risk control actions
+enum ManagedRiskAction {
+  DELEVERAGE
+  PAUSE_NEW_ENTRIES
+  FORCE_PROTECTIVE_EXIT
+}
+
+// Reserve fund ledger entry type
+enum ReserveFundEntryType {
+  DEPOSIT
+  WITHDRAW
+  GUARANTEE_TOPUP
+  ADJUSTMENT
+}
+
 // Trade size interpretation
 enum TradeSizeMode {
   SHARES // Trade size represents shares
@@ -299,8 +336,9 @@ model CopyTradingConfig {
   updatedAt DateTime @updatedAt
 
   // Relations
-  copyTrades        CopyTrade[]
-  copyTradeArchives CopyTradeArchive[]
+  copyTrades           CopyTrade[]
+  copyTradeArchives    CopyTradeArchive[]
+  managedSubscriptions ManagedSubscription[]
 
   // Agent Relation
   agentId       String?
@@ -348,10 +386,185 @@ model AgentTemplate {
   updatedAt DateTime @updatedAt
 
   // Relations
-  configs CopyTradingConfig[]
+  configs         CopyTradingConfig[]
+  managedProducts ManagedProductAgent[]
 
   @@index([isActive])
   @@index([traderAddress])
+}
+
+// ========================================
+// Managed Wealth Models (MVP)
+// ========================================
+
+model ManagedProduct {
+  id                   String                  @id @default(cuid())
+  slug                 String                  @unique
+  name                 String
+  description          String?
+  strategyProfile      StrategyProfile
+  isGuaranteed         Boolean                 @default(false)
+  isActive             Boolean                 @default(true)
+  status               String                  @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  disclosurePolicy     ManagedDisclosurePolicy @default(TRANSPARENT)
+  disclosureDelayHours Int                     @default(0)
+  performanceFeeRate   Float                   @default(0.1)
+  managementFeeRate    Float                   @default(0.0)
+  reserveCoverageMin   Float                   @default(1.2)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  terms         ManagedTerm[]
+  agents        ManagedProductAgent[]
+  subscriptions ManagedSubscription[]
+
+  @@index([isActive, strategyProfile])
+  @@index([status])
+  @@index([isGuaranteed])
+}
+
+model ManagedTerm {
+  id                    String         @id @default(cuid())
+  productId             String
+  product               ManagedProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label                 String
+  durationDays          Int
+  targetReturnMin       Float
+  targetReturnMax       Float
+  maxDrawdown           Float
+  minYieldRate          Float? // Guaranteed floor for conservative products
+  performanceFeeRate    Float? // Optional term-level override
+  maxSubscriptionAmount Float?
+  isActive              Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  subscriptions ManagedSubscription[]
+
+  @@unique([productId, durationDays])
+  @@index([durationDays, isActive])
+}
+
+model ManagedProductAgent {
+  id        String         @id @default(cuid())
+  productId String
+  product   ManagedProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     AgentTemplate  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  weight    Float          @default(1.0)
+  isPrimary Boolean        @default(false)
+  createdAt DateTime       @default(now())
+
+  @@unique([productId, agentId])
+  @@index([agentId])
+}
+
+model ManagedSubscription {
+  id                   String                    @id @default(cuid())
+  walletAddress        String
+  productId            String
+  product              ManagedProduct            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  termId               String
+  term                 ManagedTerm               @relation(fields: [termId], references: [id], onDelete: Restrict)
+  status               ManagedSubscriptionStatus @default(PENDING)
+  principal            Float
+  acceptedTermsAt      DateTime                  @default(now())
+  disclosurePolicy     ManagedDisclosurePolicy   @default(TRANSPARENT)
+  disclosureDelayHours Int                       @default(0)
+  highWaterMark        Float                     @default(0)
+  currentEquity        Float?
+  copyConfigId         String?
+  copyConfig           CopyTradingConfig?        @relation(fields: [copyConfigId], references: [id], onDelete: SetNull)
+  startAt              DateTime?
+  endAt                DateTime?
+  maturedAt            DateTime?
+  settledAt            DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  navSnapshots       ManagedNavSnapshot[]
+  settlement         ManagedSettlement?
+  reserveFundEntries ReserveFundLedger[]
+  riskEvents         ManagedRiskEvent[]
+
+  @@index([walletAddress, status])
+  @@index([status, endAt])
+  @@index([productId, termId])
+  @@index([copyConfigId])
+}
+
+model ManagedNavSnapshot {
+  id               String              @id @default(cuid())
+  subscriptionId   String
+  subscription     ManagedSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  snapshotAt       DateTime
+  nav              Float
+  equity           Float
+  periodReturn     Float?
+  cumulativeReturn Float?
+  drawdown         Float?
+  volatility       Float?
+  isFallbackPrice  Boolean             @default(false)
+  priceSource      String?
+  createdAt        DateTime            @default(now())
+
+  @@unique([subscriptionId, snapshotAt])
+  @@index([subscriptionId, snapshotAt])
+  @@index([snapshotAt])
+}
+
+model ManagedSettlement {
+  id                 String                  @id @default(cuid())
+  subscriptionId     String                  @unique
+  subscription       ManagedSubscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status             ManagedSettlementStatus @default(PENDING)
+  principal          Float
+  finalEquity        Float
+  grossPnl           Float
+  highWaterMark      Float
+  hwmEligibleProfit  Float
+  performanceFeeRate Float
+  performanceFee     Float
+  guaranteedPayout   Float?
+  reserveTopup       Float                   @default(0)
+  finalPayout        Float
+  settledAt          DateTime?
+  errorMessage       String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([status, createdAt])
+  @@index([settledAt])
+}
+
+model ReserveFundLedger {
+  id             String               @id @default(cuid())
+  entryType      ReserveFundEntryType
+  amount         Float
+  balanceAfter   Float?
+  subscriptionId String?
+  subscription   ManagedSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  note           String?
+  createdAt      DateTime             @default(now())
+
+  @@index([entryType, createdAt])
+  @@index([subscriptionId])
+}
+
+model ManagedRiskEvent {
+  id             String              @id @default(cuid())
+  subscriptionId String
+  subscription   ManagedSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  severity       String // INFO | WARN | CRITICAL
+  metric         String
+  threshold      Float?
+  observedValue  Float?
+  action         ManagedRiskAction
+  description    String?
+  createdAt      DateTime            @default(now())
+
+  @@index([subscriptionId, createdAt])
+  @@index([action, createdAt])
 }
 
 // Individual copy trade record

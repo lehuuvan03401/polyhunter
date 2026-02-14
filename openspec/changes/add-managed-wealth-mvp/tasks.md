@@ -1,10 +1,10 @@
 ## 1. Specification & Data Model
-- [ ] 1.1 Add Prisma models for managed products, terms, subscriptions, NAV snapshots, settlements, reserve fund ledger, and risk events.
-- [ ] 1.2 Add DB indexes for subscription status scans, NAV fetches, settlement scans, and reserve ledger reporting.
-- [ ] 1.3 Add migration and backfill/seed script for initial products and term matrix.
+- [x] 1.1 Add Prisma models for managed products, terms, subscriptions, NAV snapshots, settlements, reserve fund ledger, and risk events.
+- [x] 1.2 Add DB indexes for subscription status scans, NAV fetches, settlement scans, and reserve ledger reporting.
+- [x] 1.3 Add migration and backfill/seed script for initial products and term matrix.
 
 ## 2. API Layer
-- [ ] 2.1 Implement `GET /api/managed-products` and `GET /api/managed-products/:id`.
+- [x] 2.1 Implement `GET /api/managed-products` and `GET /api/managed-products/:id`.
 - [ ] 2.2 Implement `POST /api/managed-subscriptions` with terms acceptance and eligibility checks.
 - [ ] 2.3 Implement `GET /api/managed-subscriptions` and `GET /api/managed-subscriptions/:id/nav`.
 - [ ] 2.4 Implement settlement endpoints: `POST /api/managed-settlement/run`, `GET /api/managed-settlements/:subscriptionId`.
