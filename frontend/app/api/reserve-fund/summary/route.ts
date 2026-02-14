@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
+import {
+    calculateCoverageRatio,
+    calculateGuaranteeLiability,
+    calculateReserveBalance,
+} from '@/lib/managed-wealth/settlement-math';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,35 +58,33 @@ export async function GET() {
             adjustments: 0,
         };
 
-        const currentBalance = ledgerRows.reduce((acc, row) => {
+        const currentBalance = calculateReserveBalance(ledgerRows);
+        ledgerRows.forEach((row) => {
             if (row.entryType === 'DEPOSIT') {
                 totals.deposits += row.amount;
-                return acc + row.amount;
+                return;
             }
             if (row.entryType === 'WITHDRAW') {
                 totals.withdrawals += row.amount;
-                return acc - row.amount;
+                return;
             }
             if (row.entryType === 'GUARANTEE_TOPUP') {
                 totals.guaranteeTopups += row.amount;
-                return acc - row.amount;
+                return;
             }
             totals.adjustments += row.amount;
-            return acc + row.amount;
-        }, 0);
+        });
 
-        const outstandingGuaranteedLiability = activeGuaranteedSubs.reduce((acc, sub) => {
-            const minYieldRate = Number(sub.term.minYieldRate ?? 0);
-            return acc + (sub.principal * minYieldRate);
-        }, 0);
+        const outstandingGuaranteedLiability = activeGuaranteedSubs.reduce(
+            (acc, sub) => acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
+            0
+        );
 
         const requiredCoverageRatio = guaranteedProducts.length > 0
             ? Math.max(...guaranteedProducts.map((p) => p.reserveCoverageMin))
             : 1;
 
-        const coverageRatio = outstandingGuaranteedLiability > 0
-            ? currentBalance / outstandingGuaranteedLiability
-            : Number.POSITIVE_INFINITY;
+        const coverageRatio = calculateCoverageRatio(currentBalance, outstandingGuaranteedLiability);
 
         const shouldPauseGuaranteed = coverageRatio < requiredCoverageRatio;
 

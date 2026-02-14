@@ -25,7 +25,7 @@
 - [x] 4.5 Implement disclosure policy rendering (realtime vs delayed details).
 
 ## 5. Validation
-- [ ] 5.1 Unit tests for HWM fee, guarantee shortfall, and settlement math.
-- [ ] 5.2 Integration tests for subscribe -> run -> mature -> settle lifecycle.
+- [x] 5.1 Unit tests for HWM fee, guarantee shortfall, and settlement math.
+- [x] 5.2 Integration tests for subscribe -> run -> mature -> settle lifecycle.
 - [ ] 5.3 E2E tests for user subscription flow and settlement visibility.
-- [ ] 5.4 Add runbook section for reserve-fund operations and emergency controls.
+- [x] 5.4 Add runbook section for reserve-fund operations and emergency controls.

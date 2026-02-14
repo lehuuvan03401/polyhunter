@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { z } from 'zod';
 import { Prisma, ManagedSubscriptionStatus } from '@prisma/client';
+import {
+    calculateCoverageRatio,
+    calculateGuaranteeLiability,
+    calculateReserveBalance,
+} from '@/lib/managed-wealth/settlement-math';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,15 +57,7 @@ async function getReserveCoverageAfterSubscription(
         select: { entryType: true, amount: true },
     });
 
-    const balance = ledgerRows.reduce((acc, row) => {
-        if (row.entryType === 'DEPOSIT' || row.entryType === 'ADJUSTMENT') {
-            return acc + row.amount;
-        }
-        if (row.entryType === 'WITHDRAW' || row.entryType === 'GUARANTEE_TOPUP') {
-            return acc - row.amount;
-        }
-        return acc;
-    }, 0);
+    const balance = calculateReserveBalance(ledgerRows);
 
     const existingGuaranteed = await prisma.managedSubscription.findMany({
         where: {
@@ -78,13 +75,14 @@ async function getReserveCoverageAfterSubscription(
         },
     });
 
-    const existingGuaranteedLiability = existingGuaranteed.reduce((acc, sub) => {
-        const rate = Number(sub.term.minYieldRate ?? 0);
-        return acc + sub.principal * rate;
-    }, 0);
+    const existingGuaranteedLiability = existingGuaranteed.reduce(
+        (acc, sub) => acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
+        0
+    );
 
-    const projectedLiability = existingGuaranteedLiability + (principal * minYieldRate);
-    const coverageRatio = projectedLiability > 0 ? balance / projectedLiability : Number.POSITIVE_INFINITY;
+    const additionalLiability = calculateGuaranteeLiability(principal, minYieldRate);
+    const projectedLiability = existingGuaranteedLiability + additionalLiability;
+    const coverageRatio = calculateCoverageRatio(balance, existingGuaranteedLiability, additionalLiability);
 
     return {
         balance,

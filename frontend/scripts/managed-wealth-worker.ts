@@ -5,6 +5,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import {
     PrismaClient,
 } from '@prisma/client';
+import {
+    calculateCoverageRatio,
+    calculateGuaranteeLiability,
+    calculateManagedSettlement,
+    calculateReserveBalance,
+} from '../lib/managed-wealth/settlement-math';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
 if (!DATABASE_URL) {
@@ -28,12 +34,7 @@ async function getReserveBalance(tx: Omit<PrismaClient, '$connect' | '$disconnec
     const rows = await tx.reserveFundLedger.findMany({
         select: { entryType: true, amount: true },
     });
-
-    return rows.reduce((acc, row) => {
-        if (row.entryType === 'DEPOSIT' || row.entryType === 'ADJUSTMENT') return acc + row.amount;
-        if (row.entryType === 'WITHDRAW' || row.entryType === 'GUARANTEE_TOPUP') return acc - row.amount;
-        return acc;
-    }, 0);
+    return calculateReserveBalance(rows);
 }
 
 async function ensureExecutionMappings(now: Date): Promise<number> {
@@ -276,25 +277,14 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
     for (const sub of candidates) {
         if (sub.settlement?.status === 'COMPLETED') continue;
 
-        const principal = sub.principal;
-        const finalEquity = Number(sub.currentEquity ?? principal);
-        const grossPnl = finalEquity - principal;
-        const highWaterMark = Math.max(sub.highWaterMark, principal);
-        const hwmEligibleProfit = Math.max(0, finalEquity - highWaterMark);
-        const performanceFeeRate = Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate);
-        const performanceFee = hwmEligibleProfit * performanceFeeRate;
-        const preGuaranteePayout = principal + grossPnl - performanceFee;
-
-        let guaranteedPayout: number | null = null;
-        let reserveTopup = 0;
-
-        if (sub.product.isGuaranteed) {
-            const minYieldRate = Number(sub.term.minYieldRate ?? 0);
-            guaranteedPayout = principal * (1 + minYieldRate);
-            reserveTopup = Math.max(0, guaranteedPayout - preGuaranteePayout);
-        }
-
-        const finalPayout = preGuaranteePayout + reserveTopup;
+        const settlementCalc = calculateManagedSettlement({
+            principal: sub.principal,
+            finalEquity: Number(sub.currentEquity ?? sub.principal),
+            highWaterMark: sub.highWaterMark,
+            performanceFeeRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
+            isGuaranteed: sub.product.isGuaranteed,
+            minYieldRate: sub.term.minYieldRate,
+        });
 
         await prisma.$transaction(async (tx) => {
             const current = await tx.managedSubscription.findUnique({
@@ -309,13 +299,13 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
             if (!current) return;
             if (current.settlement?.status === 'COMPLETED') return;
 
-            if (reserveTopup > 0) {
+            if (settlementCalc.reserveTopup > 0) {
                 const reserveBalance = await getReserveBalance(tx);
                 await tx.reserveFundLedger.create({
                     data: {
                         entryType: 'GUARANTEE_TOPUP',
-                        amount: reserveTopup,
-                        balanceAfter: reserveBalance - reserveTopup,
+                        amount: settlementCalc.reserveTopup,
+                        balanceAfter: reserveBalance - settlementCalc.reserveTopup,
                         subscriptionId: sub.id,
                         note: 'WORKER_AUTO_SETTLEMENT_GUARANTEE_TOPUP',
                     },
@@ -326,32 +316,32 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
                 where: { subscriptionId: sub.id },
                 update: {
                     status: 'COMPLETED',
-                    principal,
-                    finalEquity,
-                    grossPnl,
-                    highWaterMark,
-                    hwmEligibleProfit,
-                    performanceFeeRate,
-                    performanceFee,
-                    guaranteedPayout,
-                    reserveTopup,
-                    finalPayout,
+                    principal: settlementCalc.principal,
+                    finalEquity: settlementCalc.finalEquity,
+                    grossPnl: settlementCalc.grossPnl,
+                    highWaterMark: settlementCalc.highWaterMark,
+                    hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
+                    performanceFeeRate: settlementCalc.performanceFeeRate,
+                    performanceFee: settlementCalc.performanceFee,
+                    guaranteedPayout: settlementCalc.guaranteedPayout,
+                    reserveTopup: settlementCalc.reserveTopup,
+                    finalPayout: settlementCalc.finalPayout,
                     settledAt: now,
                     errorMessage: null,
                 },
                 create: {
                     subscriptionId: sub.id,
                     status: 'COMPLETED',
-                    principal,
-                    finalEquity,
-                    grossPnl,
-                    highWaterMark,
-                    hwmEligibleProfit,
-                    performanceFeeRate,
-                    performanceFee,
-                    guaranteedPayout,
-                    reserveTopup,
-                    finalPayout,
+                    principal: settlementCalc.principal,
+                    finalEquity: settlementCalc.finalEquity,
+                    grossPnl: settlementCalc.grossPnl,
+                    highWaterMark: settlementCalc.highWaterMark,
+                    hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
+                    performanceFeeRate: settlementCalc.performanceFeeRate,
+                    performanceFee: settlementCalc.performanceFee,
+                    guaranteedPayout: settlementCalc.guaranteedPayout,
+                    reserveTopup: settlementCalc.reserveTopup,
+                    finalPayout: settlementCalc.finalPayout,
                     settledAt: now,
                 },
             });
@@ -362,8 +352,8 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
                     status: 'SETTLED',
                     maturedAt: current.maturedAt ?? now,
                     settledAt: now,
-                    currentEquity: finalEquity,
-                    highWaterMark: Math.max(current.highWaterMark, finalEquity),
+                    currentEquity: settlementCalc.finalEquity,
+                    highWaterMark: Math.max(current.highWaterMark, settlementCalc.finalEquity),
                 },
             });
         });
@@ -404,14 +394,12 @@ async function enforceGuaranteedPause(): Promise<number> {
             },
         });
 
-        const guaranteedLiability = liabilities.reduce((acc, sub) => {
-            const minYieldRate = Number(sub.term.minYieldRate ?? 0);
-            return acc + (sub.principal * minYieldRate);
-        }, 0);
+        const guaranteedLiability = liabilities.reduce(
+            (acc, sub) => acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
+            0
+        );
 
-        const coverageRatio = guaranteedLiability > 0
-            ? reserveBalance / guaranteedLiability
-            : Number.POSITIVE_INFINITY;
+        const coverageRatio = calculateCoverageRatio(reserveBalance, guaranteedLiability);
 
         const shouldPause = coverageRatio < product.reserveCoverageMin;
         const nextStatus = shouldPause ? 'PAUSED' : 'ACTIVE';

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { z } from 'zod';
+import { calculateManagedSettlement, calculateReserveBalance } from '@/lib/managed-wealth/settlement-math';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,10 +10,6 @@ const runSettlementSchema = z.object({
     subscriptionIds: z.array(z.string()).optional(),
     limit: z.number().int().positive().max(500).optional(),
 });
-
-type ReserveBalance = {
-    balance: number;
-};
 
 export async function POST(request: NextRequest) {
     try {
@@ -83,39 +80,21 @@ export async function POST(request: NextRequest) {
                 continue;
             }
 
-            const principal = sub.principal;
-            const finalEquity = Number(sub.currentEquity ?? principal);
-            const grossPnl = finalEquity - principal;
-            const highWaterMark = Math.max(sub.highWaterMark, principal);
-            const hwmEligibleProfit = Math.max(0, finalEquity - highWaterMark);
-            const performanceFeeRate = Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate);
-            const performanceFee = hwmEligibleProfit * performanceFeeRate;
-            const preGuaranteePayout = principal + grossPnl - performanceFee;
-
-            let guaranteedPayout: number | null = null;
-            let reserveTopup = 0;
-
-            if (sub.product.isGuaranteed) {
-                const minYieldRate = Number(sub.term.minYieldRate ?? 0);
-                guaranteedPayout = principal * (1 + minYieldRate);
-                reserveTopup = Math.max(0, guaranteedPayout - preGuaranteePayout);
-            }
-
-            const finalPayout = preGuaranteePayout + reserveTopup;
+            const settlementCalc = calculateManagedSettlement({
+                principal: sub.principal,
+                finalEquity: Number(sub.currentEquity ?? sub.principal),
+                highWaterMark: sub.highWaterMark,
+                performanceFeeRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
+                isGuaranteed: sub.product.isGuaranteed,
+                minYieldRate: sub.term.minYieldRate,
+            });
 
             if (dryRun) {
                 settledCount += 1;
                 results.push({
                     subscriptionId: sub.id,
                     status: 'DRY_RUN_READY',
-                    principal,
-                    finalEquity,
-                    grossPnl,
-                    performanceFeeRate,
-                    performanceFee,
-                    guaranteedPayout,
-                    reserveTopup,
-                    finalPayout,
+                    ...settlementCalc,
                 });
                 continue;
             }
@@ -133,23 +112,17 @@ export async function POST(request: NextRequest) {
                 if (!current) return;
                 if (current.settlement?.status === 'COMPLETED') return;
 
-                if (reserveTopup > 0) {
+                if (settlementCalc.reserveTopup > 0) {
                     const reserveRows = await tx.reserveFundLedger.findMany({
                         select: { entryType: true, amount: true },
                     });
-                    const reserve: ReserveBalance = {
-                        balance: reserveRows.reduce((acc, row) => {
-                            if (row.entryType === 'DEPOSIT' || row.entryType === 'ADJUSTMENT') return acc + row.amount;
-                            if (row.entryType === 'WITHDRAW' || row.entryType === 'GUARANTEE_TOPUP') return acc - row.amount;
-                            return acc;
-                        }, 0),
-                    };
-                    const nextBalance = reserve.balance - reserveTopup;
+                    const reserveBalance = calculateReserveBalance(reserveRows);
+                    const nextBalance = reserveBalance - settlementCalc.reserveTopup;
 
                     await tx.reserveFundLedger.create({
                         data: {
                             entryType: 'GUARANTEE_TOPUP',
-                            amount: reserveTopup,
+                            amount: settlementCalc.reserveTopup,
                             balanceAfter: nextBalance,
                             subscriptionId: sub.id,
                             note: 'AUTO_SETTLEMENT_GUARANTEE_TOPUP',
@@ -161,32 +134,32 @@ export async function POST(request: NextRequest) {
                     where: { subscriptionId: sub.id },
                     update: {
                         status: 'COMPLETED',
-                        principal,
-                        finalEquity,
-                        grossPnl,
-                        highWaterMark,
-                        hwmEligibleProfit,
-                        performanceFeeRate,
-                        performanceFee,
-                        guaranteedPayout,
-                        reserveTopup,
-                        finalPayout,
+                        principal: settlementCalc.principal,
+                        finalEquity: settlementCalc.finalEquity,
+                        grossPnl: settlementCalc.grossPnl,
+                        highWaterMark: settlementCalc.highWaterMark,
+                        hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
+                        performanceFeeRate: settlementCalc.performanceFeeRate,
+                        performanceFee: settlementCalc.performanceFee,
+                        guaranteedPayout: settlementCalc.guaranteedPayout,
+                        reserveTopup: settlementCalc.reserveTopup,
+                        finalPayout: settlementCalc.finalPayout,
                         errorMessage: null,
                         settledAt: now,
                     },
                     create: {
                         subscriptionId: sub.id,
                         status: 'COMPLETED',
-                        principal,
-                        finalEquity,
-                        grossPnl,
-                        highWaterMark,
-                        hwmEligibleProfit,
-                        performanceFeeRate,
-                        performanceFee,
-                        guaranteedPayout,
-                        reserveTopup,
-                        finalPayout,
+                        principal: settlementCalc.principal,
+                        finalEquity: settlementCalc.finalEquity,
+                        grossPnl: settlementCalc.grossPnl,
+                        highWaterMark: settlementCalc.highWaterMark,
+                        hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
+                        performanceFeeRate: settlementCalc.performanceFeeRate,
+                        performanceFee: settlementCalc.performanceFee,
+                        guaranteedPayout: settlementCalc.guaranteedPayout,
+                        reserveTopup: settlementCalc.reserveTopup,
+                        finalPayout: settlementCalc.finalPayout,
                         settledAt: now,
                     },
                 });
@@ -195,8 +168,8 @@ export async function POST(request: NextRequest) {
                     where: { id: sub.id },
                     data: {
                         status: 'SETTLED',
-                        currentEquity: finalEquity,
-                        highWaterMark: Math.max(current.highWaterMark, finalEquity),
+                        currentEquity: settlementCalc.finalEquity,
+                        highWaterMark: Math.max(current.highWaterMark, settlementCalc.finalEquity),
                         maturedAt: current.maturedAt ?? now,
                         settledAt: now,
                     },
@@ -207,9 +180,9 @@ export async function POST(request: NextRequest) {
             results.push({
                 subscriptionId: sub.id,
                 status: 'SETTLED',
-                principal,
-                finalPayout,
-                reserveTopup,
+                principal: settlementCalc.principal,
+                finalPayout: settlementCalc.finalPayout,
+                reserveTopup: settlementCalc.reserveTopup,
             });
         }
 

@@ -73,6 +73,85 @@ CopyExec 日志流畅输出：
 
 ---
 
+## 托管理财（Managed Wealth）准备金与应急控制
+
+### 1) 日常巡检（准备金覆盖率）
+
+启动前端服务后，检查准备金摘要：
+
+```bash
+curl -s http://localhost:3000/api/reserve-fund/summary | jq
+```
+
+重点字段：
+- `currentBalance`：准备金当前余额
+- `outstandingGuaranteedLiability`：保底责任敞口
+- `coverageRatio`：覆盖率（`currentBalance / outstandingGuaranteedLiability`）
+- `requiredCoverageRatio`：系统要求阈值（取保底产品配置上限）
+- `shouldPauseGuaranteed`：是否应暂停保底产品新申购
+
+### 2) 准备金注资/调整（手动记账）
+
+当前 MVP 暂无管理端写入 API，运维可通过 SQL 插入 `ReserveFundLedger`：
+
+```bash
+cd frontend
+psql "$DATABASE_URL" <<'SQL'
+INSERT INTO "ReserveFundLedger" ("id", "entryType", "amount", "balanceAfter", "note", "createdAt")
+VALUES (md5(random()::text || clock_timestamp()::text), 'DEPOSIT', 10000, NULL, 'OPS_TOPUP_2026-02-14', NOW());
+SQL
+```
+
+可选类型：
+- `DEPOSIT`：注资
+- `WITHDRAW`：提取
+- `ADJUSTMENT`：审计调整
+
+说明：`balanceAfter` 可留空，系统会按流水实时聚合余额；建议 `note` 带工单号。
+
+### 3) 紧急暂停保底新申购
+
+当 `coverageRatio < requiredCoverageRatio` 或风险事件触发时，立即暂停保底产品：
+
+```bash
+cd frontend
+psql "$DATABASE_URL" <<'SQL'
+UPDATE "ManagedProduct"
+SET "status" = 'PAUSED', "updatedAt" = NOW()
+WHERE "isGuaranteed" = true AND "status" <> 'ARCHIVED';
+SQL
+```
+
+说明：已在运行中的订阅不受影响，仅阻止新增保底申购。
+
+### 4) 恢复保底申购
+
+准备金补足后恢复：
+
+```bash
+cd frontend
+psql "$DATABASE_URL" <<'SQL'
+UPDATE "ManagedProduct"
+SET "status" = 'ACTIVE', "updatedAt" = NOW()
+WHERE "isGuaranteed" = true AND "status" = 'PAUSED';
+SQL
+```
+
+恢复前建议满足：
+1. `coverageRatio >= requiredCoverageRatio`
+2. 连续两次巡检（间隔 >= 5 分钟）均达标
+
+### 5) 结算链路快速验证
+
+在本地可执行托管理财全链路验证脚本：
+
+```bash
+cd frontend
+MW_VERIFY_BASE_URL=http://localhost:3000 npm run verify:managed-wealth:lifecycle
+```
+
+---
+
 ## Copy Trading 执行环境变量（核心）
 
 完整清单见 `frontend/.env.example`。以下是执行相关的核心项：
