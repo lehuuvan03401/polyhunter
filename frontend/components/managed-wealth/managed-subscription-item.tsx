@@ -22,6 +22,10 @@ export interface ManagedSubscriptionItemProps {
         settledAt?: string | null;
         product: ManagedProduct;
         term: ManagedTerm;
+        settlement?: {
+            finalPayout: number;
+            settledAt: string;
+        } | null;
         navSnapshots: Array<{
             snapshotAt: string;
             nav: number;
@@ -38,8 +42,16 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
     const [expanded, setExpanded] = useState(false);
 
     const latest = subscription.navSnapshots?.[0];
-    const currentEquity = latest?.equity ?? subscription.principal;
-    const returnPct = latest?.cumulativeReturn ?? 0;
+    // If settled, use finalPayout, otherwise use current equity from snapshot or principal
+    const currentEquity = subscription.status === 'SETTLED' && subscription.settlement?.finalPayout
+        ? subscription.settlement.finalPayout
+        : (latest?.equity ?? subscription.principal);
+
+    const initialPrincipal = subscription.principal;
+    const returnPct = initialPrincipal > 0
+        ? ((currentEquity - initialPrincipal) / initialPrincipal)
+        : 0;
+
     const isPositive = returnPct >= 0;
 
     // Calculate progress based on dates
@@ -58,7 +70,7 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                     <div className="flex items-center gap-4 min-w-0 flex-1">
                         <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${subscription.status === 'RUNNING' ? 'border-blue-500/20 bg-blue-500/10 text-blue-400' : 'border-white/5 bg-white/5 text-zinc-500'
                             }`}>
-                            <TrendingUp className="h-6 w-6" />
+                            {subscription.status === 'SETTLED' ? <ShieldCheck className="h-6 w-6 text-emerald-500" /> : <TrendingUp className="h-6 w-6" />}
                         </div>
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
@@ -74,8 +86,16 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                                 )}
                             </div>
                             <div className="flex items-center gap-3 text-xs font-medium text-zinc-500 mt-1">
-                                <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md ${subscription.status === 'RUNNING' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-zinc-800 text-zinc-400 border border-white/5'}`}>
-                                    <span className={`h-1.5 w-1.5 rounded-full ${subscription.status === 'RUNNING' ? 'bg-blue-400 animate-pulse' : 'bg-zinc-500'}`} />
+                                <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md ${subscription.status === 'RUNNING'
+                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    : subscription.status === 'SETTLED'
+                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                        : 'bg-zinc-800 text-zinc-400 border border-white/5'
+                                    }`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${subscription.status === 'RUNNING' ? 'bg-blue-400 animate-pulse'
+                                        : subscription.status === 'SETTLED' ? 'bg-emerald-400'
+                                            : 'bg-zinc-500'
+                                        }`} />
                                     {t(`status.${subscription.status}`)}
                                 </span>
                                 <span>{subscription.term.label} ({subscription.term.durationDays}d)</span>
@@ -85,7 +105,9 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
 
                     <div className="flex items-center gap-8">
                         <div className="hidden sm:block text-right">
-                            <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mb-0.5">{t('currentEquity')}</div>
+                            <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mb-0.5">
+                                {subscription.status === 'SETTLED' ? t('finalPayout') : t('currentEquity')}
+                            </div>
                             <div className="font-mono text-lg font-bold text-white">${currentEquity.toFixed(2)}</div>
                         </div>
                         <div className="hidden sm:block text-right">
@@ -145,10 +167,19 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                                             <span className="text-zinc-500">{t('startDate')}</span>
                                             <span className="text-white">{subscription.startAt ? format(new Date(subscription.startAt), 'MMM d') : '--'}</span>
                                         </div>
-                                        <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
-                                            <span className="text-zinc-500">{t('endDate')}</span>
-                                            <span className="text-white">{subscription.endAt ? format(new Date(subscription.endAt), 'MMM d') : '--'}</span>
-                                        </div>
+                                        {subscription.status === 'SETTLED' ? (
+                                            <div className="flex justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
+                                                <span className="text-emerald-500">{t('settledDate')}</span>
+                                                <span className="text-emerald-400 font-medium">
+                                                    {subscription.settlement?.settledAt ? format(new Date(subscription.settlement.settledAt), 'MMM d') : '--'}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
+                                                <span className="text-zinc-500">{t('endDate')}</span>
+                                                <span className="text-white">{subscription.endAt ? format(new Date(subscription.endAt), 'MMM d') : '--'}</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
                                             <span className="text-zinc-500">{t('disclosure')}</span>
                                             <DisclosurePolicyPill policy={subscription.product.disclosurePolicy} delayHours={subscription.product.disclosureDelayHours} />
@@ -156,16 +187,46 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                                     </div>
                                 </div>
 
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onViewDetails(subscription.id);
-                                    }}
-                                    className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition"
-                                >
-                                    <Eye className="h-4 w-4" />
-                                    {t('viewAnalysis')}
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onViewDetails(subscription.id);
+                                        }}
+                                        className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition"
+                                    >
+                                        <Eye className="h-4 w-4" />
+                                        {t('viewAnalysis')}
+                                    </button>
+                                    {(subscription.status === 'RUNNING' || subscription.status === 'MATURED') && (
+                                        <button
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (!confirm(t('confirmWithdraw'))) return;
+
+                                                try {
+                                                    const res = await fetch(`/api/managed-subscriptions/${subscription.id}/withdraw`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ confirm: true })
+                                                    });
+
+                                                    if (!res.ok) throw new Error('Withdrawal failed');
+
+                                                    // Refresh page to show updated status
+                                                    window.location.reload();
+                                                } catch (error) {
+                                                    console.error(error);
+                                                    alert(t('withdrawFailed'));
+                                                }
+                                            }}
+                                            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-500 hover:bg-red-500/20 transition"
+                                        >
+                                            <ShieldCheck className="h-4 w-4" />
+                                            {t('withdraw')}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </motion.div>

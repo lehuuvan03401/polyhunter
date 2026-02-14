@@ -72,6 +72,7 @@ export async function GET(
                 subscriptionCount,
                 runningSubscriptionCount,
             },
+            chartData: simulateHistoricalData(product.createdAt, product.strategyProfile),
         });
     } catch (error) {
         console.error('Failed to fetch managed product detail:', error);
@@ -80,4 +81,41 @@ export async function GET(
             { status: 500 }
         );
     }
+}
+
+// Helper to simulate historical data for demo content
+function simulateHistoricalData(createdAt: Date, strategyProfile: string) {
+    const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24)) || 30; // Min 30 days
+    const data = [];
+    let price = 100;
+
+    // Volatility settings
+    const volatility =
+        strategyProfile === 'AGGRESSIVE' ? 0.02 :
+            strategyProfile === 'MODERATE' ? 0.01 :
+                0.005; // CONSERVATIVE
+
+    // Trend settings (daily return)
+    const trend =
+        strategyProfile === 'AGGRESSIVE' ? 0.0015 :
+            strategyProfile === 'MODERATE' ? 0.001 :
+                0.0005; // CONSERVATIVE
+
+    const now = new Date();
+
+    for (let i = days; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+
+        // Random walk with drift
+        const change = (Math.random() - 0.45) * volatility + trend;
+        price = price * (1 + change);
+
+        data.push({
+            date: date.toISOString(),
+            value: price
+        });
+    }
+
+    return data;
 }

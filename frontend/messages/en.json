@@ -148,7 +148,12 @@
             "startDate": "Start Date",
             "endDate": "End Date",
             "disclosure": "Disclosure",
-            "viewAnalysis": "View Full Analysis"
+            "viewAnalysis": "View Full Analysis",
+            "withdraw": "Withdraw",
+            "confirmWithdraw": "Are you sure you want to withdraw? This will close your position and return funds to your wallet.",
+            "withdrawFailed": "Failed to process withdrawal. Please try again.",
+            "finalPayout": "Final Payout",
+            "settledDate": "Settled Date"
         },
         "Marketplace": {
             "title": "Marketplace",

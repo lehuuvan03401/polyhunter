@@ -37,6 +37,7 @@ type ProductDetailResponse = {
         subscriptionCount: number;
         runningSubscriptionCount: number;
     };
+    chartData: { date: string; value: number }[];
 };
 
 export default function ManagedWealthDetailPage() {
@@ -172,7 +173,7 @@ export default function ManagedWealthDetailPage() {
                             <div className="text-xs text-zinc-500">{t('performance.disclaimer')}</div>
                         </div>
                         <div className="h-[240px] w-full">
-                            <ManagedNavChart data={[]} /> {/* Placeholder until API provides historical NAV */}
+                            <ManagedNavChart data={detail?.chartData || []} />
                         </div>
                     </div>
 

@@ -148,7 +148,12 @@
             "startDate": "开始日期",
             "endDate": "结束日期",
             "disclosure": "披露",
-            "viewAnalysis": "查看完整分析"
+            "viewAnalysis": "查看完整分析",
+            "withdraw": "赎回",
+            "confirmWithdraw": "您确定要赎回吗？ 这将平仓您的头寸并将资金退回至您的钱包。",
+            "withdrawFailed": "赎回处理失败。 请重试。",
+            "finalPayout": "结算金额",
+            "settledDate": "结算日期"
         },
         "Marketplace": {
             "title": "市场",

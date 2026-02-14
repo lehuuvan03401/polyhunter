@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
                 },
                 navSnapshots: {
                     orderBy: { snapshotAt: 'desc' },
-                    take: 1,
+                    take: 30,
                     select: {
                         snapshotAt: true,
                         nav: true,
