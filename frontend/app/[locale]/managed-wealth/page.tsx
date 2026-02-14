@@ -5,8 +5,9 @@ import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { BarChart3, Loader2, Lock, ShieldCheck, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import { ManagedProduct, SubscriptionModal } from '@/components/managed-wealth/subscription-modal';
+import { ManagedProductCard } from '@/components/managed-wealth/managed-product-card';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export default function ManagedWealthPage() {
     const { authenticated, ready, login, user, isLoggingIn } = usePrivyLogin();
@@ -63,9 +64,10 @@ export default function ManagedWealthPage() {
 
     if (!ready || loading) {
         return (
-            <div className="container py-10">
-                <div className="flex items-center justify-center">
-                    <Loader2 className="h-7 w-7 animate-spin text-blue-400" />
+            <div className="container py-20">
+                <div className="flex flex-col items-center justify-center gap-4">
+                    <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+                    <p className="text-sm text-zinc-500 animate-pulse">Loading strategies...</p>
                 </div>
             </div>
         );
@@ -73,137 +75,152 @@ export default function ManagedWealthPage() {
 
     if (!authenticated) {
         return (
-            <div className="container py-10">
-                <div className="mx-auto max-w-4xl rounded-2xl border border-white/10 bg-card/50 p-10 text-center">
-                    <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-500/10">
+            <div className="container py-20 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/5 via-transparent to-emerald-500/5 pointer-events-none" />
+
+                <div className="relative mx-auto max-w-4xl rounded-3xl border border-white/10 bg-[#0A0B0E]/80 p-12 text-center backdrop-blur-xl shadow-2xl">
+                    <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 shadow-[0_0_30px_rgba(59,130,246,0.2)]">
                         <Lock className="h-10 w-10 text-blue-400" />
                     </div>
-                    <h1 className="text-3xl font-bold">Managed Wealth</h1>
-                    <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
-                        Choose a strategy product, lock your term, and let the platform execute with transparent NAV and risk reporting.
+
+                    <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
+                        Managed Wealth
+                    </h1>
+                    <p className="mx-auto mt-6 max-w-2xl text-lg text-zinc-400">
+                        Institutional-grade strategies for everyone. Choose a product and let our automated systems handle the execution with full transparency.
                     </p>
 
-                    <div className="mt-8 grid gap-4 md:grid-cols-3">
-                        <FeatureCard icon={<ShieldCheck className="h-5 w-5 text-emerald-300" />} title="Conservative Guarantee" desc="Principal/minimum-yield support on conservative products." />
-                        <FeatureCard icon={<TrendingUp className="h-5 w-5 text-blue-300" />} title="Term Flexibility" desc="1/3/7/15/30/60/90/180/365 day products." />
-                        <FeatureCard icon={<BarChart3 className="h-5 w-5 text-purple-300" />} title="Transparent Tracking" desc="Default real-time visibility for NAV, drawdown, and fills." />
+                    <div className="mt-12 grid gap-6 md:grid-cols-3">
+                        <FeatureCard
+                            icon={<ShieldCheck className="h-6 w-6 text-emerald-400" />}
+                            title="Principal Protection"
+                            desc="Conservative products backed by reserve funds to minimize downside risk."
+                        />
+                        <FeatureCard
+                            icon={<TrendingUp className="h-6 w-6 text-blue-400" />}
+                            title="Flexible Terms"
+                            desc="Lock periods from 24h to 365d depending on your liquidity needs."
+                        />
+                        <FeatureCard
+                            icon={<BarChart3 className="h-6 w-6 text-purple-400" />}
+                            title="Real-time NAV"
+                            desc="Track performance, drawdowns, and settlement fills with full visibility."
+                        />
                     </div>
 
                     <button
                         onClick={login}
                         disabled={isLoggingIn}
-                        className="mt-8 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+                        className="mt-12 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-8 py-4 text-base font-semibold text-white transition-all hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] disabled:opacity-60 disabled:hover:shadow-none"
                     >
                         {isLoggingIn ? (
                             <>
-                                Connecting...
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Connecting Wallet...
+                                <Loader2 className="h-5 w-5 animate-spin" />
                             </>
                         ) : (
-                            'Connect wallet to continue'
+                            'Connect Wallet to View Strategies'
                         )}
                     </button>
+
+                    <div className="mt-6 text-xs text-zinc-500">
+                        By connecting, you agree to our Terms of Service and Risk Disclosures.
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="container py-10">
-            <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="container min-h-screen py-10 relative">
+            {/* Background Decorations */}
+            <div className="absolute top-0 right-0 -z-10 h-[500px] w-[500px] bg-blue-500/5 blur-[100px] rounded-full" />
+
+            <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Managed Wealth</h1>
-                    <p className="mt-2 text-muted-foreground">Productized strategy investing for non-professional users.</p>
+                    <h1 className="text-3xl font-bold tracking-tight text-white">Marketplace</h1>
+                    <p className="mt-2 text-zinc-400">Discover and subscribe to automated trading strategies.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Link href="/managed-wealth/my" className="rounded-lg border border-white/10 px-3 py-2 text-sm text-muted-foreground hover:bg-white/5 hover:text-white">
-                        My Managed Positions
+                    <Link
+                        href="/managed-wealth/my"
+                        className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white hover:border-white/20"
+                    >
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        My Dashboard
                     </Link>
-                    <span className="rounded-lg bg-white/5 px-3 py-2 text-xs text-muted-foreground">
-                        {stats.total} products · {stats.guaranteed} guaranteed
-                    </span>
                 </div>
             </div>
 
-            <div className="mb-6 flex flex-wrap items-center gap-2">
-                {(['ALL', 'CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'] as const).map((strategy) => (
-                    <button
-                        key={strategy}
-                        type="button"
-                        onClick={() => setStrategyFilter(strategy)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${strategyFilter === strategy
-                                ? 'border-blue-500/60 bg-blue-500/20 text-blue-200'
-                                : 'border-white/10 bg-white/5 text-muted-foreground hover:text-white'
-                            }`}
-                    >
-                        {strategy === 'ALL' ? 'All' : strategy}
-                    </button>
-                ))}
+            <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                    {(['ALL', 'CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'] as const).map((strategy) => (
+                        <button
+                            key={strategy}
+                            type="button"
+                            onClick={() => setStrategyFilter(strategy)}
+                            className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${strategyFilter === strategy
+                                ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]'
+                                : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                                }`}
+                        >
+                            {strategy === 'ALL' ? 'All Strategies' : strategy}
+                        </button>
+                    ))}
+                </div>
 
                 <button
                     type="button"
                     onClick={() => setGuaranteedOnly((prev) => !prev)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${guaranteedOnly
-                            ? 'border-emerald-500/60 bg-emerald-500/20 text-emerald-200'
-                            : 'border-white/10 bg-white/5 text-muted-foreground hover:text-white'
+                    className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${guaranteedOnly
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)]'
+                        : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
                         }`}
                 >
-                    Guaranteed only
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Guaranteed Only
                 </button>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {products.map((product) => (
-                    <div key={product.id} className="rounded-2xl border border-white/10 bg-[#121417] p-5">
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                            <div>
-                                <h2 className="text-xl font-bold text-white">{product.name}</h2>
-                                <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{product.strategyProfile}</p>
-                            </div>
-                            <DisclosurePolicyPill policy={product.disclosurePolicy} delayHours={product.disclosureDelayHours} />
-                        </div>
-
-                        <p className="mb-4 line-clamp-2 min-h-[40px] text-sm text-muted-foreground">{product.description || 'Managed strategy product'}</p>
-
-                        <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
-                            <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                                <div className="text-muted-foreground">Performance Fee</div>
-                                <div className="font-semibold text-white">{(product.performanceFeeRate * 100).toFixed(1)}%</div>
-                            </div>
-                            <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                                <div className="text-muted-foreground">Guarantee</div>
-                                <div className="font-semibold text-white">{product.isGuaranteed ? 'Enabled' : 'No guarantee'}</div>
-                            </div>
-                        </div>
-
-                        <div className="mb-5 flex flex-wrap gap-1.5">
-                            {product.terms.slice(0, 5).map((term) => (
-                                <span key={term.id} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-muted-foreground">
-                                    {term.durationDays}d {term.targetReturnMin}% - {term.targetReturnMax}%
-                                </span>
-                            ))}
-                        </div>
-
-                        <div className="flex gap-2">
-                            <Link href={`/managed-wealth/${product.slug}`} className="flex-1 rounded-lg border border-white/10 px-3 py-2 text-center text-sm text-muted-foreground hover:bg-white/5 hover:text-white">
-                                Details
-                            </Link>
-                            <button
-                                type="button"
-                                onClick={() => openSubscribe(product)}
-                                className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"
-                            >
-                                Subscribe
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
+            <motion.div
+                layout
+                className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+            >
+                <AnimatePresence mode="popLayout">
+                    {products.map((product) => (
+                        <ManagedProductCard
+                            key={product.id}
+                            product={product}
+                            onSubscribe={openSubscribe}
+                        />
+                    ))}
+                </AnimatePresence>
+            </motion.div>
 
             {products.length === 0 && (
-                <div className="mt-12 rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-muted-foreground">
-                    No products matched current filters.
-                </div>
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-20 flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-12 text-center"
+                >
+                    <div className="mb-4 rounded-full bg-white/5 p-4">
+                        <BarChart3 className="h-8 w-8 text-zinc-600" />
+                    </div>
+                    <h3 className="text-lg font-medium text-white">No matching products</h3>
+                    <p className="mt-1 text-sm text-zinc-500">Try adjusting your filters to see more results.</p>
+                    <button
+                        onClick={() => {
+                            setStrategyFilter('ALL');
+                            setGuaranteedOnly(false);
+                        }}
+                        className="mt-6 text-xs text-blue-400 hover:text-blue-300"
+                    >
+                        Clear all filters
+                    </button>
+                </motion.div>
             )}
 
             <SubscriptionModal
@@ -214,7 +231,7 @@ export default function ManagedWealthPage() {
                 onRequireLogin={login}
                 onSuccess={() => {
                     setModalOpen(false);
-                    toast.success('You can track this position in My Managed Positions.');
+                    toast.success('You can track this position in My Dashboard.');
                 }}
             />
         </div>
@@ -223,10 +240,10 @@ export default function ManagedWealthPage() {
 
 function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
     return (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-left">
-            <div className="mb-2 inline-flex rounded-lg border border-white/10 bg-black/20 p-2">{icon}</div>
-            <div className="text-sm font-semibold text-white">{title}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{desc}</div>
+        <div className="group rounded-2xl border border-white/10 bg-white/5 p-6 text-left transition hover:bg-white/[0.07]">
+            <div className="mb-4 inline-flex rounded-xl border border-white/10 bg-[#0A0B0E] p-3 shadow-sm group-hover:scale-110 transition duration-300">{icon}</div>
+            <div className="text-lg font-semibold text-white">{title}</div>
+            <div className="mt-2 text-sm text-zinc-400 leading-relaxed">{desc}</div>
         </div>
     );
 }

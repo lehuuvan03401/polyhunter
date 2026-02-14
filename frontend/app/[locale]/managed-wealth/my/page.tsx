@@ -3,78 +3,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { Eye, Loader2, Lock } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
-
-type ManagedSubscriptionItem = {
-    id: string;
-    status: 'PENDING' | 'RUNNING' | 'MATURED' | 'SETTLED' | 'CANCELLED';
-    principal: number;
-    createdAt: string;
-    startAt?: string | null;
-    endAt?: string | null;
-    settledAt?: string | null;
-    product: {
-        id: string;
-        slug: string;
-        name: string;
-        strategyProfile: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
-        isGuaranteed: boolean;
-        disclosurePolicy: 'TRANSPARENT' | 'DELAYED';
-        disclosureDelayHours: number;
-    };
-    term: {
-        id: string;
-        label: string;
-        durationDays: number;
-        targetReturnMin: number;
-        targetReturnMax: number;
-        maxDrawdown: number;
-    };
-    navSnapshots: Array<{
-        snapshotAt: string;
-        nav: number;
-        equity: number;
-        cumulativeReturn?: number | null;
-        drawdown?: number | null;
-    }>;
-    settlement?: {
-        id: string;
-        status: string;
-        finalPayout?: number | null;
-        reserveTopup?: number | null;
-        settledAt?: string | null;
-    } | null;
-};
-
-type NavDetail = {
-    summary: {
-        latestNav: number;
-        latestEquity: number;
-        cumulativeReturn: number;
-        maxDrawdown: number;
-        peakNav: number;
-        points: number;
-    };
-    snapshots: Array<{
-        snapshotAt: string;
-        nav: number;
-        equity: number;
-        cumulativeReturn?: number | null;
-        drawdown?: number | null;
-    }>;
-};
+import { ManagedSubscriptionItem, ManagedSubscriptionItemProps } from '@/components/managed-wealth/managed-subscription-item';
+import { ManagedStatsGrid, StatItem } from '@/components/managed-wealth/managed-stats-grid';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export default function MyManagedWealthPage() {
     const { authenticated, ready, login, user, isLoggingIn } = usePrivyLogin();
 
     const [loading, setLoading] = useState(true);
-    const [subscriptions, setSubscriptions] = useState<ManagedSubscriptionItem[]>([]);
+    const [subscriptions, setSubscriptions] = useState<ManagedSubscriptionItemProps['subscription'][]>([]);
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'MATURED' | 'SETTLED'>('ALL');
-    const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
-    const [navDetail, setNavDetail] = useState<NavDetail | null>(null);
-    const [navLoading, setNavLoading] = useState(false);
 
     useEffect(() => {
         const fetchSubscriptions = async () => {
@@ -103,67 +43,68 @@ export default function MyManagedWealthPage() {
         fetchSubscriptions();
     }, [authenticated, user?.wallet?.address, statusFilter]);
 
-    useEffect(() => {
-        const fetchNav = async () => {
-            if (!activeSubscriptionId || !user?.wallet?.address) {
-                setNavDetail(null);
-                return;
-            }
+    const stats = useMemo<StatItem[]>(() => {
+        const totalPrincipal = subscriptions.reduce((acc, sub) => acc + sub.principal, 0);
 
-            setNavLoading(true);
-            try {
-                const res = await fetch(`/api/managed-subscriptions/${activeSubscriptionId}/nav?wallet=${user.wallet.address}&limit=100`);
-                const data = await res.json();
-                if (!res.ok) throw new Error(data?.error || 'Failed to fetch NAV');
-                setNavDetail({ summary: data.summary, snapshots: data.snapshots });
-            } catch (error) {
-                toast.error(error instanceof Error ? error.message : 'Failed to fetch NAV');
-            } finally {
-                setNavLoading(false);
-            }
-        };
+        const totalEquity = subscriptions.reduce((acc, sub) => {
+            const latest = sub.navSnapshots?.[0];
+            return acc + (latest?.equity ?? sub.principal);
+        }, 0);
 
-        fetchNav();
-    }, [activeSubscriptionId, user?.wallet?.address]);
+        const activeCount = subscriptions.filter(s => s.status === 'RUNNING').length;
+        const totalPnl = totalEquity - totalPrincipal;
+        const pnlPct = totalPrincipal > 0 ? (totalPnl / totalPrincipal) * 100 : 0;
+        const isPositive = pnlPct >= 0;
 
-    const totals = useMemo(() => {
-        return subscriptions.reduce(
-            (acc, sub) => {
-                const latest = sub.navSnapshots?.[0];
-                const equity = latest?.equity ?? sub.principal;
-                acc.principal += sub.principal;
-                acc.equity += equity;
-                return acc;
+        return [
+            {
+                label: 'Active Capital',
+                value: `$${totalPrincipal.toFixed(2)}`,
+                subValue: `${activeCount} active positions`,
+                color: 'blue',
+                icon: Wallet
             },
-            { principal: 0, equity: 0 }
-        );
+            {
+                label: 'Current Equity',
+                value: `$${totalEquity.toFixed(2)}`,
+                subValue: 'Estimated total value',
+                color: 'purple',
+                icon: PieChart
+            },
+            {
+                label: 'Total PnL',
+                value: `${isPositive ? '+' : ''}${pnlPct.toFixed(2)}%`,
+                subValue: `$${totalPnl.toFixed(2)}`,
+                color: isPositive ? 'emerald' : 'amber', // Using amber for negative instead of red for softer look or add red support
+                icon: TrendingUp
+            }
+        ];
     }, [subscriptions]);
 
     if (!ready || loading) {
         return (
-            <div className="container py-10">
-                <div className="flex items-center justify-center">
-                    <Loader2 className="h-7 w-7 animate-spin text-blue-400" />
-                </div>
+            <div className="container py-20 flex justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
             </div>
         );
     }
 
     if (!authenticated) {
         return (
-            <div className="container py-10">
-                <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-card/50 p-10 text-center">
-                    <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-500/10">
-                        <Lock className="h-10 w-10 text-blue-400" />
+            <div className="container py-20 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/5 via-transparent to-purple-500/5 pointer-events-none" />
+                <div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-[#0A0B0E]/80 backdrop-blur-xl p-12 text-center shadow-2xl">
+                    <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.2)]">
+                        <Lock className="h-8 w-8 text-blue-400" />
                     </div>
-                    <h1 className="text-3xl font-bold">My Managed Positions</h1>
-                    <p className="mt-3 text-muted-foreground">Connect your wallet to view subscriptions, NAV and settlement records.</p>
+                    <h1 className="text-3xl font-bold text-white">My Managed Positions</h1>
+                    <p className="mt-4 text-zinc-400">Connect your wallet to view your active strategies, track performance in real-time, and manage your settlements.</p>
                     <button
                         onClick={login}
                         disabled={isLoggingIn}
-                        className="mt-6 rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+                        className="mt-8 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500 hover:shadow-blue-500/40 disabled:opacity-60"
                     >
-                        {isLoggingIn ? 'Connecting...' : 'Connect wallet'}
+                        {isLoggingIn ? 'Connecting...' : 'Connect Wallet'}
                     </button>
                 </div>
             </div>
@@ -171,134 +112,75 @@ export default function MyManagedWealthPage() {
     }
 
     return (
-        <div className="container py-10">
-            <div className="mb-6 flex items-end justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold">My Managed Positions</h1>
-                    <p className="mt-2 text-muted-foreground">Track lifecycle, NAV, disclosure policy and settlement results.</p>
-                </div>
-                <Link href="/managed-wealth" className="rounded-lg border border-white/10 px-3 py-2 text-sm text-muted-foreground hover:bg-white/5 hover:text-white">
-                    Explore products
+        <div className="container py-10 min-h-screen relative">
+            <div className="absolute top-0 right-0 -z-10 h-[500px] w-[500px] bg-emerald-500/5 blur-[100px] rounded-full" />
+
+            <div className="mb-10">
+                <Link href="/managed-wealth" className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors mb-6 group">
+                    <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                    Back to Marketplace
                 </Link>
-            </div>
 
-            <div className="mb-5 grid gap-3 sm:grid-cols-3">
-                <Stat label="Subscriptions" value={`${subscriptions.length}`} />
-                <Stat label="Principal" value={`$${totals.principal.toFixed(2)}`} />
-                <Stat label="Current Equity" value={`$${totals.equity.toFixed(2)}`} />
-            </div>
-
-            <div className="mb-5 flex flex-wrap gap-2">
-                {(['ALL', 'RUNNING', 'MATURED', 'SETTLED'] as const).map((status) => (
-                    <button
-                        key={status}
-                        type="button"
-                        onClick={() => setStatusFilter(status)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${statusFilter === status
-                                ? 'border-blue-500/60 bg-blue-500/20 text-blue-200'
-                                : 'border-white/10 bg-white/5 text-muted-foreground hover:text-white'
-                            }`}
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div>
+                        <h1 className="text-4xl font-bold text-white tracking-tight">My Dashboard</h1>
+                        <p className="mt-2 text-lg text-zinc-400">Track and manage your automated wealth strategies.</p>
+                    </div>
+                    <Link
+                        href="/managed-wealth"
+                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98]"
                     >
-                        {status}
-                    </button>
-                ))}
+                        <Plus className="h-4 w-4" />
+                        Browse New Strategies
+                    </Link>
+                </div>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-5">
-                <div className="space-y-3 lg:col-span-3">
-                    {subscriptions.map((sub) => {
-                        const latest = sub.navSnapshots?.[0];
-                        const cumulative = Number(latest?.cumulativeReturn ?? 0);
-                        const pnlColor = cumulative >= 0 ? 'text-emerald-300' : 'text-red-300';
+            <ManagedStatsGrid stats={stats} />
 
-                        return (
-                            <div key={sub.id} className="rounded-2xl border border-white/10 bg-[#121417] p-4">
-                                <div className="mb-3 flex items-start justify-between gap-3">
-                                    <div>
-                                        <div className="text-sm font-semibold text-white">{sub.product.name}</div>
-                                        <div className="mt-1 text-xs text-muted-foreground">{sub.term.label} ({sub.term.durationDays}d) · {sub.status}</div>
-                                    </div>
-                                    <DisclosurePolicyPill policy={sub.product.disclosurePolicy} delayHours={sub.product.disclosureDelayHours} />
-                                </div>
+            <div className="mt-12 relative z-10">
+                <div className="flex flex-wrap items-center gap-2 mb-6">
+                    {(['ALL', 'RUNNING', 'MATURED', 'SETTLED'] as const).map((status) => (
+                        <button
+                            key={status}
+                            type="button"
+                            onClick={() => setStatusFilter(status)}
+                            className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${statusFilter === status
+                                ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]'
+                                : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                                }`}
+                        >
+                            {status === 'ALL' ? 'All Positions' : status}
+                        </button>
+                    ))}
+                </div>
 
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                                        <div className="text-muted-foreground">Principal</div>
-                                        <div className="font-semibold text-white">${sub.principal.toFixed(2)}</div>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                                        <div className="text-muted-foreground">Equity</div>
-                                        <div className="font-semibold text-white">${(latest?.equity ?? sub.principal).toFixed(2)}</div>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-white/5 p-2">
-                                        <div className="text-muted-foreground">Return</div>
-                                        <div className={`font-semibold ${pnlColor}`}>{(cumulative * 100).toFixed(2)}%</div>
-                                    </div>
-                                </div>
-
-                                <div className="mt-3 flex justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={() => setActiveSubscriptionId(sub.id)}
-                                        className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-muted-foreground hover:bg-white/5 hover:text-white"
-                                    >
-                                        <Eye className="h-3.5 w-3.5" />
-                                        View NAV
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
+                <div className="space-y-4">
+                    <AnimatePresence mode="popLayout">
+                        {subscriptions.map((sub) => (
+                            <ManagedSubscriptionItem
+                                key={sub.id}
+                                subscription={sub}
+                                onViewDetails={(id) => console.log('View details', id)}
+                            />
+                        ))}
+                    </AnimatePresence>
 
                     {subscriptions.length === 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-muted-foreground">
-                            No subscriptions found for current filter.
-                        </div>
-                    )}
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-[#121417] p-4 lg:col-span-2">
-                    <h2 className="text-sm font-semibold text-white">NAV Detail</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">Select a subscription to inspect latest NAV trajectory.</p>
-
-                    {navLoading ? (
-                        <div className="mt-6 flex items-center justify-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
-                        </div>
-                    ) : navDetail ? (
-                        <>
-                            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                                <Stat label="Latest NAV" value={navDetail.summary.latestNav.toFixed(4)} compact />
-                                <Stat label="Cumulative" value={`${(navDetail.summary.cumulativeReturn * 100).toFixed(2)}%`} compact />
-                                <Stat label="Max Drawdown" value={`${(navDetail.summary.maxDrawdown * 100).toFixed(2)}%`} compact />
-                                <Stat label="Points" value={`${navDetail.summary.points}`} compact />
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-12 text-center"
+                        >
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
+                                <Wallet className="h-6 w-6 text-zinc-600" />
                             </div>
-
-                            <div className="mt-4 max-h-[360px] space-y-1 overflow-auto rounded-lg border border-white/10 bg-black/20 p-2">
-                                {navDetail.snapshots.slice(-30).map((point) => (
-                                    <div key={point.snapshotAt} className="flex items-center justify-between rounded px-2 py-1 text-xs text-muted-foreground hover:bg-white/5">
-                                        <span>{new Date(point.snapshotAt).toLocaleString()}</span>
-                                        <span className="font-mono text-white">{point.nav.toFixed(4)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="mt-6 rounded-lg border border-dashed border-white/10 p-6 text-center text-xs text-muted-foreground">
-                            Choose one subscription from the list.
-                        </div>
+                            <h3 className="text-lg font-medium text-white">No positions found</h3>
+                            <p className="mt-1 text-sm text-zinc-500">You don't have any subscriptions matching this filter.</p>
+                        </motion.div>
                     )}
                 </div>
             </div>
-        </div>
-    );
-}
-
-function Stat({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
-    return (
-        <div className={`rounded-lg border border-white/10 bg-white/5 ${compact ? 'p-2' : 'p-3'}`}>
-            <div className="text-[11px] text-muted-foreground">{label}</div>
-            <div className="mt-0.5 text-sm font-semibold text-white">{value}</div>
         </div>
     );
 }

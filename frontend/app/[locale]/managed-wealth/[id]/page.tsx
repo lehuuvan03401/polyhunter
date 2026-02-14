@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { Loader2, ShieldAlert, ShieldCheck, User2 } from 'lucide-react';
+import { ArrowLeft, Loader2, ShieldAlert, ShieldCheck, User2, Wallet, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import { ManagedProduct, ManagedTerm, SubscriptionModal } from '@/components/managed-wealth/subscription-modal';
+import { ManagedNavChart } from '@/components/managed-wealth/managed-nav-chart';
+import { motion } from 'framer-motion';
 
 type AgentSummary = {
     id: string;
@@ -74,157 +76,194 @@ export default function ManagedWealthDetailPage() {
         const avgMax = product.terms.reduce((acc, term) => acc + term.targetReturnMax, 0) / product.terms.length;
         return `${avgMin.toFixed(2)}% - ${avgMax.toFixed(2)}%`;
     }, [product]);
+    useEffect(() => {
+        if (product?.terms) {
+            const defaultTerm = product.terms.find((t) => t.durationDays === 30);
+            if (defaultTerm) {
+                setPresetTermId(defaultTerm.id);
+            }
+        }
+    }, [product]);
+
 
     if (loading) {
         return (
-            <div className="container py-10">
-                <div className="flex items-center justify-center">
-                    <Loader2 className="h-7 w-7 animate-spin text-blue-400" />
-                </div>
+            <div className="container py-20 flex justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
             </div>
         );
     }
 
     if (!product) {
         return (
-            <div className="container py-10">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-muted-foreground">
-                    Product not found.
-                    <div className="mt-4">
-                        <Link href="/managed-wealth" className="text-blue-400 hover:text-blue-300">Back to Managed Wealth</Link>
-                    </div>
+            <div className="container py-20">
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-12 text-center">
+                    <h2 className="text-xl font-semibold text-white">Product not found</h2>
+                    <p className="mt-2 text-zinc-400">The strategy you are looking for does not exist or has been removed.</p>
+                    <Link href="/managed-wealth" className="mt-6 inline-block text-blue-400 hover:text-blue-300">
+                        &larr; Return to Marketplace
+                    </Link>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="container py-10">
-            <div className="mb-6">
-                <Link href="/managed-wealth" className="text-sm text-muted-foreground hover:text-white">← Back to Marketplace</Link>
+        <div className="container py-10 min-h-screen relative">
+            <div className="absolute top-0 left-0 -z-10 h-[400px] w-[400px] bg-purple-500/5 blur-[100px] rounded-full" />
+            <div className="absolute bottom-0 right-0 -z-10 h-[400px] w-[400px] bg-blue-500/5 blur-[100px] rounded-full" />
+
+            <div className="mb-8">
+                <Link href="/managed-wealth" className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors">
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to Marketplace
+                </Link>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-[#121417] p-6 lg:col-span-2">
-                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <h1 className="text-3xl font-bold text-white">{product.name}</h1>
-                            <div className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{product.strategyProfile}</div>
-                        </div>
-                        <DisclosurePolicyPill policy={product.disclosurePolicy} delayHours={product.disclosureDelayHours} />
-                    </div>
-
-                    <p className="mb-6 text-sm text-muted-foreground">{product.description || 'Managed strategy product.'}</p>
-
-                    <div className="mb-6 grid gap-3 sm:grid-cols-3">
-                        <Stat label="Avg target range" value={avgTarget || '--'} />
-                        <Stat label="Subscriptions" value={`${detail?.stats.subscriptionCount ?? 0}`} />
-                        <Stat label="Running" value={`${detail?.stats.runningSubscriptionCount ?? 0}`} />
-                    </div>
-
-                    <h2 className="mb-3 text-lg font-semibold text-white">Term Matrix</h2>
-                    <div className="overflow-x-auto rounded-xl border border-white/10">
-                        <table className="w-full min-w-[680px] text-sm">
-                            <thead className="bg-white/5 text-xs text-muted-foreground">
-                                <tr>
-                                    <th className="px-3 py-2 text-left">Term</th>
-                                    <th className="px-3 py-2 text-left">Target Return</th>
-                                    <th className="px-3 py-2 text-left">Max Drawdown</th>
-                                    <th className="px-3 py-2 text-left">Fee</th>
-                                    <th className="px-3 py-2 text-left">Guarantee</th>
-                                    <th className="px-3 py-2 text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {product.terms.map((term) => (
-                                    <tr key={term.id} className="border-t border-white/10">
-                                        <td className="px-3 py-3">{term.label} ({term.durationDays}d)</td>
-                                        <td className="px-3 py-3">{term.targetReturnMin}% - {term.targetReturnMax}%</td>
-                                        <td className="px-3 py-3">{term.maxDrawdown}%</td>
-                                        <td className="px-3 py-3">{((term.performanceFeeRate ?? product.performanceFeeRate) * 100).toFixed(1)}%</td>
-                                        <td className="px-3 py-3">
-                                            {product.isGuaranteed ? (
-                                                <span className="inline-flex items-center gap-1 text-emerald-300">
-                                                    <ShieldCheck className="h-3.5 w-3.5" />
-                                                    {(Number(term.minYieldRate ?? 0) * 100).toFixed(2)}% floor
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center gap-1 text-orange-300">
-                                                    <ShieldAlert className="h-3.5 w-3.5" />
-                                                    No guarantee
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-3 text-right">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (!authenticated) {
-                                                        login();
-                                                        return;
-                                                    }
-                                                    setPresetTermId(term.id);
-                                                    setModalOpen(true);
-                                                }}
-                                                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
-                                            >
-                                                Subscribe
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <h2 className="mb-3 mt-7 text-lg font-semibold text-white">Strategy Agents</h2>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {product.agents.map((item) => (
-                            <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <div className="rounded-md bg-white/10 p-2">
-                                            <User2 className="h-4 w-4 text-blue-300" />
+            <div className="grid gap-8 lg:grid-cols-3">
+                {/* Left Column: Main Content */}
+                <div className="lg:col-span-2 space-y-8">
+                    {/* Header Card */}
+                    <div className="rounded-3xl border border-white/10 bg-[#0A0B0E]/80 backdrop-blur-md p-6 relative overflow-hidden">
+                        <div className="relative z-10">
+                            <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                                <div>
+                                    <h1 className="text-3xl font-bold text-white mb-2">{product.name}</h1>
+                                    <div className="flex items-center gap-3">
+                                        <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${product.strategyProfile === 'CONSERVATIVE'
+                                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                                            : 'border-blue-500/30 bg-blue-500/10 text-blue-400'
+                                            }`}>
+                                            {product.strategyProfile}
                                         </div>
-                                        <div>
-                                            <div className="text-sm font-semibold text-white">{item.agent.name}</div>
-                                            <div className="text-xs text-muted-foreground">{item.agent.traderName || item.agent.traderAddress}</div>
-                                        </div>
+                                        <DisclosurePolicyPill policy={product.disclosurePolicy} delayHours={product.disclosureDelayHours} />
                                     </div>
-                                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-muted-foreground">
-                                        weight {(item.weight * 100).toFixed(0)}%
-                                    </span>
+                                </div>
+                                <div className="text-right hidden sm:block">
+                                    <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Target APY</div>
+                                    <div className="text-2xl font-bold text-white">{avgTarget}</div>
                                 </div>
                             </div>
-                        ))}
+
+                            <p className="text-zinc-400 leading-relaxed max-w-2xl">
+                                {product.description || 'Institutional-grade managed strategy tailored for optimal risk-adjusted returns.'}
+                            </p>
+
+                            <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                <Stat label="Subscriptions" value={`${detail?.stats.subscriptionCount ?? 0}`} />
+                                <Stat label="Active" value={`${detail?.stats.runningSubscriptionCount ?? 0}`} />
+                                <Stat label="Perf. Fee" value={`${(product.performanceFeeRate * 100).toFixed(1)}%`} />
+                                <Stat label="Guarantee" value={product.isGuaranteed ? 'Yes' : 'No'} highlight={product.isGuaranteed} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Chart Section */}
+                    <div className="rounded-3xl border border-white/10 bg-[#0A0B0E]/50 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-white">Performance History</h2>
+                            <div className="text-xs text-zinc-500">Past performance is not indicative of future results</div>
+                        </div>
+                        <div className="h-[240px] w-full">
+                            <ManagedNavChart data={[]} /> {/* Placeholder until API provides historical NAV */}
+                        </div>
+                    </div>
+
+                    {/* Agents Section */}
+                    <div>
+                        <h2 className="text-lg font-semibold text-white mb-4">Strategy Composition</h2>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {product.agents.map((item) => (
+                                <div key={item.id} className="flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-colors">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                            <User2 className="h-5 w-5 text-blue-400" />
+                                        </div>
+                                        <div>
+                                            <div className="font-medium text-white">{item.agent.name}</div>
+                                            <div className="text-xs text-zinc-500 truncate max-w-[120px]">
+                                                {item.agent.traderName || item.agent.traderAddress.slice(0, 8)}...
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs text-zinc-500">Weight</div>
+                                        <div className="font-mono text-white">{(item.weight * 100).toFixed(0)}%</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-[#121417] p-6">
-                    <h2 className="text-lg font-semibold text-white">Subscribe</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">Choose your term and principal with explicit risk confirmation.</p>
+                {/* Right Column: Terms & Action */}
+                <div className="lg:col-span-1">
+                    <div className="sticky top-24 space-y-6">
+                        <div className="rounded-3xl border border-white/10 bg-[#121417] p-5 shadow-xl">
+                            <h2 className="text-lg font-semibold text-white mb-2">Select a Term</h2>
+                            <p className="text-sm text-zinc-500 mb-6">Choose a lock-up period that suits your investment horizon.</p>
 
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (!authenticated) {
-                                login();
-                                return;
-                            }
-                            setPresetTermId(undefined);
-                            setModalOpen(true);
-                        }}
-                        className="mt-5 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
-                    >
-                        Open Subscription Modal
-                    </button>
+                            <div className="space-y-2">
+                                {product.terms.map((term) => (
+                                    <motion.div
+                                        key={term.id}
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        className={`group relative overflow-hidden rounded-xl border p-3 transition-colors cursor-pointer ${presetTermId === term.id
+                                            ? 'border-blue-500 bg-blue-500/10'
+                                            : 'border-white/10 bg-white/5 hover:bg-white/10'
+                                            }`}
+                                        onClick={() => {
+                                            setPresetTermId(term.id);
+                                        }}
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="font-bold text-white">{term.label} ({term.durationDays}d)</span>
+                                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/10 text-zinc-300">
+                                                {term.targetReturnMin}-{term.targetReturnMax}% APY
+                                            </span>
+                                        </div>
 
-                    <Link
-                        href="/managed-wealth/my"
-                        className="mt-3 block w-full rounded-lg border border-white/10 px-4 py-2.5 text-center text-sm text-muted-foreground hover:bg-white/5 hover:text-white"
-                    >
-                        View My Managed Positions
-                    </Link>
+                                        <div className="flex items-center gap-4 text-xs text-zinc-500">
+                                            <span>Max DD: {term.maxDrawdown}%</span>
+                                            {product.isGuaranteed && (
+                                                <span className="flex items-center gap-1 text-emerald-400">
+                                                    <ShieldCheck className="h-3 w-3" />
+                                                    Filtered
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className={`absolute inset-0 border-2 transition-all rounded-xl ${presetTermId === term.id ? 'border-blue-500' : 'border-blue-500/0 group-hover:border-blue-500/50'}`} />
+                                    </motion.div>
+                                ))}
+                            </div>
+
+                            <div className="mt-4 pt-6 border-t border-white/10">
+                                <button
+                                    onClick={() => {
+                                        if (!authenticated) {
+                                            login();
+                                            return;
+                                        }
+                                        if (presetTermId) {
+                                            setModalOpen(true);
+                                        }
+                                    }}
+                                    disabled={!presetTermId}
+                                    className="w-full rounded-xl bg-blue-600 py-4 font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500 hover:shadow-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                                >
+                                    Subscribe Now
+                                </button>
+                                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-500">
+                                    <Info className="h-3.5 w-3.5" />
+                                    <span>Funds are held in non-custodial smart contracts</span>
+                                </div>
+                            </div>
+                        </div>
+
+
+                    </div>
                 </div>
             </div>
 
@@ -240,11 +279,13 @@ export default function ManagedWealthDetailPage() {
     );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
     return (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-muted-foreground">{label}</div>
-            <div className="mt-1 text-sm font-semibold text-white">{value}</div>
+        <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+            <div className="text-xs text-zinc-500 uppercase tracking-wide">{label}</div>
+            <div className={`mt-1 font-semibold ${highlight ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                {value}
+            </div>
         </div>
     );
 }
