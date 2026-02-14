@@ -11,11 +11,11 @@
 - [x] 2.5 Implement ops endpoint `GET /api/reserve-fund/summary`.
 
 ## 3. Execution & Lifecycle Jobs
-- [ ] 3.1 Map active managed subscriptions to isolated copy-trading execution configs.
-- [ ] 3.2 Implement periodic NAV snapshot job with pricing fallback tagging.
-- [ ] 3.3 Implement maturity scanner and idempotent settlement job.
-- [ ] 3.4 Implement reserve-fund top-up/deduction entries for conservative guarantee shortfall.
-- [ ] 3.5 Enforce pause of new guaranteed subscriptions when reserve coverage ratio is below threshold.
+- [x] 3.1 Map active managed subscriptions to isolated copy-trading execution configs.
+- [x] 3.2 Implement periodic NAV snapshot job with pricing fallback tagging.
+- [x] 3.3 Implement maturity scanner and idempotent settlement job.
+- [x] 3.4 Implement reserve-fund top-up/deduction entries for conservative guarantee shortfall.
+- [x] 3.5 Enforce pause of new guaranteed subscriptions when reserve coverage ratio is below threshold.
 
 ## 4. Frontend Experience
 - [ ] 4.1 Add `托管理财` entry and product marketplace page.
