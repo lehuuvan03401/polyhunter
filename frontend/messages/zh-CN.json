@@ -87,6 +87,207 @@
         },
         "copyButton": "AI跟单"
     },
+    "ManagedWealth": {
+        "ProductCard": {
+            "strategies": {
+                "Conservative": "稳健型",
+                "Moderate": "平衡型",
+                "Aggressive": "激进型"
+            },
+            "targetReturn": "目标回报",
+            "defaultDescription": "专业托管策略。",
+            "lockup": "锁定期",
+            "protection": "本金保障",
+            "guaranteed": "保本",
+            "standard": "标准",
+            "perfFee": "绩效费",
+            "subscribe": "立即订阅",
+            "viewDetails": "查看策略详情"
+        },
+        "SubscriptionModal": {
+            "strategyLabel": "{strategy}策略",
+            "title": "订阅 {name}",
+            "selectTerm": "1. 选择期限",
+            "days": "{count} 天",
+            "investmentAmount": "2. 投资金额",
+            "balance": "余额: -- USDC",
+            "projectedPerformance": "预期表现",
+            "historicalData": "基于历史数据",
+            "targetReturn": "目标回报",
+            "maxDrawdown": "最大回撤",
+            "guaranteedFloor": "最低保障",
+            "riskAck": "我确认我了解与<highlight>{strategy}</highlight>策略相关的特定风险，包括潜在的回撤。",
+            "termsAck": "我接受服务条款、披露政策，并同意智能合约执行。",
+            "importantNotice": "重要提示",
+            "noticeContent": "利润分成将自动从正收益中扣除。提前赎回请求可能会受到冷静期和罚款费用的影响，从而影响保本。",
+            "cancel": "取消",
+            "confirm": "确认投资",
+            "processing": "处理中...",
+            "errors": {
+                "selectTerm": "请选择期限。",
+                "invalidAmount": "请输入有效的投资金额。",
+                "success": "订阅成功创建。",
+                "failed": "订阅失败。",
+                "createFailed": "创建订阅失败"
+            }
+        },
+        "SubscriptionItem": {
+            "guaranteed": "保本",
+            "status": {
+                "PENDING": "待处理",
+                "RUNNING": "运行中",
+                "MATURED": "已到期",
+                "SETTLED": "已结算",
+                "CANCELLED": "已取消"
+            },
+            "currentEquity": "当前权益",
+            "return": "回报",
+            "performance": "表现",
+            "subscriptionDetails": "订阅详情",
+            "principal": "本金",
+            "startDate": "开始日期",
+            "endDate": "结束日期",
+            "disclosure": "披露",
+            "viewAnalysis": "查看完整分析"
+        },
+        "Marketplace": {
+            "title": "市场",
+            "subtitle": "发现并订阅自动交易策略。",
+            "myDashboard": "我的仪表板",
+            "loading": "加载策略中...",
+            "filters": {
+                "strategies": {
+                    "ALL": "所有策略",
+                    "CONSERVATIVE": "保守型",
+                    "MODERATE": "稳健型",
+                    "AGGRESSIVE": "进取型"
+                },
+                "guaranteedOnly": "仅保本",
+                "clear": "清除所有筛选"
+            },
+            "empty": {
+                "title": "没有匹配的产品",
+                "desc": "尝试调整筛选条件以查看更多结果。"
+            },
+            "landing": {
+                "title": "托管财富",
+                "subtitle": "面向所有人的机构级策略。选择产品，让我们的自动系统完全透明地处理执行。",
+                "connectWallet": "连接钱包以查看策略",
+                "connecting": "连接钱包中...",
+                "terms": "连接即表示您同意我们的服务条款和风险披露。",
+                "features": {
+                    "protection": {
+                        "title": "本金保护",
+                        "desc": "由储备基金支持的保守产品，可最大限度地降低下行风险。"
+                    },
+                    "terms": {
+                        "title": "灵活期限",
+                        "desc": "根据您的流动性需求锁定 24 小时到 365 天。"
+                    },
+                    "nav": {
+                        "title": "实时 NAV",
+                        "desc": "全面可见地跟踪表现、回撤和结算填充。"
+                    }
+                }
+            },
+            "errors": {
+                "fetchFailed": "获托管产品失败",
+                "subscribeSuccess": "您可以在“我的仪表板”中跟踪此持仓。"
+            }
+        },
+        "ProductDetails": {
+            "notFound": {
+                "title": "未找到产品",
+                "desc": "您查找的策略不存在或已被移除。",
+                "return": "返回市场"
+            },
+            "backToMarketplace": "返回市场",
+            "targetApy": "目标年化收益率",
+            "defaultDesc": "为最佳风险调整回报量身定制的机构级托管策略。",
+            "stats": {
+                "subscriptions": "订阅数",
+                "active": "活跃",
+                "perfFee": "绩效费",
+                "guarantee": "保本",
+                "yes": "是",
+                "no": "否"
+            },
+            "performance": {
+                "title": "历史表现",
+                "disclaimer": "过往表现不代表未来结果"
+            },
+            "composition": {
+                "title": "策略组合",
+                "weight": "权重"
+            },
+            "subscribe": {
+                "title": "选择期限",
+                "desc": "选择适合您投资期限的锁定期。",
+                "maxDrawdown": "最大回撤: {value}%",
+                "guaranteed": "保本",
+                "action": "立即订阅",
+                "disclaimer": "资金由非托管智能合约持有"
+            },
+            "errors": {
+                "fetchFailed": "获取产品详情失败",
+                "fetchGeneral": "获取产品失败"
+            }
+        },
+        "Dashboard": {
+            "unauth": {
+                "title": "我的托管持仓",
+                "desc": "连接您的钱包以查看活跃策略，实时跟踪表现并管理结算。",
+                "connect": "连接钱包",
+                "connecting": "连接中..."
+            },
+            "backToMarketplace": "返回市场",
+            "title": "我的仪表板",
+            "subtitle": "跟踪和管理您的自动财富策略。",
+            "browseTypes": "浏览新策略",
+            "stats": {
+                "activeCapital": "活跃资金",
+                "activePositions": "{count} 个活跃持仓",
+                "currentEquity": "当前权益",
+                "estimatedValue": "预估总价值",
+                "totalPnl": "总盈亏"
+            },
+            "filters": {
+                "all": "所有持仓",
+                "running": "运行中",
+                "matured": "已到期",
+                "settled": "已结算"
+            },
+            "empty": {
+                "title": "未找到持仓",
+                "desc": "您没有符合此筛选条件的订阅。"
+            },
+            "errors": {
+                "fetchFailed": "获取订阅失败"
+            }
+        },
+        "DisclosurePill": {
+            "delayed": "延迟披露",
+            "realtime": "实时透明"
+        },
+        "NavChart": {
+            "noData": "暂无 NAV 历史数据",
+            "tooltipNav": "净值: {value}"
+        },
+        "Products": {
+            "CONSERVATIVE": {
+                "name": "稳健收益金库",
+                "description": "保守型托管策略，由储备基金支持本金和最低收益保护。"
+            },
+            "MODERATE": {
+                "name": "平衡阿尔法金库",
+                "description": "旨在平衡风险和中期增长的稳健策略。"
+            },
+            "AGGRESSIVE": {
+                "name": "进取机会金库",
+                "description": "专注于高波动性机会和更大回撤容忍度的激进策略。"
+            }
+        }
+    },
     "Navbar": {
         "traders": "首页",
         "markets": "市场",

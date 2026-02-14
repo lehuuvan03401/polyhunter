@@ -10,6 +10,7 @@ import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-pol
 import { ManagedProduct, ManagedTerm, SubscriptionModal } from '@/components/managed-wealth/subscription-modal';
 import { ManagedNavChart } from '@/components/managed-wealth/managed-nav-chart';
 import { motion } from 'framer-motion';
+import { useTranslations } from 'next-intl';
 
 type AgentSummary = {
     id: string;
@@ -39,6 +40,8 @@ type ProductDetailResponse = {
 };
 
 export default function ManagedWealthDetailPage() {
+    const t = useTranslations('ManagedWealth.ProductDetails');
+    const tProducts = useTranslations('ManagedWealth.Products');
     const params = useParams<{ id: string }>();
     const { authenticated, login, user } = usePrivyLogin();
 
@@ -55,11 +58,11 @@ export default function ManagedWealthDetailPage() {
                 const res = await fetch(`/api/managed-products/${params.id}`);
                 const data = await res.json();
                 if (!res.ok) {
-                    throw new Error(data?.error || 'Failed to fetch product detail');
+                    throw new Error(data?.error || t('errors.fetchFailed'));
                 }
                 setDetail(data);
             } catch (error) {
-                toast.error(error instanceof Error ? error.message : 'Failed to fetch product');
+                toast.error(error instanceof Error ? error.message : t('errors.fetchGeneral'));
             } finally {
                 setLoading(false);
             }
@@ -98,10 +101,10 @@ export default function ManagedWealthDetailPage() {
         return (
             <div className="container py-20">
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-12 text-center">
-                    <h2 className="text-xl font-semibold text-white">Product not found</h2>
-                    <p className="mt-2 text-zinc-400">The strategy you are looking for does not exist or has been removed.</p>
+                    <h2 className="text-xl font-semibold text-white">{t('notFound.title')}</h2>
+                    <p className="mt-2 text-zinc-400">{t('notFound.desc')}</p>
                     <Link href="/managed-wealth" className="mt-6 inline-block text-blue-400 hover:text-blue-300">
-                        &larr; Return to Marketplace
+                        &larr; {t('notFound.return')}
                     </Link>
                 </div>
             </div>
@@ -116,7 +119,7 @@ export default function ManagedWealthDetailPage() {
             <div className="mb-8">
                 <Link href="/managed-wealth" className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors">
                     <ArrowLeft className="h-4 w-4" />
-                    Back to Marketplace
+                    {t('backToMarketplace')}
                 </Link>
             </div>
 
@@ -128,7 +131,10 @@ export default function ManagedWealthDetailPage() {
                         <div className="relative z-10">
                             <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                                 <div>
-                                    <h1 className="text-3xl font-bold text-white mb-2">{product.name}</h1>
+                                    <h1 className="text-3xl font-bold text-white mb-2">
+                                        {/* @ts-ignore */}
+                                        {tProducts(`${product.strategyProfile}.name`)}
+                                    </h1>
                                     <div className="flex items-center gap-3">
                                         <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${product.strategyProfile === 'CONSERVATIVE'
                                             ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
@@ -140,20 +146,21 @@ export default function ManagedWealthDetailPage() {
                                     </div>
                                 </div>
                                 <div className="text-right hidden sm:block">
-                                    <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Target APY</div>
+                                    <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">{t('targetApy')}</div>
                                     <div className="text-2xl font-bold text-white">{avgTarget}</div>
                                 </div>
                             </div>
 
                             <p className="text-zinc-400 leading-relaxed max-w-2xl">
-                                {product.description || 'Institutional-grade managed strategy tailored for optimal risk-adjusted returns.'}
+                                {/* @ts-ignore */}
+                                {tProducts(`${product.strategyProfile}.description`)}
                             </p>
 
                             <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                <Stat label="Subscriptions" value={`${detail?.stats.subscriptionCount ?? 0}`} />
-                                <Stat label="Active" value={`${detail?.stats.runningSubscriptionCount ?? 0}`} />
-                                <Stat label="Perf. Fee" value={`${(product.performanceFeeRate * 100).toFixed(1)}%`} />
-                                <Stat label="Guarantee" value={product.isGuaranteed ? 'Yes' : 'No'} highlight={product.isGuaranteed} />
+                                <Stat label={t('stats.subscriptions')} value={`${detail?.stats.subscriptionCount ?? 0}`} />
+                                <Stat label={t('stats.active')} value={`${detail?.stats.runningSubscriptionCount ?? 0}`} />
+                                <Stat label={t('stats.perfFee')} value={`${(product.performanceFeeRate * 100).toFixed(1)}%`} />
+                                <Stat label={t('stats.guarantee')} value={product.isGuaranteed ? t('stats.yes') : t('stats.no')} highlight={product.isGuaranteed} />
                             </div>
                         </div>
                     </div>
@@ -161,8 +168,8 @@ export default function ManagedWealthDetailPage() {
                     {/* Chart Section */}
                     <div className="rounded-3xl border border-white/10 bg-[#0A0B0E]/50 p-6">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-semibold text-white">Performance History</h2>
-                            <div className="text-xs text-zinc-500">Past performance is not indicative of future results</div>
+                            <h2 className="text-lg font-semibold text-white">{t('performance.title')}</h2>
+                            <div className="text-xs text-zinc-500">{t('performance.disclaimer')}</div>
                         </div>
                         <div className="h-[240px] w-full">
                             <ManagedNavChart data={[]} /> {/* Placeholder until API provides historical NAV */}
@@ -171,7 +178,7 @@ export default function ManagedWealthDetailPage() {
 
                     {/* Agents Section */}
                     <div>
-                        <h2 className="text-lg font-semibold text-white mb-4">Strategy Composition</h2>
+                        <h2 className="text-lg font-semibold text-white mb-4">{t('composition.title')}</h2>
                         <div className="grid gap-3 sm:grid-cols-2">
                             {product.agents.map((item) => (
                                 <div key={item.id} className="flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-colors">
@@ -187,7 +194,7 @@ export default function ManagedWealthDetailPage() {
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-xs text-zinc-500">Weight</div>
+                                        <div className="text-xs text-zinc-500">{t('composition.weight')}</div>
                                         <div className="font-mono text-white">{(item.weight * 100).toFixed(0)}%</div>
                                     </div>
                                 </div>
@@ -200,8 +207,8 @@ export default function ManagedWealthDetailPage() {
                 <div className="lg:col-span-1">
                     <div className="sticky top-24 space-y-6">
                         <div className="rounded-3xl border border-white/10 bg-[#121417] p-5 shadow-xl">
-                            <h2 className="text-lg font-semibold text-white mb-2">Select a Term</h2>
-                            <p className="text-sm text-zinc-500 mb-6">Choose a lock-up period that suits your investment horizon.</p>
+                            <h2 className="text-lg font-semibold text-white mb-2">{t('subscribe.title')}</h2>
+                            <p className="text-sm text-zinc-500 mb-6">{t('subscribe.desc')}</p>
 
                             <div className="space-y-2">
                                 {product.terms.map((term) => (
@@ -225,11 +232,11 @@ export default function ManagedWealthDetailPage() {
                                         </div>
 
                                         <div className="flex items-center gap-4 text-xs text-zinc-500">
-                                            <span>Max DD: {term.maxDrawdown}%</span>
+                                            <span>{t('subscribe.maxDrawdown', { value: term.maxDrawdown })}</span>
                                             {product.isGuaranteed && (
                                                 <span className="flex items-center gap-1 text-emerald-400">
                                                     <ShieldCheck className="h-3 w-3" />
-                                                    Filtered
+                                                    {t('subscribe.guaranteed')}
                                                 </span>
                                             )}
                                         </div>
@@ -253,11 +260,11 @@ export default function ManagedWealthDetailPage() {
                                     disabled={!presetTermId}
                                     className="w-full rounded-xl bg-blue-600 py-4 font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500 hover:shadow-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                                 >
-                                    Subscribe Now
+                                    {t('subscribe.action')}
                                 </button>
                                 <div className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-500">
                                     <Info className="h-3.5 w-3.5" />
-                                    <span>Funds are held in non-custodial smart contracts</span>
+                                    <span>{t('subscribe.disclaimer')}</span>
                                 </div>
                             </div>
                         </div>

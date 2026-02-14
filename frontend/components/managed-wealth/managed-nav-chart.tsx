@@ -3,6 +3,7 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useTranslations } from 'next-intl';
 
 type NavPoint = {
     snapshotAt: string;
@@ -27,6 +28,8 @@ export function ManagedNavChart({
     showXAxis = true,
     color = "#3b82f6"
 }: ManagedNavChartProps) {
+    const t = useTranslations('ManagedWealth.NavChart');
+
     if (loading) {
         return (
             <div className="flex w-full items-center justify-center rounded-xl border border-white/5 bg-white/[0.02]" style={{ height }}>
@@ -38,7 +41,7 @@ export function ManagedNavChart({
     if (!data.length) {
         return (
             <div className="flex w-full items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02]" style={{ height }}>
-                <p className="text-xs text-zinc-500">No NAV history available</p>
+                <p className="text-xs text-zinc-500">{t('noData')}</p>
             </div>
         );
     }
@@ -79,7 +82,7 @@ export function ManagedNavChart({
                                     <div className="rounded-lg border border-white/10 bg-[#0A0B0E]/90 p-2 text-xs backdrop-blur-md shadow-xl">
                                         <div className="mb-1 text-zinc-400">{format(new Date(pt.snapshotAt), 'MMM dd, yyyy')}</div>
                                         <div className="flex items-center gap-2">
-                                            <span className="font-semibold text-white">NAV: {pt.nav.toFixed(4)}</span>
+                                            <span className="font-semibold text-white">{t('tooltipNav', { value: pt.nav.toFixed(4) })}</span>
                                             {pt.cumulativeReturn !== undefined && (
                                                 <span className={pt.cumulativeReturn! >= 0 ? 'text-emerald-400' : 'text-red-400'}>
                                                     {(pt.cumulativeReturn! * 100).toFixed(2)}%

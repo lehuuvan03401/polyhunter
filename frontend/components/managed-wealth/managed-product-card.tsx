@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { ShieldCheck, TrendingUp, Zap, Clock, Percent, ShieldAlert, ArrowRight } from 'lucide-react';
 import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import { ManagedProduct } from '@/components/managed-wealth/subscription-modal';
+import { useTranslations } from 'next-intl';
 
 interface ManagedProductCardProps {
     product: ManagedProduct;
@@ -18,7 +19,7 @@ const THEMES = {
         border: 'border-green-500/20',
         gradient: 'from-green-500/5',
         icon: ShieldCheck,
-        label: 'Conservative',
+        labelKey: 'Conservative',
         button: 'bg-green-600 hover:bg-green-500 shadow-green-900/20',
     },
     MODERATE: {
@@ -27,7 +28,7 @@ const THEMES = {
         border: 'border-blue-500/20',
         gradient: 'from-blue-500/5',
         icon: TrendingUp,
-        label: 'Moderate',
+        labelKey: 'Moderate',
         button: 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20',
     },
     AGGRESSIVE: {
@@ -36,12 +37,15 @@ const THEMES = {
         border: 'border-purple-500/20',
         gradient: 'from-purple-500/5',
         icon: Zap,
-        label: 'Aggressive',
+        labelKey: 'Aggressive',
         button: 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/20',
     },
 };
 
 export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardProps) {
+    const t = useTranslations('ManagedWealth.ProductCard');
+    const tProducts = useTranslations('ManagedWealth.Products');
+    // @ts-ignore
     const theme = THEMES[product.strategyProfile];
     const Icon = theme.icon;
 
@@ -74,10 +78,12 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                     <div>
                         <div className={`inline-flex items-center gap-1.5 rounded-full ${theme.bg} px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${theme.color} mb-3`}>
                             <Icon className="h-3 w-3" />
-                            {theme.label}
+                            {/* @ts-ignore */}
+                            {t(`strategies.${theme.labelKey}`)}
                         </div>
                         <h3 className="text-xl font-bold text-white leading-tight group-hover:text-white/90 transition-colors">
-                            {product.name}
+                            {/* @ts-ignore */}
+                            {tProducts(`${product.strategyProfile}.name`)}
                         </h3>
                     </div>
                 </div>
@@ -88,10 +94,11 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                         <span className={`text-3xl font-bold tracking-tight ${theme.color}`}>
                             {minReturn}% - {maxReturn}%
                         </span>
-                        <span className="text-sm font-medium text-zinc-500">Target Return</span>
+                        <span className="text-sm font-medium text-zinc-500">{t('targetReturn')}</span>
                     </div>
                     <p className="mt-2 text-sm text-zinc-400 line-clamp-2">
-                        {product.description || 'Professional managed strategy.'}
+                        {/* @ts-ignore */}
+                        {tProducts(`${product.strategyProfile}.description`)}
                     </p>
                 </div>
 
@@ -100,7 +107,7 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                     <div className="rounded-2xl bg-white/[0.03] p-3 text-center transition-colors group-hover:bg-white/[0.05]">
                         <Clock className="mx-auto mb-2 h-4 w-4 text-zinc-500" />
                         <div className="text-xs font-medium text-zinc-300">{durationLabel}</div>
-                        <div className="text-[10px] text-zinc-600">Lockup</div>
+                        <div className="text-[10px] text-zinc-600">{t('lockup')}</div>
                     </div>
 
                     <div className="rounded-2xl bg-white/[0.03] p-3 text-center transition-colors group-hover:bg-white/[0.05]">
@@ -110,15 +117,15 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                             <ShieldAlert className="mx-auto mb-2 h-4 w-4 text-zinc-500" />
                         )}
                         <div className={`text-xs font-medium ${product.isGuaranteed ? 'text-emerald-400' : 'text-zinc-300'}`}>
-                            {product.isGuaranteed ? 'Guaranteed' : 'Standard'}
+                            {product.isGuaranteed ? t('guaranteed') : t('standard')}
                         </div>
-                        <div className="text-[10px] text-zinc-600">Protection</div>
+                        <div className="text-[10px] text-zinc-600">{t('protection')}</div>
                     </div>
 
                     <div className="rounded-2xl bg-white/[0.03] p-3 text-center transition-colors group-hover:bg-white/[0.05]">
                         <Percent className="mx-auto mb-2 h-4 w-4 text-zinc-500" />
                         <div className="text-xs font-medium text-zinc-300">{(product.performanceFeeRate * 100).toFixed(0)}%</div>
-                        <div className="text-[10px] text-zinc-600">Perf. Fee</div>
+                        <div className="text-[10px] text-zinc-600">{t('perfFee')}</div>
                     </div>
                 </div>
 
@@ -129,14 +136,14 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                         onClick={() => onSubscribe(product)}
                         className={`w-full rounded-xl py-3 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] ${theme.button} shadow-lg`}
                     >
-                        Subscribe Now
+                        {t('subscribe')}
                     </button>
 
                     <Link
                         href={`/managed-wealth/${product.slug}`}
                         className="group/link flex w-full items-center justify-center gap-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white"
                     >
-                        View Strategy Details
+                        {t('viewDetails')}
                         <ArrowRight className="h-3 w-3 transition-transform group-hover/link:translate-x-0.5" />
                     </Link>
                 </div>

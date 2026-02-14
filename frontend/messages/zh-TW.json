@@ -87,6 +87,207 @@
         },
         "copyButton": "AI跟单"
     },
+    "ManagedWealth": {
+        "ProductCard": {
+            "strategies": {
+                "Conservative": "穩健型",
+                "Moderate": "平衡型",
+                "Aggressive": "激進型"
+            },
+            "targetReturn": "目標回報",
+            "defaultDescription": "專業託管策略。",
+            "lockup": "鎖定期",
+            "protection": "本金保障",
+            "guaranteed": "保本",
+            "standard": "標準",
+            "perfFee": "績效費",
+            "subscribe": "立即訂閱",
+            "viewDetails": "查看策略詳情"
+        },
+        "SubscriptionModal": {
+            "strategyLabel": "{strategy}策略",
+            "title": "訂閱 {name}",
+            "selectTerm": "1. 選擇期限",
+            "days": "{count} 天",
+            "investmentAmount": "2. 投資金額",
+            "balance": "餘額: -- USDC",
+            "projectedPerformance": "預期表現",
+            "historicalData": "基於歷史數據",
+            "targetReturn": "目標回報",
+            "maxDrawdown": "最大回撤",
+            "guaranteedFloor": "最低保障",
+            "riskAck": "我確認我了解與<highlight>{strategy}</highlight>策略相關的特定風險，包括潛在的回撤。",
+            "termsAck": "我接受服務條款、披露政策，並同意智能合約執行。",
+            "importantNotice": "重要提示",
+            "noticeContent": "利潤分成將自動從正收益中扣除。提前贖回請求可能會受到冷靜期和罰款費用的影響，從而影響保本。",
+            "cancel": "取消",
+            "confirm": "確認投資",
+            "processing": "處理中...",
+            "errors": {
+                "selectTerm": "請選擇期限。",
+                "invalidAmount": "請輸入有效的投資金額。",
+                "success": "訂閱成功創建。",
+                "failed": "訂閱失敗。",
+                "createFailed": "創建訂閱失敗"
+            }
+        },
+        "SubscriptionItem": {
+            "guaranteed": "保本",
+            "status": {
+                "PENDING": "待處理",
+                "RUNNING": "運行中",
+                "MATURED": "已到期",
+                "SETTLED": "已結算",
+                "CANCELLED": "已取消"
+            },
+            "currentEquity": "當前權益",
+            "return": "回報",
+            "performance": "表現",
+            "subscriptionDetails": "訂閱詳情",
+            "principal": "本金",
+            "startDate": "開始日期",
+            "endDate": "結束日期",
+            "disclosure": "披露",
+            "viewAnalysis": "查看完整分析"
+        },
+        "Marketplace": {
+            "title": "市場",
+            "subtitle": "發現並訂閱自動交易策略。",
+            "myDashboard": "我的儀表板",
+            "loading": "加載策略中...",
+            "filters": {
+                "strategies": {
+                    "ALL": "所有策略",
+                    "CONSERVATIVE": "保守型",
+                    "MODERATE": "穩健型",
+                    "AGGRESSIVE": "進取型"
+                },
+                "guaranteedOnly": "僅保本",
+                "clear": "清除所有篩選"
+            },
+            "empty": {
+                "title": "沒有匹配的產品",
+                "desc": "嘗試調整篩選條件以查看更多結果。"
+            },
+            "landing": {
+                "title": "託管財富",
+                "subtitle": "面向所有人的機構級策略。選擇產品，讓我們的自動系統完全透明地處理執行。",
+                "connectWallet": "連接錢包以查看策略",
+                "connecting": "連接錢包中...",
+                "terms": "連接即表示您同意我們的服務條款和風險披露。",
+                "features": {
+                    "protection": {
+                        "title": "本金保護",
+                        "desc": "由儲備基金支持的保守產品，可最大限度地降低下行風險。"
+                    },
+                    "terms": {
+                        "title": "靈活期限",
+                        "desc": "根據您的流動性需求鎖定 24 小時到 365 天。"
+                    },
+                    "nav": {
+                        "title": "實時 NAV",
+                        "desc": "全面可見地跟蹤表現、回撤和結算填充。"
+                    }
+                }
+            },
+            "errors": {
+                "fetchFailed": "獲取託管產品失敗",
+                "subscribeSuccess": "您可以在「我的儀表板」中跟蹤此持倉。"
+            }
+        },
+        "ProductDetails": {
+            "notFound": {
+                "title": "未找到產品",
+                "desc": "您查找的策略不存在或已被移除。",
+                "return": "返回市場"
+            },
+            "backToMarketplace": "返回市場",
+            "targetApy": "目標年化收益率",
+            "defaultDesc": "為最佳風險調整回報量身定制的機構級託管策略。",
+            "stats": {
+                "subscriptions": "訂閱數",
+                "active": "活躍",
+                "perfFee": "績效費",
+                "guarantee": "保本",
+                "yes": "是",
+                "no": "否"
+            },
+            "performance": {
+                "title": "歷史表現",
+                "disclaimer": "過往表現不代表未來結果"
+            },
+            "composition": {
+                "title": "策略組合",
+                "weight": "權重"
+            },
+            "subscribe": {
+                "title": "選擇期限",
+                "desc": "選擇適合您投資期限的鎖定期。",
+                "maxDrawdown": "最大回撤: {value}%",
+                "guaranteed": "保本",
+                "action": "立即訂閱",
+                "disclaimer": "資金由非託管智能合約持有"
+            },
+            "errors": {
+                "fetchFailed": "獲取產品詳情失敗",
+                "fetchGeneral": "獲取產品失敗"
+            }
+        },
+        "Dashboard": {
+            "unauth": {
+                "title": "我的託管持倉",
+                "desc": "連接您的錢包以查看活躍策略，實時跟蹤表現並管理結算。",
+                "connect": "連接錢包",
+                "connecting": "連接中..."
+            },
+            "backToMarketplace": "返回市場",
+            "title": "我的儀表板",
+            "subtitle": "跟蹤和管理您的自動財富策略。",
+            "browseTypes": "瀏覽新策略",
+            "stats": {
+                "activeCapital": "活躍資金",
+                "activePositions": "{count} 個活躍持倉",
+                "currentEquity": "當前權益",
+                "estimatedValue": "預估總價值",
+                "totalPnl": "總盈虧"
+            },
+            "filters": {
+                "all": "所有持倉",
+                "running": "運行中",
+                "matured": "已到期",
+                "settled": "已結算"
+            },
+            "empty": {
+                "title": "未找到持倉",
+                "desc": "您沒有符合此篩選條件的訂閱。"
+            },
+            "errors": {
+                "fetchFailed": "獲取訂閱失敗"
+            }
+        },
+        "DisclosurePill": {
+            "delayed": "延遲披露",
+            "realtime": "實時透明"
+        },
+        "NavChart": {
+            "noData": "暫無 NAV 歷史數據",
+            "tooltipNav": "淨值: {value}"
+        },
+        "Products": {
+            "CONSERVATIVE": {
+                "name": "穩健收益金庫",
+                "description": "保守型託管策略，由儲備基金支持本金和最低收益保護。"
+            },
+            "MODERATE": {
+                "name": "平衡阿爾法金庫",
+                "description": "旨在平衡風險和中期增長的穩健策略。"
+            },
+            "AGGRESSIVE": {
+                "name": "進取機會金庫",
+                "description": "專注於高波動性機會和更大回撤容忍度的激進策略。"
+            }
+        }
+    },
     "Navbar": {
         "traders": "首頁",
         "markets": "市場",

@@ -8,8 +8,10 @@ import { toast } from 'sonner';
 import { ManagedProduct, SubscriptionModal } from '@/components/managed-wealth/subscription-modal';
 import { ManagedProductCard } from '@/components/managed-wealth/managed-product-card';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslations } from 'next-intl';
 
 export default function ManagedWealthPage() {
+    const t = useTranslations('ManagedWealth.Marketplace');
     const { authenticated, ready, login, user, isLoggingIn } = usePrivyLogin();
 
     const [products, setProducts] = useState<ManagedProduct[]>([]);
@@ -32,11 +34,11 @@ export default function ManagedWealthPage() {
                 const res = await fetch(`/api/managed-products?${params.toString()}`);
                 const data = await res.json();
                 if (!res.ok) {
-                    throw new Error(data?.error || 'Failed to fetch products');
+                    throw new Error(data?.error || t('errors.fetchFailed'));
                 }
                 setProducts(data.products || []);
             } catch (error) {
-                toast.error(error instanceof Error ? error.message : 'Failed to fetch managed products');
+                toast.error(error instanceof Error ? error.message : t('errors.fetchFailed'));
             } finally {
                 setLoading(false);
             }
@@ -67,7 +69,7 @@ export default function ManagedWealthPage() {
             <div className="container py-20">
                 <div className="flex flex-col items-center justify-center gap-4">
                     <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
-                    <p className="text-sm text-zinc-500 animate-pulse">Loading strategies...</p>
+                    <p className="text-sm text-zinc-500 animate-pulse">{t('loading')}</p>
                 </div>
             </div>
         );
@@ -84,27 +86,27 @@ export default function ManagedWealthPage() {
                     </div>
 
                     <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-                        Managed Wealth
+                        {t('landing.title')}
                     </h1>
                     <p className="mx-auto mt-6 max-w-2xl text-lg text-zinc-400">
-                        Institutional-grade strategies for everyone. Choose a product and let our automated systems handle the execution with full transparency.
+                        {t('landing.subtitle')}
                     </p>
 
                     <div className="mt-12 grid gap-6 md:grid-cols-3">
                         <FeatureCard
                             icon={<ShieldCheck className="h-6 w-6 text-emerald-400" />}
-                            title="Principal Protection"
-                            desc="Conservative products backed by reserve funds to minimize downside risk."
+                            title={t('landing.features.protection.title')}
+                            desc={t('landing.features.protection.desc')}
                         />
                         <FeatureCard
                             icon={<TrendingUp className="h-6 w-6 text-blue-400" />}
-                            title="Flexible Terms"
-                            desc="Lock periods from 24h to 365d depending on your liquidity needs."
+                            title={t('landing.features.terms.title')}
+                            desc={t('landing.features.terms.desc')}
                         />
                         <FeatureCard
                             icon={<BarChart3 className="h-6 w-6 text-purple-400" />}
-                            title="Real-time NAV"
-                            desc="Track performance, drawdowns, and settlement fills with full visibility."
+                            title={t('landing.features.nav.title')}
+                            desc={t('landing.features.nav.desc')}
                         />
                     </div>
 
@@ -115,16 +117,16 @@ export default function ManagedWealthPage() {
                     >
                         {isLoggingIn ? (
                             <>
-                                Connecting Wallet...
+                                {t('landing.connecting')}
                                 <Loader2 className="h-5 w-5 animate-spin" />
                             </>
                         ) : (
-                            'Connect Wallet to View Strategies'
+                            t('landing.connectWallet')
                         )}
                     </button>
 
                     <div className="mt-6 text-xs text-zinc-500">
-                        By connecting, you agree to our Terms of Service and Risk Disclosures.
+                        {t('landing.terms')}
                     </div>
                 </div>
             </div>
@@ -138,8 +140,8 @@ export default function ManagedWealthPage() {
 
             <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-white">Marketplace</h1>
-                    <p className="mt-2 text-zinc-400">Discover and subscribe to automated trading strategies.</p>
+                    <h1 className="text-3xl font-bold tracking-tight text-white">{t('title')}</h1>
+                    <p className="mt-2 text-zinc-400">{t('subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Link
@@ -150,7 +152,7 @@ export default function ManagedWealthPage() {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
-                        My Dashboard
+                        {t('myDashboard')}
                     </Link>
                 </div>
             </div>
@@ -167,7 +169,8 @@ export default function ManagedWealthPage() {
                                 : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
                                 }`}
                         >
-                            {strategy === 'ALL' ? 'All Strategies' : strategy}
+                            {/* @ts-ignore */}
+                            {t(`filters.strategies.${strategy}`)}
                         </button>
                     ))}
                 </div>
@@ -181,7 +184,7 @@ export default function ManagedWealthPage() {
                         }`}
                 >
                     <ShieldCheck className="h-3.5 w-3.5" />
-                    Guaranteed Only
+                    {t('filters.guaranteedOnly')}
                 </button>
             </div>
 
@@ -209,8 +212,8 @@ export default function ManagedWealthPage() {
                     <div className="mb-4 rounded-full bg-white/5 p-4">
                         <BarChart3 className="h-8 w-8 text-zinc-600" />
                     </div>
-                    <h3 className="text-lg font-medium text-white">No matching products</h3>
-                    <p className="mt-1 text-sm text-zinc-500">Try adjusting your filters to see more results.</p>
+                    <h3 className="text-lg font-medium text-white">{t('empty.title')}</h3>
+                    <p className="mt-1 text-sm text-zinc-500">{t('empty.desc')}</p>
                     <button
                         onClick={() => {
                             setStrategyFilter('ALL');
@@ -218,7 +221,7 @@ export default function ManagedWealthPage() {
                         }}
                         className="mt-6 text-xs text-blue-400 hover:text-blue-300"
                     >
-                        Clear all filters
+                        {t('filters.clear')}
                     </button>
                 </motion.div>
             )}
@@ -231,7 +234,7 @@ export default function ManagedWealthPage() {
                 onRequireLogin={login}
                 onSuccess={() => {
                     setModalOpen(false);
-                    toast.success('You can track this position in My Dashboard.');
+                    toast.success(t('errors.subscribeSuccess'));
                 }}
             />
         </div>

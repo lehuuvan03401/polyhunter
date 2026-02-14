@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { ManagedNavChart } from './managed-nav-chart';
 import { DisclosurePolicyPill } from './disclosure-policy-pill';
 import { ManagedProduct, ManagedTerm } from './subscription-modal';
+import { useTranslations } from 'next-intl';
 
 export type SubscriptionStatus = 'PENDING' | 'RUNNING' | 'MATURED' | 'SETTLED' | 'CANCELLED';
 
@@ -32,6 +33,8 @@ export interface ManagedSubscriptionItemProps {
 }
 
 export function ManagedSubscriptionItem({ subscription, onViewDetails }: ManagedSubscriptionItemProps) {
+    const t = useTranslations('ManagedWealth.SubscriptionItem');
+    const tProducts = useTranslations('ManagedWealth.Products');
     const [expanded, setExpanded] = useState(false);
 
     const latest = subscription.navSnapshots?.[0];
@@ -59,18 +62,21 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                         </div>
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                                <h4 className="font-bold text-white text-lg truncate">{subscription.product.name}</h4>
+                                <h4 className="font-bold text-white text-lg truncate">
+                                    {/* @ts-ignore */}
+                                    {tProducts(`${subscription.product.strategyProfile}.name`)}
+                                </h4>
                                 {subscription.product.isGuaranteed && (
                                     <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/20 uppercase tracking-wide">
                                         <ShieldCheck className="h-3 w-3" />
-                                        Guaranteed
+                                        {t('guaranteed')}
                                     </div>
                                 )}
                             </div>
                             <div className="flex items-center gap-3 text-xs font-medium text-zinc-500 mt-1">
                                 <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md ${subscription.status === 'RUNNING' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-zinc-800 text-zinc-400 border border-white/5'}`}>
                                     <span className={`h-1.5 w-1.5 rounded-full ${subscription.status === 'RUNNING' ? 'bg-blue-400 animate-pulse' : 'bg-zinc-500'}`} />
-                                    {subscription.status}
+                                    {t(`status.${subscription.status}`)}
                                 </span>
                                 <span>{subscription.term.label} ({subscription.term.durationDays}d)</span>
                             </div>
@@ -79,11 +85,11 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
 
                     <div className="flex items-center gap-8">
                         <div className="hidden sm:block text-right">
-                            <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mb-0.5">Current Equity</div>
+                            <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mb-0.5">{t('currentEquity')}</div>
                             <div className="font-mono text-lg font-bold text-white">${currentEquity.toFixed(2)}</div>
                         </div>
                         <div className="hidden sm:block text-right">
-                            <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mb-0.5">Return</div>
+                            <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mb-0.5">{t('return')}</div>
                             <div className={`font-mono text-lg font-bold ${isPositive ? 'text-emerald-400' : 'text-amber-400'}`}>
                                 {isPositive ? '+' : ''}{(returnPct * 100).toFixed(2)}%
                             </div>
@@ -118,7 +124,7 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                         <div className="p-4 grid gap-6 md:grid-cols-2">
                             {/* Chart Section */}
                             <div>
-                                <h5 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Performance</h5>
+                                <h5 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">{t('performance')}</h5>
                                 <ManagedNavChart
                                     data={[...(subscription.navSnapshots || [])].reverse()}
                                     height={180}
@@ -129,22 +135,22 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                             {/* Details Section */}
                             <div className="space-y-4">
                                 <div>
-                                    <h5 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Subscription Details</h5>
+                                    <h5 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">{t('subscriptionDetails')}</h5>
                                     <div className="grid grid-cols-2 gap-3 text-sm">
                                         <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
-                                            <span className="text-zinc-500">Principal</span>
+                                            <span className="text-zinc-500">{t('principal')}</span>
                                             <span className="text-white">${subscription.principal.toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
-                                            <span className="text-zinc-500">Start Date</span>
+                                            <span className="text-zinc-500">{t('startDate')}</span>
                                             <span className="text-white">{subscription.startAt ? format(new Date(subscription.startAt), 'MMM d') : '--'}</span>
                                         </div>
                                         <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
-                                            <span className="text-zinc-500">End Date</span>
+                                            <span className="text-zinc-500">{t('endDate')}</span>
                                             <span className="text-white">{subscription.endAt ? format(new Date(subscription.endAt), 'MMM d') : '--'}</span>
                                         </div>
                                         <div className="flex justify-between rounded-lg border border-white/5 bg-white/5 p-2">
-                                            <span className="text-zinc-500">Disclosure</span>
+                                            <span className="text-zinc-500">{t('disclosure')}</span>
                                             <DisclosurePolicyPill policy={subscription.product.disclosurePolicy} delayHours={subscription.product.disclosureDelayHours} />
                                         </div>
                                     </div>
@@ -158,7 +164,7 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                                     className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition"
                                 >
                                     <Eye className="h-4 w-4" />
-                                    View Full Analysis
+                                    {t('viewAnalysis')}
                                 </button>
                             </div>
                         </div>

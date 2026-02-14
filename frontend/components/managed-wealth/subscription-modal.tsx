@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, X, ShieldCheck, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 
 export interface ManagedTerm {
     id: string;
@@ -54,6 +55,7 @@ const THEMES = {
         lightBg: 'bg-purple-500/5',
         lightBorder: 'border-purple-500/20',
         dot: 'bg-purple-400',
+        labelKey: 'Conservative',
     },
     MODERATE: {
         color: 'text-green-400',
@@ -67,6 +69,7 @@ const THEMES = {
         lightBg: 'bg-green-500/5',
         lightBorder: 'border-green-500/20',
         dot: 'bg-green-400',
+        labelKey: 'Moderate',
     },
     AGGRESSIVE: {
         color: 'text-blue-400',
@@ -80,6 +83,7 @@ const THEMES = {
         lightBg: 'bg-blue-500/5',
         lightBorder: 'border-blue-500/20',
         dot: 'bg-blue-400',
+        labelKey: 'Aggressive',
     },
 };
 
@@ -92,6 +96,8 @@ export function SubscriptionModal({
     onRequireLogin,
     onSuccess,
 }: SubscriptionModalProps) {
+    const t = useTranslations('ManagedWealth');
+    const tProducts = useTranslations('ManagedWealth.Products');
     const [termId, setTermId] = useState('');
     const [principal, setPrincipal] = useState('100');
     const [riskConfirmed, setRiskConfirmed] = useState(false);
@@ -113,6 +119,7 @@ export function SubscriptionModal({
 
     if (!open || !product) return null;
 
+    // @ts-ignore
     const theme = THEMES[product.strategyProfile];
     const canSubmit = Boolean(walletAddress && selectedTerm && riskConfirmed && termsConfirmed && Number(principal) > 0 && !isSubmitting);
 
@@ -123,13 +130,13 @@ export function SubscriptionModal({
         }
 
         if (!selectedTerm) {
-            toast.error('Please select a term.');
+            toast.error(t('SubscriptionModal.errors.selectTerm'));
             return;
         }
 
         const amount = Number(principal);
         if (!Number.isFinite(amount) || amount <= 0) {
-            toast.error('Please enter a valid principal amount.');
+            toast.error(t('SubscriptionModal.errors.invalidAmount'));
             return;
         }
 
@@ -149,14 +156,14 @@ export function SubscriptionModal({
 
             const data = await res.json();
             if (!res.ok) {
-                throw new Error(data?.error || 'Failed to create subscription');
+                throw new Error(data?.error || t('SubscriptionModal.errors.createFailed'));
             }
 
-            toast.success('Subscription created successfully.');
+            toast.success(t('SubscriptionModal.errors.success'));
             onSuccess?.(data.subscription.id);
             onClose();
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Subscription failed.');
+            toast.error(error instanceof Error ? error.message : t('SubscriptionModal.errors.failed'));
         } finally {
             setIsSubmitting(false);
         }
@@ -171,9 +178,13 @@ export function SubscriptionModal({
                     <div className="flex items-start justify-between relative z-10">
                         <div>
                             <div className={`mb-2 inline-flex items-center gap-1.5 rounded-full ${theme.bg} px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${theme.color}`}>
-                                {product.strategyProfile} Strategy
+                                {/* @ts-ignore */}
+                                {t('SubscriptionModal.strategyLabel', { strategy: t(`ProductCard.strategies.${theme.labelKey}`) })}
                             </div>
-                            <h3 className="text-xl font-bold text-white tracking-tight">Subscribe to {product.name}</h3>
+                            <h3 className="text-xl font-bold text-white tracking-tight">
+                                {/* @ts-ignore */}
+                                {t('SubscriptionModal.title', { name: tProducts(`${product.strategyProfile}.name`) })}
+                            </h3>
                         </div>
                         <button
                             type="button"
@@ -189,7 +200,7 @@ export function SubscriptionModal({
                     {/* Configuration Section */}
                     <div className="space-y-8">
                         <label className="block">
-                            <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-zinc-500">1. Select Term</span>
+                            <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-zinc-500">{t('SubscriptionModal.selectTerm')}</span>
                             <div className="relative">
                                 <select
                                     className={`w-full appearance-none rounded-2xl border border-white/10 bg-[#121417] px-4 py-4 text-white transition-all hover:border-white/20 focus:outline-none focus:ring-1 disabled:opacity-50 ${theme.focusBorder} ${theme.focusRing}`}
@@ -198,7 +209,7 @@ export function SubscriptionModal({
                                 >
                                     {product.terms.map((term) => (
                                         <option key={term.id} value={term.id} className="bg-[#121417]">
-                                            {term.label} ({term.durationDays} Days)
+                                            {term.label} ({t('SubscriptionModal.days', { count: term.durationDays })})
                                         </option>
                                     ))}
                                 </select>
@@ -212,8 +223,8 @@ export function SubscriptionModal({
 
                         <label className="block">
                             <div className="mb-2 flex items-center justify-between">
-                                <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">2. Investment Amount</span>
-                                <span className="text-xs text-zinc-500 font-mono">Bal: -- USDC</span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">{t('SubscriptionModal.investmentAmount')}</span>
+                                <span className="text-xs text-zinc-500 font-mono">{t('SubscriptionModal.balance', { amount: '--' })}</span>
                             </div>
                             <div className="relative">
                                 <input
@@ -236,23 +247,23 @@ export function SubscriptionModal({
                             <div className="flex items-center justify-between mb-4">
                                 <h4 className={`text-sm font-bold ${theme.lightText} flex items-center gap-2`}>
                                     <span className={`h-2 w-2 rounded-full ${theme.dot} animate-pulse`} />
-                                    Projected Performance
+                                    {t('SubscriptionModal.projectedPerformance')}
                                 </h4>
-                                <div className={`text-[10px] uppercase tracking-wider font-medium ${theme.lightText} opacity-70`}>Based on historical data</div>
+                                <div className={`text-[10px] uppercase tracking-wider font-medium ${theme.lightText} opacity-70`}>{t('SubscriptionModal.historicalData')}</div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-px bg-white/5 rounded-xl overflow-hidden border border-white/5">
                                 <div className="bg-[#0e1014]/50 p-4">
-                                    <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Target Return</div>
+                                    <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">{t('SubscriptionModal.targetReturn')}</div>
                                     <div className={`text-lg font-bold ${theme.color}`}>{selectedTerm.targetReturnMin}% - {selectedTerm.targetReturnMax}%</div>
                                 </div>
                                 <div className="bg-[#0e1014]/50 p-4">
-                                    <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Max Drawdown</div>
+                                    <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">{t('SubscriptionModal.maxDrawdown')}</div>
                                     <div className="text-lg font-bold text-white">{selectedTerm.maxDrawdown}%</div>
                                 </div>
                                 {product.isGuaranteed && selectedTerm.minYieldRate !== null && selectedTerm.minYieldRate !== undefined && (
                                     <div className="col-span-2 bg-[#0e1014]/50 p-4 border-t border-white/5">
-                                        <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Guaranteed Floor</div>
+                                        <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">{t('SubscriptionModal.guaranteedFloor')}</div>
                                         <div className="text-base font-bold text-white flex items-center gap-2">
                                             <ShieldCheck className="h-4 w-4 text-emerald-500" />
                                             {(Number(selectedTerm.minYieldRate) * 100).toFixed(2)}% APY
@@ -275,7 +286,11 @@ export function SubscriptionModal({
                                 />
                             </div>
                             <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors leading-relaxed">
-                                I verify that I understand the specific risks associated with <span className="text-white font-medium">{product.strategyProfile}</span> strategies, including potential drawdown.
+                                {t.rich('SubscriptionModal.riskAck', {
+                                    // @ts-ignore
+                                    strategy: t(`ProductCard.strategies.${theme.labelKey}`),
+                                    highlight: (chunks) => <span className="text-white font-medium">{chunks}</span>
+                                })}
                             </span>
                         </label>
 
@@ -289,7 +304,7 @@ export function SubscriptionModal({
                                 />
                             </div>
                             <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors leading-relaxed">
-                                I accept the Terms of Service, Disclosure Policy, and agree to the smart contract execution.
+                                {t('SubscriptionModal.termsAck')}
                             </span>
                         </label>
                     </div>
@@ -297,8 +312,8 @@ export function SubscriptionModal({
                     <div className="rounded-xl bg-amber-500/10 p-4 border border-amber-500/20 flex gap-3">
                         <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                         <div className="text-xs text-amber-200/80 leading-relaxed">
-                            <strong className="text-amber-200 block mb-1">Important Notice</strong>
-                            Profit sharing is automatically deducted from positive returns. Early redemption requests may be subject to a cooling-off period and penalty fees impacting the guarantee.
+                            <strong className="text-amber-200 block mb-1">{t('SubscriptionModal.importantNotice')}</strong>
+                            {t('SubscriptionModal.noticeContent')}
                         </div>
                     </div>
                 </div>
@@ -311,7 +326,7 @@ export function SubscriptionModal({
                             onClick={onClose}
                             className="rounded-xl border border-white/10 py-3.5 text-sm font-bold text-zinc-400 hover:bg-white/5 hover:text-white transition-colors"
                         >
-                            Cancel
+                            {t('SubscriptionModal.cancel')}
                         </button>
                         <button
                             type="button"
@@ -322,11 +337,11 @@ export function SubscriptionModal({
                             {isSubmitting ? (
                                 <span className="flex items-center justify-center gap-2">
                                     <Loader2 className="h-4 w-4 animate-spin" />
-                                    Processing...
+                                    {t('SubscriptionModal.processing')}
                                 </span>
                             ) : (
                                 <span className="flex items-center justify-center gap-2">
-                                    Confirm Investment
+                                    {t('SubscriptionModal.confirm')}
                                     <ArrowRight className="h-4 w-4" />
                                 </span>
                             )}

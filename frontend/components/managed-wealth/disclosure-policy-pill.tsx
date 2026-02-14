@@ -2,6 +2,7 @@
 
 import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 
 type DisclosurePolicy = 'TRANSPARENT' | 'DELAYED';
 
@@ -12,6 +13,7 @@ interface DisclosurePolicyPillProps {
 }
 
 export function DisclosurePolicyPill({ policy, delayHours = 0, className }: DisclosurePolicyPillProps) {
+    const t = useTranslations('ManagedWealth.DisclosurePill');
     const hours = Number(delayHours ?? 0);
     if (policy === 'DELAYED') {
         return (
@@ -22,7 +24,7 @@ export function DisclosurePolicyPill({ policy, delayHours = 0, className }: Disc
                 )}
             >
                 <EyeOff className="h-3 w-3" />
-                Delayed details{hours > 0 ? ` (${hours}h)` : ''}
+                {t('delayed')}{hours > 0 ? ` (${hours}h)` : ''}
             </span>
         );
     }
@@ -35,7 +37,7 @@ export function DisclosurePolicyPill({ policy, delayHours = 0, className }: Disc
             )}
         >
             <Eye className="h-3 w-3" />
-            Real-time transparency
+            {t('realtime')}
         </span>
     );
 }
