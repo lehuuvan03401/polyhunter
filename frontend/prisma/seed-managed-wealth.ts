@@ -191,9 +191,33 @@ async function seedAgentMapping() {
     }
 }
 
+async function seedReserveFund() {
+    const existingSeed = await prisma.reserveFundLedger.findFirst({
+        where: { note: 'INITIAL_RESERVE_SEED' },
+        select: { id: true },
+    });
+
+    if (existingSeed) {
+        console.log('Reserve fund seed already exists.');
+        return;
+    }
+
+    await prisma.reserveFundLedger.create({
+        data: {
+            entryType: 'DEPOSIT',
+            amount: 100000,
+            balanceAfter: 100000,
+            note: 'INITIAL_RESERVE_SEED',
+        },
+    });
+
+    console.log('Seeded initial reserve fund balance.');
+}
+
 async function main() {
     await seedProductAndTerms();
     await seedAgentMapping();
+    await seedReserveFund();
     console.log('Managed wealth seed completed.');
 }
 

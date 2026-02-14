@@ -5,8 +5,8 @@
 
 ## 2. API Layer
 - [x] 2.1 Implement `GET /api/managed-products` and `GET /api/managed-products/:id`.
-- [ ] 2.2 Implement `POST /api/managed-subscriptions` with terms acceptance and eligibility checks.
-- [ ] 2.3 Implement `GET /api/managed-subscriptions` and `GET /api/managed-subscriptions/:id/nav`.
+- [x] 2.2 Implement `POST /api/managed-subscriptions` with terms acceptance and eligibility checks.
+- [x] 2.3 Implement `GET /api/managed-subscriptions` and `GET /api/managed-subscriptions/:id/nav`.
 - [ ] 2.4 Implement settlement endpoints: `POST /api/managed-settlement/run`, `GET /api/managed-settlements/:subscriptionId`.
 - [ ] 2.5 Implement ops endpoint `GET /api/reserve-fund/summary`.
 
