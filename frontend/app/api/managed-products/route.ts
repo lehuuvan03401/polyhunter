@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
+type StrategyProfile = 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
 
 function parseBooleanParam(value: string | null): boolean | undefined {
     if (value === null) return undefined;
@@ -10,12 +11,32 @@ function parseBooleanParam(value: string | null): boolean | undefined {
     return undefined;
 }
 
+function parseStrategy(value: string | null): StrategyProfile | undefined {
+    if (!value) return undefined;
+    const normalized = value.toUpperCase();
+    if (normalized === 'CONSERVATIVE' || normalized === 'MODERATE' || normalized === 'AGGRESSIVE') {
+        return normalized;
+    }
+    return undefined;
+}
+
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
-        const strategy = searchParams.get('strategy');
+        const rawStrategy = searchParams.get('strategy');
+        const strategy = parseStrategy(rawStrategy);
         const guaranteed = parseBooleanParam(searchParams.get('guaranteed'));
         const active = parseBooleanParam(searchParams.get('active'));
+
+        if (rawStrategy && !strategy) {
+            return NextResponse.json(
+                {
+                    error: 'Invalid strategy',
+                    allowed: ['CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'],
+                },
+                { status: 400 }
+            );
+        }
 
         if (!isDatabaseEnabled) {
             return NextResponse.json({
@@ -29,8 +50,7 @@ export async function GET(request: NextRequest) {
             where: {
                 ...(strategy
                     ? {
-                        strategyProfile:
-                            strategy.toUpperCase() as 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE',
+                        strategyProfile: strategy,
                     }
                     : {}),
                 ...(guaranteed !== undefined ? { isGuaranteed: guaranteed } : {}),
