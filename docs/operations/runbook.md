@@ -135,6 +135,21 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 - `SUPERVISOR_WS_FILTER_BY_ADDRESS=true`（默认）
 设置为 `false` 将订阅全量 activity。
 
+### 3.1) 信号源模式（WS / Polling / Hybrid）
+- `COPY_TRADING_SIGNAL_MODE=HYBRID`（默认，推荐）
+  - `WS_ONLY`：仅 WebSocket（最低延迟，可靠性依赖 WS）
+  - `POLLING_ONLY`：仅轮询（不依赖 WS，可靠性更高）
+  - `HYBRID`：WS + Polling 并行，去重后只执行一次（推荐生产）
+- Polling 相关参数：
+  - `SUPERVISOR_POLLING_BASE_INTERVAL_MS`（默认 `5000`）
+  - `SUPERVISOR_POLLING_MAX_INTERVAL_MS`（默认 `10000`）
+  - `SUPERVISOR_POLLING_LIMIT`（默认 `200`）
+  - `SUPERVISOR_POLLING_LOOKBACK_SECONDS`（默认 `90`）
+  - `SUPERVISOR_WS_UNHEALTHY_THRESHOLD_MS`（默认 `30000`）
+  - `SUPERVISOR_SIGNAL_SOURCE_WINDOW_MS`（默认 `120000`）
+- `HYBRID` 下当 WS 长时间无事件，会进入 degraded 状态并继续依赖 polling；无需重启。
+- `POLLING_ONLY` 下会关闭 WS/chain/mempool 监听，仅由 polling 触发信号。
+
 ### 4) 性能调参
 - `SUPERVISOR_FANOUT_CONCURRENCY=25`：同一交易的并发分发上限
 - `SUPERVISOR_QUEUE_MAX_SIZE=5000`：队列容量（满则丢弃并记录指标）
@@ -157,6 +172,22 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 相关部署步骤见：`docs/operations/deploy-supervisor-capacity-controls.md`  
 上线 SOP 见：`docs/operations/sop-supervisor-capacity-controls.md`
 发布说明见：`docs/operations/release-notes.md`
+
+### 6) 故障排查（Signal Ingestion）
+- 日志出现 `WS unhealthy ... Polling remains active`：说明已自动降级到 polling，检查 WS 提供商健康。
+- 指标 `source_mismatch_rate` 持续升高：说明 WS 和 polling 观察到的事件集合偏差变大，优先排查 WS 订阅过滤和 Data API 限流。
+- 指标 `poll_lag_ms` 持续升高：提高 `SUPERVISOR_POLLING_LIMIT`，降低 `SUPERVISOR_POLLING_BASE_INTERVAL_MS`，并确认 Data API 可用性。
+- 若出现 `Failed to read/persist signal cursor`：先执行 Prisma 迁移，再重启 supervisor。
+
+### 7) 上游同步迁移说明（RealtimeServiceV2 -> Polling 对齐）
+- 背景：上游已弱化/移除 Activity WS 路径，建议切到 polling 语义。
+- 建议 rollout：
+  1. Staging：`COPY_TRADING_SIGNAL_MODE=POLLING_ONLY` 验证完整链路；
+  2. Production：切 `HYBRID`，观察 `source_mismatch_rate` 与 `poll_lag_ms`；
+  3. 稳定后再评估是否长期 `POLLING_ONLY`。
+- 回滚：
+  - 将 `COPY_TRADING_SIGNAL_MODE=WS_ONLY` 后重启 supervisor。
+  - `SignalCursor` 表可保留（仅状态数据，不影响 WS_ONLY 运行）。
 
 ---
 

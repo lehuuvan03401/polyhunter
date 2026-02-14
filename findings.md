@@ -93,6 +93,13 @@
 ## Visual/Browser Findings
 - None
 
+## Hybrid Signal Ingestion Findings (2026-02-13)
+- Supervisor now supports `WS_ONLY`, `POLLING_ONLY`, and `HYBRID` signal modes with `HYBRID` default.
+- Polling cursor persistence is modeled via `SignalCursor` (scope/source/cursor/cursorTxHash), enabling restart-safe resume with bounded replay.
+- Dedup path is shared across ws/polling/chain/mempool; ws+polling source overlap can be measured via mismatch metrics.
+- In `POLLING_ONLY`, WS/chain/mempool listeners are disabled to keep signal source behavior deterministic.
+- Runbook and env examples now include rollout/rollback guidance for upstream polling alignment.
+
 ## DB Optimization Proposal Prep
 - Active DB-related changes already completed: `optimize-db-performance` (async prewrite + config cache) and `implement-data-archiving` (archive tables + script).
 - Existing `storage` spec is minimal; new DB requirements should extend `storage` rather than creating a duplicate capability.

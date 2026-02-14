@@ -1,7 +1,7 @@
-# Task Plan: Batched Reimbursement Ledger (add-batched-reimbursement-ledger)
+# Task Plan: Hybrid Signal Ingestion (add-hybrid-signal-ingestion)
 
 ## Goal
-Reduce reimbursement TX volume by batching bot float reimbursements while keeping exposure capped and observable.
+Add a production-safe hybrid ingestion pipeline (`WS + polling`) for copy-trading so the system can align with upstream polling changes without losing low-latency capability.
 
 ## Current Phase
 Phase 2: Verification (in_progress)
@@ -9,36 +9,32 @@ Phase 2: Verification (in_progress)
 ## Phases
 
 ### Phase 1: Implementation
-- [x] 1.1 Add ReimbursementLedger model + migration
-- [x] 1.2 Add ledger controls to execution service (defer reimbursement + float allow flag)
-- [x] 1.3 Add ledger recording, cap checks, and flush loop in worker
-- [x] 1.4 Add ledger metrics + env config
-- [x] 1.5 Add verification script
-- [x] 1.6 Update runbook + env.example
+- [x] 1.1 Add `COPY_TRADING_SIGNAL_MODE` (`WS_ONLY|POLLING_ONLY|HYBRID`, default `HYBRID`)
+- [x] 1.2 Implement polling signal source with incremental cursor fetching
+- [x] 1.3 Persist polling cursor and load on startup
+- [x] 1.4 Apply channel-agnostic dedup across WS + polling
+- [x] 1.5 Add signal health metrics (`poll_lag_ms`, `ws_last_event_age_ms`, `source_mismatch_rate`)
+- [x] 1.6 Add WS unhealthy degrade behavior in `HYBRID` mode
 
 ### Phase 2: Verification
-- [x] 2.1 Local fork: create ledger entries, flush batch reimbursement
-- [ ] 2.2 Confirm retry/backoff on failure
+- [ ] 2.1 Verify `POLLING_ONLY` captures and executes signals end-to-end
+- [ ] 2.2 Verify `HYBRID` does not duplicate execution
+- [ ] 2.3 Simulate WS outage and confirm polling continuity
+- [ ] 2.4 Restart supervisor and confirm cursor resume behavior
 
-### Phase 3: Wrap-up
-- [x] 3.1 Update OpenSpec tasks checklist
-- [x] 3.2 Update progress log
-
-### Phase 4: Mainnet Readiness Verification
-- [x] 4.1 Run `copy-trading-readiness` against mainnet env
-- [ ] 4.2 Create proxy for execution wallet (if missing)
-- [ ] 4.3 Re-run readiness check and capture results
+### Phase 3: Docs & Wrap-up
+- [x] 3.1 Update runbook with mode selection and troubleshooting
+- [x] 3.2 Document upstream sync migration/rollback steps
+- [x] 3.3 Update OpenSpec tasks checklist and progress logs
 
 ## Decisions
 | Decision | Rationale |
 |---|---|
-| Record ledger entries in worker after prewrite | Execution service runs before trade ID exists; worker has DB + trade ID |
-| Use deferReimbursement flag to skip immediate reimburse | Keeps existing settlement flow intact when ledger disabled |
-| Enforce float cap in worker before execution | Worker can query ledger sums safely |
+| Default mode is `HYBRID` | Preserves low latency while ensuring reliability via polling |
+| Cursor is persisted per trader scope | Safer restart behavior and avoids full replay |
+| Dedup key remains tx-centric (`txHash + logIndex` preferred) | Keeps cross-channel idempotency deterministic |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |---|---|---|
-| session-catchup.py missing (CLAUDE_PLUGIN_ROOT unset) | 1 | Proceeded without catchup |
-| Prisma migrate failed (schema not found from repo root) | 1 | Ran migration from `frontend` with DATABASE_URL |
-| Prisma validation error (missing opposite relation) | 1 | Added `reimbursementLedger` relation to CopyTrade |
+| None yet for this phase | - | - |

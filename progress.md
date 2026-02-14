@@ -1,5 +1,35 @@
 # Progress Log
 
+## Session: 2026-02-13
+
+### Phase 1: Implementation (Hybrid Signal Ingestion)
+- **Status:** complete
+- Actions taken:
+  - Added `COPY_TRADING_SIGNAL_MODE` runtime switch (`WS_ONLY|POLLING_ONLY|HYBRID`, default `HYBRID`).
+  - Implemented polling ingestion loop with incremental `DataApiClient.getActivity` fetch.
+  - Added persistent polling cursor model (`SignalCursor`) and migration.
+  - Added cursor preload/recovery and bounded replay behavior on restart.
+  - Unified dedup across ws/polling/chain/mempool with shared dedup key path.
+  - Added signal-source metrics and WS unhealthy degrade handling in hybrid mode.
+  - Added env examples + runbook sections (mode selection, troubleshooting, migration rollback).
+- Files created/modified:
+  - frontend/scripts/copy-trading-supervisor.ts (modified)
+  - frontend/prisma/schema.prisma (modified)
+  - frontend/prisma/migrations/20260213230000_add_signal_cursor/migration.sql (created)
+  - frontend/.env.example (modified)
+  - docs/operations/runbook.md (modified)
+  - openspec/changes/add-hybrid-signal-ingestion/tasks.md (modified)
+  - openspec/changes/add-hybrid-signal-ingestion/verification.md (created)
+  - task_plan.md (modified)
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Prisma schema format | `cd frontend && npx prisma format` | schema valid/normalized | format succeeded | ✓ |
+| Frontend TypeScript check | `cd frontend && npx tsc --noEmit` | no TS regressions | Fails on unrelated import in `app/api/agents/route.ts` (`lib/prisma` has no default export) | ✗ (unrelated) |
+| Prisma migration check | `cd frontend && DATABASE_URL=... npx prisma migrate dev --name add_signal_cursor` | migration applied/recognized | Already in sync, no pending migration | ✓ |
+| Supervisor POLLING_ONLY startup smoke | `cd frontend && TRADING_PRIVATE_KEY=... DATABASE_URL=... COPY_TRADING_SIGNAL_MODE=POLLING_ONLY DRY_RUN=true SUPERVISOR_SELFTEST=true SUPERVISOR_SELFTEST_EXIT=true npx tsx scripts/copy-trading-supervisor.ts` | mode loaded, process exits | mode=`POLLING_ONLY`, selftest exited cleanly | ✓ |
+
 ## Session: 2026-02-04
 
 ### Phase 1: Requirements & Discovery
