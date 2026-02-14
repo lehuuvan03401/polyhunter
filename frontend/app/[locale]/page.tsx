@@ -10,6 +10,74 @@ import { ImportTraderSection } from '@/components/home/import-trader-section';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useTranslations } from 'next-intl';
 import TextType from '@/components/ui/text-type';
+import { AgentCard, AgentTemplate } from '@/components/agents/agent-card';
+import { CopyTraderModal } from '@/components/copy-trading/copy-trader-modal';
+import { toast } from 'sonner';
+
+function AgentSection() {
+  const [agents, setAgents] = useState<AgentTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedAgent, setSelectedAgent] = useState<AgentTemplate | null>(null);
+  const { authenticated, login } = usePrivyLogin();
+
+  useEffect(() => {
+    fetch('/api/agents')
+      .then(res => res.json())
+      .then(data => {
+        if (data.agents) setAgents(data.agents);
+      })
+      .catch(err => console.error('Failed to load agents', err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCopy = (agent: AgentTemplate) => {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setSelectedAgent(agent);
+  };
+
+  if (loading || agents.length === 0) return null;
+
+  return (
+    <section className="py-12 bg-card/20 border-y border-white/5">
+      <div className="container max-w-6xl mx-auto px-4">
+        <div className="flex items-end justify-between mb-8">
+          <div>
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+              <Zap className="h-6 w-6 text-yellow-500" />
+              Featured Agents
+            </h2>
+            <p className="text-muted-foreground">
+              One-click copy trading strategies curated for you.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {agents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              onCopy={handleCopy}
+            />
+          ))}
+        </div>
+      </div>
+
+      {selectedAgent && (
+        <CopyTraderModal
+          isOpen={!!selectedAgent}
+          onClose={() => setSelectedAgent(null)}
+          traderAddress={selectedAgent.traderAddress}
+          traderName={selectedAgent.traderName || 'Unknown Trader'}
+          agentTemplate={selectedAgent}
+        />
+      )}
+    </section>
+  );
+}
 
 export function Home() {
   const t = useTranslations('HomePage');
@@ -110,6 +178,9 @@ export function Home() {
           </div>
         </div>
       </section>
+
+      {/* Featured Agents Section */}
+      <AgentSection />
 
       {/* Import Trader Section */}
       <ImportTraderSection />

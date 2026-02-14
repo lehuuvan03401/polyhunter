@@ -302,10 +302,56 @@ model CopyTradingConfig {
   copyTrades        CopyTrade[]
   copyTradeArchives CopyTradeArchive[]
 
+  // Agent Relation
+  agentId       String?
+  agentTemplate AgentTemplate? @relation(fields: [agentId], references: [id])
+
   @@index([walletAddress])
   @@index([traderAddress])
   @@index([isActive])
   @@index([updatedAt, isActive, autoExecute, channel])
+  @@index([agentId])
+}
+
+// Agent Template - Pre-configured copy trading settings for easy onboarding
+model AgentTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  tags        String[] // e.g., ["Safe", "High Winrate", "Degen"]
+
+  // The trader this agent follows
+  traderAddress String
+  traderName    String?
+  avatarUrl     String?
+
+  // Preset Settings
+  strategyProfile StrategyProfile @default(MODERATE)
+  mode            CopyTradingMode @default(PERCENTAGE)
+  sizeScale       Float? // e.g. 0.1 for 10%
+  fixedAmount     Float?
+  maxSizePerTrade Float           @default(100)
+  minSizePerTrade Float?
+  stopLoss        Float?
+  takeProfit      Float?
+
+  // Filters
+  maxOdds      Float?
+  minLiquidity Float?
+  minVolume    Float?
+
+  // Sell Strategy
+  sellMode String @default("SAME_PERCENT")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  configs CopyTradingConfig[]
+
+  @@index([isActive])
+  @@index([traderAddress])
 }
 
 // Individual copy trade record
@@ -344,9 +390,9 @@ model CopyTrade {
   lockedBy     String?
 
   // Timestamps
-  detectedAt DateTime  @default(now())
-  executedAt DateTime?
-  expiresAt  DateTime? // For PENDING trades
+  detectedAt          DateTime             @default(now())
+  executedAt          DateTime?
+  expiresAt           DateTime? // For PENDING trades
   reimbursementLedger ReimbursementLedger?
 
   @@unique([configId, originalTxHash])

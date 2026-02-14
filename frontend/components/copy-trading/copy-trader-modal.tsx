@@ -11,18 +11,21 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { useTranslations } from 'next-intl';
 
+import { AgentTemplate } from '@/components/agents/agent-card';
+
 interface CopyTraderModalProps {
     isOpen: boolean;
     onClose: () => void;
     traderAddress: string;
     traderName?: string;
+    agentTemplate?: AgentTemplate | null;
 }
 
 type TabType = 'Mode' | 'Filters' | 'Sells';
 type CopyMode = '% Shares' | 'Range' | 'Fixed $';
 type SellMode = 'Same %' | 'Fixed Amount' | 'Custom %';
 
-export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: CopyTraderModalProps) {
+export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName, agentTemplate }: CopyTraderModalProps) {
     const router = useRouter();
     const { user, authenticated } = usePrivy();
     const { hasProxy, stats, isExecutorAuthorized, isLoading: proxyLoading } = useProxy();
@@ -38,6 +41,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
     const [activeTab, setActiveTab] = React.useState<TabType>('Mode');
     const [isAdvancedMode, setIsAdvancedMode] = React.useState(false); // Default to Simple Mode
     const [riskProfile, setRiskProfile] = React.useState<'Conservative' | 'Moderate' | 'Aggressive'>('Moderate');
+
+    // Initialize state based on Agent Template if available
     const [copyMode, setCopyMode] = React.useState<CopyMode>('% Shares');
     const [sellMode, setSellMode] = React.useState<SellMode>('Same %');
     const [infiniteMode, setInfiniteMode] = React.useState(true); // Default ON for continuous copying
@@ -55,6 +60,34 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName }: 
 
     // Fixed Mode State
     const [fixedAmount, setFixedAmount] = React.useState('50');
+
+    // Effect to apply Agent Template settings when modal opens
+    React.useEffect(() => {
+        if (isOpen && agentTemplate) {
+            // Map strategy profile
+            const profileMap: Record<string, 'Conservative' | 'Moderate' | 'Aggressive'> = {
+                'CONSERVATIVE': 'Conservative',
+                'MODERATE': 'Moderate',
+                'AGGRESSIVE': 'Aggressive'
+            };
+            if (agentTemplate.strategyProfile) {
+                setRiskProfile(profileMap[agentTemplate.strategyProfile] || 'Moderate');
+            }
+
+            // Map other fields
+            if (agentTemplate.sizeScale) setSharePercent((agentTemplate.sizeScale * 100).toString());
+            if (agentTemplate.fixedAmount) setFixedAmount(agentTemplate.fixedAmount.toString());
+            if (agentTemplate.maxSizePerTrade) setMaxPerTrade(agentTemplate.maxSizePerTrade.toString());
+            if (agentTemplate.stopLoss) setStopLoss(agentTemplate.stopLoss.toString());
+            if (agentTemplate.takeProfit) setTakeProfit(agentTemplate.takeProfit.toString());
+            if (agentTemplate.mode === 'FIXED_AMOUNT') setCopyMode('Fixed $');
+
+            // Filters
+            if (agentTemplate.maxOdds) setMaxOdds((agentTemplate.maxOdds * 100).toString());
+            if (agentTemplate.minLiquidity) setMinLiquidity(agentTemplate.minLiquidity.toString());
+            if (agentTemplate.minVolume) setMinVolume(agentTemplate.minVolume.toString());
+        }
+    }, [isOpen, agentTemplate]);
 
     // Filter States - Default recommended values
     const [maxDaysOut, setMaxDaysOut] = React.useState('30');        // 30 days max
