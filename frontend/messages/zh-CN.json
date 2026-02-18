@@ -129,10 +129,15 @@
                 "success": "订阅成功创建。",
                 "failed": "订阅失败。",
                 "createFailed": "创建订阅失败"
+            },
+            "marketing": {
+                "trialApplied": "已激活 1 天免费体验，本期结算免绩效费。",
+                "referralBonusApplied": "推荐奖励已发放：推荐人托管仓自动延长 1 天。"
             }
         },
         "SubscriptionItem": {
             "guaranteed": "保本",
+            "trial": "体验中",
             "status": {
                 "PENDING": "待处理",
                 "RUNNING": "运行中",
@@ -153,7 +158,8 @@
             "confirmWithdraw": "您确定要赎回吗？ 这将平仓您的头寸并将资金退回至您的钱包。",
             "withdrawFailed": "赎回处理失败。 请重试。",
             "finalPayout": "结算金额",
-            "settledDate": "结算日期"
+            "settledDate": "结算日期",
+            "trialEnds": "体验到期"
         },
         "Marketplace": {
             "title": "市场",

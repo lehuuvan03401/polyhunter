@@ -18,6 +18,8 @@ export interface ManagedSubscriptionItemProps {
         id: string;
         status: SubscriptionStatus;
         principal: number;
+        isTrial?: boolean;
+        trialEndsAt?: string | null;
         createdAt: string;
         startAt?: string | null;
         endAt?: string | null;
@@ -61,6 +63,8 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
     const start = subscription.startAt ? new Date(subscription.startAt).getTime() : Date.now();
     const end = subscription.endAt ? new Date(subscription.endAt).getTime() : start + (subscription.term.durationDays * 86400000);
     const now = Date.now();
+    const trialEndTs = subscription.trialEndsAt ? new Date(subscription.trialEndsAt).getTime() : null;
+    const trialActive = Boolean(subscription.isTrial && subscription.status === 'RUNNING' && trialEndTs && now <= trialEndTs);
     const progress = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
 
     return (
@@ -85,6 +89,12 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
                                     <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/20 uppercase tracking-wide">
                                         <ShieldCheck className="h-3 w-3" />
                                         {t('guaranteed')}
+                                    </div>
+                                )}
+                                {trialActive && (
+                                    <div className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/20 uppercase tracking-wide">
+                                        <Clock className="h-3 w-3" />
+                                        {t('trial')}
                                     </div>
                                 )}
                             </div>
@@ -187,6 +197,14 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
                                             <span className="text-zinc-500">{t('disclosure')}</span>
                                             <DisclosurePolicyPill policy={subscription.product.disclosurePolicy} delayHours={subscription.product.disclosureDelayHours} />
                                         </div>
+                                        {trialActive && (
+                                            <div className="flex justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 p-2">
+                                                <span className="text-amber-300">{t('trialEnds')}</span>
+                                                <span className="text-amber-200 font-medium">
+                                                    {subscription.trialEndsAt ? format(new Date(subscription.trialEndsAt), 'MMM d, HH:mm') : '--'}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

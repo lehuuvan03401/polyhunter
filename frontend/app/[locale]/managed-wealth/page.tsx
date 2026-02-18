@@ -234,7 +234,6 @@ export default function ManagedWealthPage() {
                 onRequireLogin={login}
                 onSuccess={() => {
                     setModalOpen(false);
-                    toast.success(t('errors.subscribeSuccess'));
                 }}
             />
         </div>

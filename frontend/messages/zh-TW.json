@@ -129,10 +129,15 @@
                 "success": "訂閱成功創建。",
                 "failed": "訂閱失敗。",
                 "createFailed": "創建訂閱失敗"
+            },
+            "marketing": {
+                "trialApplied": "已啟用 1 天免費體驗，本期結算免績效費。",
+                "referralBonusApplied": "推薦獎勵已發放：推薦人託管倉自動延長 1 天。"
             }
         },
         "SubscriptionItem": {
             "guaranteed": "保本",
+            "trial": "體驗中",
             "status": {
                 "PENDING": "待處理",
                 "RUNNING": "運行中",
@@ -153,7 +158,8 @@
             "confirmWithdraw": "您確定要贖回嗎？ 這將平倉您的頭寸並將資金退回至您的錢包。",
             "withdrawFailed": "贖回處理失敗。 請重試。",
             "finalPayout": "結算金額",
-            "settledDate": "結算日期"
+            "settledDate": "結算日期",
+            "trialEnds": "體驗到期"
         },
         "Marketplace": {
             "title": "市場",

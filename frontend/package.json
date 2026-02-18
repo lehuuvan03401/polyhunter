@@ -12,6 +12,7 @@
     "test:managed-wealth:unit": "npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts",
     "test:managed-wealth:e2e": "npx playwright test --config=playwright.config.mjs e2e/managed-wealth.spec.mjs",
     "verify:managed-wealth:lifecycle": "tsx scripts/verify/managed-wealth-lifecycle.ts",
+    "verify:managed-wealth:marketing": "npx tsx scripts/verify/managed-wealth-marketing-rules.ts",
     "cache:update": "tsx scripts/update-leaderboard-cache.ts",
     "copy-worker:speed": "COPY_TRADING_SPEED_MODE=true npx tsx scripts/copy-trading-worker.ts",
     "env:mainnet": "sh -c \"cat .env.local.mainnet .env.local.secrets 2>/dev/null > .env.local\"",

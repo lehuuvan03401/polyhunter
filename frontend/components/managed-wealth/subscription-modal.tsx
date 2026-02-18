@@ -42,6 +42,18 @@ interface SubscriptionModalProps {
     onSuccess?: (subscriptionId: string) => void;
 }
 
+type SubscriptionCreateResponse = {
+    error?: string;
+    subscription: {
+        id: string;
+    };
+    marketing?: {
+        trialApplied?: boolean;
+        trialEndsAt?: string | null;
+        referralBonusApplied?: boolean;
+    };
+};
+
 // Define themes matching ManagedProductCard for consistency
 const THEMES = {
     CONSERVATIVE: {
@@ -165,12 +177,18 @@ export function SubscriptionModal({
                 }),
             });
 
-            const data = await res.json();
+            const data = await res.json() as SubscriptionCreateResponse;
             if (!res.ok) {
                 throw new Error(data?.error || t('SubscriptionModal.errors.createFailed'));
             }
 
             toast.success(t('SubscriptionModal.errors.success'));
+            if (data.marketing?.trialApplied) {
+                toast.success(t('SubscriptionModal.marketing.trialApplied'));
+            }
+            if (data.marketing?.referralBonusApplied) {
+                toast.success(t('SubscriptionModal.marketing.referralBonusApplied'));
+            }
             onSuccess?.(data.subscription.id);
             onClose();
         } catch (error) {

@@ -129,10 +129,15 @@
                 "success": "Subscription created successfully.",
                 "failed": "Subscription failed.",
                 "createFailed": "Failed to create subscription"
+            },
+            "marketing": {
+                "trialApplied": "1-day free trial activated. This term settles with zero performance fee.",
+                "referralBonusApplied": "Referral reward applied: referrer managed position extended by 1 day."
             }
         },
         "SubscriptionItem": {
             "guaranteed": "Guaranteed",
+            "trial": "Trial",
             "status": {
                 "PENDING": "Pending",
                 "RUNNING": "Running",
@@ -153,7 +158,8 @@
             "confirmWithdraw": "Are you sure you want to withdraw? This will close your position and return funds to your wallet.",
             "withdrawFailed": "Failed to process withdrawal. Please try again.",
             "finalPayout": "Final Payout",
-            "settledDate": "Settled Date"
+            "settledDate": "Settled Date",
+            "trialEnds": "Trial Ends"
         },
         "Marketplace": {
             "title": "Marketplace",
