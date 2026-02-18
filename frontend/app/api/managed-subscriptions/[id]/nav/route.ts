@@ -21,6 +21,7 @@ export async function GET(
         const walletContext = resolveWalletContext(request, {
             queryWallet: searchParams.get('wallet'),
             requireHeader: true,
+            requireSignature: true,
         });
         const limit = Math.min(Math.max(Number(searchParams.get('limit') || 200), 1), 1000);
 

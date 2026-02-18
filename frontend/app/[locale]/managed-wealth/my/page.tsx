@@ -10,10 +10,12 @@ import { ManagedStatsGrid, StatItem } from '@/components/managed-wealth/managed-
 import { ManagedTransactionHistory } from '@/components/managed-wealth/managed-transaction-history';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
+import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 
 export default function MyManagedWealthPage() {
     const t = useTranslations('ManagedWealth.Dashboard');
     const { authenticated, ready, login, user, isLoggingIn } = usePrivyLogin();
+    const { createWalletAuthHeaders } = useManagedWalletAuth();
 
     const [loading, setLoading] = useState(true);
     const [subscriptions, setSubscriptions] = useState<ManagedSubscriptionItemProps['subscription'][]>([]);
@@ -32,11 +34,16 @@ export default function MyManagedWealthPage() {
             try {
                 const params = new URLSearchParams({ wallet: user.wallet.address });
                 if (statusFilter !== 'ALL') params.set('status', statusFilter);
+                const query = params.toString();
+                const path = `/api/managed-subscriptions?${query}`;
+                const walletHeaders = await createWalletAuthHeaders({
+                    walletAddress: user.wallet.address,
+                    method: 'GET',
+                    pathWithQuery: path,
+                });
 
-                const res = await fetch(`/api/managed-subscriptions?${params.toString()}`, {
-                    headers: {
-                        'x-wallet-address': user.wallet.address,
-                    },
+                const res = await fetch(path, {
+                    headers: walletHeaders,
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error || t('errors.fetchFailed'));
@@ -49,7 +56,7 @@ export default function MyManagedWealthPage() {
         };
 
         fetchSubscriptions();
-    }, [authenticated, user?.wallet?.address, statusFilter]);
+    }, [authenticated, user?.wallet?.address, statusFilter, createWalletAuthHeaders, t]);
 
     const stats = useMemo<StatItem[]>(() => {
         const totalPrincipal = subscriptions.reduce((acc, sub) => acc + sub.principal, 0);

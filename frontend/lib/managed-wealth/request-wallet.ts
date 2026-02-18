@@ -63,8 +63,7 @@ export function resolveWalletContext(
     const shouldRequireSignature = options.requireSignature !== undefined
         ? options.requireSignature
         : process.env.MANAGED_WEALTH_REQUIRE_SIGNATURE === 'true';
-    const bypassSignature = process.env.NODE_ENV !== 'production'
-        && process.env.NEXT_PUBLIC_E2E_MOCK_AUTH === 'true';
+    const bypassSignature = process.env.NEXT_PUBLIC_E2E_MOCK_AUTH === 'true';
 
     if (shouldRequireSignature && !bypassSignature) {
         const signature = request.headers.get('x-wallet-signature');

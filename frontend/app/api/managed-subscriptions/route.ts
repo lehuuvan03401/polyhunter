@@ -125,6 +125,7 @@ export async function GET(request: NextRequest) {
         const walletContext = resolveWalletContext(request, {
             queryWallet: searchParams.get('wallet'),
             requireHeader: true,
+            requireSignature: true,
         });
         const rawStatus = searchParams.get('status');
         const status = parseStatusParam(rawStatus);

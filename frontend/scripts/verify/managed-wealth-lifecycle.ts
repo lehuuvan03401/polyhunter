@@ -211,17 +211,20 @@ async function main(): Promise<void> {
     const settlementA = await api<SettlementDetailResponse>(
         `/api/managed-settlements/${subA.subscription.id}?wallet=${wallet}`,
         undefined,
-        wallet
+        wallet,
+        signer
     );
     const settlementB = await api<SettlementDetailResponse>(
         `/api/managed-settlements/${subB.subscription.id}?wallet=${wallet}`,
         undefined,
-        wallet
+        wallet,
+        signer
     );
     const navA = await api<SubscriptionNavResponse>(
         `/api/managed-subscriptions/${subA.subscription.id}/nav?wallet=${wallet}&limit=10`,
         undefined,
-        wallet
+        wallet,
+        signer
     );
 
     assert.equal(settlementA.settlement.status, 'COMPLETED', 'Guaranteed settlement should complete');

@@ -20,6 +20,7 @@ export async function GET(
         const walletContext = resolveWalletContext(request, {
             queryWallet: request.nextUrl.searchParams.get('wallet'),
             requireHeader: true,
+            requireSignature: true,
         });
 
         if (!walletContext.ok) {

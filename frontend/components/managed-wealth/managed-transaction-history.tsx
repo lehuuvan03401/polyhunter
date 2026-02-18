@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDownLeft, ArrowUpRight, Clock, Loader2, Receipt, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useTranslations } from 'next-intl';
+import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 
 type TransactionEvent = {
     id: string;
@@ -48,6 +49,7 @@ const typeConfig = {
 export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionHistoryProps) {
     const t = useTranslations('ManagedWealth.TransactionHistory');
     const tProducts = useTranslations('ManagedWealth.Products');
+    const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [transactions, setTransactions] = useState<TransactionEvent[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -59,10 +61,14 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
             }
             setLoading(true);
             try {
-                const res = await fetch(`/api/managed-subscriptions/transactions?wallet=${walletAddress}`, {
-                    headers: {
-                        'x-wallet-address': walletAddress,
-                    },
+                const path = `/api/managed-subscriptions/transactions?wallet=${walletAddress}`;
+                const walletHeaders = await createWalletAuthHeaders({
+                    walletAddress,
+                    method: 'GET',
+                    pathWithQuery: path,
+                });
+                const res = await fetch(path, {
+                    headers: walletHeaders,
                 });
                 const data = await res.json();
                 if (res.ok) {
@@ -76,7 +82,7 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
         };
 
         fetchTransactions();
-    }, [walletAddress]);
+    }, [walletAddress, createWalletAuthHeaders]);
 
     if (loading) {
         return (
