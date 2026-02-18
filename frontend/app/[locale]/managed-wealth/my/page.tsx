@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { ManagedSubscriptionItem, ManagedSubscriptionItemProps } from '@/components/managed-wealth/managed-subscription-item';
 import { ManagedStatsGrid, StatItem } from '@/components/managed-wealth/managed-stats-grid';
+import { ManagedTransactionHistory } from '@/components/managed-wealth/managed-transaction-history';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 
@@ -17,6 +18,7 @@ export default function MyManagedWealthPage() {
     const [loading, setLoading] = useState(true);
     const [subscriptions, setSubscriptions] = useState<ManagedSubscriptionItemProps['subscription'][]>([]);
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'MATURED' | 'SETTLED'>('ALL');
+    const [activeTab, setActiveTab] = useState<'positions' | 'history'>('positions');
 
     useEffect(() => {
         const fetchSubscriptions = async () => {
@@ -141,48 +143,73 @@ export default function MyManagedWealthPage() {
             <ManagedStatsGrid stats={stats} />
 
             <div className="mt-12 relative z-10">
-                <div className="flex flex-wrap items-center gap-2 mb-6">
-                    {(['ALL', 'RUNNING', 'MATURED', 'SETTLED'] as const).map((status) => (
+                {/* Tab Bar */}
+                <div className="flex items-center gap-1 mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-1 w-fit">
+                    {(['positions', 'history'] as const).map((tab) => (
                         <button
-                            key={status}
+                            key={tab}
                             type="button"
-                            onClick={() => setStatusFilter(status)}
-                            className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${statusFilter === status
-                                ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]'
-                                : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                            onClick={() => setActiveTab(tab)}
+                            className={`relative flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${activeTab === tab
+                                ? 'bg-white/10 text-white shadow-sm'
+                                : 'text-zinc-500 hover:text-zinc-300'
                                 }`}
                         >
-                            {/* @ts-ignore */}
-                            {status === 'ALL' ? t('filters.all') : t(`filters.${status.toLowerCase()}`)}
+                            {tab === 'positions' ? <Wallet className="h-4 w-4" /> : <Receipt className="h-4 w-4" />}
+                            {t(`tabs.${tab}`)}
                         </button>
                     ))}
                 </div>
 
-                <div className="space-y-4">
-                    <AnimatePresence mode="popLayout">
-                        {subscriptions.map((sub) => (
-                            <ManagedSubscriptionItem
-                                key={sub.id}
-                                subscription={sub}
-                                onViewDetails={(id) => console.log('View details', id)}
-                            />
-                        ))}
-                    </AnimatePresence>
+                {activeTab === 'positions' ? (
+                    <>
+                        {/* Status Filters */}
+                        <div className="flex flex-wrap items-center gap-2 mb-6">
+                            {(['ALL', 'RUNNING', 'MATURED', 'SETTLED'] as const).map((status) => (
+                                <button
+                                    key={status}
+                                    type="button"
+                                    onClick={() => setStatusFilter(status)}
+                                    className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${statusFilter === status
+                                        ? 'border-blue-500 bg-blue-500/10 text-blue-400 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]'
+                                        : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                                        }`}
+                                >
+                                    {/* @ts-ignore */}
+                                    {status === 'ALL' ? t('filters.all') : t(`filters.${status.toLowerCase()}`)}
+                                </button>
+                            ))}
+                        </div>
 
-                    {subscriptions.length === 0 && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-12 text-center"
-                        >
-                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
-                                <Wallet className="h-6 w-6 text-zinc-600" />
-                            </div>
-                            <h3 className="text-lg font-medium text-white">{t('empty.title')}</h3>
-                            <p className="mt-1 text-sm text-zinc-500">{t('empty.desc')}</p>
-                        </motion.div>
-                    )}
-                </div>
+                        <div className="space-y-4">
+                            <AnimatePresence mode="popLayout">
+                                {subscriptions.map((sub) => (
+                                    <ManagedSubscriptionItem
+                                        key={sub.id}
+                                        subscription={sub}
+                                        onViewDetails={(id) => console.log('View details', id)}
+                                    />
+                                ))}
+                            </AnimatePresence>
+
+                            {subscriptions.length === 0 && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-12 text-center"
+                                >
+                                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
+                                        <Wallet className="h-6 w-6 text-zinc-600" />
+                                    </div>
+                                    <h3 className="text-lg font-medium text-white">{t('empty.title')}</h3>
+                                    <p className="mt-1 text-sm text-zinc-500">{t('empty.desc')}</p>
+                                </motion.div>
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    <ManagedTransactionHistory walletAddress={user?.wallet?.address || ''} />
+                )}
             </div>
         </div>
     );

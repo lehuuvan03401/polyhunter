@@ -268,6 +268,33 @@
             },
             "errors": {
                 "fetchFailed": "Failed to fetch subscriptions"
+            },
+            "tabs": {
+                "positions": "Positions",
+                "history": "History"
+            }
+        },
+        "TransactionHistory": {
+            "columns": {
+                "date": "Date",
+                "type": "Type",
+                "product": "Product",
+                "amount": "Amount",
+                "pnl": "PnL",
+                "status": "Status"
+            },
+            "types": {
+                "DEPOSIT": "Deposit",
+                "WITHDRAWAL": "Withdrawal",
+                "MATURED": "Matured"
+            },
+            "status": {
+                "COMPLETED": "Done",
+                "PENDING": "Pending"
+            },
+            "empty": {
+                "title": "No transactions yet",
+                "desc": "Your transaction history will appear here after you subscribe to a strategy."
             }
         },
         "DisclosurePill": {

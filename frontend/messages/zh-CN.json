@@ -268,6 +268,33 @@
             },
             "errors": {
                 "fetchFailed": "获取订阅失败"
+            },
+            "tabs": {
+                "positions": "持仓",
+                "history": "历史记录"
+            }
+        },
+        "TransactionHistory": {
+            "columns": {
+                "date": "日期",
+                "type": "类型",
+                "product": "产品",
+                "amount": "金额",
+                "pnl": "盈亏",
+                "status": "状态"
+            },
+            "types": {
+                "DEPOSIT": "存入",
+                "WITHDRAWAL": "赎回",
+                "MATURED": "到期"
+            },
+            "status": {
+                "COMPLETED": "已完成",
+                "PENDING": "处理中"
+            },
+            "empty": {
+                "title": "暂无交易记录",
+                "desc": "订阅策略后，您的交易记录将在此显示。"
             }
         },
         "DisclosurePill": {

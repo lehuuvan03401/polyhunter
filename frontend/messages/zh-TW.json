@@ -268,6 +268,33 @@
             },
             "errors": {
                 "fetchFailed": "獲取訂閱失敗"
+            },
+            "tabs": {
+                "positions": "持倉",
+                "history": "歷史記錄"
+            }
+        },
+        "TransactionHistory": {
+            "columns": {
+                "date": "日期",
+                "type": "類型",
+                "product": "產品",
+                "amount": "金額",
+                "pnl": "盈虧",
+                "status": "狀態"
+            },
+            "types": {
+                "DEPOSIT": "存入",
+                "WITHDRAWAL": "贖回",
+                "MATURED": "到期"
+            },
+            "status": {
+                "COMPLETED": "已完成",
+                "PENDING": "處理中"
+            },
+            "empty": {
+                "title": "暫無交易記錄",
+                "desc": "訂閱策略後，您的交易記錄將在此顯示。"
             }
         },
         "DisclosurePill": {
