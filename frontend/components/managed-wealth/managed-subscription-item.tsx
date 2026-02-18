@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 export type SubscriptionStatus = 'PENDING' | 'RUNNING' | 'MATURED' | 'SETTLED' | 'CANCELLED';
 
 export interface ManagedSubscriptionItemProps {
+    walletAddress?: string;
     subscription: {
         id: string;
         status: SubscriptionStatus;
@@ -36,7 +37,7 @@ export interface ManagedSubscriptionItemProps {
     onViewDetails: (id: string) => void;
 }
 
-export function ManagedSubscriptionItem({ subscription, onViewDetails }: ManagedSubscriptionItemProps) {
+export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDetails }: ManagedSubscriptionItemProps) {
     const t = useTranslations('ManagedWealth.SubscriptionItem');
     const tProducts = useTranslations('ManagedWealth.Products');
     const [expanded, setExpanded] = useState(false);
@@ -202,13 +203,23 @@ export function ManagedSubscriptionItem({ subscription, onViewDetails }: Managed
                                         <button
                                             onClick={async (e) => {
                                                 e.stopPropagation();
+                                                if (!walletAddress) {
+                                                    alert(t('withdrawFailed'));
+                                                    return;
+                                                }
                                                 if (!confirm(t('confirmWithdraw'))) return;
 
                                                 try {
                                                     const res = await fetch(`/api/managed-subscriptions/${subscription.id}/withdraw`, {
                                                         method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({ confirm: true })
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                            ...(walletAddress ? { 'x-wallet-address': walletAddress } : {}),
+                                                        },
+                                                        body: JSON.stringify({
+                                                            confirm: true,
+                                                            walletAddress,
+                                                        }),
                                                     });
 
                                                     if (!res.ok) throw new Error('Withdrawal failed');

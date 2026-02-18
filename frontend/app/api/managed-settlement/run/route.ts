@@ -5,6 +5,21 @@ import { calculateManagedSettlement, calculateReserveBalance } from '@/lib/manag
 
 export const dynamic = 'force-dynamic';
 
+const ADMIN_WALLETS = (process.env.ADMIN_WALLETS || '')
+    .split(',')
+    .map((wallet) => wallet.toLowerCase().trim())
+    .filter(Boolean);
+
+function isAdmin(request: NextRequest): boolean {
+    const adminWallet = request.headers.get('x-admin-wallet');
+    if (process.env.NODE_ENV === 'development' && ADMIN_WALLETS.length === 0) {
+        console.warn('[ManagedSettlementRun] Admin auth bypassed in development mode');
+        return true;
+    }
+    if (!adminWallet) return false;
+    return ADMIN_WALLETS.includes(adminWallet.toLowerCase());
+}
+
 const runSettlementSchema = z.object({
     dryRun: z.boolean().optional(),
     subscriptionIds: z.array(z.string()).optional(),
@@ -13,6 +28,13 @@ const runSettlementSchema = z.object({
 
 export async function POST(request: NextRequest) {
     try {
+        if (!isAdmin(request)) {
+            return NextResponse.json(
+                { error: 'Unauthorized' },
+                { status: 401 }
+            );
+        }
+
         if (!isDatabaseEnabled) {
             return NextResponse.json(
                 { error: 'Database not configured' },

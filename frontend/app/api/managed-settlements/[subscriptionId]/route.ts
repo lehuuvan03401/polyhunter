@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
+import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,17 @@ export async function GET(
         }
 
         const { subscriptionId } = await params;
-        const walletAddress = request.nextUrl.searchParams.get('wallet')?.toLowerCase();
+        const walletContext = resolveWalletContext(request, {
+            queryWallet: request.nextUrl.searchParams.get('wallet'),
+            requireHeader: true,
+        });
+
+        if (!walletContext.ok) {
+            return NextResponse.json(
+                { error: walletContext.error },
+                { status: walletContext.status }
+            );
+        }
 
         const settlement = await prisma.managedSettlement.findUnique({
             where: { subscriptionId },
@@ -53,7 +64,7 @@ export async function GET(
             );
         }
 
-        if (walletAddress && settlement.subscription.walletAddress !== walletAddress) {
+        if (settlement.subscription.walletAddress !== walletContext.wallet) {
             return NextResponse.json(
                 { error: 'Settlement does not belong to wallet' },
                 { status: 403 }

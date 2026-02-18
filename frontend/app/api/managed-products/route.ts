@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 type StrategyProfile = 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
@@ -83,6 +84,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ products });
     } catch (error) {
         console.error('Failed to fetch managed products:', error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
+            return NextResponse.json(
+                { products: [], error: 'Managed wealth tables are not initialized' },
+                { status: 503 }
+            );
+        }
         return NextResponse.json(
             { error: 'Failed to fetch managed products' },
             { status: 500 }

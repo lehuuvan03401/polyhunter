@@ -33,7 +33,11 @@ export default function MyManagedWealthPage() {
                 const params = new URLSearchParams({ wallet: user.wallet.address });
                 if (statusFilter !== 'ALL') params.set('status', statusFilter);
 
-                const res = await fetch(`/api/managed-subscriptions?${params.toString()}`);
+                const res = await fetch(`/api/managed-subscriptions?${params.toString()}`, {
+                    headers: {
+                        'x-wallet-address': user.wallet.address,
+                    },
+                });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error || t('errors.fetchFailed'));
                 setSubscriptions(data.subscriptions || []);
@@ -187,6 +191,7 @@ export default function MyManagedWealthPage() {
                                     <ManagedSubscriptionItem
                                         key={sub.id}
                                         subscription={sub}
+                                        walletAddress={user?.wallet?.address}
                                         onViewDetails={(id) => console.log('View details', id)}
                                     />
                                 ))}

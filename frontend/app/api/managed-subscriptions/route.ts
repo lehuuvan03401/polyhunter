@@ -7,6 +7,7 @@ import {
     calculateGuaranteeLiability,
     calculateReserveBalance,
 } from '@/lib/managed-wealth/settlement-math';
+import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,10 +30,6 @@ const createSubscriptionSchema = z.object({
     message: 'Either productId or productSlug is required',
     path: ['productId'],
 });
-
-function toLowerAddress(address: string): string {
-    return address.toLowerCase();
-}
 
 function parseStatusParam(value: string | null): ManagedSubscriptionStatus | undefined {
     if (!value) return undefined;
@@ -103,14 +100,17 @@ export async function GET(request: NextRequest) {
         }
 
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet');
+        const walletContext = resolveWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+            requireHeader: true,
+        });
         const rawStatus = searchParams.get('status');
         const status = parseStatusParam(rawStatus);
 
-        if (!walletAddress) {
+        if (!walletContext.ok) {
             return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
+                { error: walletContext.error },
+                { status: walletContext.status }
             );
         }
 
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
         }
 
         const where: Prisma.ManagedSubscriptionWhereInput = {
-            walletAddress: toLowerAddress(walletAddress),
+            walletAddress: walletContext.wallet,
             ...(status ? { status } : {}),
         };
 
@@ -217,6 +217,18 @@ export async function POST(request: NextRequest) {
             copyConfigId,
         } = validation.data;
 
+        const walletContext = resolveWalletContext(request, {
+            bodyWallet: walletAddress,
+            requireHeader: true,
+        });
+        if (!walletContext.ok) {
+            return NextResponse.json(
+                { error: walletContext.error },
+                { status: walletContext.status }
+            );
+        }
+        const requestWallet = walletContext.wallet;
+
         if (!acceptedTerms) {
             return NextResponse.json(
                 { error: 'Terms must be accepted before subscribing' },
@@ -276,7 +288,7 @@ export async function POST(request: NextRequest) {
             const copyConfig = await prisma.copyTradingConfig.findFirst({
                 where: {
                     id: copyConfigId,
-                    walletAddress: toLowerAddress(walletAddress),
+                    walletAddress: requestWallet,
                 },
                 select: { id: true },
             });
@@ -309,7 +321,7 @@ export async function POST(request: NextRequest) {
 
         const subscription = await prisma.managedSubscription.create({
             data: {
-                walletAddress: toLowerAddress(walletAddress),
+                walletAddress: requestWallet,
                 productId: product.id,
                 termId: term.id,
                 principal,

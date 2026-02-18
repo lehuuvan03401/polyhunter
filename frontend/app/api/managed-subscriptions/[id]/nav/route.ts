@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
+import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +18,18 @@ export async function GET(
 
         const { id } = await params;
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet')?.toLowerCase();
+        const walletContext = resolveWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+            requireHeader: true,
+        });
         const limit = Math.min(Math.max(Number(searchParams.get('limit') || 200), 1), 1000);
+
+        if (!walletContext.ok) {
+            return NextResponse.json(
+                { error: walletContext.error },
+                { status: walletContext.status }
+            );
+        }
 
         const subscription = await prisma.managedSubscription.findUnique({
             where: { id },
@@ -63,18 +74,19 @@ export async function GET(
             return NextResponse.json({ error: 'Subscription not found' }, { status: 404 });
         }
 
-        if (walletAddress && subscription.walletAddress !== walletAddress) {
+        if (subscription.walletAddress !== walletContext.wallet) {
             return NextResponse.json(
                 { error: 'Subscription does not belong to wallet' },
                 { status: 403 }
             );
         }
 
-        const snapshots = await prisma.managedNavSnapshot.findMany({
+        const latestSnapshots = await prisma.managedNavSnapshot.findMany({
             where: { subscriptionId: id },
-            orderBy: { snapshotAt: 'asc' },
+            orderBy: { snapshotAt: 'desc' },
             take: limit,
         });
+        const snapshots = [...latestSnapshots].reverse();
 
         const latest = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
         const peakNav = snapshots.reduce((max, point) => Math.max(max, point.nav), 1);

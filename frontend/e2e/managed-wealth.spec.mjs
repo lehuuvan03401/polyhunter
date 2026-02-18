@@ -68,22 +68,22 @@ test.describe('Managed wealth E2E', () => {
         });
 
         await page.goto('/en/managed-wealth');
-        await expect(page.getByRole('heading', { name: 'Managed Wealth' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Marketplace' })).toBeVisible();
 
-        await page.getByRole('button', { name: 'Subscribe' }).click();
-        await expect(page.getByRole('heading', { name: /Subscribe to Safe Yield Bot/i })).toBeVisible();
+        await page.getByRole('button', { name: 'Subscribe Now' }).click();
+        await expect(page.getByRole('heading', { name: /Subscribe to Safe Income Vault/i })).toBeVisible();
 
-        const confirmButton = page.getByRole('button', { name: /Confirm Subscription/i });
+        const confirmButton = page.getByRole('button', { name: /Confirm Investment/i });
         await expect(confirmButton).toBeDisabled();
 
-        await page.getByLabel('Principal (USDC)').fill('1200');
-        await page.getByLabel(/I understand this is strategy investing/i).check();
-        await page.getByLabel(/I accept product terms, disclosure policy/i).check();
+        await page.getByPlaceholder('0.00').fill('1200');
+        await page.getByRole('checkbox').nth(0).check();
+        await page.getByRole('checkbox').nth(1).check();
 
         await expect(confirmButton).toBeEnabled();
         await confirmButton.click();
 
-        await expect(page.getByRole('heading', { name: /Subscribe to Safe Yield Bot/i })).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: /Subscribe to Safe Income Vault/i })).toHaveCount(0);
 
         expect(postedPayload).toBeTruthy();
         expect(String(postedPayload.walletAddress).toLowerCase()).toBe(MOCK_WALLET);
@@ -93,7 +93,7 @@ test.describe('Managed wealth E2E', () => {
         expect(postedPayload.acceptedTerms).toBe(true);
     });
 
-    test('user can view settled subscription and nav details', async ({ page }) => {
+    test('user can view settled subscription details', async ({ page }) => {
         await page.route('**/api/managed-subscriptions?**', async (route) => {
             await route.fulfill({
                 status: 200,
@@ -171,14 +171,14 @@ test.describe('Managed wealth E2E', () => {
 
         await page.goto('/en/managed-wealth/my');
 
-        await expect(page.getByRole('heading', { name: 'My Managed Positions' })).toBeVisible();
-        await expect(page.getByText('30D (30d) · SETTLED')).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'My Dashboard' })).toBeVisible();
+        await expect(page.getByText('30D (30d)')).toBeVisible();
+        await expect(page.getByText('Final Payout')).toBeVisible();
+        await expect(page.getByText('$1035.00').first()).toBeVisible();
+        await expect(page.getByText('+3.50%').first()).toBeVisible();
 
-        await page.getByRole('button', { name: 'View NAV' }).click();
-
-        await expect(page.getByText('Latest NAV')).toBeVisible();
-        await expect(page.getByText('1.0350').first()).toBeVisible();
-        await expect(page.getByText('3.50%').first()).toBeVisible();
-        await expect(page.getByText('Points')).toBeVisible();
+        await page.getByRole('heading', { name: 'Safe Income Vault' }).click();
+        await expect(page.getByText('Subscription Details')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'View Full Analysis' })).toBeVisible();
     });
 });

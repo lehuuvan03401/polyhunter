@@ -59,7 +59,11 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
             }
             setLoading(true);
             try {
-                const res = await fetch(`/api/managed-subscriptions/transactions?wallet=${walletAddress}`);
+                const res = await fetch(`/api/managed-subscriptions/transactions?wallet=${walletAddress}`, {
+                    headers: {
+                        'x-wallet-address': walletAddress,
+                    },
+                });
                 const data = await res.json();
                 if (res.ok) {
                     setTransactions(data.transactions || []);

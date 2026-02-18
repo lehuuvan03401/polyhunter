@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,7 @@ export async function GET(
             },
             include: {
                 terms: {
+                    where: { isActive: true },
                     orderBy: { durationDays: 'asc' },
                 },
                 agents: {
@@ -66,56 +68,55 @@ export async function GET(
             }),
         ]);
 
+        const rawSnapshots = await prisma.managedNavSnapshot.findMany({
+            where: {
+                subscription: {
+                    productId: product.id,
+                },
+            },
+            select: {
+                snapshotAt: true,
+                nav: true,
+            },
+            orderBy: { snapshotAt: 'desc' },
+            take: 5000,
+        });
+
+        const chartBuckets = new Map<string, { sum: number; count: number }>();
+        for (const snapshot of rawSnapshots) {
+            const dayKey = snapshot.snapshotAt.toISOString().slice(0, 10);
+            const bucket = chartBuckets.get(dayKey) ?? { sum: 0, count: 0 };
+            bucket.sum += snapshot.nav;
+            bucket.count += 1;
+            chartBuckets.set(dayKey, bucket);
+        }
+
+        const chartData = Array.from(chartBuckets.entries())
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([dayKey, bucket]) => ({
+                date: `${dayKey}T00:00:00.000Z`,
+                value: bucket.sum / bucket.count,
+            }));
+
         return NextResponse.json({
             product,
             stats: {
                 subscriptionCount,
                 runningSubscriptionCount,
             },
-            chartData: simulateHistoricalData(product.createdAt, product.strategyProfile),
+            chartData,
         });
     } catch (error) {
         console.error('Failed to fetch managed product detail:', error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
+            return NextResponse.json(
+                { error: 'Managed wealth tables are not initialized' },
+                { status: 503 }
+            );
+        }
         return NextResponse.json(
             { error: 'Failed to fetch managed product detail' },
             { status: 500 }
         );
     }
-}
-
-// Helper to simulate historical data for demo content
-function simulateHistoricalData(createdAt: Date, strategyProfile: string) {
-    const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24)) || 30; // Min 30 days
-    const data = [];
-    let price = 100;
-
-    // Volatility settings
-    const volatility =
-        strategyProfile === 'AGGRESSIVE' ? 0.02 :
-            strategyProfile === 'MODERATE' ? 0.01 :
-                0.005; // CONSERVATIVE
-
-    // Trend settings (daily return)
-    const trend =
-        strategyProfile === 'AGGRESSIVE' ? 0.0015 :
-            strategyProfile === 'MODERATE' ? 0.001 :
-                0.0005; // CONSERVATIVE
-
-    const now = new Date();
-
-    for (let i = days; i >= 0; i--) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - i);
-
-        // Random walk with drift
-        const change = (Math.random() - 0.45) * volatility + trend;
-        price = price * (1 + change);
-
-        data.push({
-            date: date.toISOString(),
-            value: price
-        });
-    }
-
-    return data;
 }

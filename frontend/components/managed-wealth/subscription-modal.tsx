@@ -144,7 +144,10 @@ export function SubscriptionModal({
         try {
             const res = await fetch('/api/managed-subscriptions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-wallet-address': walletAddress,
+                },
                 body: JSON.stringify({
                     walletAddress,
                     productId: product.id,

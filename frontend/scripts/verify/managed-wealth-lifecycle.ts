@@ -76,8 +76,16 @@ function makeTestWallet(): string {
     return `0x${randomBytes(20).toString('hex')}`;
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(`${BASE_URL}${path}`, init);
+async function api<T>(path: string, init?: RequestInit, walletAddress?: string): Promise<T> {
+    const headers = new Headers(init?.headers ?? {});
+    if (walletAddress) {
+        headers.set('x-wallet-address', walletAddress);
+    }
+
+    const res = await fetch(`${BASE_URL}${path}`, {
+        ...init,
+        headers,
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         throw new Error(`[${res.status}] ${path} -> ${JSON.stringify(data)}`);
@@ -112,7 +120,7 @@ async function main(): Promise<void> {
             principal: 1000,
             acceptedTerms: true,
         }),
-    });
+    }, wallet);
 
     const subB = await api<CreatedSubscriptionResponse>('/api/managed-subscriptions', {
         method: 'POST',
@@ -124,7 +132,7 @@ async function main(): Promise<void> {
             principal: 800,
             acceptedTerms: true,
         }),
-    });
+    }, wallet);
 
     console.log(`[verify] created subscriptions: ${subA.subscription.id}, ${subB.subscription.id}`);
 
@@ -174,13 +182,19 @@ async function main(): Promise<void> {
     });
 
     const settlementA = await api<SettlementDetailResponse>(
-        `/api/managed-settlements/${subA.subscription.id}?wallet=${wallet}`
+        `/api/managed-settlements/${subA.subscription.id}?wallet=${wallet}`,
+        undefined,
+        wallet
     );
     const settlementB = await api<SettlementDetailResponse>(
-        `/api/managed-settlements/${subB.subscription.id}?wallet=${wallet}`
+        `/api/managed-settlements/${subB.subscription.id}?wallet=${wallet}`,
+        undefined,
+        wallet
     );
     const navA = await api<SubscriptionNavResponse>(
-        `/api/managed-subscriptions/${subA.subscription.id}/nav?wallet=${wallet}&limit=10`
+        `/api/managed-subscriptions/${subA.subscription.id}/nav?wallet=${wallet}&limit=10`,
+        undefined,
+        wallet
     );
 
     assert.equal(settlementA.settlement.status, 'COMPLETED', 'Guaranteed settlement should complete');

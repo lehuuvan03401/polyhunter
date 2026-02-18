@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
+import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,18 +29,22 @@ export async function GET(request: NextRequest) {
         }
 
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet');
+        const walletContext = resolveWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+            requireHeader: true,
+        });
+        const limit = Math.min(Math.max(Number(searchParams.get('limit') || 200), 1), 1000);
 
-        if (!walletAddress) {
+        if (!walletContext.ok) {
             return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
+                { error: walletContext.error },
+                { status: walletContext.status }
             );
         }
 
         const subscriptions = await prisma.managedSubscription.findMany({
             where: {
-                walletAddress: walletAddress.toLowerCase(),
+                walletAddress: walletContext.wallet,
             },
             include: {
                 product: {
@@ -65,6 +70,7 @@ export async function GET(request: NextRequest) {
                 },
             },
             orderBy: { createdAt: 'desc' },
+            take: limit,
         });
 
         const transactions: TransactionEvent[] = [];
