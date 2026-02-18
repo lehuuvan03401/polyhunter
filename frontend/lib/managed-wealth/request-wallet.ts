@@ -1,4 +1,9 @@
 import { NextRequest } from 'next/server';
+import { ethers } from 'ethers';
+import {
+    buildManagedWalletAuthMessage,
+    MANAGED_WALLET_AUTH_WINDOW_MS,
+} from '@/lib/managed-wealth/wallet-auth-message';
 
 const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
@@ -6,6 +11,7 @@ type ResolveWalletContextOptions = {
     queryWallet?: string | null;
     bodyWallet?: string | null;
     requireHeader?: boolean;
+    requireSignature?: boolean;
 };
 
 type ResolveWalletContextResult =
@@ -53,5 +59,68 @@ export function resolveWalletContext(
         return { ok: false, status: 400, error: 'Wallet mismatch between request header/query/body' };
     }
 
-    return { ok: true, wallet: wallets[0] };
+    const resolvedWallet = wallets[0];
+    const shouldRequireSignature = options.requireSignature !== undefined
+        ? options.requireSignature
+        : process.env.MANAGED_WEALTH_REQUIRE_SIGNATURE === 'true';
+    const bypassSignature = process.env.NODE_ENV !== 'production'
+        && process.env.NEXT_PUBLIC_E2E_MOCK_AUTH === 'true';
+
+    if (shouldRequireSignature && !bypassSignature) {
+        const signature = request.headers.get('x-wallet-signature');
+        const timestampRaw = request.headers.get('x-wallet-timestamp');
+
+        if (!signature || !timestampRaw) {
+            return {
+                ok: false,
+                status: 401,
+                error: 'Missing wallet signature headers',
+            };
+        }
+
+        const timestamp = Number(timestampRaw);
+        if (!Number.isFinite(timestamp) || timestamp <= 0) {
+            return {
+                ok: false,
+                status: 400,
+                error: 'Invalid wallet signature timestamp',
+            };
+        }
+
+        const now = Date.now();
+        if (Math.abs(now - timestamp) > MANAGED_WALLET_AUTH_WINDOW_MS) {
+            return {
+                ok: false,
+                status: 401,
+                error: 'Wallet signature expired',
+            };
+        }
+
+        const pathWithQuery = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+        const message = buildManagedWalletAuthMessage({
+            walletAddress: resolvedWallet,
+            method: request.method,
+            pathWithQuery,
+            timestamp,
+        });
+
+        try {
+            const recovered = ethers.utils.verifyMessage(message, signature).toLowerCase();
+            if (recovered !== resolvedWallet) {
+                return {
+                    ok: false,
+                    status: 401,
+                    error: 'Invalid wallet signature',
+                };
+            }
+        } catch {
+            return {
+                ok: false,
+                status: 401,
+                error: 'Invalid wallet signature format',
+            };
+        }
+    }
+
+    return { ok: true, wallet: resolvedWallet };
 }

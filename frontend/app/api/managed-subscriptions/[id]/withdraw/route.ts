@@ -47,6 +47,7 @@ export async function POST(
         const walletContext = resolveWalletContext(request, {
             bodyWallet: validation.data.walletAddress,
             requireHeader: true,
+            requireSignature: true,
         });
         if (!walletContext.ok) {
             return NextResponse.json(

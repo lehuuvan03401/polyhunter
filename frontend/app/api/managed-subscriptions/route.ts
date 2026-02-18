@@ -18,6 +18,26 @@ type ReserveCoverageResult = {
     coverageRatio: number;
 };
 
+type ReserveCoverageDb = {
+    reserveFundLedger: {
+        findMany: typeof prisma.reserveFundLedger.findMany;
+    };
+    managedSubscription: {
+        findMany: typeof prisma.managedSubscription.findMany;
+    };
+};
+
+class ReserveCoverageError extends Error {
+    reserveCoverage: ReserveCoverageResult;
+    requiredCoverageRatio: number;
+
+    constructor(message: string, reserveCoverage: ReserveCoverageResult, requiredCoverageRatio: number) {
+        super(message);
+        this.reserveCoverage = reserveCoverage;
+        this.requiredCoverageRatio = requiredCoverageRatio;
+    }
+}
+
 const createSubscriptionSchema = z.object({
     walletAddress: z.string().min(3),
     productId: z.string().optional(),
@@ -47,16 +67,17 @@ function parseStatusParam(value: string | null): ManagedSubscriptionStatus | und
 }
 
 async function getReserveCoverageAfterSubscription(
+    db: ReserveCoverageDb,
     principal: number,
     minYieldRate: number,
 ): Promise<ReserveCoverageResult> {
-    const ledgerRows = await prisma.reserveFundLedger.findMany({
+    const ledgerRows = await db.reserveFundLedger.findMany({
         select: { entryType: true, amount: true },
     });
 
     const balance = calculateReserveBalance(ledgerRows);
 
-    const existingGuaranteed = await prisma.managedSubscription.findMany({
+    const existingGuaranteed = await db.managedSubscription.findMany({
         where: {
             status: { in: ['PENDING', 'RUNNING', 'MATURED'] },
             product: {
@@ -73,7 +94,8 @@ async function getReserveCoverageAfterSubscription(
     });
 
     const existingGuaranteedLiability = existingGuaranteed.reduce(
-        (acc, sub) => acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
+        (acc: number, sub: { principal: number; term: { minYieldRate: number | null } }) =>
+            acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
         0
     );
 
@@ -220,6 +242,7 @@ export async function POST(request: NextRequest) {
         const walletContext = resolveWalletContext(request, {
             bodyWallet: walletAddress,
             requireHeader: true,
+            requireSignature: true,
         });
         if (!walletContext.ok) {
             return NextResponse.json(
@@ -301,63 +324,78 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (product.isGuaranteed) {
-            const minYieldRate = Number(term.minYieldRate ?? 0);
-            const reserveCoverage = await getReserveCoverageAfterSubscription(principal, minYieldRate);
-            if (reserveCoverage.coverageRatio < product.reserveCoverageMin) {
-                return NextResponse.json(
-                    {
-                        error: 'Guaranteed subscriptions temporarily unavailable due to reserve coverage',
-                        reserveCoverage,
-                        requiredCoverageRatio: product.reserveCoverageMin,
-                    },
-                    { status: 409 }
-                );
-            }
-        }
-
         const now = new Date();
         const endAt = new Date(now.getTime() + term.durationDays * 24 * 60 * 60 * 1000);
 
-        const subscription = await prisma.managedSubscription.create({
-            data: {
-                walletAddress: requestWallet,
-                productId: product.id,
-                termId: term.id,
-                principal,
-                disclosurePolicy: product.disclosurePolicy,
-                disclosureDelayHours: product.disclosureDelayHours,
-                highWaterMark: principal,
-                currentEquity: principal,
-                status: 'RUNNING',
-                acceptedTermsAt: now,
-                startAt: now,
-                endAt,
-                copyConfigId: copyConfigId ?? null,
-            },
-            include: {
-                product: true,
-                term: true,
-            },
-        });
+        const subscription = await prisma.$transaction(async (tx) => {
+            if (product.isGuaranteed) {
+                const lockKey = `managed_wealth_guaranteed_${product.id}`;
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-        await prisma.managedNavSnapshot.create({
-            data: {
-                subscriptionId: subscription.id,
-                snapshotAt: now,
-                nav: 1,
-                equity: principal,
-                periodReturn: 0,
-                cumulativeReturn: 0,
-                drawdown: 0,
-                volatility: 0,
-                isFallbackPrice: false,
-                priceSource: 'INITIAL',
-            },
+                const minYieldRate = Number(term.minYieldRate ?? 0);
+                const reserveCoverage = await getReserveCoverageAfterSubscription(tx, principal, minYieldRate);
+                if (reserveCoverage.coverageRatio < product.reserveCoverageMin) {
+                    throw new ReserveCoverageError(
+                        'Guaranteed subscriptions temporarily unavailable due to reserve coverage',
+                        reserveCoverage,
+                        product.reserveCoverageMin
+                    );
+                }
+            }
+
+            const createdSubscription = await tx.managedSubscription.create({
+                data: {
+                    walletAddress: requestWallet,
+                    productId: product.id,
+                    termId: term.id,
+                    principal,
+                    disclosurePolicy: product.disclosurePolicy,
+                    disclosureDelayHours: product.disclosureDelayHours,
+                    highWaterMark: principal,
+                    currentEquity: principal,
+                    status: 'RUNNING',
+                    acceptedTermsAt: now,
+                    startAt: now,
+                    endAt,
+                    copyConfigId: copyConfigId ?? null,
+                },
+                include: {
+                    product: true,
+                    term: true,
+                },
+            });
+
+            await tx.managedNavSnapshot.create({
+                data: {
+                    subscriptionId: createdSubscription.id,
+                    snapshotAt: now,
+                    nav: 1,
+                    equity: principal,
+                    periodReturn: 0,
+                    cumulativeReturn: 0,
+                    drawdown: 0,
+                    volatility: 0,
+                    isFallbackPrice: false,
+                    priceSource: 'INITIAL',
+                },
+            });
+
+            return createdSubscription;
         });
 
         return NextResponse.json({ subscription }, { status: 201 });
     } catch (error) {
+        if (error instanceof ReserveCoverageError) {
+            return NextResponse.json(
+                {
+                    error: error.message,
+                    reserveCoverage: error.reserveCoverage,
+                    requiredCoverageRatio: error.requiredCoverageRatio,
+                },
+                { status: 409 }
+            );
+        }
+
         console.error('Failed to create managed subscription:', error);
         return NextResponse.json(
             { error: 'Failed to create managed subscription' },

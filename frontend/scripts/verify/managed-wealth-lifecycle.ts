@@ -13,10 +13,11 @@
 import 'dotenv/config';
 
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
+import { ethers } from 'ethers';
+import { buildManagedWalletAuthMessage } from '../../lib/managed-wealth/wallet-auth-message';
 
 const BASE_URL = process.env.MW_VERIFY_BASE_URL || 'http://localhost:3000';
 const DATABASE_URL = process.env.DATABASE_URL || '';
@@ -72,14 +73,30 @@ interface SubscriptionNavResponse {
     snapshots: Array<Record<string, unknown>>;
 }
 
-function makeTestWallet(): string {
-    return `0x${randomBytes(20).toString('hex')}`;
-}
-
-async function api<T>(path: string, init?: RequestInit, walletAddress?: string): Promise<T> {
+async function api<T>(
+    path: string,
+    init?: RequestInit,
+    walletAddress?: string,
+    signer?: ethers.Wallet
+): Promise<T> {
     const headers = new Headers(init?.headers ?? {});
-    if (walletAddress) {
-        headers.set('x-wallet-address', walletAddress);
+    const normalizedWallet = walletAddress?.toLowerCase();
+
+    if (normalizedWallet) {
+        headers.set('x-wallet-address', normalizedWallet);
+    }
+
+    if (normalizedWallet && signer) {
+        const timestamp = Date.now();
+        const message = buildManagedWalletAuthMessage({
+            walletAddress: normalizedWallet,
+            method: init?.method || 'GET',
+            pathWithQuery: path,
+            timestamp,
+        });
+        const signature = await signer.signMessage(message);
+        headers.set('x-wallet-signature', signature);
+        headers.set('x-wallet-timestamp', String(timestamp));
     }
 
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -107,8 +124,12 @@ async function main(): Promise<void> {
     assert(guaranteedTerm, 'Guaranteed product needs at least one term');
     assert(nonGuaranteedTerm, 'Non-guaranteed product needs at least one term');
 
-    const wallet = makeTestWallet();
+    const signer = ethers.Wallet.createRandom();
+    const wallet = signer.address.toLowerCase();
     console.log(`[verify] test wallet: ${wallet}`);
+
+    const adminWallet = process.env.MW_VERIFY_ADMIN_WALLET
+        || process.env.ADMIN_WALLETS?.split(',')[0]?.trim();
 
     const subA = await api<CreatedSubscriptionResponse>('/api/managed-subscriptions', {
         method: 'POST',
@@ -120,7 +141,7 @@ async function main(): Promise<void> {
             principal: 1000,
             acceptedTerms: true,
         }),
-    }, wallet);
+    }, wallet, signer);
 
     const subB = await api<CreatedSubscriptionResponse>('/api/managed-subscriptions', {
         method: 'POST',
@@ -132,7 +153,7 @@ async function main(): Promise<void> {
             principal: 800,
             acceptedTerms: true,
         }),
-    }, wallet);
+    }, wallet, signer);
 
     console.log(`[verify] created subscriptions: ${subA.subscription.id}, ${subB.subscription.id}`);
 
@@ -162,7 +183,10 @@ async function main(): Promise<void> {
 
     const dryRunResult = await api<SettlementRunResponse>('/api/managed-settlement/run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}),
+        },
         body: JSON.stringify({
             dryRun: true,
             subscriptionIds: [subA.subscription.id, subB.subscription.id],
@@ -174,7 +198,10 @@ async function main(): Promise<void> {
 
     await api('/api/managed-settlement/run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}),
+        },
         body: JSON.stringify({
             dryRun: false,
             subscriptionIds: [subA.subscription.id, subB.subscription.id],

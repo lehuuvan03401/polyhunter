@@ -8,6 +8,7 @@ import { ManagedNavChart } from './managed-nav-chart';
 import { DisclosurePolicyPill } from './disclosure-policy-pill';
 import { ManagedProduct, ManagedTerm } from './subscription-modal';
 import { useTranslations } from 'next-intl';
+import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 
 export type SubscriptionStatus = 'PENDING' | 'RUNNING' | 'MATURED' | 'SETTLED' | 'CANCELLED';
 
@@ -40,6 +41,7 @@ export interface ManagedSubscriptionItemProps {
 export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDetails }: ManagedSubscriptionItemProps) {
     const t = useTranslations('ManagedWealth.SubscriptionItem');
     const tProducts = useTranslations('ManagedWealth.Products');
+    const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [expanded, setExpanded] = useState(false);
 
     const latest = subscription.navSnapshots?.[0];
@@ -210,11 +212,17 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
                                                 if (!confirm(t('confirmWithdraw'))) return;
 
                                                 try {
+                                                    const path = `/api/managed-subscriptions/${subscription.id}/withdraw`;
+                                                    const walletHeaders = await createWalletAuthHeaders({
+                                                        walletAddress,
+                                                        method: 'POST',
+                                                        pathWithQuery: path,
+                                                    });
                                                     const res = await fetch(`/api/managed-subscriptions/${subscription.id}/withdraw`, {
                                                         method: 'POST',
                                                         headers: {
                                                             'Content-Type': 'application/json',
-                                                            ...(walletAddress ? { 'x-wallet-address': walletAddress } : {}),
+                                                            ...walletHeaders,
                                                         },
                                                         body: JSON.stringify({
                                                             confirm: true,

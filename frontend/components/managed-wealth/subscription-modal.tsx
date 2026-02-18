@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, X, ShieldCheck, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 
 export interface ManagedTerm {
     id: string;
@@ -98,6 +99,7 @@ export function SubscriptionModal({
 }: SubscriptionModalProps) {
     const t = useTranslations('ManagedWealth');
     const tProducts = useTranslations('ManagedWealth.Products');
+    const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [termId, setTermId] = useState('');
     const [principal, setPrincipal] = useState('100');
     const [riskConfirmed, setRiskConfirmed] = useState(false);
@@ -142,11 +144,17 @@ export function SubscriptionModal({
 
         setIsSubmitting(true);
         try {
+            const walletHeaders = await createWalletAuthHeaders({
+                walletAddress,
+                method: 'POST',
+                pathWithQuery: '/api/managed-subscriptions',
+            });
+
             const res = await fetch('/api/managed-subscriptions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-wallet-address': walletAddress,
+                    ...walletHeaders,
                 },
                 body: JSON.stringify({
                     walletAddress,
