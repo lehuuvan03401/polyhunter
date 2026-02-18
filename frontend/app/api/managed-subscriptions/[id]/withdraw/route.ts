@@ -20,6 +20,17 @@ class ApiError extends Error {
     }
 }
 
+function resolveEffectivePerformanceFeeRate(input: {
+    baseRate: number;
+    isTrial: boolean;
+    trialEndsAt?: Date | null;
+    endAt?: Date | null;
+}): number {
+    if (!input.isTrial) return input.baseRate;
+    if (!input.trialEndsAt || !input.endAt) return input.baseRate;
+    return input.endAt.getTime() <= input.trialEndsAt.getTime() ? 0 : input.baseRate;
+}
+
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -91,7 +102,12 @@ export async function POST(
                 principal: subscription.principal,
                 finalEquity: Number(subscription.currentEquity ?? subscription.principal),
                 highWaterMark: subscription.highWaterMark,
-                performanceFeeRate: Number(subscription.term.performanceFeeRate ?? subscription.product.performanceFeeRate),
+                performanceFeeRate: resolveEffectivePerformanceFeeRate({
+                    baseRate: Number(subscription.term.performanceFeeRate ?? subscription.product.performanceFeeRate),
+                    isTrial: Boolean(subscription.isTrial),
+                    trialEndsAt: subscription.trialEndsAt,
+                    endAt: subscription.endAt,
+                }),
                 isGuaranteed: guaranteeEligible,
                 minYieldRate: guaranteeEligible ? subscription.term.minYieldRate : null,
             });

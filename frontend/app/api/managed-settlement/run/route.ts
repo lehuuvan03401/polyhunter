@@ -26,6 +26,17 @@ const runSettlementSchema = z.object({
     limit: z.number().int().positive().max(500).optional(),
 });
 
+function resolveEffectivePerformanceFeeRate(input: {
+    baseRate: number;
+    isTrial: boolean;
+    trialEndsAt?: Date | null;
+    endAt?: Date | null;
+}): number {
+    if (!input.isTrial) return input.baseRate;
+    if (!input.trialEndsAt || !input.endAt) return input.baseRate;
+    return input.endAt.getTime() <= input.trialEndsAt.getTime() ? 0 : input.baseRate;
+}
+
 export async function POST(request: NextRequest) {
     try {
         if (!isAdmin(request)) {
@@ -106,7 +117,12 @@ export async function POST(request: NextRequest) {
                 principal: sub.principal,
                 finalEquity: Number(sub.currentEquity ?? sub.principal),
                 highWaterMark: sub.highWaterMark,
-                performanceFeeRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
+                performanceFeeRate: resolveEffectivePerformanceFeeRate({
+                    baseRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
+                    isTrial: Boolean(sub.isTrial),
+                    trialEndsAt: sub.trialEndsAt,
+                    endAt: sub.endAt,
+                }),
                 isGuaranteed: sub.product.isGuaranteed,
                 minYieldRate: sub.term.minYieldRate,
             });

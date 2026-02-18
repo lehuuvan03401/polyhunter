@@ -10,6 +10,7 @@ import {
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 
 export const dynamic = 'force-dynamic';
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 type ReserveCoverageResult = {
     balance: number;
@@ -329,6 +330,14 @@ export async function POST(request: NextRequest) {
         const endAt = new Date(now.getTime() + term.durationDays * 24 * 60 * 60 * 1000);
 
         const subscription = await prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`managed_wealth_trial_${requestWallet}`}))`;
+
+            const existingCount = await tx.managedSubscription.count({
+                where: { walletAddress: requestWallet },
+            });
+            const trialApplied = existingCount === 0 && term.durationDays <= 1;
+            const trialEndsAt = trialApplied ? new Date(now.getTime() + ONE_DAY_MS) : null;
+
             if (product.isGuaranteed) {
                 const lockKey = `managed_wealth_guaranteed_${product.id}`;
                 await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
@@ -358,6 +367,8 @@ export async function POST(request: NextRequest) {
                     acceptedTermsAt: now,
                     startAt: now,
                     endAt,
+                    isTrial: trialApplied,
+                    trialEndsAt,
                     copyConfigId: copyConfigId ?? null,
                 },
                 include: {
@@ -381,10 +392,63 @@ export async function POST(request: NextRequest) {
                 },
             });
 
-            return createdSubscription;
+            let referralBonusApplied = false;
+            const referral = await tx.referral.findUnique({
+                where: { refereeAddress: requestWallet },
+                include: {
+                    referrer: {
+                        select: { walletAddress: true },
+                    },
+                },
+            });
+
+            if (referral && !referral.subscriptionBonusGrantedAt) {
+                const referrerActiveSub = await tx.managedSubscription.findFirst({
+                    where: {
+                        walletAddress: referral.referrer.walletAddress,
+                        status: 'RUNNING',
+                        endAt: { gt: now },
+                    },
+                    orderBy: { endAt: 'asc' },
+                    select: {
+                        id: true,
+                        endAt: true,
+                    },
+                });
+
+                if (referrerActiveSub?.endAt) {
+                    await tx.managedSubscription.update({
+                        where: { id: referrerActiveSub.id },
+                        data: {
+                            endAt: new Date(referrerActiveSub.endAt.getTime() + ONE_DAY_MS),
+                        },
+                    });
+                    await tx.referral.update({
+                        where: { id: referral.id },
+                        data: {
+                            subscriptionBonusGrantedAt: now,
+                        },
+                    });
+                    referralBonusApplied = true;
+                }
+            }
+
+            return {
+                createdSubscription,
+                trialApplied,
+                trialEndsAt,
+                referralBonusApplied,
+            };
         });
 
-        return NextResponse.json({ subscription }, { status: 201 });
+        return NextResponse.json({
+            subscription: subscription.createdSubscription,
+            marketing: {
+                trialApplied: subscription.trialApplied,
+                trialEndsAt: subscription.trialEndsAt,
+                referralBonusApplied: subscription.referralBonusApplied,
+            },
+        }, { status: 201 });
     } catch (error) {
         if (error instanceof ReserveCoverageError) {
             return NextResponse.json(

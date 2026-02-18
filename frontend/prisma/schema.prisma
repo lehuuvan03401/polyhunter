@@ -81,6 +81,7 @@ model Referral {
   refereeAddress   String    @unique
   lifetimeVolume   Float     @default(0)
   last30DaysVolume Float     @default(0)
+  subscriptionBonusGrantedAt DateTime?
   createdAt        DateTime  @default(now())
   lastActiveAt     DateTime?
 
@@ -479,6 +480,8 @@ model ManagedSubscription {
   endAt                DateTime?
   maturedAt            DateTime?
   settledAt            DateTime?
+  isTrial              Boolean                   @default(false)
+  trialEndsAt          DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 

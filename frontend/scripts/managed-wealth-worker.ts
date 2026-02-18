@@ -30,6 +30,17 @@ const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 let running = false;
 
+function resolveEffectivePerformanceFeeRate(input: {
+    baseRate: number;
+    isTrial: boolean;
+    trialEndsAt?: Date | null;
+    endAt?: Date | null;
+}): number {
+    if (!input.isTrial) return input.baseRate;
+    if (!input.trialEndsAt || !input.endAt) return input.baseRate;
+    return input.endAt.getTime() <= input.trialEndsAt.getTime() ? 0 : input.baseRate;
+}
+
 async function getReserveBalance(tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>): Promise<number> {
     const rows = await tx.reserveFundLedger.findMany({
         select: { entryType: true, amount: true },
@@ -281,7 +292,12 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
             principal: sub.principal,
             finalEquity: Number(sub.currentEquity ?? sub.principal),
             highWaterMark: sub.highWaterMark,
-            performanceFeeRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
+            performanceFeeRate: resolveEffectivePerformanceFeeRate({
+                baseRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
+                isTrial: Boolean(sub.isTrial),
+                trialEndsAt: sub.trialEndsAt,
+                endAt: sub.endAt,
+            }),
             isGuaranteed: sub.product.isGuaranteed,
             minYieldRate: sub.term.minYieldRate,
         });
