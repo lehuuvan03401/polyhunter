@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Eye, ShieldCheck, Clock, TrendingUp } from 'lucide-react';
+import { ChevronDown, Eye, ShieldCheck, Clock, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
 import { ManagedNavChart } from './managed-nav-chart';
 import { DisclosurePolicyPill } from './disclosure-policy-pill';
@@ -231,24 +231,67 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
 
                                                 try {
                                                     const path = `/api/managed-subscriptions/${subscription.id}/withdraw`;
-                                                    const walletHeaders = await createWalletAuthHeaders({
-                                                        walletAddress,
-                                                        method: 'POST',
-                                                        pathWithQuery: path,
-                                                    });
-                                                    const res = await fetch(`/api/managed-subscriptions/${subscription.id}/withdraw`, {
-                                                        method: 'POST',
-                                                        headers: {
-                                                            'Content-Type': 'application/json',
-                                                            ...walletHeaders,
-                                                        },
-                                                        body: JSON.stringify({
-                                                            confirm: true,
+                                                    const executeWithdraw = async (acknowledgeEarlyWithdrawalFee: boolean): Promise<boolean> => {
+                                                        const walletHeaders = await createWalletAuthHeaders({
                                                             walletAddress,
-                                                        }),
-                                                    });
+                                                            method: 'POST',
+                                                            pathWithQuery: path,
+                                                        });
+                                                        const res = await fetch(path, {
+                                                            method: 'POST',
+                                                            headers: {
+                                                                'Content-Type': 'application/json',
+                                                                ...walletHeaders,
+                                                            },
+                                                            body: JSON.stringify({
+                                                                confirm: true,
+                                                                walletAddress,
+                                                                acknowledgeEarlyWithdrawalFee,
+                                                            }),
+                                                        });
+                                                        const data = await res.json().catch(() => ({})) as Record<string, unknown>;
 
-                                                    if (!res.ok) throw new Error('Withdrawal failed');
+                                                        if (!res.ok) {
+                                                            if (data?.code === 'WITHDRAW_COOLDOWN_ACTIVE') {
+                                                                const cooldownEndsAt = data?.cooldownEndsAt
+                                                                    ? new Date(String(data.cooldownEndsAt)).toLocaleString()
+                                                                    : '--';
+                                                                alert(t('withdrawCooldown', { time: cooldownEndsAt }));
+                                                                return false;
+                                                            }
+
+                                                            if (
+                                                                data?.code === 'EARLY_WITHDRAWAL_FEE_ACK_REQUIRED'
+                                                                && !acknowledgeEarlyWithdrawalFee
+                                                            ) {
+                                                                const feeRate = typeof data.earlyWithdrawalFeeRate === 'number'
+                                                                    ? `${(data.earlyWithdrawalFeeRate * 100).toFixed(2)}%`
+                                                                    : '--';
+                                                                const feeAmount = typeof data.earlyWithdrawalFee === 'number'
+                                                                    ? `$${data.earlyWithdrawalFee.toFixed(2)}`
+                                                                    : '--';
+                                                                const payout = typeof data.estimatedPayoutAfterFee === 'number'
+                                                                    ? `$${data.estimatedPayoutAfterFee.toFixed(2)}`
+                                                                    : '--';
+                                                                const accepted = confirm(
+                                                                    t('confirmEarlyWithdrawFee', {
+                                                                        rate: feeRate,
+                                                                        fee: feeAmount,
+                                                                        payout,
+                                                                    })
+                                                                );
+                                                                if (!accepted) return false;
+                                                                return executeWithdraw(true);
+                                                            }
+
+                                                            throw new Error(typeof data?.error === 'string' ? data.error : 'Withdrawal failed');
+                                                        }
+
+                                                        return true;
+                                                    };
+
+                                                    const completed = await executeWithdraw(false);
+                                                    if (!completed) return;
 
                                                     // Refresh page to show updated status
                                                     window.location.reload();

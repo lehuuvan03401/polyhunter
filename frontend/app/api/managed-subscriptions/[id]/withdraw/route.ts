@@ -9,15 +9,40 @@ export const dynamic = 'force-dynamic';
 const withdrawSchema = z.object({
     confirm: z.literal(true),
     walletAddress: z.string().min(3),
+    acknowledgeEarlyWithdrawalFee: z.boolean().optional(),
 });
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const WITHDRAW_COOLDOWN_HOURS = resolveNumberEnv('MANAGED_WITHDRAW_COOLDOWN_HOURS', 6, 0, 168);
+const EARLY_WITHDRAWAL_FEE_RATE = resolveNumberEnv('MANAGED_EARLY_WITHDRAW_FEE_RATE', 0.01, 0, 0.5);
+const DRAWDOWN_ALERT_THRESHOLD = resolveNumberEnv('MANAGED_WITHDRAW_DRAWDOWN_ALERT_THRESHOLD', 0.35, 0, 1);
 
 class ApiError extends Error {
     status: number;
+    code?: string;
+    details?: Record<string, unknown>;
 
-    constructor(status: number, message: string) {
+    constructor(
+        status: number,
+        message: string,
+        options?: {
+            code?: string;
+            details?: Record<string, unknown>;
+        }
+    ) {
         super(message);
         this.status = status;
+        this.code = options?.code;
+        this.details = options?.details;
     }
+}
+
+function resolveNumberEnv(name: string, fallback: number, min: number, max: number): number {
+    const raw = process.env[name];
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
 }
 
 function resolveEffectivePerformanceFeeRate(input: {
@@ -54,6 +79,7 @@ export async function POST(
                 { status: 400 }
             );
         }
+        const acknowledgeEarlyWithdrawalFee = Boolean(validation.data.acknowledgeEarlyWithdrawalFee);
 
         const walletContext = resolveWalletContext(request, {
             bodyWallet: validation.data.walletAddress,
@@ -97,6 +123,24 @@ export async function POST(
             const maturedByTime = Boolean(subscription.endAt && subscription.endAt <= now);
             const guaranteeEligible = subscription.product.isGuaranteed
                 && (subscription.status === 'MATURED' || maturedByTime);
+            const isEarlyWithdrawal = Boolean(subscription.status === 'RUNNING' && subscription.endAt && subscription.endAt > now);
+            const withdrawStartAt = subscription.startAt ?? subscription.createdAt;
+            const cooldownEndsAt = new Date(withdrawStartAt.getTime() + WITHDRAW_COOLDOWN_HOURS * ONE_HOUR_MS);
+
+            if (isEarlyWithdrawal && WITHDRAW_COOLDOWN_HOURS > 0 && now < cooldownEndsAt) {
+                const remainingMinutes = Math.max(
+                    1,
+                    Math.ceil((cooldownEndsAt.getTime() - now.getTime()) / (60 * 1000))
+                );
+                throw new ApiError(409, 'Early withdrawal cooling period is active', {
+                    code: 'WITHDRAW_COOLDOWN_ACTIVE',
+                    details: {
+                        cooldownHours: WITHDRAW_COOLDOWN_HOURS,
+                        cooldownEndsAt,
+                        remainingMinutes,
+                    },
+                });
+            }
 
             const settlementCalc = calculateManagedSettlement({
                 principal: subscription.principal,
@@ -111,6 +155,22 @@ export async function POST(
                 isGuaranteed: guaranteeEligible,
                 minYieldRate: guaranteeEligible ? subscription.term.minYieldRate : null,
             });
+            const earlyWithdrawalFeeRate = isEarlyWithdrawal ? EARLY_WITHDRAWAL_FEE_RATE : 0;
+            const earlyWithdrawalFee = isEarlyWithdrawal
+                ? Number((settlementCalc.finalPayout * earlyWithdrawalFeeRate).toFixed(6))
+                : 0;
+            const finalPayoutAfterFee = Math.max(0, Number((settlementCalc.finalPayout - earlyWithdrawalFee).toFixed(6)));
+
+            if (isEarlyWithdrawal && earlyWithdrawalFee > 0 && !acknowledgeEarlyWithdrawalFee) {
+                throw new ApiError(409, 'Early withdrawal fee acknowledgement required', {
+                    code: 'EARLY_WITHDRAWAL_FEE_ACK_REQUIRED',
+                    details: {
+                        earlyWithdrawalFeeRate,
+                        earlyWithdrawalFee,
+                        estimatedPayoutAfterFee: finalPayoutAfterFee,
+                    },
+                });
+            }
 
             if (settlementCalc.reserveTopup > 0) {
                 const reserveRows = await tx.reserveFundLedger.findMany({
@@ -143,7 +203,7 @@ export async function POST(
                     performanceFee: settlementCalc.performanceFee,
                     guaranteedPayout: settlementCalc.guaranteedPayout,
                     reserveTopup: settlementCalc.reserveTopup,
-                    finalPayout: settlementCalc.finalPayout,
+                    finalPayout: finalPayoutAfterFee,
                     settledAt: now,
                     errorMessage: null,
                 },
@@ -159,10 +219,27 @@ export async function POST(
                     performanceFee: settlementCalc.performanceFee,
                     guaranteedPayout: settlementCalc.guaranteedPayout,
                     reserveTopup: settlementCalc.reserveTopup,
-                    finalPayout: settlementCalc.finalPayout,
+                    finalPayout: finalPayoutAfterFee,
                     settledAt: now,
                 },
             });
+
+            const drawdownRatio = subscription.principal > 0
+                ? Math.max(0, (subscription.principal - settlementCalc.finalEquity) / subscription.principal)
+                : 0;
+            if (isEarlyWithdrawal && drawdownRatio >= DRAWDOWN_ALERT_THRESHOLD) {
+                await tx.managedRiskEvent.create({
+                    data: {
+                        subscriptionId: subscription.id,
+                        severity: 'WARN',
+                        metric: 'EARLY_WITHDRAW_DRAWDOWN',
+                        threshold: DRAWDOWN_ALERT_THRESHOLD,
+                        observedValue: drawdownRatio,
+                        action: 'DELEVERAGE',
+                        description: 'Early withdrawal requested under elevated drawdown ratio',
+                    },
+                });
+            }
 
             const updatedSubscription = await tx.managedSubscription.update({
                 where: { id: subscription.id },
@@ -180,6 +257,14 @@ export async function POST(
                 updatedSubscription,
                 settlement,
                 guaranteeEligible,
+                guardrails: {
+                    isEarlyWithdrawal,
+                    cooldownHours: WITHDRAW_COOLDOWN_HOURS,
+                    earlyWithdrawalFeeRate,
+                    earlyWithdrawalFee,
+                    finalPayoutBeforeFee: settlementCalc.finalPayout,
+                    finalPayoutAfterFee,
+                },
             };
         });
 
@@ -188,12 +273,17 @@ export async function POST(
             subscription: result.updatedSubscription,
             settlement: result.settlement,
             earlyRedeemed: !result.guaranteeEligible,
+            guardrails: result.guardrails,
             message: 'Withdrawal processed successfully',
         });
     } catch (error) {
         if (error instanceof ApiError) {
             return NextResponse.json(
-                { error: error.message },
+                {
+                    error: error.message,
+                    ...(error.code ? { code: error.code } : {}),
+                    ...(error.details ?? {}),
+                },
                 { status: error.status }
             );
         }

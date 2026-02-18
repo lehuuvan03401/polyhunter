@@ -156,6 +156,8 @@
             "viewAnalysis": "查看完整分析",
             "withdraw": "赎回",
             "confirmWithdraw": "您确定要赎回吗？ 这将平仓您的头寸并将资金退回至您的钱包。",
+            "confirmEarlyWithdrawFee": "未到期赎回将收取 {rate} 手续费（{fee}），预估到账 {payout}。是否继续？",
+            "withdrawCooldown": "冷静期尚未结束，最早可赎回时间：{time}。",
             "withdrawFailed": "赎回处理失败。 请重试。",
             "finalPayout": "结算金额",
             "settledDate": "结算日期",

@@ -5,6 +5,7 @@
  * 1) First 1-day subscription gets trial flag
  * 2) Referred user's first subscription extends referrer's active subscription by 1 day
  * 3) Same referee only triggers extension once
+ * 4) Early withdrawal guardrails return cooldown or fee-ack requirement
  *
  * Usage:
  *   cd frontend
@@ -55,6 +56,36 @@ interface CreateSubscriptionResponse {
         trialApplied?: boolean;
         trialEndsAt?: string | null;
         referralBonusApplied?: boolean;
+    };
+}
+
+async function signedRequest<T>(
+    path: string,
+    init: RequestInit,
+    walletAddress: string,
+    signer: ethers.Wallet
+): Promise<{ ok: boolean; status: number; data: T }> {
+    const headers = new Headers(init.headers ?? {});
+    const normalizedWallet = walletAddress.toLowerCase();
+    headers.set('x-wallet-address', normalizedWallet);
+
+    const timestamp = Date.now();
+    const message = buildManagedWalletAuthMessage({
+        walletAddress: normalizedWallet,
+        method: init.method || 'GET',
+        pathWithQuery: path,
+        timestamp,
+    });
+    const signature = await signer.signMessage(message);
+    headers.set('x-wallet-signature', signature);
+    headers.set('x-wallet-timestamp', String(timestamp));
+
+    const res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
+    const data = await res.json().catch(() => ({}));
+    return {
+        ok: res.ok,
+        status: res.status,
+        data: data as T,
     };
 }
 
@@ -246,6 +277,60 @@ async function main(): Promise<void> {
     assert.equal(firstRefereeSubRecord?.isTrial, true, 'First 1-day subscription should be trial');
     assert(firstRefereeSubRecord?.trialEndsAt, 'First trial subscription should have trialEndsAt');
     assert.equal(secondRefereeSubRecord?.isTrial, false, 'Second subscription should not be trial');
+
+    const guardrailSigner = ethers.Wallet.createRandom();
+    const guardrailWallet = guardrailSigner.address.toLowerCase();
+    const guardrailSub = await createSubscription({
+        walletAddress: guardrailWallet,
+        signer: guardrailSigner,
+        productId: product.id,
+        termId: longTerm.id,
+        principal: 500,
+    });
+    const withdrawPath = `/api/managed-subscriptions/${guardrailSub.subscription.id}/withdraw`;
+    const firstWithdrawAttempt = await signedRequest<Record<string, unknown>>(
+        withdrawPath,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                confirm: true,
+                walletAddress: guardrailWallet,
+            }),
+        },
+        guardrailWallet,
+        guardrailSigner
+    );
+    assert.equal(firstWithdrawAttempt.status, 409, 'Early withdrawal should trigger guardrail response');
+
+    const guardrailCode = String(firstWithdrawAttempt.data.code ?? '');
+    assert(
+        guardrailCode === 'WITHDRAW_COOLDOWN_ACTIVE' || guardrailCode === 'EARLY_WITHDRAWAL_FEE_ACK_REQUIRED',
+        `Unexpected guardrail code: ${guardrailCode || 'empty'}`
+    );
+
+    if (guardrailCode === 'EARLY_WITHDRAWAL_FEE_ACK_REQUIRED') {
+        const confirmedWithdraw = await signedRequest<Record<string, unknown>>(
+            withdrawPath,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    confirm: true,
+                    walletAddress: guardrailWallet,
+                    acknowledgeEarlyWithdrawalFee: true,
+                }),
+            },
+            guardrailWallet,
+            guardrailSigner
+        );
+        assert.equal(confirmedWithdraw.ok, true, 'Confirmed early withdrawal should succeed');
+        assert.equal(
+            Boolean((confirmedWithdraw.data.guardrails as Record<string, unknown> | undefined)?.isEarlyWithdrawal),
+            true,
+            'Confirmed early withdrawal should report guardrail metadata'
+        );
+    }
 
     console.log('[verify-marketing] marketing rules verification passed');
 }

@@ -156,6 +156,8 @@
             "viewAnalysis": "View Full Analysis",
             "withdraw": "Withdraw",
             "confirmWithdraw": "Are you sure you want to withdraw? This will close your position and return funds to your wallet.",
+            "confirmEarlyWithdrawFee": "Early withdrawal before maturity incurs {rate} fee ({fee}). Estimated payout after fee: {payout}. Continue?",
+            "withdrawCooldown": "Cooling period active. Earliest withdrawal time: {time}.",
             "withdrawFailed": "Failed to process withdrawal. Please try again.",
             "finalPayout": "Final Payout",
             "settledDate": "Settled Date",
