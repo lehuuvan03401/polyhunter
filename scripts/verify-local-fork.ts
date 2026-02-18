@@ -12,7 +12,7 @@ async function main() {
     console.log("🚀 Starting Local Fork Verification...");
 
     // 1. Load Deployed Addresses
-    const configPath = path.resolve(__dirname, '../deployed-addresses.json');
+    const configPath = path.resolve(__dirname, '../contracts/deployed-addresses.json');
     if (!fs.existsSync(configPath)) {
         throw new Error(`❌ deployed-addresses.json not found. Run 'npx hardhat run scripts/deploy.ts --network localhost' in 'contracts/' first.`);
     }

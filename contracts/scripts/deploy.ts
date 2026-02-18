@@ -100,7 +100,7 @@ async function main() {
     console.log("CTF/Exchange:", ctfExchangeAddress);
     console.log("========================================");
 
-    const deploymentPath = path.join(__dirname, "../../deployed-addresses.json");
+    const deploymentPath = path.join(__dirname, "../deployed-addresses.json");
     fs.writeFileSync(deploymentPath, JSON.stringify({
         usdc: usdcAddress,
         treasury: treasuryAddress,
