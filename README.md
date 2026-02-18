@@ -743,9 +743,9 @@ pnpm example:arb-service  # Arbitrage service
 
 For detailed API documentation, see:
 
-- [docs/00-design.md](docs/00-design.md) - Architecture design
-- [docs/02-API.md](docs/02-API.md) - Complete API reference
-- [docs/01-polymarket-orderbook-arbitrage.md](docs/01-polymarket-orderbook-arbitrage.md) - Orderbook mirror & arbitrage
+- [docs/architecture/](docs/architecture/) - Architecture design & project overview
+- [docs/api/01-overview.md](docs/api/01-overview.md) - Complete API reference
+- [docs/arb/arbitrage.md](docs/arb/arbitrage.md) - Orderbook mirror & arbitrage
 
 ### Type Exports
 
@@ -815,6 +815,37 @@ import type {
 ## License
 
 MIT
+
+---
+
+## Project Structure
+
+```
+poly-hunter/
+├── src/                  # SDK core (clients, services, types)
+├── frontend/             # Next.js web application
+├── contracts/            # Solidity smart contracts (Hardhat)
+│   └── deployed-addresses.json
+├── backend/              # Backend services (affiliate-service)
+├── scripts/              # Utility & operational scripts
+├── examples/             # SDK usage examples
+├── docs/                 # Documentation
+│   ├── architecture/     # Architecture design, IFLOW, scaling analysis
+│   ├── api/              # API reference
+│   ├── arb/              # Arbitrage documentation
+│   ├── concepts/         # Polymarket concepts & principles
+│   ├── guides/           # Copy-trading & real-trading guides
+│   ├── operations/       # Runbook, findings, progress, SOPs
+│   ├── plans/            # Task plans & design docs
+│   ├── prds/             # Product requirement documents
+│   ├── reports/          # Analysis reports
+│   └── archive/          # Archived docs
+├── openspec/             # OpenSpec change proposals
+├── logs/                 # Runtime logs
+├── package.json
+├── tsconfig.json
+└── ecosystem.config.cjs  # PM2 process manager config
+```
 
 ---
 

@@ -731,9 +731,9 @@ pnpm example:arb-service  # 套利服务
 
 详细 API 文档见：
 
-- [docs/00-design.md](docs/00-design.md) - 架构设计
-- [docs/02-API.md](docs/02-API.md) - 完整 API 参考
-- [docs/01-polymarket-orderbook-arbitrage.md](docs/01-polymarket-orderbook-arbitrage.md) - 订单簿镜像与套利
+- [docs/architecture/](docs/architecture/) - 架构设计与项目概览
+- [docs/api/01-overview.md](docs/api/01-overview.md) - 完整 API 参考
+- [docs/arb/arbitrage.md](docs/arb/arbitrage.md) - 订单簿镜像与套利
 
 ### 类型导出
 
@@ -803,6 +803,37 @@ import type {
 ## 许可证
 
 MIT
+
+---
+
+## 项目结构
+
+```
+poly-hunter/
+├── src/                  # SDK 核心 (客户端、服务、类型)
+├── frontend/             # Next.js Web 应用
+├── contracts/            # Solidity 智能合约 (Hardhat)
+│   └── deployed-addresses.json
+├── backend/              # 后端服务 (affiliate-service)
+├── scripts/              # 工具与运维脚本
+├── examples/             # SDK 使用示例
+├── docs/                 # 文档
+│   ├── architecture/     # 架构设计、IFLOW、扩容分析
+│   ├── api/              # API 参考
+│   ├── arb/              # 套利文档
+│   ├── concepts/         # Polymarket 概念与原理
+│   ├── guides/           # 跟单交易与实盘指南
+│   ├── operations/       # 运行手册、发现记录、进度、SOP
+│   ├── plans/            # 任务计划与设计文档
+│   ├── prds/             # 产品需求文档
+│   ├── reports/          # 分析报告
+│   └── archive/          # 归档文档
+├── openspec/             # OpenSpec 变更提案
+├── logs/                 # 运行日志
+├── package.json
+├── tsconfig.json
+└── ecosystem.config.cjs  # PM2 进程管理配置
+```
 
 ---
 
