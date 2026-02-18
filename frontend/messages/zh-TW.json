@@ -161,7 +161,13 @@
             "withdrawFailed": "贖回處理失敗。 請重試。",
             "finalPayout": "結算金額",
             "settledDate": "結算日期",
-            "trialEnds": "體驗到期"
+            "trialEnds": "體驗到期",
+            "withdrawPolicyLabel": "提前贖回規則",
+            "withdrawPolicyValue": "未到期贖回：可能觸發 {cooldownHours} 小時冷靜期，並收取 {feeRate} 手續費。",
+            "feeBreakdown": "結算費用分解",
+            "performanceFeeLabel": "績效費",
+            "grossPnlLabel": "毛收益",
+            "netPnlLabel": "淨收益"
         },
         "Marketplace": {
             "title": "市場",
@@ -338,6 +344,7 @@
                 "COMPLETED": "已完成",
                 "PENDING": "處理中"
             },
+            "breakdown": "毛收益 ${gross} · 績效費 ${fee}",
             "empty": {
                 "title": "暫無交易記錄",
                 "desc": "訂閱策略後，您的交易記錄將在此顯示。"

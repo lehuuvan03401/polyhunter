@@ -17,8 +17,10 @@ type TransactionEvent = {
     termLabel: string;
     subscriptionId: string;
     status: 'COMPLETED' | 'PENDING';
-    pnl?: number;
-    pnlPct?: number;
+    netPnl?: number;
+    netPnlPct?: number;
+    grossPnl?: number;
+    performanceFee?: number;
 };
 
 interface ManagedTransactionHistoryProps {
@@ -124,7 +126,7 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
                 {transactions.map((tx, index) => {
                     const config = typeConfig[tx.type];
                     const Icon = config.icon;
-                    const isPositive = (tx.pnl ?? 0) >= 0;
+                    const isPositive = (tx.netPnl ?? 0) >= 0;
 
                     return (
                         <motion.div
@@ -160,14 +162,22 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
                                     </span>
                                 </div>
                                 <div className="col-span-2 text-right">
-                                    {tx.pnl !== undefined ? (
+                                    {tx.netPnl !== undefined ? (
                                         <div>
                                             <span className={`font-mono text-sm font-bold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {isPositive ? '+' : ''}{tx.pnlPct?.toFixed(2)}%
+                                                {isPositive ? '+' : ''}{tx.netPnlPct?.toFixed(2)}%
                                             </span>
                                             <div className={`text-[10px] font-mono ${isPositive ? 'text-emerald-500/60' : 'text-red-500/60'}`}>
-                                                {isPositive ? '+' : ''}${tx.pnl.toFixed(2)}
+                                                {isPositive ? '+' : ''}${tx.netPnl.toFixed(2)}
                                             </div>
+                                            {tx.type === 'WITHDRAWAL' && (tx.grossPnl !== undefined || tx.performanceFee !== undefined) && (
+                                                <div className="text-[10px] text-zinc-500">
+                                                    {t('breakdown', {
+                                                        gross: tx.grossPnl?.toFixed(2) ?? '0.00',
+                                                        fee: tx.performanceFee?.toFixed(2) ?? '0.00',
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
                                         <span className="text-zinc-600">—</span>
@@ -208,9 +218,9 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
                                         <div className={`font-mono text-sm font-bold ${tx.type === 'DEPOSIT' ? 'text-blue-400' : 'text-white'}`}>
                                             {tx.type === 'DEPOSIT' ? '-' : '+'}${tx.amount.toFixed(2)}
                                         </div>
-                                        {tx.pnl !== undefined && (
+                                        {tx.netPnl !== undefined && (
                                             <div className={`text-[10px] font-mono ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {isPositive ? '+' : ''}{tx.pnlPct?.toFixed(2)}%
+                                                {isPositive ? '+' : ''}{tx.netPnlPct?.toFixed(2)}%
                                             </div>
                                         )}
                                     </div>

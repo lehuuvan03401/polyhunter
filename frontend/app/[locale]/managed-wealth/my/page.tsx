@@ -19,6 +19,11 @@ export default function MyManagedWealthPage() {
 
     const [loading, setLoading] = useState(true);
     const [subscriptions, setSubscriptions] = useState<ManagedSubscriptionItemProps['subscription'][]>([]);
+    const [withdrawGuardrails, setWithdrawGuardrails] = useState<{
+        cooldownHours: number;
+        earlyWithdrawalFeeRate: number;
+        drawdownAlertThreshold: number;
+    } | null>(null);
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'MATURED' | 'SETTLED'>('ALL');
     const [activeTab, setActiveTab] = useState<'positions' | 'history'>('positions');
     const [membershipLoading, setMembershipLoading] = useState(false);
@@ -55,6 +60,7 @@ export default function MyManagedWealthPage() {
         const fetchSubscriptions = async () => {
             if (!authenticated || !user?.wallet?.address) {
                 setSubscriptions([]);
+                setWithdrawGuardrails(null);
                 setLoading(false);
                 return;
             }
@@ -77,6 +83,7 @@ export default function MyManagedWealthPage() {
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error || t('errors.fetchFailed'));
                 setSubscriptions(data.subscriptions || []);
+                setWithdrawGuardrails(data.withdrawGuardrails || null);
             } catch (error) {
                 toast.error(error instanceof Error ? error.message : t('errors.fetchFailed'));
             } finally {
@@ -385,6 +392,7 @@ export default function MyManagedWealthPage() {
                                         key={sub.id}
                                         subscription={sub}
                                         walletAddress={user?.wallet?.address}
+                                        withdrawGuardrails={withdrawGuardrails ?? undefined}
                                         onViewDetails={(id) => console.log('View details', id)}
                                     />
                                 ))}

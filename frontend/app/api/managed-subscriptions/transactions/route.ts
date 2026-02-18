@@ -14,8 +14,10 @@ type TransactionEvent = {
     termLabel: string;
     subscriptionId: string;
     status: 'COMPLETED' | 'PENDING';
-    pnl?: number;
-    pnlPct?: number;
+    netPnl?: number;
+    netPnlPct?: number;
+    grossPnl?: number;
+    performanceFee?: number;
 };
 
 export async function GET(request: NextRequest) {
@@ -66,6 +68,7 @@ export async function GET(request: NextRequest) {
                         finalPayout: true,
                         grossPnl: true,
                         principal: true,
+                        performanceFee: true,
                         settledAt: true,
                     },
                 },
@@ -107,9 +110,9 @@ export async function GET(request: NextRequest) {
 
             // 3. WITHDRAWAL event — if settlement exists
             if (sub.settlement) {
-                const pnl = sub.settlement.grossPnl;
-                const pnlPct = sub.settlement.principal > 0
-                    ? (pnl / sub.settlement.principal) * 100
+                const netPnl = sub.settlement.finalPayout - sub.settlement.principal;
+                const netPnlPct = sub.settlement.principal > 0
+                    ? (netPnl / sub.settlement.principal) * 100
                     : 0;
 
                 transactions.push({
@@ -122,8 +125,10 @@ export async function GET(request: NextRequest) {
                     termLabel: sub.term.label,
                     subscriptionId: sub.id,
                     status: sub.settlement.status === 'COMPLETED' ? 'COMPLETED' : 'PENDING',
-                    pnl,
-                    pnlPct,
+                    netPnl,
+                    netPnlPct,
+                    grossPnl: sub.settlement.grossPnl,
+                    performanceFee: sub.settlement.performanceFee,
                 });
             }
         }

@@ -62,6 +62,7 @@ interface SettlementRunResponse {
 interface ManagedSettlementRecord {
     status: string;
     reserveTopup: number;
+    finalPayout: number;
 }
 
 interface SettlementDetailResponse {
@@ -71,6 +72,16 @@ interface SettlementDetailResponse {
 interface SubscriptionNavResponse {
     summary: Record<string, unknown>;
     snapshots: Array<Record<string, unknown>>;
+}
+
+interface TransactionHistoryResponse {
+    transactions: Array<{
+        type: 'DEPOSIT' | 'WITHDRAWAL' | 'MATURED';
+        subscriptionId: string;
+        amount: number;
+        netPnl?: number;
+        netPnlPct?: number;
+    }>;
 }
 
 async function api<T>(
@@ -226,11 +237,26 @@ async function main(): Promise<void> {
         wallet,
         signer
     );
+    const transactions = await api<TransactionHistoryResponse>(
+        `/api/managed-subscriptions/transactions?wallet=${wallet}&limit=100`,
+        undefined,
+        wallet,
+        signer
+    );
 
     assert.equal(settlementA.settlement.status, 'COMPLETED', 'Guaranteed settlement should complete');
     assert.equal(settlementB.settlement.status, 'COMPLETED', 'Non-guaranteed settlement should complete');
     assert.ok(settlementA.settlement.reserveTopup > 0, 'Guaranteed flow should trigger reserve topup in this scenario');
     assert.ok(navA.snapshots.length >= 1, 'NAV endpoint should return at least one snapshot');
+    const withdrawalTx = transactions.transactions.find(
+        (item) => item.type === 'WITHDRAWAL' && item.subscriptionId === subA.subscription.id
+    );
+    assert(withdrawalTx, 'Transactions API should include withdrawal event after settlement');
+    assert.equal(
+        Number(withdrawalTx.netPnl?.toFixed(6)),
+        Number((settlementA.settlement.finalPayout - 1000).toFixed(6)),
+        'Withdrawal netPnl should match settled final payout minus principal'
+    );
 
     console.log('[verify] managed wealth lifecycle verification passed');
 }

@@ -11,6 +11,11 @@ import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 
 export const dynamic = 'force-dynamic';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const WITHDRAW_GUARDRAILS = {
+    cooldownHours: resolveNumberEnv('MANAGED_WITHDRAW_COOLDOWN_HOURS', 6, 0, 168),
+    earlyWithdrawalFeeRate: resolveNumberEnv('MANAGED_EARLY_WITHDRAW_FEE_RATE', 0.01, 0, 0.5),
+    drawdownAlertThreshold: resolveNumberEnv('MANAGED_WITHDRAW_DRAWDOWN_ALERT_THRESHOLD', 0.35, 0, 1),
+};
 
 type ReserveCoverageResult = {
     balance: number;
@@ -65,6 +70,14 @@ function parseStatusParam(value: string | null): ManagedSubscriptionStatus | und
         return normalized as ManagedSubscriptionStatus;
     }
     return undefined;
+}
+
+function resolveNumberEnv(name: string, fallback: number, min: number, max: number): number {
+    const raw = process.env[name];
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
 }
 
 async function getReserveCoverageAfterSubscription(
@@ -194,7 +207,13 @@ export async function GET(request: NextRequest) {
                     select: {
                         id: true,
                         status: true,
+                        principal: true,
+                        finalEquity: true,
+                        grossPnl: true,
+                        performanceFeeRate: true,
+                        performanceFee: true,
                         finalPayout: true,
+                        guaranteedPayout: true,
                         reserveTopup: true,
                         settledAt: true,
                     },
@@ -203,7 +222,10 @@ export async function GET(request: NextRequest) {
             orderBy: { createdAt: 'desc' },
         });
 
-        return NextResponse.json({ subscriptions });
+        return NextResponse.json({
+            subscriptions,
+            withdrawGuardrails: WITHDRAW_GUARDRAILS,
+        });
     } catch (error) {
         console.error('Failed to fetch managed subscriptions:', error);
         return NextResponse.json(

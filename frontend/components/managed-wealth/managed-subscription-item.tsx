@@ -14,6 +14,11 @@ export type SubscriptionStatus = 'PENDING' | 'RUNNING' | 'MATURED' | 'SETTLED' |
 
 export interface ManagedSubscriptionItemProps {
     walletAddress?: string;
+    withdrawGuardrails?: {
+        cooldownHours: number;
+        earlyWithdrawalFeeRate: number;
+        drawdownAlertThreshold: number;
+    };
     subscription: {
         id: string;
         status: SubscriptionStatus;
@@ -27,7 +32,14 @@ export interface ManagedSubscriptionItemProps {
         product: ManagedProduct;
         term: ManagedTerm;
         settlement?: {
+            principal?: number;
+            finalEquity?: number;
+            grossPnl?: number;
+            performanceFeeRate?: number;
+            performanceFee?: number;
             finalPayout: number;
+            guaranteedPayout?: number | null;
+            reserveTopup?: number;
             settledAt: string;
         } | null;
         navSnapshots: Array<{
@@ -40,7 +52,12 @@ export interface ManagedSubscriptionItemProps {
     onViewDetails: (id: string) => void;
 }
 
-export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDetails }: ManagedSubscriptionItemProps) {
+export function ManagedSubscriptionItem({
+    walletAddress,
+    subscription,
+    withdrawGuardrails,
+    onViewDetails,
+}: ManagedSubscriptionItemProps) {
     const t = useTranslations('ManagedWealth.SubscriptionItem');
     const tProducts = useTranslations('ManagedWealth.Products');
     const { createWalletAuthHeaders } = useManagedWalletAuth();
@@ -65,6 +82,12 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
     const now = Date.now();
     const trialEndTs = subscription.trialEndsAt ? new Date(subscription.trialEndsAt).getTime() : null;
     const trialActive = Boolean(subscription.isTrial && subscription.status === 'RUNNING' && trialEndTs && now <= trialEndTs);
+    const earlyWithdrawalPolicyApplies = Boolean(
+        subscription.status === 'RUNNING'
+        && subscription.endAt
+        && new Date(subscription.endAt).getTime() > now
+        && withdrawGuardrails
+    );
     const progress = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
 
     return (
@@ -203,6 +226,33 @@ export function ManagedSubscriptionItem({ walletAddress, subscription, onViewDet
                                                 <span className="text-amber-200 font-medium">
                                                     {subscription.trialEndsAt ? format(new Date(subscription.trialEndsAt), 'MMM d, HH:mm') : '--'}
                                                 </span>
+                                            </div>
+                                        )}
+                                        {earlyWithdrawalPolicyApplies && (
+                                            <div className="col-span-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-xs">
+                                                <div className="text-amber-300">{t('withdrawPolicyLabel')}</div>
+                                                <div className="mt-1 text-amber-100">
+                                                    {t('withdrawPolicyValue', {
+                                                        cooldownHours: withdrawGuardrails?.cooldownHours ?? 0,
+                                                        feeRate: `${(((withdrawGuardrails?.earlyWithdrawalFeeRate ?? 0) * 100)).toFixed(2)}%`,
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {subscription.status === 'SETTLED' && subscription.settlement && (
+                                            <div className="col-span-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs">
+                                                <div className="text-zinc-400">{t('feeBreakdown')}</div>
+                                                <div className="mt-1 flex flex-wrap items-center gap-3 text-zinc-200">
+                                                    <span>
+                                                        {t('performanceFeeLabel')}: ${Number(subscription.settlement.performanceFee ?? 0).toFixed(2)}
+                                                    </span>
+                                                    <span>
+                                                        {t('grossPnlLabel')}: {Number(subscription.settlement.grossPnl ?? 0) >= 0 ? '+' : ''}${Number(subscription.settlement.grossPnl ?? 0).toFixed(2)}
+                                                    </span>
+                                                    <span>
+                                                        {t('netPnlLabel')}: {Number((subscription.settlement.finalPayout ?? 0) - subscription.principal) >= 0 ? '+' : ''}${Number((subscription.settlement.finalPayout ?? 0) - subscription.principal).toFixed(2)}
+                                                    </span>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

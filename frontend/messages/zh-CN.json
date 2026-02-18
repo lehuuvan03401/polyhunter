@@ -161,7 +161,13 @@
             "withdrawFailed": "赎回处理失败。 请重试。",
             "finalPayout": "结算金额",
             "settledDate": "结算日期",
-            "trialEnds": "体验到期"
+            "trialEnds": "体验到期",
+            "withdrawPolicyLabel": "提前赎回规则",
+            "withdrawPolicyValue": "未到期赎回：可能触发 {cooldownHours} 小时冷静期，并收取 {feeRate} 手续费。",
+            "feeBreakdown": "结算费用分解",
+            "performanceFeeLabel": "绩效费",
+            "grossPnlLabel": "毛收益",
+            "netPnlLabel": "净收益"
         },
         "Marketplace": {
             "title": "市场",
@@ -338,6 +344,7 @@
                 "COMPLETED": "已完成",
                 "PENDING": "处理中"
             },
+            "breakdown": "毛收益 ${gross} · 绩效费 ${fee}",
             "empty": {
                 "title": "暂无交易记录",
                 "desc": "订阅策略后，您的交易记录将在此显示。"

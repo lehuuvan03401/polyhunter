@@ -161,7 +161,13 @@
             "withdrawFailed": "Failed to process withdrawal. Please try again.",
             "finalPayout": "Final Payout",
             "settledDate": "Settled Date",
-            "trialEnds": "Trial Ends"
+            "trialEnds": "Trial Ends",
+            "withdrawPolicyLabel": "Early Withdrawal Policy",
+            "withdrawPolicyValue": "Before maturity: {cooldownHours}h cooling period and {feeRate} fee may apply.",
+            "feeBreakdown": "Settlement Breakdown",
+            "performanceFeeLabel": "Performance Fee",
+            "grossPnlLabel": "Gross PnL",
+            "netPnlLabel": "Net PnL"
         },
         "Marketplace": {
             "title": "Marketplace",
@@ -338,6 +344,7 @@
                 "COMPLETED": "Done",
                 "PENDING": "Pending"
             },
+            "breakdown": "Gross ${gross} · Fee ${fee}",
             "empty": {
                 "title": "No transactions yet",
                 "desc": "Your transaction history will appear here after you subscribe to a strategy."
