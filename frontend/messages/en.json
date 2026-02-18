@@ -278,6 +278,15 @@
             "tabs": {
                 "positions": "Positions",
                 "history": "History"
+            },
+            "membership": {
+                "title": "Service Membership (Monthly/Quarterly)",
+                "desc": "Pay with USDC or MCN. MCN payments get a 50% discount.",
+                "monthly": "Monthly",
+                "quarterly": "Quarterly",
+                "activeUntil": "Active membership until:",
+                "noActive": "No active service membership.",
+                "purchaseSuccess": "Membership activated successfully."
             }
         },
         "TransactionHistory": {

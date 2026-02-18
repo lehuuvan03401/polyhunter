@@ -278,6 +278,15 @@
             "tabs": {
                 "positions": "持仓",
                 "history": "历史记录"
+            },
+            "membership": {
+                "title": "服务订阅（月/季）",
+                "desc": "可使用 USDC 或 MCN 开通；MCN 支付享 50% 折扣。",
+                "monthly": "月订阅",
+                "quarterly": "季订阅",
+                "activeUntil": "当前订阅有效期至：",
+                "noActive": "当前无生效中的服务订阅。",
+                "purchaseSuccess": "订阅开通成功。"
             }
         },
         "TransactionHistory": {

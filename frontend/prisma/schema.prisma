@@ -245,6 +245,17 @@ enum ManagedRiskAction {
   FORCE_PROTECTIVE_EXIT
 }
 
+enum ManagedMembershipPlanType {
+  MONTHLY
+  QUARTERLY
+}
+
+enum ManagedMembershipStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
 // Reserve fund ledger entry type
 enum ReserveFundEntryType {
   DEPOSIT
@@ -568,6 +579,25 @@ model ManagedRiskEvent {
 
   @@index([subscriptionId, createdAt])
   @@index([action, createdAt])
+}
+
+model ManagedMembership {
+  id           String                    @id @default(cuid())
+  walletAddress String
+  planType     ManagedMembershipPlanType
+  status       ManagedMembershipStatus   @default(ACTIVE)
+  paymentToken String                    @default("USDC") // USDC | MCN
+  basePriceUsd Float
+  discountRate Float                     @default(0)
+  finalPriceUsd Float
+  startsAt     DateTime
+  endsAt       DateTime
+  paidAt       DateTime                  @default(now())
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  @@index([walletAddress, status, endsAt])
+  @@index([walletAddress, createdAt])
 }
 
 // Individual copy trade record

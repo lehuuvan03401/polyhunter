@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus, Receipt } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus, Receipt, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { ManagedSubscriptionItem, ManagedSubscriptionItemProps } from '@/components/managed-wealth/managed-subscription-item';
 import { ManagedStatsGrid, StatItem } from '@/components/managed-wealth/managed-stats-grid';
@@ -21,6 +21,30 @@ export default function MyManagedWealthPage() {
     const [subscriptions, setSubscriptions] = useState<ManagedSubscriptionItemProps['subscription'][]>([]);
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'MATURED' | 'SETTLED'>('ALL');
     const [activeTab, setActiveTab] = useState<'positions' | 'history'>('positions');
+    const [membershipLoading, setMembershipLoading] = useState(false);
+    const [membershipPaymentToken, setMembershipPaymentToken] = useState<'USDC' | 'MCN'>('USDC');
+    const [membershipPlans, setMembershipPlans] = useState<Array<{
+        planType: 'MONTHLY' | 'QUARTERLY';
+        label: string;
+        durationDays: number;
+        basePriceUsd: number;
+        prices: {
+            USDC: number;
+            MCN: number;
+        };
+        mcnDiscountRate: number;
+    }>>([]);
+    const [activeMembership, setActiveMembership] = useState<{
+        id: string;
+        planType: 'MONTHLY' | 'QUARTERLY';
+        paymentToken: 'USDC' | 'MCN';
+        finalPriceUsd: number;
+        startsAt: string;
+        endsAt: string;
+        status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+    } | null>(null);
+    const planTypeLabel = (planType: 'MONTHLY' | 'QUARTERLY') =>
+        planType === 'MONTHLY' ? t('membership.monthly') : t('membership.quarterly');
 
     useEffect(() => {
         const fetchSubscriptions = async () => {
@@ -57,6 +81,80 @@ export default function MyManagedWealthPage() {
 
         fetchSubscriptions();
     }, [authenticated, user?.wallet?.address, statusFilter, createWalletAuthHeaders, t]);
+
+    useEffect(() => {
+        const fetchMembership = async () => {
+            if (!authenticated || !user?.wallet?.address) {
+                setActiveMembership(null);
+                setMembershipPlans([]);
+                return;
+            }
+
+            setMembershipLoading(true);
+            try {
+                const plansRes = await fetch('/api/managed-membership/plans');
+                const plansData = await plansRes.json();
+                if (!plansRes.ok) throw new Error(plansData?.error || t('errors.fetchFailed'));
+                setMembershipPlans(plansData.plans || []);
+
+                const query = new URLSearchParams({ wallet: user.wallet.address }).toString();
+                const path = `/api/managed-membership?${query}`;
+                const walletHeaders = await createWalletAuthHeaders({
+                    walletAddress: user.wallet.address,
+                    method: 'GET',
+                    pathWithQuery: path,
+                });
+                const membershipRes = await fetch(path, { headers: walletHeaders });
+                const membershipData = await membershipRes.json();
+                if (!membershipRes.ok) throw new Error(membershipData?.error || t('errors.fetchFailed'));
+                setActiveMembership(membershipData.activeMembership || null);
+            } catch (error) {
+                toast.error(error instanceof Error ? error.message : t('errors.fetchFailed'));
+            } finally {
+                setMembershipLoading(false);
+            }
+        };
+
+        fetchMembership();
+    }, [authenticated, user?.wallet?.address, createWalletAuthHeaders, t]);
+
+    const createMembership = async (planType: 'MONTHLY' | 'QUARTERLY') => {
+        if (!user?.wallet?.address) {
+            toast.error(t('errors.fetchFailed'));
+            return;
+        }
+        setMembershipLoading(true);
+        try {
+            const path = '/api/managed-membership';
+            const walletHeaders = await createWalletAuthHeaders({
+                walletAddress: user.wallet.address,
+                method: 'POST',
+                pathWithQuery: path,
+            });
+
+            const res = await fetch(path, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...walletHeaders,
+                },
+                body: JSON.stringify({
+                    walletAddress: user.wallet.address,
+                    planType,
+                    paymentToken: membershipPaymentToken,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || t('errors.fetchFailed'));
+
+            setActiveMembership(data.membership || null);
+            toast.success(t('membership.purchaseSuccess'));
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : t('errors.fetchFailed'));
+        } finally {
+            setMembershipLoading(false);
+        }
+    };
 
     const stats = useMemo<StatItem[]>(() => {
         const totalPrincipal = subscriptions.reduce((acc, sub) => acc + sub.principal, 0);
@@ -154,6 +252,68 @@ export default function MyManagedWealthPage() {
             <ManagedStatsGrid stats={stats} />
 
             <div className="mt-12 relative z-10">
+                <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <div className="flex items-center gap-2 text-white font-semibold">
+                                <Sparkles className="h-4 w-4 text-amber-400" />
+                                {t('membership.title')}
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-1">{t('membership.desc')}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setMembershipPaymentToken('USDC')}
+                                className={`rounded-full px-3 py-1 text-xs border transition ${membershipPaymentToken === 'USDC'
+                                    ? 'border-blue-500 bg-blue-500/10 text-blue-300'
+                                    : 'border-white/10 text-zinc-400 hover:text-white'
+                                    }`}
+                            >
+                                USDC
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMembershipPaymentToken('MCN')}
+                                className={`rounded-full px-3 py-1 text-xs border transition ${membershipPaymentToken === 'MCN'
+                                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300'
+                                    : 'border-white/10 text-zinc-400 hover:text-white'
+                                    }`}
+                            >
+                                MCN
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="mt-3 text-xs text-zinc-400">
+                        {activeMembership ? (
+                            <span>
+                                {t('membership.activeUntil')} {new Date(activeMembership.endsAt).toLocaleString()}
+                            </span>
+                        ) : (
+                            <span>{t('membership.noActive')}</span>
+                        )}
+                    </div>
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {membershipPlans.map((plan) => (
+                            <button
+                                key={plan.planType}
+                                type="button"
+                                disabled={membershipLoading || Boolean(activeMembership)}
+                                onClick={() => createMembership(plan.planType)}
+                                className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-left hover:border-white/20 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                                <div className="text-sm font-semibold text-white">{planTypeLabel(plan.planType)}</div>
+                                <div className="text-xs text-zinc-400 mt-1">{plan.durationDays}d</div>
+                                <div className="text-sm text-emerald-300 mt-2">
+                                    ${membershipPaymentToken === 'MCN' ? plan.prices.MCN : plan.prices.USDC}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 {/* Tab Bar */}
                 <div className="flex items-center gap-1 mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-1 w-fit">
                     {(['positions', 'history'] as const).map((tab) => (
