@@ -285,8 +285,37 @@
                 "monthly": "月订阅",
                 "quarterly": "季订阅",
                 "activeUntil": "当前订阅有效期至：",
+                "activePlan": "当前方案",
+                "expiringSoon": "即将到期（剩余约 {days} 天）",
+                "viewHistory": "查看订阅历史",
                 "noActive": "当前无生效中的服务订阅。",
                 "purchaseSuccess": "订阅开通成功。"
+            }
+        },
+        "MembershipHistory": {
+            "title": "服务订阅历史",
+            "subtitle": "查看当前与历史月/季服务订阅记录。",
+            "backToDashboard": "返回我的托管",
+            "payment": "支付信息",
+            "startsAt": "开始时间",
+            "endsAt": "结束时间",
+            "empty": "暂无订阅记录。",
+            "filters": {
+                "ALL": "全部",
+                "ACTIVE": "生效中",
+                "EXPIRED": "已过期",
+                "CANCELLED": "已取消"
+            },
+            "status": {
+                "ACTIVE": "生效中",
+                "EXPIRED": "已过期",
+                "CANCELLED": "已取消"
+            },
+            "unauth": {
+                "title": "订阅历史",
+                "desc": "连接钱包后查看您的服务订阅历史。",
+                "connect": "连接钱包",
+                "connecting": "连接中..."
             }
         },
         "TransactionHistory": {

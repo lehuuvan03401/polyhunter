@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import {
@@ -16,6 +17,7 @@ const createMembershipSchema = z.object({
     planType: z.enum(['MONTHLY', 'QUARTERLY']),
     paymentToken: z.enum(['USDC', 'MCN']).optional().default('USDC'),
 });
+const membershipStatusSchema = z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']);
 
 type ManagedMembershipRow = {
     id: string;
@@ -58,40 +60,64 @@ export async function GET(request: NextRequest) {
             requireHeader: true,
             requireSignature: true,
         });
+        const rawStatus = searchParams.get('status');
+        const parsedStatus = rawStatus ? membershipStatusSchema.safeParse(rawStatus.toUpperCase()) : null;
+        const parsedLimit = Number(searchParams.get('limit') ?? 20);
+        const limit = Number.isFinite(parsedLimit) ? Math.min(100, Math.max(1, Math.floor(parsedLimit))) : 20;
 
         if (!walletContext.ok) {
             return NextResponse.json({ error: walletContext.error }, { status: walletContext.status });
+        }
+        if (parsedStatus && !parsedStatus.success) {
+            return NextResponse.json(
+                { error: 'Invalid status', allowed: membershipStatusSchema.options },
+                { status: 400 }
+            );
         }
 
         const now = new Date();
         await expireOutdatedMemberships(walletContext.wallet, now);
 
-        const memberships = await prisma.$queryRaw<ManagedMembershipRow[]>`
-            SELECT
-              "id",
-              "walletAddress",
-              "planType",
-              "status",
-              "paymentToken",
-              "basePriceUsd",
-              "discountRate",
-              "finalPriceUsd",
-              "startsAt",
-              "endsAt",
-              "paidAt",
-              "createdAt",
-              "updatedAt"
-            FROM "ManagedMembership"
-            WHERE "walletAddress" = ${walletContext.wallet}
-            ORDER BY "createdAt" DESC
-            LIMIT 20
+        const membershipSelect = Prisma.sql`
+          SELECT
+            "id",
+            "walletAddress",
+            "planType",
+            "status",
+            "paymentToken",
+            "basePriceUsd",
+            "discountRate",
+            "finalPriceUsd",
+            "startsAt",
+            "endsAt",
+            "paidAt",
+            "createdAt",
+            "updatedAt"
+          FROM "ManagedMembership"
+          WHERE "walletAddress" = ${walletContext.wallet}
+          ${parsedStatus ? Prisma.sql`AND "status" = ${parsedStatus.data}` : Prisma.empty}
+          ORDER BY "createdAt" DESC
+          LIMIT ${limit}
         `;
+        const memberships = await prisma.$queryRaw<ManagedMembershipRow[]>(membershipSelect);
 
         const activeMembership = memberships.find(
             (membership) => membership.status === 'ACTIVE' && membership.endsAt > now
         ) ?? null;
+        const activeMembershipAlert = activeMembership
+            ? (() => {
+                const remainingMs = activeMembership.endsAt.getTime() - now.getTime();
+                const remainingHours = Math.max(0, Math.ceil(remainingMs / (60 * 60 * 1000)));
+                const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+                return {
+                    isExpiringSoon: remainingMs <= 3 * 24 * 60 * 60 * 1000,
+                    remainingHours,
+                    remainingDays,
+                };
+            })()
+            : null;
 
-        return NextResponse.json({ memberships, activeMembership });
+        return NextResponse.json({ memberships, activeMembership, activeMembershipAlert });
     } catch (error) {
         console.error('Failed to fetch managed memberships:', error);
         return NextResponse.json({ error: 'Failed to fetch managed memberships' }, { status: 500 });

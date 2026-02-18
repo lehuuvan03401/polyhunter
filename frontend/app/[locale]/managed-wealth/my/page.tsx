@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus, Receipt, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, TrendingUp, Wallet, PieChart, Plus, Receipt, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { ManagedSubscriptionItem, ManagedSubscriptionItemProps } from '@/components/managed-wealth/managed-subscription-item';
 import { ManagedStatsGrid, StatItem } from '@/components/managed-wealth/managed-stats-grid';
@@ -42,6 +42,11 @@ export default function MyManagedWealthPage() {
         startsAt: string;
         endsAt: string;
         status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+    } | null>(null);
+    const [activeMembershipAlert, setActiveMembershipAlert] = useState<{
+        isExpiringSoon: boolean;
+        remainingHours: number;
+        remainingDays: number;
     } | null>(null);
     const planTypeLabel = (planType: 'MONTHLY' | 'QUARTERLY') =>
         planType === 'MONTHLY' ? t('membership.monthly') : t('membership.quarterly');
@@ -86,6 +91,7 @@ export default function MyManagedWealthPage() {
         const fetchMembership = async () => {
             if (!authenticated || !user?.wallet?.address) {
                 setActiveMembership(null);
+                setActiveMembershipAlert(null);
                 setMembershipPlans([]);
                 return;
             }
@@ -108,6 +114,7 @@ export default function MyManagedWealthPage() {
                 const membershipData = await membershipRes.json();
                 if (!membershipRes.ok) throw new Error(membershipData?.error || t('errors.fetchFailed'));
                 setActiveMembership(membershipData.activeMembership || null);
+                setActiveMembershipAlert(membershipData.activeMembershipAlert || null);
             } catch (error) {
                 toast.error(error instanceof Error ? error.message : t('errors.fetchFailed'));
             } finally {
@@ -287,9 +294,20 @@ export default function MyManagedWealthPage() {
 
                     <div className="mt-3 text-xs text-zinc-400">
                         {activeMembership ? (
-                            <span>
-                                {t('membership.activeUntil')} {new Date(activeMembership.endsAt).toLocaleString()}
-                            </span>
+                            <div className="flex flex-col gap-2">
+                                <span>
+                                    {t('membership.activeUntil')} {new Date(activeMembership.endsAt).toLocaleString()}
+                                </span>
+                                <span>
+                                    {t('membership.activePlan')}: {planTypeLabel(activeMembership.planType)}
+                                </span>
+                                {activeMembershipAlert?.isExpiringSoon && (
+                                    <span className="inline-flex w-fit items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        {t('membership.expiringSoon', { days: activeMembershipAlert.remainingDays })}
+                                    </span>
+                                )}
+                            </div>
                         ) : (
                             <span>{t('membership.noActive')}</span>
                         )}
@@ -311,6 +329,14 @@ export default function MyManagedWealthPage() {
                                 </div>
                             </button>
                         ))}
+                    </div>
+                    <div className="mt-4">
+                        <Link
+                            href="/managed-wealth/membership"
+                            className="text-xs text-blue-300 hover:text-blue-200 transition-colors"
+                        >
+                            {t('membership.viewHistory')}
+                        </Link>
                     </div>
                 </div>
 

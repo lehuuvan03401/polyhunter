@@ -285,8 +285,37 @@
                 "monthly": "Monthly",
                 "quarterly": "Quarterly",
                 "activeUntil": "Active membership until:",
+                "activePlan": "Current plan",
+                "expiringSoon": "Expiring soon (about {days} day(s) left)",
+                "viewHistory": "View membership history",
                 "noActive": "No active service membership.",
                 "purchaseSuccess": "Membership activated successfully."
+            }
+        },
+        "MembershipHistory": {
+            "title": "Membership History",
+            "subtitle": "Review current and past monthly/quarterly memberships.",
+            "backToDashboard": "Back to My Managed",
+            "payment": "Payment",
+            "startsAt": "Starts At",
+            "endsAt": "Ends At",
+            "empty": "No membership records yet.",
+            "filters": {
+                "ALL": "All",
+                "ACTIVE": "Active",
+                "EXPIRED": "Expired",
+                "CANCELLED": "Cancelled"
+            },
+            "status": {
+                "ACTIVE": "Active",
+                "EXPIRED": "Expired",
+                "CANCELLED": "Cancelled"
+            },
+            "unauth": {
+                "title": "Membership History",
+                "desc": "Connect your wallet to view your membership history.",
+                "connect": "Connect Wallet",
+                "connecting": "Connecting..."
             }
         },
         "TransactionHistory": {

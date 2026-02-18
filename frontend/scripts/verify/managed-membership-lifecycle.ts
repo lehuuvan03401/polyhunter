@@ -49,6 +49,22 @@ interface MembershipResponse {
     };
 }
 
+interface MembershipListResponse {
+    memberships: Array<{
+        id: string;
+        status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+    }>;
+    activeMembership: {
+        id: string;
+        status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+    } | null;
+    activeMembershipAlert: {
+        isExpiringSoon: boolean;
+        remainingHours: number;
+        remainingDays: number;
+    } | null;
+}
+
 async function api<T>(
     path: string,
     init?: RequestInit,
@@ -128,6 +144,18 @@ async function main(): Promise<void> {
     assert.equal(created.membership.basePriceUsd, 88, 'Expected monthly base price');
     assert.equal(created.membership.discountRate, 0.5, 'Expected 50% discount');
     assert.equal(created.membership.finalPriceUsd, 44, 'Expected discounted final price');
+
+    const activeOnly = await api<MembershipListResponse>(
+        `/api/managed-membership?wallet=${wallet}&status=ACTIVE&limit=10`,
+        undefined,
+        wallet,
+        signer,
+        200
+    );
+    assert.equal(activeOnly.memberships.length, 1, 'Expected one ACTIVE membership in filter response');
+    assert.equal(activeOnly.activeMembership?.id, created.membership.id, 'Expected active membership id to match created id');
+    assert(activeOnly.activeMembershipAlert, 'Expected active membership alert payload');
+    assert.equal(activeOnly.activeMembershipAlert?.isExpiringSoon, false, 'New monthly plan should not be expiring soon');
 
     await api<{ error: string }>(
         '/api/managed-membership',
