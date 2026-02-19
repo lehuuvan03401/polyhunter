@@ -90,6 +90,10 @@ let executionProvider: ethers.providers.JsonRpcProvider | null = null;
 // ============================================================================
 
 const REFRESH_INTERVAL_MS = 60_000; // Refresh active configs every minute
+
+// =========================
+// 基础执行配置
+// =========================
 const API_BASE_URL = process.env.COPY_TRADING_API_URL || 'http://localhost:3000';
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
 const WORKER_KEYS = (process.env.COPY_TRADING_WORKER_KEYS || '')
@@ -99,6 +103,10 @@ const WORKER_KEYS = (process.env.COPY_TRADING_WORKER_KEYS || '')
 const WORKER_INDEX = parseInt(process.env.COPY_TRADING_WORKER_INDEX || '0', 10);
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const PENDING_EXPIRY_MINUTES = 10;
+
+// =========================
+// RPC 与准入控制
+// =========================
 const EXECUTION_RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .split(',')
     .map((url) => url.trim())
@@ -116,6 +124,10 @@ const WORKER_ALLOWLIST = (process.env.COPY_TRADING_WORKER_ALLOWLIST || '')
 const POLY_API_KEY = process.env.POLY_API_KEY;
 const POLY_API_SECRET = process.env.POLY_API_SECRET;
 const POLY_API_PASSPHRASE = process.env.POLY_API_PASSPHRASE;
+
+// =========================
+// 频率与监控阈值
+// =========================
 const MAX_TRADE_USD = Number(process.env.COPY_TRADING_MAX_TRADE_USD || '0');
 const GLOBAL_ORDER_LIMIT_PER_MIN = parseInt(process.env.COPY_TRADING_GLOBAL_ORDERS_PER_MIN || '90', 10);
 const USER_ORDER_LIMIT_PER_MIN = parseInt(
@@ -130,6 +142,10 @@ const PROXY_CHECK_LIMIT = parseInt(process.env.COPY_TRADING_PROXY_CHECK_LIMIT ||
 const MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_MAX_RETRY_ATTEMPTS || '2', 10);
 const RETRY_BACKOFF_MS = parseInt(process.env.COPY_TRADING_RETRY_BACKOFF_MS || '60000', 10);
 const RETRY_INTERVAL_MS = parseInt(process.env.COPY_TRADING_RETRY_INTERVAL_MS || '60000', 10);
+
+// =========================
+// 结算与报销账本
+// =========================
 const ASYNC_SETTLEMENT = process.env.COPY_TRADING_ASYNC_SETTLEMENT === 'true'
     || process.env.COPY_TRADING_ASYNC_SETTLEMENT === '1';
 const SETTLEMENT_MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS || '5', 10);
@@ -147,6 +163,10 @@ const LEDGER_MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_LEDGER_MAX_R
 const LEDGER_RETRY_BACKOFF_MS = parseInt(process.env.COPY_TRADING_LEDGER_RETRY_BACKOFF_MS || '60000', 10);
 const LEDGER_CLAIM_BATCH = parseInt(process.env.COPY_TRADING_LEDGER_CLAIM_BATCH || '50', 10);
 const LEDGER_OUTSTANDING_TTL_MS = 5000;
+
+// =========================
+// 全局风控与价格策略
+// =========================
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
@@ -188,6 +208,7 @@ if (MARKET_CAPS_RAW) {
 }
 
 const quoteCache = new Map<string, { price: number; fetchedAt: number; source: string }>();
+// inFlight map 用于“同 key 请求合并”，避免同一时刻重复抓盘口。
 const quoteInFlight = new Map<string, Promise<{ price: number; fetchedAt: number; source: string } | null>>();
 const quoteStats = {
     hits: 0,
@@ -199,6 +220,7 @@ const priceSourceStats = {
     fallback: 0,
 };
 const preflightCache = new Map<string, { value: any; fetchedAt: number }>();
+// 预检缓存同样做 inflight 去重，降低余额/授权并发查询成本。
 const preflightInFlight = new Map<string, Promise<any>>();
 const preflightStats = {
     hits: 0,
@@ -672,6 +694,10 @@ async function refreshConfigs(): Promise<void> {
         activeConfigs = newMap;
         watchedAddresses = newSet;
 
+        // 运行时配置采用“定期全量刷新 + 内存索引”模型：
+        // - DB 是权威源（isActive、参数更新）
+        // - activeConfigs/watchedAddresses 是热路径读取结构（O(1) 命中）
+        // 这样可以在高频 trade 流中避免每笔都查库。
         console.log(`[Worker] Updated: Monitoring ${configs.length} configs for ${newSet.size} traders.`);
 
         // Refresh WS subscription if we are using address filters
@@ -775,6 +801,9 @@ function subscribeToActivityIfNeeded(): void {
         console.log('[Worker] Activity subscription: all-activity');
     }
 
+    // 订阅重建策略：
+    // 仅当“订阅模式或地址集合发生变化”才重建，避免无意义的 WS 抖动。
+    // filtered 模式可显著降低事件量，all 模式作为兜底。
     lastSubscriptionKey = nextKey;
     lastSubscriptionMode = nextMode;
 }
@@ -852,6 +881,7 @@ async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Pr
     const inflight = preflightInFlight.get(key);
     if (inflight) {
         preflightStats.inflightHits++;
+        // 同 key 并发去重：多个请求共享同一个 Promise，避免重复 RPC 调用。
         return inflight as Promise<T>;
     }
 
@@ -931,6 +961,10 @@ async function fetchFreshPrice(
 
     quoteStats.misses++;
 
+    // 价格优先级：
+    // 1) orderbook 报价（交易执行权威）
+    // 2) fallback（trade 事件价格，需通过 TTL 约束新鲜度）
+    // 这样既保证执行准确性，又在盘口短时不可用时保持系统可用。
     const fetchPromise = (async () => {
         try {
             const fetchedAt = Date.now();
@@ -1049,6 +1083,9 @@ async function checkExecutionGuardrails(
     const source = context.source || 'worker';
     const marketSlug = context.marketSlug?.toLowerCase();
 
+    // Guardrail 采用“短路失败”顺序：
+    // 全局开关 -> 白名单 -> 单笔上限 -> 日额度 -> 窗口频率 -> dry-run
+    // 一旦命中立即返回并记录事件，避免多余数据库与链上查询开销。
     if (EMERGENCY_PAUSE) {
         await recordGuardrailEvent({ reason: 'EMERGENCY_PAUSE', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
         return { allowed: false, reason: 'EMERGENCY_PAUSE' };
@@ -1158,6 +1195,10 @@ async function preflightExecution(
         return { allowed: false, reason: 'INVALID_PRICE', adjustedCopySize: copySize, adjustedCopyShares: 0 };
     }
 
+    // preflight 目标不是“保证成功”，而是尽可能在下单前排除高概率失败：
+    // - 授权不足
+    // - 资金不足
+    // - 卖出份额超过真实可用仓位（自动降规模）
     const allowanceKey = buildPreflightKey([
         'allowance',
         proxyAddress,
@@ -1592,6 +1633,9 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                     }
                 }
 
+                // 执行前“决策门”：
+                // shouldExecuteCandidate=true 才会进入真实下单，
+                // 否则也会 prewrite 一条 SKIPPED 记录，保证可观测性与审计完整性。
                 const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
                 const execPrice = copySide === 'BUY'
                     ? basePrice * (1 + fixedSlippage)
@@ -1747,6 +1791,10 @@ async function handleRealtimeTrade(trade: ActivityTrade): Promise<void> {
                 // ========================================
                 // Reconcile: Await Prewrite & Update Status
                 // ========================================
+                // 这里是防“孤儿订单”的关键：
+                // - 先发起 prewrite，再并行发起执行
+                // - 最终必须拿到 DB 记录 ID 再回写结果
+                // 这样即使执行很快，也不会出现链上成交但数据库无记录。
                 let copyTrade: any = null;
                 try {
                     // Await the prewrite to get the record ID
@@ -1918,20 +1966,9 @@ async function recoverPendingTrades(): Promise<void> {
         for (const trade of pendingTrades) {
             console.log(`   Processing Trade ${trade.id} (${trade.copySize} ${trade.originalSide})...`);
 
-            // We need to infer 'usedBotFloat'. 
-            // Ideally we store this in DB, but for now we can infer or retry safely.
-            // Only BUYs use float. If we used float, we need to reimburse.
-            // Recovery method handles logic: checks if push needed, checks if reimburse needed.
-            // But wait, `recoverSettlement` relies on us passing `usedBotFloat`.
-            // Without DB column, we might assume NO (safer for Bot, worse for Proxy if we double charge? No).
-            // If we assume NO (standard), we just Push Tokens/USDC. We DONT reimburse.
-            // If we assume YES (float), we reimburse.
-
-            // RISK: If we used Float but claim NO, Bot loses money (never reimbursed).
-            // FIX: We should add `usedFloat` to CopyTrade model or `metadata`. 
-            // FOR NOW: We will assume logic based on `trade.errorMessage`. 
-            // Or better, just try standard push (safe for User). Bot eats loss if Float failed.
-            // The User asked for "Safety". Primary safety is User funds.
+            // 结算恢复策略：
+            // 只处理 SETTLEMENT_PENDING，按 retry/backoff 扫描。
+            // 核心目标是把“已成交但未归集”的资产补齐，恢复到账务一致状态。
 
             const isBuy = trade.originalSide === 'BUY'; // Wait, need copySide? Saved in originalSide?
             // originalSide is what Trader did. copySide might be diff (Counter).
@@ -2182,6 +2219,10 @@ async function flushReimbursementLedger(): Promise<void> {
             || group.total >= LEDGER_FLUSH_AMOUNT
             || ageMs >= LEDGER_MAX_AGE_MS;
 
+        // 批量报销触发条件：
+        // - 金额达到阈值
+        // - 或等待时间超过阈值
+        // 通过“以 proxy 聚合”减少链上小额高频转账。
         if (!shouldFlush) {
             await releaseReimbursementLedgerEntries(group.entries);
             continue;
@@ -2341,6 +2382,9 @@ async function retryFailedTrades(): Promise<void> {
 
             const execStart = Date.now();
             try {
+                // Retry 路径与实时路径保持同一执行语义：
+                // preflight -> executeOrderWithProxy -> persistence，
+                // 保证首单与重试行为一致，避免“修复路径”引入新偏差。
                 const result = await timeStage('execution', () => executionService.executeOrderWithProxy({
                     tradeId: trade.id,
                     walletAddress: trade.config.walletAddress,
@@ -2504,6 +2548,8 @@ async function claimCopyTrades(options: {
         data: { lockedAt: now, lockedBy: lockOwner },
     });
 
+    // 二次读取 lockedBy=lockOwner 的记录，确保“抢锁成功集合”准确，
+    // 避免多 worker 并发下把未抢到锁的记录误当成已认领任务。
     return prisma.copyTrade.findMany({
         where: { id: { in: ids }, lockedBy: lockOwner },
         include: options.include,

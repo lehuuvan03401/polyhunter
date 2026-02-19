@@ -13,6 +13,7 @@ const redactConfigSecrets = (config: any) => {
     if (!config) return config;
     return {
         ...config,
+        // 任何返回到客户端的配置对象都必须脱敏，避免密钥二次泄漏。
         encryptedKey: null,
         iv: null,
         apiKey: null,
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Fetch real trader profile if name not provided or generic
+        // 若前端未提供有效昵称，则回源查询 trader profile 补齐展示名。
         let finalTraderName = traderName;
         if (!finalTraderName || finalTraderName.startsWith('Trader 0x')) {
             try {
@@ -151,13 +152,13 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Determine mode: percentage, fixed_amount, or range
+        // 统一映射前端模式字段到数据库枚举，避免多种别名写入 DB。
         let copyMode: 'PERCENTAGE' | 'FIXED_AMOUNT' = 'PERCENTAGE';
         if (mode === 'fixed_amount' || mode === 'Fixed $') {
             copyMode = 'FIXED_AMOUNT';
         }
 
-        // Encryption logic for EOA Mode
+        // EOA 私钥只允许以密文入库，明文仅在请求上下文存在。
         let encryptedKey: string | null = null;
         let iv: string | null = null;
 
@@ -178,7 +179,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Helper to encrypt API Credential (stores as IV:DATA)
+        // API 凭据按 “iv:ciphertext” 合并存储，便于单字段管理。
         const encryptField = (text: string): string | null => {
             if (!text) return null;
             try {
@@ -276,7 +277,7 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        // Soft delete by setting isActive to false
+        // 软删除而非硬删除：保留历史交易关联与审计可追溯性。
         await prisma.copyTradingConfig.update({
             where: { id: configId },
             data: { isActive: false },
@@ -323,7 +324,7 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
-        // Build update data
+        // 白名单式更新：只接受明确允许的字段，避免误改关键配置。
         const updateData: Record<string, unknown> = {};
         if (updates.sizeScale !== undefined) updateData.sizeScale = updates.sizeScale;
         if (updates.fixedAmount !== undefined) updateData.fixedAmount = updates.fixedAmount;
@@ -333,7 +334,7 @@ export async function PATCH(request: NextRequest) {
         if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
         if (updates.strategyProfile !== undefined) updateData.strategyProfile = updates.strategyProfile;
 
-        // Handle API Credential Updates
+        // API 凭据更新同样走加密路径，禁止明文覆写。
         const encryptFieldUpdate = (text: string) => {
             const { encryptedData, iv } = EncryptionService.encrypt(text);
             return `${iv}:${encryptedData}`;

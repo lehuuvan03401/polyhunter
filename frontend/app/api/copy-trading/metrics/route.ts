@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         const cacheKey = `metrics:${normalizedWallet}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
 
-            // 1. Get All Positions (for Invested Funds & Unrealized PnL)
+            // 1) 读取当前持仓，用于计算未实现盈亏和活跃仓位。
             const allPositions = await prisma.userPosition.findMany({
                 where: {
                     walletAddress: normalizedWallet,
@@ -57,11 +57,12 @@ export async function GET(request: Request) {
                 !p.tokenId.startsWith('synthetic-')
             );
 
-            // Note: totalInvested will be calculated AFTER fetching prices to filter out settled positions
+            // totalInvested 在拿到价格/结算状态后再计算：
+            // 只统计 OPEN 仓位，避免把已结算仓位重复计入“当前投入”。
             let totalInvested = 0;
             let activePositions = 0;
 
-            // 2. Fetch Current Prices for Unrealized PnL and Status Detection
+            // 2) 拉当前价格（CLOB 优先，Gamma 回退），计算未实现盈亏。
             let unrealizedPnL = 0;
 
             if (positions.length > 0) {
@@ -95,8 +96,9 @@ export async function GET(request: Request) {
 
                     const tokensNeedingGamma = tokenIds.filter((tid) => !clobPriceMap.has(tid) && gammaPriceCache.get(tid) === undefined);
 
-                    // Fallback: Fetch Gamma prices AND market resolution using marketSlug from CopyTrade metadata
-                    // For resolution check, we need metadata for ALL positions, not just ones needing Gamma prices
+                    // Gamma 兼顾两件事：
+                    // - 为缺盘口 token 提供回退价格
+                    // - 判断市场是否已结算（用于 activePositions 与 totalInvested 口径）
                     const tradeMetadata = await prisma.copyTrade.findMany({
                         where: { tokenId: { in: tokenIds } },
                         select: { tokenId: true, marketSlug: true, outcome: true, conditionId: true },
@@ -119,7 +121,7 @@ export async function GET(request: Request) {
                         }
                     });
 
-                    // Collect unique slugs AND conditionIds to query (matching positions API logic)
+                    // 查询键与 positions 接口保持一致：slug 优先，conditionId 回退。
                     const jobs = new Map<string, { type: 'slug' | 'condition', value: string }>();
                     tokenIds.forEach(tid => {
                         const info = metadataMap.get(tid);
@@ -220,7 +222,7 @@ export async function GET(request: Request) {
                     // Build a price map for all positions for status detection
                     const positionPriceMap = new Map<string, number>();
 
-                    // Calculate PnL per position, prioritizing CLOB, then Gamma, then entry price
+                    // 单仓价格优先级：CLOB -> Gamma -> Entry。
                     positions.forEach(pos => {
                         let currentPrice = pos.avgEntryPrice; // Default to entry price (neutral PnL)
 
@@ -242,8 +244,8 @@ export async function GET(request: Request) {
                         unrealizedPnL += profit;
                     });
 
-                    // Calculate totalInvested for OPEN positions only
-                    // Settled: price >= 0.95 (WIN) or <= 0.05 (LOSS) OR market resolved via Gamma
+                    // totalInvested 只累计 OPEN 仓位成本：
+                    // settled 判定 = 价格极值(>=0.95/<=0.05) 或 Gamma 标记已结算。
                     let openCount = 0;
                     let settledByPrice = 0;
                     let settledByResolution = 0;
@@ -274,8 +276,9 @@ export async function GET(request: Request) {
                 activePositions = 0;
             }
 
-            // 3. Calculate Realized/Trading PnL from completed trades
-            // This represents the execution slippage (buy price vs sell price for closed positions)
+            // 3) 计算已实现盈亏：
+            // - 优先使用 copyTrade.realizedPnL
+            // - 对缺失 realizedPnL 的 SELL 再做回补估算
             let realizedPnL = 0;
             let tradingPnL = 0; // Separate metric for trading execution cost
             let realizedWins = 0;
@@ -316,7 +319,7 @@ export async function GET(request: Request) {
                     realizedWins = winsSum._sum.realizedPnL || 0;
                     realizedLosses = lossesSum._sum.realizedPnL || 0;
 
-                    // Settlement-only realized PnL (aligns with WON/LOST views)
+                    // settlementPnL 单独统计，用于对齐 WON/LOST 视图。
                     const settlementTrades = await prisma.copyTrade.findMany({
                         where: {
                             configId: { in: configIds },
@@ -347,7 +350,8 @@ export async function GET(request: Request) {
 
                     cumulativeInvestment = allBuys.reduce((sum, t) => sum + (t.copySize || 0), 0);
 
-                    // Fallback: For trades WITHOUT stored realizedPnL, calculate manually
+                    // 回补口径：
+                    // 用 BUY 成本基准 + SELL 成交价估算 profit，减少历史数据缺字段的影响。
                     const sellTradesWithoutPnL = await prisma.copyTrade.findMany({
                         where: {
                             configId: { in: configIds },
@@ -369,8 +373,8 @@ export async function GET(request: Request) {
                             select: { tokenId: true, copySize: true, copyPrice: true, originalPrice: true }
                         });
 
-                        // Build cost basis map
-                        const costBasisMap = new Map<string, { totalCost: number, totalShares: number }>();
+                    // 构建 token 维度成本基准（总成本/总份额）。
+                    const costBasisMap = new Map<string, { totalCost: number, totalShares: number }>();
                         buyTrades.forEach(t => {
                             if (!t.tokenId) return;
                             const existing = costBasisMap.get(t.tokenId) || { totalCost: 0, totalShares: 0 };
@@ -407,8 +411,7 @@ export async function GET(request: Request) {
                 console.warn('Failed to calculate realized PnL:', err);
             }
 
-            // Enforce Consistency (Fix Rounding Errors)
-            // realizedWins + realizedLosses MUST equal realizedPnL/tradingPnL
+            // 统一收敛口径：防止浮点与路径差异导致字段不一致。
             realizedPnL = realizedWins + realizedLosses;
             tradingPnL = realizedWins + realizedLosses;
             const settlementPnL = settlementWins + settlementLosses;

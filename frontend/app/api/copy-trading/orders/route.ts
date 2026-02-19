@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
 
         const cacheKey = `orders:${walletAddress.toLowerCase()}:${tradeId || 'all'}:${status || 'all'}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
+            // 读取接口使用短 TTL 缓存，避免频繁刷新页面时对 DB 造成压力。
             // Build query
             const where: Record<string, unknown> = {
                 config: {
@@ -62,8 +63,10 @@ export async function GET(request: NextRequest) {
 
             if (status) {
                 const statusUpper = status.toUpperCase();
-                // Map 'OPEN' (client term) to 'PENDING' (DB term)
-                // Use explicit mapping or raw enum check to avoid crash
+                // 状态口径兼容：
+                // - 前端常用 OPEN
+                // - 数据库存的是 PENDING
+                // 非法状态直接忽略，避免 enum 抛错导致 500。
                 if (statusUpper === 'OPEN') {
                     where.status = 'PENDING';
                 } else if (['PENDING', 'EXECUTED', 'SETTLEMENT_PENDING', 'FAILED', 'SKIPPED', 'EXPIRED'].includes(statusUpper)) {
@@ -141,6 +144,8 @@ export async function GET(request: NextRequest) {
                 executedAt: trade.executedAt,
                 errorMessage: trade.errorMessage,
                 // Filled info - would come from CLOB API in production
+                // 当前仅做本地推导：EXECUTED 视为 100% filled。
+                // 若后续接入真实 CLOB 订单状态，应以链路实际撮合结果覆盖此字段。
                 filledSize: trade.status === 'EXECUTED' ? trade.copySize : 0,
                 filledPercent: trade.status === 'EXECUTED' ? 100 : 0,
                 leaderSize: trade.originalSize,
@@ -160,6 +165,7 @@ export async function GET(request: NextRequest) {
             });
 
             // Get stats (only from actual trades)
+            // 这里统计的是“映射后的展示状态”，用于前端看板摘要。
             const stats = {
                 total: orders.length,
                 pending: orders.filter((o: OrderItem) => o.status === 'PENDING' || o.status === 'SETTLEMENT_PENDING').length,
@@ -186,6 +192,7 @@ export async function GET(request: NextRequest) {
  * Map internal trade status to order status
  */
 function mapTradeStatusToOrderStatus(tradeStatus: string): OrderStatus {
+    // 统一把内部 copyTrade 状态映射到前端订单语义，避免 UI 直接感知底层状态枚举。
     switch (tradeStatus) {
         case 'PENDING':
             return 'PENDING';
@@ -252,7 +259,8 @@ export async function POST(request: NextRequest) {
          * }
          */
 
-        // For now, just return current status
+        // 当前实现是“本地状态回显”占位。
+        // 后续如果接入 CLOB 状态轮询，可在此处把挂单状态回写 DB 后再返回。
         const orders = await prisma.copyTrade.findMany({
             where: {
                 config: {

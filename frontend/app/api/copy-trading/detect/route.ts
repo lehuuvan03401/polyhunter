@@ -39,10 +39,10 @@ function calculateCopySize(
         return Math.min(config.fixedAmount, config.maxSizePerTrade);
     }
 
-    // PROPORTIONAL mode - scale based on original trade size
+    // PROPORTIONAL 模式：以原单名义价值做缩放。
     const scaledValue = originalValue * (config.sizeScale || 1);
 
-    // Range mode - clamp between min and max
+    // 区间约束：最终金额必须落在 [minSizePerTrade, maxSizePerTrade] 内。
     const minSize = config.minSizePerTrade ?? 0;
     const clampedValue = Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Get all active copy trading configs
+        // 只扫描激活配置，停用策略不会进入检测链路。
         const activeConfigs = await prisma.copyTradingConfig.findMany({
             where: { isActive: true },
         });
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         // Type alias for config items
         type ConfigType = typeof activeConfigs[number];
 
-        // Group configs by trader address for efficient querying
+        // 按 trader 聚合后再拉 activity，避免重复调用同一个地址的历史接口。
         const traderAddresses = [...new Set(activeConfigs.map((c: ConfigType) => c.traderAddress))];
 
         let totalDetected = 0;
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
                 // Fetch recent activity for this trader
                 const activity = await polyClient.wallets.getWalletActivity(traderAddress, 20);
 
-                // Filter to recent trades within detection window
+                // 仅处理窗口内 trade，避免旧事件重复灌入 pending 队列。
                 const now = Date.now();
                 const cutoff = now - (DETECTION_WINDOW_SECONDS * 1000);
 
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
                     for (const config of configsForTrader) {
                         const { tradeShares, tradeNotional } = normalizeTradeSizing(config, trade.size, trade.price);
 
-                        // Check if we already have a copy trade for this exact trade
+                        // 幂等去重：用（config+trader+时间容差+方向+仓位）近似识别同一 leader 成交。
                         const existing = await prisma.copyTrade.findFirst({
                             where: {
                                 configId: config.id,
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
 
                         if (copySize <= 0) continue;
 
-                        // Create pending copy trade
+                        // 检测阶段只写 PENDING，不直接执行，执行由 worker/API 分支负责。
                         await prisma.copyTrade.create({
                             data: {
                                 configId: config.id,

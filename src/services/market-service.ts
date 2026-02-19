@@ -158,11 +158,11 @@ export class MarketService {
       const chainId = (this.config?.chainId || POLYGON_MAINNET) as Chain;
 
       if (this.config?.privateKey) {
-        // Authenticated client
+        // 有私钥时走鉴权 client，兼容需要签名权限的扩展场景。
         const wallet = new Wallet(this.config.privateKey);
         this.clobClient = new ClobClient(CLOB_HOST, chainId, wallet);
       } else {
-        // Read-only client (no auth needed for market data)
+        // 纯行情读取可走匿名 client，减少密钥依赖与初始化复杂度。
         this.clobClient = new ClobClient(CLOB_HOST, chainId);
       }
       this.initialized = true;
@@ -180,6 +180,7 @@ export class MarketService {
   async getClobMarket(conditionId: string): Promise<Market> {
     const cacheKey = `clob:market:${conditionId}`;
     return this.cache.getOrSet(cacheKey, CACHE_TTL.MARKET_INFO, async () => {
+      // 先走缓存再请求，降低热门市场页面重复打开时的 API 负载。
       const client = await this.ensureInitialized();
 
       let attempt = 0;
@@ -191,6 +192,7 @@ export class MarketService {
           });
         } catch (err: any) {
           // Retry on Network Error (up to 3 times)
+          // 只对网络抖动错误重试，业务错误直接抛出给上层处理。
           const isNetworkError = err?.message?.includes('Network Error') || err?.message?.includes('ECONNRESET') || err?.code === 'ECONNRESET';
           if (attempt < 3 && isNetworkError) {
             attempt++;
@@ -266,6 +268,7 @@ export class MarketService {
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       const bookParams = params.map(p => ({
         token_id: p.tokenId,
+        // Side 语义统一映射到 clob-client 枚举，避免上层枚举耦合。
         side: p.side === 'BUY' ? ClobSide.BUY : ClobSide.SELL,
       }));
       const books = await client.getOrderBooks(bookParams);
@@ -310,11 +313,14 @@ export class MarketService {
    * Get processed orderbook with arbitrage analysis for a market
    */
   async getProcessedOrderbook(conditionId: string): Promise<ProcessedOrderbook> {
+    // 交易可执行性以 CLOB 为准：这里直接从 CLOB 拿 token 与盘口，
+    // 避免 Gamma 元数据延迟导致的价格/流动性偏差。
     const market = await this.getClobMarket(conditionId);
     let yesToken = market.tokens.find(t => t.outcome === 'Yes');
     let noToken = market.tokens.find(t => t.outcome === 'No');
 
-    // Fallback for non-standard binary markets (use first two tokens)
+    // 兼容非标准二元市场（例如 outcome 命名不是 Yes/No）：
+    // 当无法按 outcome 定位时，退化为前两个 token。
     if ((!yesToken || !noToken) && market.tokens.length >= 2) {
       yesToken = market.tokens[0];
       noToken = market.tokens[1];
@@ -358,6 +364,7 @@ export class MarketService {
         ? history
         : (history as { history?: Array<{ t: number; p: number }> })?.history || [];
 
+      // 兼容不同 SDK/接口返回结构（数组或 {history: []}）。
       return historyArray.map((pt: { t: number; p: number }) => ({
         timestamp: pt.t,
         price: pt.p,
@@ -406,6 +413,7 @@ export class MarketService {
    * Get market by slug or condition ID
    */
   async getMarket(identifier: string): Promise<UnifiedMarket> {
+    // conditionId 可能是 0x... 或纯数字字符串，两者都走条件 ID 分支。
     const isConditionId = identifier.startsWith('0x') || /^\d+$/.test(identifier);
 
     if (isConditionId) {
@@ -433,7 +441,10 @@ export class MarketService {
   }
 
   private async getMarketByConditionId(conditionId: string): Promise<UnifiedMarket> {
-    // Try to get data from both sources for best accuracy
+    // 融合策略：
+    // - CLOB：交易权威源（token、盘口、可交易状态）
+    // - Gamma：展示权威源（slug、描述、统计指标）
+    // 两者都成功时优先 merge；失败时按可用源降级。
     let clobMarket: Market | null = null;
     let gammaMarket: GammaMarket | null = null;
 
@@ -463,7 +474,7 @@ export class MarketService {
       return this.fromGammaMarket(gammaMarket);
     }
 
-    // CLOB only - slug might be stale, add warning
+    // 仅 CLOB 可用时，slug 可能过期（历史重命名场景），做一次保守修正。
     if (clobMarket) {
       const market = this.fromClobMarket(clobMarket);
       // Check if slug looks stale (doesn't match question keywords)
@@ -497,7 +508,7 @@ export class MarketService {
     }
     const trades = await this.dataApi.getTradesByMarket(conditionId, options?.limit || 1000);
 
-    // Filter by token/outcome if specified
+    // 可按 tokenId/outcomeIndex 筛分，支持多结果市场的单 outcome 分析。
     let filteredTrades = trades;
     if (options?.tokenId) {
       filteredTrades = trades.filter((t) => t.asset === options.tokenId);
@@ -623,14 +634,15 @@ export class MarketService {
       const yesCandle = yesMap.get(ts);
       const noCandle = noMap.get(ts);
 
+      // 某一侧缺 candle 时沿用上一个 close，保证双边时间轴可连续对齐。
       if (yesCandle) lastYes = yesCandle.close;
       if (noCandle) lastNo = noCandle.close;
 
       const priceSum = lastYes + lastNo;
       const priceSpread = priceSum - 1;
 
-      // Determine arb opportunity based on price deviation
-      // Note: This is indicative only - actual arb requires orderbook analysis
+      // 历史信号仅基于成交价偏离（indicative），不代表可即时成交套利。
+      // 实际执行仍需结合盘口深度与滑点（见 calculateRealtimeSpread/processOrderbooks）。
       let arbOpportunity: 'LONG' | 'SHORT' | '' = '';
       if (priceSpread < -0.005) arbOpportunity = 'LONG';   // Sum < 0.995
       else if (priceSpread > 0.005) arbOpportunity = 'SHORT'; // Sum > 1.005
@@ -660,7 +672,7 @@ export class MarketService {
   private calculateRealtimeSpread(orderbook: ProcessedOrderbook): RealtimeSpreadAnalysis {
     const { yes, no, summary } = orderbook;
 
-    // Determine arbitrage opportunity
+    // 实时机会判定直接使用 processOrderbooks 产出的可执行收益口径。
     let arbOpportunity: 'LONG' | 'SHORT' | '' = '';
     let arbProfitPercent = 0;
 
@@ -674,17 +686,17 @@ export class MarketService {
 
     return {
       timestamp: Date.now(),
-      // Orderbook prices
+      // 盘口快照（可用于执行前风控）
       yesBid: yes.bid,
       yesAsk: yes.ask,
       noBid: no.bid,
       noAsk: no.ask,
-      // Spread metrics
+      // spread 指标（YES+NO 相对 1 的偏离）
       askSum: summary.askSum,
       bidSum: summary.bidSum,
       askSpread: summary.askSum - 1,
       bidSpread: summary.bidSum - 1,
-      // Arbitrage
+      // 套利指标（已考虑镜像路径）
       longArbProfit: summary.longArbProfit,
       shortArbProfit: summary.shortArbProfit,
       arbOpportunity,
@@ -792,11 +804,15 @@ export class MarketService {
     if (!this.dataApi) {
       throw new PolymarketError(ErrorCode.INVALID_CONFIG, 'DataApiClient is required for signal detection');
     }
+    // 组合信号来源：
+    // - market: 宏观量能指标
+    // - orderbook: 即时深度结构
+    // - trades: 最近成交行为
     const market = await this.getMarket(conditionId);
     const orderbook = await this.getOrderbook(conditionId);
     const trades = await this.dataApi.getTradesByMarket(conditionId, 100);
 
-    // Volume surge detection
+    // Volume surge：24h 交易量相对历史均值突增（market.volume 近似按 7 天均值拆分）。
     if (market.volume24hr && market.volume > 0) {
       const avgDaily = market.volume / 7; // Approximate
       const ratio = market.volume24hr / avgDaily;
@@ -809,7 +825,7 @@ export class MarketService {
       }
     }
 
-    // Depth imbalance detection
+    // Depth imbalance：盘口买卖深度明显失衡，常用于判断短时买压/卖压。
     if (orderbook.summary.imbalanceRatio > 1.5 || orderbook.summary.imbalanceRatio < 0.67) {
       const ratio = orderbook.summary.imbalanceRatio;
       signals.push({
@@ -824,7 +840,7 @@ export class MarketService {
       });
     }
 
-    // Whale trade detection
+    // Whale trade：大额成交提示潜在信息流或流动性冲击（仅取最近 3 条避免信号泛滥）。
     const recentLargeTrades = trades.filter((t) => t.size * t.price > 1000);
     for (const trade of recentLargeTrades.slice(0, 3)) {
       const value = trade.size * trade.price;
@@ -847,6 +863,7 @@ export class MarketService {
   // ===== Helper Methods =====
 
   private normalizeClobMarket(m: ClobMarket): Market {
+    // 统一命名风格：把 CLOB snake_case 映射为 SDK camelCase 输出。
     return {
       conditionId: m.condition_id,
       questionId: m.question_id,
@@ -890,7 +907,11 @@ export class MarketService {
     const askSum = yesBestAsk + noBestAsk;
     const bidSum = yesBestBid + noBestBid;
 
-    // Effective prices (accounting for mirroring)
+    // 有效价格（考虑镜像订单）：
+    // Polymarket 二元盘存在镜像关系：
+    // - 买 YES @ p 等价于卖 NO @ (1-p)
+    // - 买 NO  @ p 等价于卖 YES @ (1-p)
+    // 因此真实可执行成本/收入应取两条路径中的最优值。
     const effectivePrices: EffectivePrices = {
       effectiveBuyYes: Math.min(yesBestAsk, 1 - noBestBid),
       effectiveBuyNo: Math.min(noBestAsk, 1 - yesBestBid),
@@ -898,6 +919,9 @@ export class MarketService {
       effectiveSellNo: Math.max(noBestBid, 1 - yesBestAsk),
     };
 
+    // 套利解释：
+    // - longArbProfit > 0: 买入 YES+NO 成本 < 1，可合并兑付 $1 获利
+    // - shortArbProfit > 0: 拆分 $1 后卖出 YES+NO 收入 > 1，可反向套利
     const effectiveLongCost = effectivePrices.effectiveBuyYes + effectivePrices.effectiveBuyNo;
     const effectiveShortRevenue = effectivePrices.effectiveSellYes + effectivePrices.effectiveSellNo;
 
@@ -944,7 +968,8 @@ export class MarketService {
   }
 
   private mergeMarkets(gamma: GammaMarket, clob: Market): UnifiedMarket {
-    // Build tokens array from CLOB data, falling back to Gamma prices
+    // tokenId 必须以 CLOB 为准，价格优先用 CLOB；
+    // 当 CLOB 价格为空时回退到 Gamma，保证 UI/API 不出现空价格。
     const tokens: UnifiedMarketToken[] = clob.tokens.map((t, index) => ({
       tokenId: t.tokenId,
       outcome: t.outcome,
@@ -973,7 +998,7 @@ export class MarketService {
   }
 
   private fromGammaMarket(gamma: GammaMarket): UnifiedMarket {
-    // Create tokens from Gamma outcomes (binary market: Yes/No)
+    // Gamma 回退路径下 tokenId 不可用（置空），仅保证展示层可读性。
     const tokens: UnifiedMarketToken[] = [
       { tokenId: '', outcome: 'Yes', price: gamma.outcomePrices[0] || 0.5 },
       { tokenId: '', outcome: 'No', price: gamma.outcomePrices[1] || 0.5 },
@@ -1000,7 +1025,7 @@ export class MarketService {
   }
 
   private fromClobMarket(clob: Market): UnifiedMarket {
-    // Convert CLOB tokens to UnifiedMarketToken format
+    // 仅 CLOB 路径缺少 volume/liquidity 等统计字段，填默认值以维持类型完整。
     const tokens: UnifiedMarketToken[] = clob.tokens.map(t => ({
       tokenId: t.tokenId,
       outcome: t.outcome,
@@ -1030,6 +1055,7 @@ export class MarketService {
 // ===== Utility Functions =====
 
 export function getIntervalMs(interval: KLineInterval): number {
+  // 统一 K 线周期到毫秒，供聚合桶切分与对齐。
   const map: Record<KLineInterval, number> = {
     '30s': 30 * 1000,
     '1m': 60 * 1000,

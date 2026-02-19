@@ -195,9 +195,10 @@ export class SmartMoneyService {
       return cachedList.slice(startIndex, targetEndIndex);
     }
 
-    // We need more data. Fetch from leaderboard.
-    // To ensure we get enough *filtered* (valid) results, we need to fetch a larger candidate pool.
-    // Heuristic: valid rate is ~30%, so we fetch 3x the target count.
+    // 拉取策略：
+    // 最终返回前会经过多轮过滤（PnL/活跃度/资料完整性），
+    // 因此候选池必须放大，否则分页后段会频繁“数量不足”。
+    // 这里用 3x 的经验系数做吞吐与准确率折中。
     const candidatesToFetch = Math.max(targetEndIndex * 3, 50);
     console.log(`[SmartMoney] Fetching ${candidatesToFetch} candidates from leaderboard for page ${page} (target index: ${targetEndIndex})`);
 
@@ -207,7 +208,7 @@ export class SmartMoneyService {
 
     const candidates = [];
 
-    // First pass: Filter by Min PnL
+    // 第一层过滤：基础盈利门槛（minPnl）。
     for (const trader of entries) {
       if (trader.pnl >= this.config.minPnl) {
         candidates.push(trader);
@@ -230,7 +231,7 @@ export class SmartMoneyService {
       this.cacheTimestamp = Date.now();
     }
 
-    // Second pass: Verify Activity
+    // 第二层过滤：活跃度校验（持仓/最近交易），并计算跟单评分。
     let processedCount = 0;
     const CHUNK_SIZE = 5;
 
@@ -252,16 +253,17 @@ export class SmartMoneyService {
         const results = await Promise.all(newCandidates.map(async (trader) => {
           try {
             const profile = await this.walletService.getWalletProfile(trader.address);
-            // Criteria: Must have active positions OR traded in last 7 days
+            // 活跃判定：有持仓 或 最近 7 天有活动。
             const hasPositions = profile.positionCount > 0;
             const isRecent = Date.now() - profile.lastActiveAt.getTime() < 7 * 24 * 60 * 60 * 1000;
 
             if (hasPositions || isRecent) {
-              // Improved score calculation:
-              // - PnL contribution (40%): Normalize around $50k as baseline good performance
-              // - Volume contribution (30%): Normalize around $500k as baseline
-              // - Activity bonus (20%): For having positions
-              // - Recency bonus (10%): For recent trades
+              // 评分口径（总分 100）：
+              // - PnL 40 分（以 50k 为基准上限）
+              // - Volume 30 分（以 500k 为基准上限）
+              // - 持仓活跃 20 分
+              // - 近期活跃 10 分
+              // 该评分更偏向“可复制性”而非单纯绝对收益。
               const pnlScore = Math.min(40, Math.max(0, (trader.pnl / 50000) * 40));
               const volumeScore = Math.min(30, Math.max(0, (trader.volume / 500000) * 30));
               const activityScore = hasPositions ? 20 : 0;
@@ -396,6 +398,8 @@ export class SmartMoneyService {
     if (options.minSize && trade.size < options.minSize) return;
 
     // Smart Money filter
+    // 注意：这里依赖本地缓存，不会每笔 trade 都走远程查询，
+    // 目的是把实时路径控制在内存判断，避免订阅回调阻塞。
     const isSmartMoney = this.smartMoneySet.has(traderAddress);
     if (options.smartMoneyOnly && !isSmartMoney) return;
 
@@ -455,7 +459,8 @@ export class SmartMoneyService {
   async startAutoCopyTrading(options: AutoCopyTradingOptions): Promise<AutoCopyTradingSubscription> {
     const startTime = Date.now();
 
-    // Build target list
+    // 1) 构建跟单目标集合：
+    // 支持“显式地址”与“排行榜 TopN”混合，最后去重后统一执行。
     let targetAddresses: string[] = [];
 
     if (options.targetAddresses?.length) {
@@ -472,7 +477,7 @@ export class SmartMoneyService {
       throw new Error('No target addresses. Use targetAddresses or topN.');
     }
 
-    // Stats
+    // 2) 运行期统计：用于观测命中率、执行率和资金消耗。
     const stats: AutoCopyTradingStats = {
       startTime,
       tradesDetected: 0,
@@ -482,7 +487,7 @@ export class SmartMoneyService {
       totalUsdcSpent: 0,
     };
 
-    // Config
+    // 3) 参数归一化：避免每次回调中重复处理可选参数。
     const sizeScale = options.sizeScale ?? 0.1;
     const maxSizePerTrade = options.maxSizePerTrade ?? 50;
     const maxSlippage = options.maxSlippage ?? 0.03;
@@ -492,7 +497,7 @@ export class SmartMoneyService {
     const delay = options.delay ?? 0;
     const dryRun = options.dryRun ?? false;
 
-    // Subscribe
+    // 4) 订阅实时交易流并执行“过滤 -> 尺寸计算 -> 下单”流水线。
     const subscription = this.subscribeSmartMoneyTrades(
       async (trade: SmartMoneyTrade) => {
         stats.tradesDetected++;
@@ -503,7 +508,9 @@ export class SmartMoneyService {
             return;
           }
 
-          // Filters
+          // Filters:
+          // - 最小成交额过滤，避免噪声单
+          // - 买卖方向过滤，支持只跟 BUY/SELL
           const tradeValue = trade.size * trade.price;
           if (tradeValue < minTradeSize) {
             stats.tradesSkipped++;
@@ -515,7 +522,10 @@ export class SmartMoneyService {
             return;
           }
 
-          // Calculate size
+          // 跟单尺寸模型：
+          // - 先按原单 sizeScale 缩放
+          // - 再受 maxSizePerTrade 上限约束
+          // 这样可同时兼顾“跟随比例”和“单笔风险上限”。
           let copySize = trade.size * sizeScale;
           let copyValue = copySize * trade.price;
 
@@ -544,7 +554,10 @@ export class SmartMoneyService {
             return;
           }
 
-          // Price with slippage
+          // 保护价（滑点）：
+          // - BUY 上浮，防止追单时成交不了
+          // - SELL 下调，防止卖单挂空
+          // 这里与 TradingService 的 market order 保护价语义保持一致。
           const slippagePrice = trade.side === 'BUY'
             ? trade.price * (1 + maxSlippage)
             : trade.price * (1 - maxSlippage);

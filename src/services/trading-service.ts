@@ -1,15 +1,17 @@
 /**
  * TradingService
  *
- * Trading service using official @polymarket/clob-client.
+ * 交易服务（基于官方 @polymarket/clob-client），是 SDK 的“下单执行底座”。
  *
- * Provides:
- * - Order creation (limit, market)
- * - Order management (cancel, query)
- * - Rewards tracking
- * - Balance management
+ * 主要职责：
+ * - 订单创建（限价/市价）
+ * - 订单管理（撤单、查询）
+ * - 做市奖励查询
+ * - 余额与授权管理
  *
- * Note: Market data methods have been moved to MarketService.
+ * 注意：
+ * - 行情分析能力已拆分到 MarketService，TradingService 只关注“可执行交易”。
+ * - 复制交易等上层服务应复用本类，避免重复实现授权与下单细节。
  */
 
 import {
@@ -169,6 +171,7 @@ export class TradingService {
     private cache: UnifiedCache,
     private config: TradingServiceConfig
   ) {
+    // TradingService 始终以单钱包身份运行；上层若要多钱包并发应创建多实例。
     this.wallet = new Wallet(config.privateKey);
     this.chainId = (config.chainId || POLYGON_MAINNET) as Chain;
     this.credentials = config.credentials || null;
@@ -182,6 +185,7 @@ export class TradingService {
     if (this.initialized) return;
 
     if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
+      // 本地链路不强依赖真实 API Key，主要用于流程联调与单测。
       console.log(`[TradingService] ⚠️ Localhost detected. Mocking CLOB initialization.`);
       this.credentials = {
         key: 'mock-key',
@@ -195,10 +199,12 @@ export class TradingService {
       return;
     }
 
-    // Create CLOB client with L1 auth (wallet)
+    // 第一步：使用钱包（L1）初始化客户端，用于派生/创建 API Key。
+    // 这是官方推荐流程：先通过签名身份建立 L2 凭据。
     this.clobClient = new ClobClient(CLOB_HOST, this.chainId, this.wallet);
 
-    // Get or create API credentials
+    // 第二步：获取（或派生）L2 API 凭据。
+    // 生产环境下应优先复用已有凭据，减少重复派生调用。
     if (!this.credentials) {
       const creds = await this.clobClient.createOrDeriveApiKey();
       this.credentials = {
@@ -208,7 +214,8 @@ export class TradingService {
       };
     }
 
-    // Re-initialize with L2 auth (credentials)
+    // 第三步：使用 L2 凭据重建 client，后续交易请求走 API 鉴权路径。
+    // 这样可以避免每次交易都依赖钱包签名，降低延迟和复杂度。
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
@@ -228,6 +235,7 @@ export class TradingService {
 
   private async ensureInitialized(): Promise<ClobClient> {
     if (!this.initialized || !this.clobClient) {
+      // 惰性初始化：首次真实调用时再建连接，减少冷启动开销。
       await this.initialize();
     }
     return this.clobClient!;
@@ -242,9 +250,11 @@ export class TradingService {
    */
   async getTickSize(tokenId: string): Promise<TickSize> {
     if (this.tickSizeCache.has(tokenId)) {
+      // 热 token 会频繁下单，tickSize 缓存可减少重复 CLOB 请求。
       return this.tickSizeCache.get(tokenId)! as TickSize;
     }
 
+    // 本地链路下返回固定 tick，便于本地联调不依赖远端 market 元信息。
     if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) return { minimum_tick_size: 0.01 } as any;
 
     const client = await this.ensureInitialized();
@@ -258,9 +268,11 @@ export class TradingService {
    */
   async isNegRisk(tokenId: string): Promise<boolean> {
     if (this.negRiskCache.has(tokenId)) {
+      // negRisk 也按 token 缓存，避免每单重复查询市场属性。
       return this.negRiskCache.get(tokenId)!;
     }
 
+    // 本地环境默认非 neg-risk，避免依赖线上特性开关。
     if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) return false;
 
     const client = await this.ensureInitialized();
@@ -310,6 +322,9 @@ export class TradingService {
           orderType
         );
 
+        // 兼容性说明：
+        // 不同版本的 clob-client 在 success/orderID 字段行为上并不完全一致，
+        // 因此这里采用“结果字段兜底判断”，避免把已提交订单误判为失败。
         const success = result.success === true ||
           (result.success !== false &&
             ((result.orderID !== undefined && result.orderID !== '') ||
@@ -357,6 +372,10 @@ export class TradingService {
 
         const orderType = params.orderType === 'FAK' ? ClobOrderType.FAK : ClobOrderType.FOK;
 
+        // 市价单语义说明：
+        // - amount 按 USDC 价值传入（由上层决定 size 计算方式）
+        // - price 作为保护价（滑点上限），并非传统“固定成交价”
+        // - 默认 FOK，避免残单污染复制交易状态
         const result = await client.createAndPostMarketOrder(
           {
             tokenID: params.tokenId,
@@ -368,6 +387,7 @@ export class TradingService {
           orderType
         );
 
+        // 同 createLimitOrder 的兼容性兜底，统一 success 判定口径。
         const success = result.success === true ||
           (result.success !== false &&
             ((result.orderID !== undefined && result.orderID !== '') ||
@@ -398,6 +418,7 @@ export class TradingService {
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       try {
+        // 撤单操作保持“直接透传 + 统一错误包装”策略，便于上层统一处理。
         const result = await client.cancelOrder({ orderID: orderId });
         return { success: result.canceled ?? false, orderId };
       } catch (error) {
@@ -414,6 +435,7 @@ export class TradingService {
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       try {
+        // 批量撤单用于快速清仓/风控止损；成功语义沿用 SDK 返回 canceled。
         const result = await client.cancelOrders(orderIds);
         return { success: result.canceled ?? false, orderIds };
       } catch (error) {
@@ -430,6 +452,7 @@ export class TradingService {
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       try {
+        // 注意：这是账号级高风险操作，上层应避免在无筛选条件时误调用。
         const result = await client.cancelAll();
         return { success: result.canceled ?? false };
       } catch (error) {
@@ -448,6 +471,7 @@ export class TradingService {
       const orders = await client.getOpenOrders(marketId ? { market: marketId } : undefined);
 
       return orders.map((o: OpenOrder) => {
+        // 字段归一化：把字符串数值统一转换为 number，减少上层重复 parse。
         const originalSize = Number(o.original_size) || 0;
         const filledSize = Number(o.size_matched) || 0;
         return {
@@ -472,6 +496,7 @@ export class TradingService {
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       const trades = await client.getTrades(marketId ? { market: marketId } : undefined);
 
+      // 交易记录用于事后分析/对账，不在此处做额外业务过滤。
       return trades.map((t: ClobTrade) => ({
         id: t.id,
         tokenId: t.asset_id,
@@ -486,6 +511,7 @@ export class TradingService {
 
   async getOrderBook(tokenId: string): Promise<Orderbook> {
     const client = await this.ensureInitialized();
+    // 本地 mock 盘口用于避免空数据触发上层逻辑分支（如自动滑点计算）。
     if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
       return {
         hash: "mock-hash",
@@ -521,6 +547,7 @@ export class TradingService {
     const client = await this.ensureInitialized();
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       const earnings = await client.getEarningsForUserForDay(date);
+      // 奖励字段重命名后输出，保持 SDK 对外字段稳定性。
       return earnings.map(e => ({
         date: e.date,
         conditionId: e.condition_id,
@@ -536,6 +563,7 @@ export class TradingService {
     const client = await this.ensureInitialized();
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
       const rewards = await client.getCurrentRewards();
+      // 当前奖励配置是 market 维度策略输入，常用于做市参数调优。
       return rewards.map(r => ({
         conditionId: r.condition_id,
         question: r.question,
@@ -569,6 +597,7 @@ export class TradingService {
   ): Promise<{ balance: string; allowance: string }> {
     const client = await this.ensureInitialized();
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+      // 返回 string 以避免大数精度丢失；数值比较应在调用侧显式转换。
       const result = await client.getBalanceAllowance({
         asset_type: assetType as any,
         token_id: tokenId,
@@ -583,6 +612,7 @@ export class TradingService {
   ): Promise<void> {
     const client = await this.ensureInitialized();
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+      // 触发链上授权更新，实际确认策略由 clob-client 内部处理。
       await client.updateBalanceAllowance({
         asset_type: assetType as any,
         token_id: tokenId,
@@ -639,7 +669,7 @@ export class TradingService {
 
         const currentAllowance = Number(allowance);
 
-        // If allowance is sufficient, return true
+        // 授权充足则直接放行，避免重复触发链上授权交易。
         if (currentAllowance >= minAmount) {
           // console.log(`[TradingService] ✅ Allowance OK: ${currentAllowance}`);
           return true;
@@ -653,7 +683,8 @@ export class TradingService {
         });
 
         console.log(`[TradingService] ✅ Approved! Tx: ${result}`);
-        // Wait a bit for propagation? usually client waits for tx hash.
+        // 注意：这里默认 clob-client 已处理必要的链上确认流程。
+        // 若上游场景对“已上链确认”要求更严格，应在调用侧增加二次确认。
         return true;
       } catch (e) {
         console.error(`[TradingService] ❌ Failed to approve allowance:`, e);

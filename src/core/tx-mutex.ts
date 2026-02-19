@@ -4,6 +4,7 @@
  */
 export class TxMutex {
     private mutex = Promise.resolve();
+    // 预留字段：后续若需要显式 waiter 管理/取消，可在此扩展。
     private queue: Array<() => void> = [];
     private maxQueueSize: number;
     private pendingCount = 0;
@@ -21,9 +22,10 @@ export class TxMutex {
         }
         this.pendingCount++;
 
-        // Return a promise that resolves when it's this task's turn
+        // 通过 Promise 链把任务串成“单通道”：
+        // 后来的任务必须等待前一个任务完成，避免并发发送导致 nonce 冲突。
         return new Promise<T>((resolve, reject) => {
-            // Chain to the end of the mutex
+            // 挂到当前链尾，形成严格顺序执行。
             this.mutex = this.mutex.then(async () => {
                 try {
                     const result = await task();
@@ -42,11 +44,12 @@ export class TxMutex {
      */
     isLocked(): boolean {
         // Not easily doable with simple promise chain without external state,
-        // but for our purpose, we just trust the chain.
+        // 当前实现返回占位值；调用方请优先使用 getQueueDepth() 判断拥塞。
         return false;
     }
 
     getQueueDepth(): number {
+        // pendingCount 表示“已入队但未完成”的任务数，可用于背压观测。
         return this.pendingCount;
     }
 }
@@ -60,6 +63,8 @@ export class ScopedTxMutex {
     getMutex(key: string): TxMutex {
         let mutex = this.mutexes.get(key);
         if (!mutex) {
+            // 按 key 懒加载隔离锁：
+            // 例如 proxy:A 与 proxy:B 可并行，proxy:A 内部仍保持串行。
             mutex = new TxMutex();
             this.mutexes.set(key, mutex);
         }

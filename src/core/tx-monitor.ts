@@ -54,6 +54,9 @@ export class TxMonitor {
      */
     start(onReplacementNeeded: (tx: TrackedTx, newGas: { maxPriorityFeePerGas: ethers.BigNumber }) => Promise<string | null>): void {
         this.onReplacementNeeded = onReplacementNeeded;
+        // 轮询模型而非订阅模型：
+        // - 实现简单、跨 provider 行为更稳定
+        // - 配合 stuckThreshold 可以兼顾误报率与响应速度
         this.pollTimer = setInterval(() => this.checkStuckTransactions(), this.config.pollIntervalMs);
         console.log(`[TxMonitor] 🚀 Started monitoring (stuck threshold: ${this.config.stuckThresholdMs / 1000}s)`);
     }
@@ -73,6 +76,7 @@ export class TxMonitor {
      * Track a newly submitted transaction
      */
     track(tx: TrackedTx): void {
+        // key=tx.hash，后续若被替换会新增新 hash 记录并标记旧记录 replaced=true。
         this.pendingTxs.set(tx.hash, tx);
         console.log(`[TxMonitor] 📝 Tracking TX ${tx.hash.slice(0, 10)}... (nonce: ${tx.nonce}, worker: ${tx.workerIndex})`);
     }
@@ -82,6 +86,7 @@ export class TxMonitor {
      */
     confirm(hash: string): void {
         if (this.pendingTxs.has(hash)) {
+            // 一旦确认上链即从监控集合移除，防止后续误判为卡单。
             this.pendingTxs.delete(hash);
             console.log(`[TxMonitor] ✅ TX confirmed: ${hash.slice(0, 10)}...`);
         }
@@ -102,10 +107,10 @@ export class TxMonitor {
         const stuckTxs: TrackedTx[] = [];
 
         for (const [hash, tx] of this.pendingTxs.entries()) {
-            // Skip already replaced
+            // 已替换过的旧 hash 不再继续处理，避免重复 bump。
             if (tx.replaced) continue;
 
-            // Check if confirmed
+            // 先查回执：确认上链的交易应立即从 pending 集合移除。
             try {
                 const receipt = await this.provider.getTransactionReceipt(hash);
                 if (receipt) {
@@ -116,7 +121,7 @@ export class TxMonitor {
                 // Receipt not found = still pending
             }
 
-            // Check if stuck
+            // 超过阈值仍无回执，判定为“卡单”候选。
             if (now - tx.submittedAt > this.config.stuckThresholdMs) {
                 stuckTxs.push(tx);
             }
@@ -128,7 +133,8 @@ export class TxMonitor {
 
             console.log(`[TxMonitor] ⚠️ Stuck TX detected: ${tx.hash.slice(0, 10)}... (pending for ${Math.round((now - tx.submittedAt) / 1000)}s)`);
 
-            // Calculate new gas
+            // bump 逻辑仅提升 priority fee，保持 nonce 不变，
+            // 以“替换同 nonce 交易”的方式推动打包。
             const currentPriority = tx.maxPriorityFeePerGas ?? ethers.utils.parseUnits('30', 'gwei');
             const bumpedPriority = currentPriority.mul(100 + Math.round(this.config.gasBumpPercent * 100)).div(100);
 
@@ -137,7 +143,7 @@ export class TxMonitor {
                 if (newHash) {
                     tx.replaced = true;
                     console.log(`[TxMonitor] 🔄 TX replaced: ${tx.hash.slice(0, 10)}... → ${newHash.slice(0, 10)}...`);
-                    // Track the new TX
+                    // 用同一 nonce 追踪新 hash，维持替换链完整可观测。
                     this.track({
                         ...tx,
                         hash: newHash,

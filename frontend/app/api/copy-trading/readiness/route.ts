@@ -9,6 +9,7 @@ const MIN_WALLET_MATIC = Number(process.env.COPY_TRADING_MIN_WALLET_MATIC || '0.
 const MIN_PROXY_USDC = Number(process.env.COPY_TRADING_MIN_PROXY_USDC || '1');
 
 const getProvider = () => {
+    // readiness 走只读链路：优先使用独立 COPY_TRADING_RPC_URL，避免挤占前端公用 RPC。
     const rpcUrl = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
     return new ethers.providers.JsonRpcProvider(rpcUrl);
 };
@@ -22,8 +23,10 @@ const getAddresses = (chainId: number) => (chainId === 137 || chainId === 31337 
 const parseAddress = (input: string | null) => {
     if (!input) return null;
     try {
+        // 统一 checksum，后续合约调用/日志记录都使用规范地址格式。
         return ethers.utils.getAddress(input);
     } catch {
+        // 地址非法时直接返回 null，让调用方走 400 响应而不是抛异常。
         return null;
     }
 };
@@ -43,7 +46,9 @@ export async function GET(request: NextRequest) {
 
     const voidSigner = new ethers.VoidSigner(walletAddress, provider);
 
+    // readiness 的职责是给前端一个“可执行清单”，而不是只返回布尔值。
     const requiredActions: string[] = [];
+    // snapshots 用于前端展示“当前状态”，即便 ready=false 也能给出诊断上下文。
     const balanceSnapshots: Record<string, number> = {};
     const allowanceSnapshots: Record<string, any> = {};
 
@@ -76,6 +81,7 @@ export async function GET(request: NextRequest) {
             });
         }
     } catch (error) {
+        // 读链失败时保持降级可用：不给 500，只把该字段标记为 0 供前端提示。
         balanceSnapshots.walletMatic = 0;
     }
 
@@ -86,6 +92,7 @@ export async function GET(request: NextRequest) {
             balanceSnapshots.walletUsdc = Number(ethers.utils.formatUnits(walletUsdc, USDC_DECIMALS));
         }
     } catch {
+        // USDC 快照失败不影响其它 readiness 检查，继续输出可执行动作。
         balanceSnapshots.walletUsdc = 0;
     }
 
@@ -98,6 +105,7 @@ export async function GET(request: NextRequest) {
                 proxyAddress = candidate;
             }
         } catch {
+            // Factory 查询失败时按“未创建 proxy”处理，交由前端引导用户补齐。
             proxyAddress = null;
         }
     }
@@ -119,6 +127,7 @@ export async function GET(request: NextRequest) {
                 });
             }
         } catch {
+            // 余额读取失败仍允许返回动作清单，避免单点 RPC 抖动导致页面不可用。
             balanceSnapshots.proxyUsdc = 0;
         }
     }
@@ -128,6 +137,7 @@ export async function GET(request: NextRequest) {
             const usdc = new ethers.Contract(addresses.usdc, ERC20_ABI, provider);
             const allowanceRaw = await usdc.allowance(proxyAddress, addresses.executor);
             const allowance = Number(allowanceRaw) / (10 ** USDC_DECIMALS);
+            // allowance 阈值与最小执行金额保持同口径，避免“授权了但仍无法执行”。
             const allowed = allowance > 0 && allowance >= MIN_PROXY_USDC;
             allowanceSnapshots.usdc = { allowed, allowance, reason: allowed ? undefined : 'ALLOWANCE_MISSING_USDC' };
             if (!allowed) {
@@ -157,12 +167,14 @@ export async function GET(request: NextRequest) {
                     });
                 }
             } catch {
+                // CTF 授权读取失败默认视为未授权，交由动作清单引导修复。
                 allowanceSnapshots.ctf = { allowed: false, reason: 'ALLOWANCE_CHECK_FAILED' };
             }
         }
     }
 
     const uniqueActions = Array.from(new Set(requiredActions));
+    // 去重后 actions 为空即 ready=true，前端可直接打开自动执行。
     const ready = uniqueActions.length === 0;
 
     return NextResponse.json({

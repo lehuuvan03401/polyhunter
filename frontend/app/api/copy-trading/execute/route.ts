@@ -85,6 +85,8 @@ const getWorkerKey = (): { privateKey: string; index: number; total: number } | 
 async function selectExecutionRpc(timeoutMs: number = 2000): Promise<string> {
     const candidates = RPC_URLS.length > 0 ? RPC_URLS : [RPC_URL];
 
+    // 简单健康探测：按顺序尝试 RPC，首个可读区块高度的节点即作为本次执行节点。
+    // 该策略降低单 RPC 故障导致的整批执行失败概率。
     for (const url of candidates) {
         try {
             const provider = new ethers.providers.JsonRpcProvider(url);
@@ -166,6 +168,9 @@ function evaluateOrderbookGuardrails(params: {
         return { allowed: false, reason: 'ORDERBOOK_EMPTY', bestAsk, bestBid };
     }
 
+    // 盘口守卫分两层：
+    // 1) spread 限制，防止极端价差时追单
+    // 2) depth 限制，防止浅盘口导致滑点失控
     const mid = (bestAsk + bestBid) / 2;
     const spreadBps = mid > 0 ? ((bestAsk - bestBid) / mid) * 10000 : 0;
     if (maxSpreadBps > 0 && spreadBps > maxSpreadBps) {
@@ -296,7 +301,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Find the trade and verify ownership
+        // 先校验交易归属，避免跨钱包越权执行。
         const trade = await prisma.copyTrade.findFirst({
             where: {
                 id: tradeId,
@@ -324,15 +329,15 @@ export async function POST(request: NextRequest) {
         }
 
         // === SERVER-SIDE EXECUTION ===
+        // executeOnServer=true 表示由后端 worker 私钥直接执行；
+        // false 则认为前端已自行执行，仅回写状态。
         if (executeOnServer) {
             const workerSelection = getWorkerKey();
             const workerAddress = workerSelection
                 ? new ethers.Wallet(workerSelection.privateKey).address
                 : undefined;
-            // Quick check for Kill Switch using Guardrail Service (amount=0 just to check flag)
-            // Or we can just check the flag directly if we kept the env var, but better to use service for consistency
-            // Actually, for just the first check, we can check a small amount or refactor service to expose isOpen?
-            // Let's just use the guardrail check with 0 amount to check the flag.
+            // 先用 amount=0 做“全局开关检查”（Kill-Switch / Dry-Run / Emergency Pause），
+            // 这样能在初始化交易服务之前快速失败，减少无效开销。
             const guardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, 0, {
                 source: 'api',
                 workerAddress,
@@ -379,6 +384,7 @@ export async function POST(request: NextRequest) {
                 });
             }
 
+            // 再按真实交易金额做一次完整 guardrail 校验（额度、频率等）。
             const serverGuardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, trade.copySize, {
                 source: 'api',
                 workerAddress,
@@ -410,7 +416,8 @@ export async function POST(request: NextRequest) {
                 const { TradingService, RateLimiter, createUnifiedCache, CopyTradingExecutionService } = await import('@catalyst-team/poly-sdk');
                 const { ethers } = await import('ethers');
 
-                // Initialize Trading Service
+                // 初始化 TradingService + CopyTradingExecutionService，
+                // 并沿用 SDK 的执行闭环（预检/资金搬运/下单/结算）。
                 const rateLimiter = new RateLimiter();
                 const cache = createUnifiedCache();
                 const tradingService = new TradingService(rateLimiter, cache, {
@@ -420,6 +427,7 @@ export async function POST(request: NextRequest) {
                 await tradingService.initialize();
 
                 const orderbook = await tradingService.getOrderBook(trade.tokenId);
+                // 在实际下单前追加盘口质量守卫，避免在极端盘口状态下成交。
                 const orderbookGuard = evaluateOrderbookGuardrails({
                     orderbook,
                     side: trade.originalSide as 'BUY' | 'SELL',
@@ -498,7 +506,8 @@ export async function POST(request: NextRequest) {
                     }, { status: 403 });
                 }
 
-                // Execute
+                // 执行后按“是否已完成结算”写入 EXECUTED / SETTLEMENT_PENDING，
+                // 避免把尚未资产归集完成的交易误记为最终成功。
                 const result = await executionService.executeOrderWithProxy({
                     tradeId: trade.id,
                     walletAddress: walletAddress,
@@ -623,7 +632,7 @@ export async function GET(request: NextRequest) {
 
         const cacheKey = `pending:${walletAddress.toLowerCase()}`;
         const responsePayload = await pendingTradesCache.getOrSet(cacheKey, PENDING_TRADES_TTL_MS, async () => {
-            // Get pending trades that haven't expired
+            // 仅返回未过期的 PENDING，避免前端看到已失效确认单。
             const pendingTrades = await prisma.copyTrade.findMany({
                 where: {
                     config: {
@@ -650,6 +659,7 @@ export async function GET(request: NextRequest) {
             const now = Date.now();
             if (now - lastExpiryCheckAt > EXPIRY_CHECK_INTERVAL_MS) {
                 lastExpiryCheckAt = now;
+                // 低频批量过期清理，避免每次 GET 都执行 updateMany。
                 await prisma.copyTrade.updateMany({
                     where: {
                         status: 'PENDING',

@@ -88,6 +88,8 @@ export class CopyTradingExecutionService {
         const provider = this.defaultSigner.provider;
         if (provider) {
             this.txMonitor = new TxMonitor(provider);
+            // TxMonitor 只负责“发现卡单并触发替换”，真正替换交易由本服务执行，
+            // 这样可以复用 signer mutex，避免替换交易与正常交易 nonce 冲突。
             this.txMonitor.start((tx, newGas) => this.replaceStuckTx(tx, newGas));
         } else {
             console.warn('[CopyExec] ⚠️ No provider on signer. TxMonitor disabled.');
@@ -164,6 +166,7 @@ export class CopyTradingExecutionService {
         if (queueDepth > 0) {
             console.log(`[CopyExec] ⏳ Waiting on proxy mutex ${proxyAddress.slice(0, 6)} (${label}) queue=${queueDepth}`);
         }
+        // proxy 维度互斥：保证同一个用户资金搬运/结算严格串行，防止账务交错。
         return scopedTxMutex.getMutex(key).run(task);
     }
 
@@ -174,21 +177,25 @@ export class CopyTradingExecutionService {
         if (queueDepth > 0) {
             console.log(`[CopyExec] ⏳ Waiting on signer mutex ${signerAddress.slice(0, 6)} (${label}) queue=${queueDepth}`);
         }
+        // signer 维度互斥：保证单 signer nonce 连续，避免 pending nonce 竞争。
         return scopedTxMutex.getMutex(key).run(task);
     }
 
     private shouldDeferSettlement(params: ExecutionParams): boolean {
+        // 参数优先于环境变量，便于单次调用覆盖全局策略。
         if (typeof params.deferSettlement === 'boolean') return params.deferSettlement;
         const flag = process.env.COPY_TRADING_ASYNC_SETTLEMENT;
         return flag === 'true' || flag === '1';
     }
 
     private shouldDeferReimbursementFlag(flag?: boolean): boolean {
+        // 报销延迟默认关闭，必须调用侧显式开启。
         if (typeof flag === 'boolean') return flag;
         return false;
     }
 
     private getChainAddresses() {
+        // 本地 fork（31337/1337）复用 polygon 地址配置，简化本地执行链路。
         return (this.chainId === 137 || this.chainId === 31337 || this.chainId === 1337)
             ? CONTRACT_ADDRESSES.polygon
             : CONTRACT_ADDRESSES.amoy;
@@ -219,6 +226,7 @@ export class CopyTradingExecutionService {
         }
 
         if (missing.length > 0) {
+            // 启动前快速失败，避免执行中途才发现配置缺失。
             throw new Error(`[CopyExec] Missing execution addresses: ${missing.join(', ')}`);
         }
     }
@@ -274,6 +282,7 @@ export class CopyTradingExecutionService {
         const factory = new ethers.Contract(addresses.proxyFactory, PROXY_FACTORY_ABI, executionSigner);
         const userProxy = await factory.getUserProxy(userAddress);
         if (userProxy && userProxy !== ethers.constants.AddressZero) {
+            // 仅缓存有效 proxy，避免缓存空地址导致长时间误判。
             this.proxyCache.set(userAddress, userProxy); // Update Cache
             return userProxy;
         }
@@ -289,8 +298,8 @@ export class CopyTradingExecutionService {
             const executionSigner = this.getSigner(signer);
             const botAddress = await executionSigner.getAddress();
 
-            // EXECUTOR STRATEGY: Worker -> Executor -> Proxy -> USDC.transfer(Bot)
-            // This avoids 'transferFrom' approval issues and leverages the single-Executor auth.
+            // Executor 代理执行路径：Worker -> Executor -> Proxy -> USDC.transfer(Bot)。
+            // 这样可复用单一执行器授权模型，避免每次都依赖 transferFrom allowance。
 
             if (!addresses.executor) throw new Error("Executor address not configured");
             const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, executionSigner);
@@ -299,13 +308,13 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Requesting Proxy ${proxyAddress} to PUSH $${amount} to Bot ${botAddress} (via Executor)...`);
 
-            // Encode: usdc.transfer(botAddress, amountWei)
+            // 在 Proxy 上编码执行 usdc.transfer(botAddress, amountWei)。
             const transferData = erc20Interface.encodeFunctionData('transfer', [
                 botAddress,
                 amountWei
             ]);
 
-            // Call: executor.executeOnProxy(proxyAddress, usdcAddress, transferData)
+            // 真实发交易前仍走 signer mutex，保证同 signer nonce 不冲突。
             const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'proxy-push', () => executor.executeOnProxy(
                 proxyAddress,
                 addresses.usdc,
@@ -358,12 +367,12 @@ export class CopyTradingExecutionService {
             const executor = new ethers.Contract(addresses.executor, EXECUTOR_ABI, executionSigner);
             const ctfInterface = new ethers.utils.Interface(CTF_ABI);
 
-            // Amount in shares.
+            // CTF token 与 shares 使用相同精度口径（6 位）进行转换。
             const amountWei = ethers.utils.parseUnits(amount.toFixed(USDC_DECIMALS), USDC_DECIMALS);
 
             console.log(`[CopyExec] Requesting Proxy to PUSH ${amount} shares (Token ${tokenId}) to Bot (via Executor)...`);
 
-            // safeTransferFrom(from, to, id, amount, data)
+            // 在 Proxy 上编码 ERC1155 safeTransferFrom，把仓位 token 拉到 bot。
             const transferData = ctfInterface.encodeFunctionData('safeTransferFrom', [
                 proxyAddress, // from (Proxy is the holder)
                 botAddress,
@@ -372,7 +381,7 @@ export class CopyTradingExecutionService {
                 "0x"
             ]);
 
-            // Call: executor.executeOnProxy(...)
+            // 通过 executor 统一执行，绕开“直接由 bot 操作 proxy 持仓”的权限限制。
             const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'token-pull', () => executor.executeOnProxy(
                 proxyAddress,
                 CONTRACT_ADDRESSES.ctf,
@@ -403,8 +412,7 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Pushing ${amount} shares (Token ${tokenId}) from Bot to Proxy...`);
 
-            // safeTransferFrom(from, to, id, amount, data)
-            // Bot is signer, so we can call directly.
+            // BUY 完成后由 bot 直接把份额推回 proxy（bot 是当前 token 持有人）。
             const botAddress = await executionSigner.getAddress();
             const tx = await this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'token-push', () => ctf.safeTransferFrom(
                 botAddress,
@@ -454,6 +462,7 @@ export class CopyTradingExecutionService {
 
         const paused = await proxy.paused().catch(() => false);
         if (paused) {
+            // proxy 被暂停时必须硬阻断，避免绕过合约级安全开关。
             return { allowed: false, reason: 'PROXY_PAUSED' };
         }
 
@@ -467,6 +476,7 @@ export class CopyTradingExecutionService {
             return { allowed: false, reason: 'PROXY_ALLOWLIST_BLOCKED' };
         }
         if (!executorAllowed) {
+            // executor 与 proxy 双边白名单都必须放行，缺一不可。
             return { allowed: false, reason: 'EXECUTOR_ALLOWLIST_BLOCKED' };
         }
 
@@ -486,6 +496,10 @@ export class CopyTradingExecutionService {
         const execService = tradingService || this.tradingService;
         const allowBotFloat = params.allowBotFloat !== false;
 
+        // 总体模型：
+        // 1) 并行预检（无锁）：查 proxy、余额、盘口、gas、授权状态
+        // 2) 串行执行（加锁）：资金搬运 + 下单 + 结算
+        // 3) 失败回滚：把已拉出的资金/Token 退回 proxy
         console.log(`[CopyExec] 🚀 Starting Execution for ${walletAddress}. Parallelizing fetches (No Mutex)...`);
 
         this.assertExecutionAddresses();
@@ -554,10 +568,10 @@ export class CopyTradingExecutionService {
             return { success: false, error: "No Proxy wallet found for user", useProxyFunds: false, usedBotFloat: false };
         }
 
-        // Merge Gas Overrides with params.overrides (params take precedence if set manually)
+        // 合并 gas 参数：动态 gas 为默认值，手动 overrides 拥有最高优先级。
         const effectiveOverrides = { ...gasOverrides, ...params.overrides };
 
-        // --- MOCK TOKEN BYPASS (Localhost) ---
+        // 本地联调中对 mock token 快速放行，避免阻塞链路验证。
         if (this.chainId === 1337 && tokenId.length > 15 && !tokenId.startsWith("0x")) {
             console.log(`[CopyExec] ⚠️ Mock Token Detected. Skipping.`);
             return { success: true, orderId: "mock", transactionHashes: [], useProxyFunds: false, usedBotFloat: false, proxyAddress, settlementDeferred: false };
@@ -566,11 +580,14 @@ export class CopyTradingExecutionService {
         // ==================================================================
         // 2. Execution Critical Section (Scoped mutexes)
         // 2. 核心执行区 (互斥锁)
-        // Signer mutex only wraps tx submission; proxy mutex protects fund ops.
+        // 锁分层：
+        // - signer 锁：保护 nonce 顺序
+        // - proxy 锁：保护同一用户资金/持仓状态一致性
         // ==================================================================
         const mutexSigner = this.getSigner(signer);
 
-        // 0. Conditionally Approve (Save time if already approved)
+        // 0) 条件授权：
+        // 只有预检判断“可能未授权”才在 signer 锁里执行授权，减少链上写操作等待。
         if (!allowanceStatus.ok) {
             console.log(`[CopyExec] 🛡️ Validating Allowance (Signer Mutex)...`);
             await this.runWithSignerMutex(mutexSigner, 'allowance', async () => {
@@ -584,7 +601,9 @@ export class CopyTradingExecutionService {
 
         console.log(`[CopyExec] 🔒 Entering Proxy Mutex for ${proxyAddress}`);
 
-        // 2. Fund Management (Proxy-scoped)
+        // 2) 资金准备（proxy 作用域）：
+        // BUY: 优先用 Bot Float，余额不足再从 Proxy 拉资金
+        // SELL: 先把 token 从 Proxy 拉到 Bot 再卖
         let useProxyFunds = false;
         let fundTransferTxHash: string | undefined;
         let tokenPullTxHash: string | undefined;
@@ -593,14 +612,14 @@ export class CopyTradingExecutionService {
         try {
             await this.runWithProxyMutex(proxyAddress, 'funds', async () => {
                 if (side === 'BUY') {
-                    // FLOAT STRATEGY
+                    // FLOAT 模式：优先消耗 bot 浮动资金，减少一次链上 pull。
                     if (allowBotFloat && botBalance >= amount) {
                         console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
                         usedBotFloat = true;
                         return;
                     }
 
-                    // STANDARD PULL
+                    // 余额不足则走标准路径：从 proxy 拉取对应 USDC。
                     console.log(`[CopyExec] 🐢 Standard BUY: Pulling from Proxy...`);
                     const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
                     if (proxyBalance < amount) {
@@ -616,7 +635,7 @@ export class CopyTradingExecutionService {
                     return;
                 }
 
-                // SELL
+                // SELL 的资金准备是“拉 token 份额”，不是拉 USDC。
                 const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, amount / price, signer, effectiveOverrides);
                 if (!pullResult.success) {
                     throw new Error(`Proxy token pull failed: ${pullResult.error}`);
@@ -629,10 +648,11 @@ export class CopyTradingExecutionService {
             return { success: false, error: `Proxy prep failed: ${e.message}`, usedBotFloat, proxyAddress };
         }
 
-        // 3. Execute Order (CLOB)
+        // 3) CLOB 下单：
+        // 统一使用 MARKET + FOK，保证“要么全成，要么全撤”，避免复制单产生残单状态。
         let orderResult;
         try {
-            // ... Slippage logic ...
+            // 动态滑点只在 AUTO 模式启用；最终值还会被 maxSlippage 上限裁剪。
             let finalSlippage = slippage;
             if (params.slippageMode === 'AUTO') {
                 const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, amount, price, orderbook);
@@ -657,7 +677,7 @@ export class CopyTradingExecutionService {
             });
 
         } catch (err: any) {
-            // START RECOVERY (Refund)
+            // 下单异常后立即回滚，把此前资金准备阶段搬出的资产退回 Proxy。
             if (useProxyFunds) {
                 console.log(`[CopyExec] ⚠️ Order Failed. refunding...`);
                 await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
@@ -673,6 +693,7 @@ export class CopyTradingExecutionService {
         }
 
         if (!orderResult.success) {
+            // 业务失败（非异常）同样执行资金回滚，保持账务一致性。
             if (useProxyFunds) {
                 await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
                     if (side === 'BUY') {
@@ -694,10 +715,12 @@ export class CopyTradingExecutionService {
         if (deferSettlement) {
             console.log(`[CopyExec] ⏱️ Deferring settlement (async queue enabled).`);
         } else {
-            // 4. Return Assets (Settlement)
+            // 4) 结算归集：
+            // BUY 成功后把 shares 推回 Proxy；
+            // SELL 成功后把卖出得到的 USDC 归还 Proxy。
             await this.runWithProxyMutex(proxyAddress, 'settlement', async () => {
                 if (usedBotFloat && side === 'BUY') {
-                    // Push Tokens
+                    // 浮资 BUY：先把买到的 token 归位到 proxy。
                     const sharesBought = amount / price;
                     const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
                     if (pushResult.success) tokenPushTxHash = pushResult.txHash;
@@ -707,7 +730,7 @@ export class CopyTradingExecutionService {
                         return;
                     }
 
-                    // Reimburse Bot (Smart Buffer Strategy)
+                    // 报销策略：仅当 bot 余额跌破 buffer 才回补，减少链上交易频率。
                     // 策略优化：如果 Bot 余额还很充裕 (Buffer > 50 USDC)，暂不发起链上报销。
                     // 这能节省 50% 的 On-Chain TX，极大提升连续下单速度。
                     // 只有当 Bot "钱包瘪了" 时才触发报销补货。
@@ -739,15 +762,17 @@ export class CopyTradingExecutionService {
                     return;
                 }
 
-                if (useProxyFunds) {
-                    if (side === 'BUY') {
-                        const sharesBought = amount / price;
-                        const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
-                        if (pushResult.success) tokenPushTxHash = pushResult.txHash;
-                    } else {
-                        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
-                        if (returnResult.success) returnTransferTxHash = returnResult.txHash;
+                    if (useProxyFunds) {
+                        if (side === 'BUY') {
+                            // 标准 BUY：把新买到的份额推回 proxy，闭合资产归属。
+                            const sharesBought = amount / price;
+                            const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
+                            if (pushResult.success) tokenPushTxHash = pushResult.txHash;
+                        } else {
+                            // SELL：把 bot 收到的 USDC 归还 proxy，维持账务一致。
+                            const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                            const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
+                            if (returnResult.success) returnTransferTxHash = returnResult.txHash;
                     }
                 }
             });
@@ -783,8 +808,9 @@ export class CopyTradingExecutionService {
         console.log(`[CopyExec] 🚑 Recovering settlement for ${side} trade...`);
         try {
             if (side === 'BUY') {
-                // We bought. Need to Push Tokens to Proxy.
-                // Also need to Reimburse Bot (Pull USDC from Proxy) if float was used.
+                // BUY 恢复路径：
+                // 1) 先补做 token push（最关键，关系到用户持仓归属）
+                // 2) 若使用过 float，再补做报销
 
                 const sharesBought = amount / price;
 
@@ -805,7 +831,7 @@ export class CopyTradingExecutionService {
                         return this.transferFromProxy(proxyAddress, amount);
                     });
                     if (!reimbursement.success) {
-                        // Critical but less critical than holding tokens.
+                        // tokens 已归位但报销失败，仍记为失败让上层继续追偿。
                         console.error(`[CopyExec] 🚨 Reimbursement still failed: ${reimbursement.error}`);
                         return { success: false, error: `Reimbursement Failed: ${reimbursement.error}`, txHash: pushResult.txHash };
                     }
@@ -817,7 +843,7 @@ export class CopyTradingExecutionService {
                 return { success: true, txHash: pushResult.txHash };
 
             } else { // SELL
-                // We sold. Need to Push USDC to Proxy.
+                // SELL 恢复路径：卖出已完成，只需把 USDC 推回 Proxy 即可闭环。
                 console.log(`[CopyExec] 🚑 Retry Push USDC...`);
                 const addresses = this.getChainAddresses();
                 const returnResult = await this.runWithProxyMutex(proxyAddress, 'recovery-return', async () => {
@@ -865,7 +891,7 @@ export class CopyTradingExecutionService {
                 indexSets
             ]);
 
-            // Execute on Proxy (proxy-scoped)
+            // redeem 同时涉及 nonce 与 proxy 状态，因此叠加 signer+proxy 双锁。
             const tx = await this.runWithProxyMutex(proxyAddress, 'redeem', async () => {
                 return this.runWithSignerMutex<ethers.providers.TransactionResponse>(executionSigner, 'redeem', () => executor.executeOnProxy(
                     proxyAddress,
@@ -898,7 +924,7 @@ export class CopyTradingExecutionService {
         preFetchedBook?: Orderbook | null // Optional optimization
     ): Promise<number> {
         try {
-            // If no orderbook provided, fetch it
+            // 未传入盘口快照时才回源请求，避免执行链路重复拉取。
             if (!preFetchedBook) {
                 preFetchedBook = await this.tradingService.getOrderBook(tokenId);
             }
@@ -906,10 +932,12 @@ export class CopyTradingExecutionService {
             const orderbook = preFetchedBook;
             if (!orderbook) return 0.05;
 
-            // BUY needs ASKS to fill. SELL needs BIDS to fill.
+            // BUY 消耗 asks，SELL 消耗 bids。
             const levels = side === 'BUY' ? orderbook.asks : orderbook.bids;
             if (!levels || levels.length === 0) return 0.05;
 
+            // 注意：这里把订单规模近似为“USDC 价值”做深度消耗模拟，
+            // 对 SELL 场景属于估算（level.size 是 shares），但在风控层足够保守。
             let remaining = amountUSDC;
             // NOTE: amountUSDC is the "Size Value". 
             // For BUY: We are spending $amountUSDC.
@@ -924,10 +952,9 @@ export class CopyTradingExecutionService {
                 const levelSize = parseFloat(level.size); // Shares
                 const levelValue = levelPrice * levelSize; // USDC Value
 
-                // Consuming Liquidity
-                // If we are BUYING, we eat up Value.
-                // If we are SELLING, we eat up SHARES (but amount passed is usually USDC Value in our current signature?)
-                // Let's assume amount passed to this function is roughly the USDC Value size of the order.
+                // 流动性消耗模型（简化版）：
+                // 把每档可成交价值按 value 递减 remaining，直到满足目标规模。
+                // 该模型偏向执行前预估，不用于精确成交仿真。
 
                 const valueToTake = Math.min(remaining, levelValue);
                 remaining -= valueToTake;
@@ -937,6 +964,7 @@ export class CopyTradingExecutionService {
             }
 
             if (remaining > 0) {
+                // 深度不足时直接抬高滑点上限，防止在浅盘口硬冲导致连环失败。
                 console.warn(`[SmartSlippage] ⚠️ Warning: Orderbook shallow! Requested: ${amountUSDC}, Remaining unfillable: ${remaining}`);
                 return 0.10; // 10% safety cap for illiquid
             }

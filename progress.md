@@ -1,0 +1,54 @@
+# 进度日志
+
+## 2026-02-18
+- 完成 OpenSpec 与技能流程检查。
+- 完成核心模块定位与首轮代码阅读。
+- 已创建计划与发现文件，进入注释实施阶段。
+- 已完成以下核心文件中文注释增强：
+  - `src/services/trading-service.ts`
+  - `src/services/market-service.ts`
+  - `src/services/smart-money-service.ts`
+  - `src/services/copy-trading-execution-service.ts`
+  - `src/core/tx-mutex.ts`
+  - `src/core/tx-monitor.ts`
+- 已执行 `pnpm run build`，TypeScript 编译通过。
+- 第二批已完成以下文件中文注释增强：
+  - `scripts/copy-trading-worker.ts`
+  - `frontend/app/api/copy-trading/execute/route.ts`
+  - `frontend/app/api/copy-trading/config/route.ts`
+  - `frontend/app/api/copy-trading/detect/route.ts`
+  - `frontend/app/api/copy-trading/readiness/route.ts`
+- 已执行 `frontend` lint：失败（仓库已有大量历史 lint 问题，非本次注释改动引入）。
+- 第三批已完成以下文件中文注释增强：
+  - `frontend/app/api/copy-trading/orders/route.ts`
+  - `frontend/app/api/copy-trading/positions/route.ts`
+  - `frontend/app/api/copy-trading/metrics/route.ts`
+  - `frontend/lib/services/guardrail-service.ts`
+  - `frontend/scripts/copy-trading-supervisor.ts`
+- 已再次执行 `pnpm run build`，TypeScript 编译通过。
+- 第四批已完成以下文件中文注释增强：
+  - `frontend/scripts/copy-trading-supervisor.ts`（配置区分组注释增强）
+  - `scripts/copy-trading-worker.ts`（配置区分组注释增强）
+  - `src/services/smart-money-service.ts`（候选筛选与评分口径注释增强）
+- 已再次执行 `pnpm run build`，TypeScript 编译通过。
+- 第五批已完成以下文件中文注释增强：
+  - `src/services/trading-service.ts`（订单管理/奖励/授权细节注释增强）
+  - `src/services/market-service.ts`（信号检测与归一化流程注释增强）
+  - `src/services/copy-trading-execution-service.ts`（动态滑点模型注释增强）
+  - `src/core/tx-mutex.ts`（队列与观测语义注释增强）
+  - `src/core/tx-monitor.ts`（跟踪与替换链路注释增强）
+- 已再次执行 `pnpm run build`，TypeScript 编译通过。
+- 第六批已完成以下文件中文注释增强：
+  - `src/services/trading-service.ts`（初始化/缓存/本地模式注释增强）
+  - `src/services/market-service.ts`（初始化/重试/历史解析入口注释增强）
+  - `src/services/copy-trading-execution-service.ts`（地址路由/守卫入口注释增强）
+  - `src/core/tx-mutex.ts`（isLocked 使用语义注释增强）
+  - `src/core/tx-monitor.ts`（confirm 语义注释增强）
+- 已再次执行 `pnpm run build`，TypeScript 编译通过。
+
+## 2026-02-19
+- 第七批已完成以下文件中文注释增强：
+  - `frontend/app/api/copy-trading/readiness/route.ts`（RPC 选择、降级容错、动作阈值口径注释增强）
+  - `src/services/market-service.ts`（历史/实时 spread 语义边界与信号阈值注释增强）
+  - `src/services/copy-trading-execution-service.ts`（Executor 代理执行、锁分层、AUTO 滑点与结算 fallback 注释增强）
+- 已执行 `pnpm run build`，TypeScript 编译通过。

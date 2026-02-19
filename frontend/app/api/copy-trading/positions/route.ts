@@ -168,7 +168,7 @@ export async function GET(request: Request) {
             const tokenIds = positions.map(p => p.tokenId).filter((id): id is string => !!id);
             const uniqueTokenIds = Array.from(new Set(tokenIds));
 
-            // 1. Batch Fetch Metadata
+            // 1) 批量补元数据（slug/outcome/conditionId），用于展示与 Gamma 对齐。
             const tradeMetadata = await prisma.copyTrade.findMany({
                 where: { tokenId: { in: uniqueTokenIds } },
                 select: { tokenId: true, marketSlug: true, outcome: true, detectedAt: true, conditionId: true },
@@ -202,7 +202,7 @@ export async function GET(request: Request) {
                 }
             });
 
-            // 2. Batch Fetch Prices (Orderbook)
+            // 2) 先取 CLOB 盘口价格（主价格源）。
             let priceMap = new Map<string, number>();
             uniqueTokenIds.forEach((tid) => {
                 const cached = orderbookPriceCache.get(tid);
@@ -223,14 +223,14 @@ export async function GET(request: Request) {
                             priceMap.set(tokenId, price);
                             orderbookPriceCache.set(tokenId, price, PRICE_TTL_MS);
                         }
-                        // Note: If no bids, we DON'T set to 0. This allows fallback to entry price later.
+                        // 没有 bids 时不强行写 0，后续允许回退到 entry/gamma，避免伪造爆亏。
                     });
                 }
             } catch (err) {
                 console.error("Failed to batch fetch prices", err);
             }
 
-            // 3. Batch Fetch Resolution Status (Gamma Direct HTTP)
+            // 3) 再从 Gamma 拉“补价格 + 是否已结算”状态（次级源 + 结算源）。
             const marketResolutionMap = new Map<string, { resolved: boolean, winner: boolean }>();
             const gammaPriceMap = new Map<string, number>(); // Secondary price source
             uniqueTokenIds.forEach((tid) => {
@@ -244,7 +244,7 @@ export async function GET(request: Request) {
                 }
             });
             try {
-                // Collect unique slugs and conditionIds to query
+                // 优先按 slug 查询（贴合前端链路），缺失时回退 conditionId。
                 const jobs = new Map<string, { type: 'slug' | 'condition', value: string }>();
 
                 uniqueTokenIds.forEach(id => {
@@ -265,7 +265,7 @@ export async function GET(request: Request) {
 
                 const tasks = Array.from(jobs.values());
 
-                // Concurrency Control
+                // 小批并发，防止请求风暴打穿 Gamma。
                 const BATCH_SIZE = 5;
                 for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
                     const batch = tasks.slice(i, i + BATCH_SIZE);
@@ -317,10 +317,13 @@ export async function GET(request: Request) {
                 const tradeInfo = metadataMap.get(pos.tokenId);
                 const rawPrice = priceMap.get(pos.tokenId);
 
-                // Default to avgEntryPrice if no live data
+                // 价格优先级：
+                // 1) CLOB 盘口价
+                // 2) Gamma 价格
+                // 3) avgEntryPrice（兜底）
                 let curPrice = rawPrice !== undefined ? rawPrice : pos.avgEntryPrice;
 
-                // OVERRIDE: Check resolution status
+                // 若市场已明确结算，价格强制改写为 1/0，确保持仓价值与最终结果一致。
                 const resolution = marketResolutionMap.get(pos.tokenId);
                 if (resolution && resolution.resolved) {
                     curPrice = resolution.winner ? 1.0 : 0.0;
@@ -336,7 +339,9 @@ export async function GET(request: Request) {
 
                 const estValue = pos.balance * (curPrice || 0);
 
-                // Determine status
+                // 状态口径：
+                // - OPEN：未结算
+                // - SETTLED_WIN / SETTLED_LOSS：按结算或极值价格判定
                 let status: 'OPEN' | 'SETTLED_WIN' | 'SETTLED_LOSS' = 'OPEN';
                 if (rawPrice !== undefined) {
                     if (rawPrice >= 0.95) status = 'SETTLED_WIN';
@@ -346,8 +351,7 @@ export async function GET(request: Request) {
                     status = resolution.winner ? 'SETTLED_WIN' : 'SETTLED_LOSS';
                 }
 
-                // Fallback: If price is 0 but we have Gamma metadata, try to find current price from metadata map (outcomePrices)
-                // This fixes the issue where Simulation shows Entry Price == Current Price because CLOB failed
+                // 若 CLOB 缺失/异常且未结算，尝试用 Gamma 价格修正，避免 UI 长时间卡在 entry price。
                 if ((curPrice === pos.avgEntryPrice || curPrice === 0) && !resolution?.resolved) {
                     const bestGammaPrice = gammaPriceMap.get(pos.tokenId);
                     if (bestGammaPrice !== undefined) {

@@ -41,11 +41,18 @@ import { TxMonitor, TrackedTx } from '../../src/core/tx-monitor';
 import { normalizeTradeSizingFromShares } from '../../src/utils/trade-sizing.js';
 
 // --- CONFIG ---
+// =========================
+// 网络与执行开关
+// =========================
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
+
+// =========================
+// 风控阈值（额度/频率/白名单）
+// =========================
 const EXECUTION_ALLOWLIST = (process.env.COPY_TRADING_EXECUTION_ALLOWLIST || '')
     .split(',')
     .map((addr) => addr.trim().toLowerCase())
@@ -59,15 +66,35 @@ const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '6000
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 const ASYNC_SETTLEMENT = process.env.COPY_TRADING_ASYNC_SETTLEMENT === 'true'
     || process.env.COPY_TRADING_ASYNC_SETTLEMENT === '1';
+
+// =========================
+// 缓存与去重
+// =========================
+// GUARDRAIL_CACHE_TTL_MS 用于缓存额度统计查询，降低高频 guardrail 的 DB 压力。
 const GUARDRAIL_CACHE_TTL_MS = parseInt(process.env.SUPERVISOR_GUARDRAIL_CACHE_TTL_MS || '5000', 10);
+// MARKET_META_TTL_MS 缓存 token -> (slug/condition/outcome) 元数据，减少重复市场查询。
 const MARKET_META_TTL_MS = parseInt(process.env.SUPERVISOR_MARKET_META_TTL_MS || '300000', 10);
+// DEDUP_TTL_MS 控制“同一事件哈希”去重窗口，避免多信号源重复下单。
 const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10);
+
+// =========================
+// 并发与队列
+// =========================
 const FANOUT_CONCURRENCY = parseInt(process.env.SUPERVISOR_FANOUT_CONCURRENCY || '25', 10);
 const QUEUE_MAX_SIZE = parseInt(process.env.SUPERVISOR_QUEUE_MAX_SIZE || '5000', 10);
 const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS || '500', 10);
 const WORKER_POOL_SIZE = Math.max(1, parseInt(process.env.SUPERVISOR_WORKER_POOL_SIZE || '20', 10));
+
+// =========================
+// 配置刷新策略
+// =========================
+// refresh 与 full refresh 分层：高频增量 + 低频全量校准。
 const CONFIG_REFRESH_INTERVAL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_CONFIG_REFRESH_MS || '10000', 10));
 const CONFIG_FULL_REFRESH_INTERVAL_MS = Math.max(60000, parseInt(process.env.SUPERVISOR_CONFIG_FULL_REFRESH_MS || String(5 * 60 * 1000), 10));
+
+// =========================
+// 信号源（WS / Polling / Hybrid）
+// =========================
 const WS_ADDRESS_FILTER = process.env.SUPERVISOR_WS_FILTER_BY_ADDRESS !== 'false';
 const SHARD_COUNT = Math.max(1, parseInt(process.env.SUPERVISOR_SHARD_COUNT || '1', 10));
 const SHARD_INDEX = Math.max(0, parseInt(process.env.SUPERVISOR_SHARD_INDEX || '0', 10));
@@ -85,6 +112,9 @@ const WS_UNHEALTHY_THRESHOLD_MS = Math.max(5000, parseInt(process.env.SUPERVISOR
 const SIGNAL_SOURCE_WINDOW_MS = Math.max(30000, parseInt(process.env.SUPERVISOR_SIGNAL_SOURCE_WINDOW_MS || '120000', 10));
 const SIGNAL_CURSOR_SOURCE = 'data_api_activity';
 
+// =========================
+// 自检模式（联调/验收）
+// =========================
 const SELFTEST_ENABLED = process.env.SUPERVISOR_SELFTEST === 'true';
 const SELFTEST_EXIT = process.env.SUPERVISOR_SELFTEST_EXIT === 'true';
 const SELFTEST_CREATE_CONFIG = process.env.SUPERVISOR_SELFTEST_CREATE_CONFIG !== 'false';
@@ -110,10 +140,12 @@ if (!process.env.DATABASE_URL) {
 }
 
 function isWsSignalEnabled(): boolean {
+    // HYBRID 与 WS_ONLY 都允许 WS 作为信号输入。
     return SIGNAL_MODE === 'WS_ONLY' || SIGNAL_MODE === 'HYBRID';
 }
 
 function isPollingSignalEnabled(): boolean {
+    // HYBRID 与 POLLING_ONLY 都启用 polling 兜底链路。
     return SIGNAL_MODE === 'POLLING_ONLY' || SIGNAL_MODE === 'HYBRID';
 }
 
@@ -544,6 +576,7 @@ function evaluateWsHealth() {
     const unhealthy = signalHealth.wsLastEventAgeMs > WS_UNHEALTHY_THRESHOLD_MS;
 
     if (SIGNAL_MODE !== 'HYBRID') return;
+    // HYBRID 模式下，WS 退化并不停止系统，而是由 polling 接管主信号来源。
     if (unhealthy && !signalHealth.wsDegraded) {
         signalHealth.wsDegraded = true;
         console.warn(`[Supervisor] ⚠️ WS unhealthy (${signalHealth.wsLastEventAgeMs}ms without event). Polling remains active.`);
@@ -593,7 +626,7 @@ async function logMetricsSummary(): Promise<void> {
             console.log(`[Metrics] 🧭 Config refresh: mode=${configRefreshStats.lastMode} fetched=${configRefreshStats.lastFetched} duration=${configRefreshStats.lastDurationMs}ms at=${new Date(configRefreshStats.lastRunAt).toISOString()}`);
         }
 
-        // Reset for next period
+        // 周期性清零窗口指标，形成滚动观测（而非进程生命周期累计）。
         metrics.totalExecutions = 0;
         metrics.successfulExecutions = 0;
         metrics.failedExecutions = 0;
@@ -651,6 +684,7 @@ async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<nu
         console.log(`[Supervisor] 💰 Price fetched for ${tokenId}: $${price.toFixed(4)}`);
         return price;
     } catch (e: any) {
+        // 价格拉取失败时回退上次缓存（再兜底 0.5），确保执行链路不断流。
         console.warn(`[Supervisor] Price fetch failed for ${tokenId}: ${e.message}`);
         return cached?.price || 0.5;
     }
@@ -679,6 +713,7 @@ async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Pr
 
     const inflight = preflightInFlight.get(key);
     if (inflight) {
+        // 同 key 请求复用 Promise，降低高并发下重复 RPC/DB 开销。
         return inflight as Promise<T>;
     }
 
@@ -849,6 +884,7 @@ async function checkExecutionGuardrails(
     const source = context.source || 'supervisor';
     const marketSlug = context.marketSlug?.toLowerCase();
 
+    // Supervisor 侧 guardrail 与 worker 侧保持同口径，避免双系统判定不一致。
     if (EMERGENCY_PAUSE) {
         await recordGuardrailEvent({ reason: 'EMERGENCY_PAUSE', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
         return { allowed: false, reason: 'EMERGENCY_PAUSE' };
@@ -1896,14 +1932,16 @@ async function processJob(
         }
     }
 
-    // 1. Validate filters before allocating resources
+    // 1) 先过业务过滤，再分配 worker，减少队列与钱包资源占用。
     const filterResult = await passesFilters(config, tokenId, side, approxPrice);
     if (!filterResult.passes) {
         console.log(`[Supervisor] 🔕 Trade skipped for ${config.walletAddress}: ${filterResult.reason}`);
         return;
     }
 
-    // 2. Try Checkout Worker OR EOA Signer
+    // 2) 根据 executionMode 选择执行上下文：
+    // - EOA: 用户私钥解密后独立执行
+    // - PROXY: 从 worker 池借用可用执行钱包
     let worker: WorkerContext | null = null;
 
     if (config.executionMode === 'EOA') {
@@ -1938,7 +1976,7 @@ async function processJob(
     }
 
 
-    // 3. If no worker AND no EOA, QUEUE IT
+    // 3) 无可用 worker 时入队，避免直接丢单（队列满时才 drop）。
     if (!worker) {
         if (config.executionMode === 'EOA') {
             console.error(`[Supervisor] ❌ EOA execution skipped (no worker/service) for ${config.walletAddress}.`);
@@ -2053,6 +2091,7 @@ async function executeJobInternal(
         });
 
         if (!guardrail.allowed) {
+            // guardrail 拦截也写入 copyTrade（SKIPPED），保证执行审计链完整。
             if (guardrail.reason === 'DRY_RUN') {
                 // DRY_RUN Mode: Log execution decision without placing order
                 const latencyMs = Date.now() - startTime;

@@ -74,6 +74,9 @@ export class GuardrailService {
         tradeId?: string;
         tokenId?: string;
     }) {
+        // guardrail 命中统计用于在线观测：
+        // - byReason 看“阻断原因分布”
+        // - bySource 看“来自 worker/api/readiness 哪条链路”
         guardrailStats.total += 1;
         guardrailStats.byReason.set(params.reason, (guardrailStats.byReason.get(params.reason) || 0) + 1);
         guardrailStats.bySource.set(params.source, (guardrailStats.bySource.get(params.source) || 0) + 1);
@@ -103,6 +106,7 @@ export class GuardrailService {
         }
 
         if (isDatabaseEnabled && typeof (prisma as any).guardrailEvent !== 'undefined') {
+            // 持久化失败不阻塞主流程，guardrail 记录属于观测增强而非交易关键路径。
             void prisma.guardrailEvent.create({
                 data: {
                     reason: params.reason,
@@ -177,6 +181,9 @@ export class GuardrailService {
         const source = context.source || 'guardrail';
         const marketSlug = context.marketSlug?.toLowerCase();
 
+        // 风控顺序采用“短路失败”：
+        // 全局开关 -> allowlist -> 单笔上限 -> 日额度 -> 频率 -> dry-run。
+        // 这样可以优先在低成本条件处返回，减少后续数据库计算。
         if (EMERGENCY_PAUSE) {
             GuardrailService.recordGuardrailTrigger({ reason: 'EMERGENCY_PAUSE', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
             return { allowed: false, reason: 'EMERGENCY_PAUSE' };
@@ -211,7 +218,7 @@ export class GuardrailService {
 
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
 
-        // 2. Global Daily Cap
+        // 全局 24h 额度。
         if (GLOBAL_DAILY_CAP_USD > 0) {
             const globalUsed = await this.getExecutedTotalSince(since);
             if (globalUsed + amount > GLOBAL_DAILY_CAP_USD) {
@@ -223,7 +230,7 @@ export class GuardrailService {
             }
         }
 
-        // 3. Wallet Daily Cap
+        // 单钱包 24h 额度。
         if (WALLET_DAILY_CAP_USD > 0) {
             const walletUsed = await this.getExecutedTotalSince(since, walletAddress);
             if (walletUsed + amount > WALLET_DAILY_CAP_USD) {
@@ -236,6 +243,7 @@ export class GuardrailService {
         }
 
         if (marketSlug) {
+            // 市场级限额支持 MARKET_CAPS 针对 slug 覆盖默认 MARKET_DAILY_CAP_USD。
             const marketCap = MARKET_CAPS.get(marketSlug) || MARKET_DAILY_CAP_USD;
             if (marketCap > 0) {
                 const marketUsed = await this.getExecutedTotalForMarketSince(since, marketSlug);
@@ -250,6 +258,7 @@ export class GuardrailService {
         }
 
         if (MAX_TRADES_PER_WINDOW > 0) {
+            // 窗口频率限制用于抑制短时爆发执行。
             const windowStart = new Date(Date.now() - TRADE_WINDOW_MS);
             const tradeCount = await this.getExecutedCountSince(windowStart);
             if (tradeCount >= MAX_TRADES_PER_WINDOW) {
@@ -262,6 +271,7 @@ export class GuardrailService {
         }
 
         if (DRY_RUN) {
+            // DRY_RUN 仍记录 guardrail 命中，便于验证链路触达。
             GuardrailService.recordGuardrailTrigger({ reason: 'DRY_RUN', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
             return { allowed: false, reason: 'DRY_RUN' };
         }
