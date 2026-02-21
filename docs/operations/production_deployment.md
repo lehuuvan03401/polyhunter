@@ -162,145 +162,46 @@
 
 ## 6. 环境变量配置 (Environment Setup)
 
-在服务器创建 `web/.env` 文件，填入真实生产配置：
+部署上线这套系统（不论是在阿里云等自建服务器，还是由于 Vercel/Render 等云平台），请遵循以下 **“三步走”** 的环境变量配置标准最佳实践：
 
-```env
-# --- 区块链网络 (Blockchain) ---
-# ⚠️ 必须是 137 (Polygon Mainnet)
-NEXT_PUBLIC_CHAIN_ID=137
+### 第一步：确定当前运行的网络环境并选择模板
+在代码库的 `web` 目录下，我们提供了多套 `.example` 模板：
+- **如果要跑主网 (实盘真钱交易)**：
+  将 `.env.local.mainnet.example` 复制一份并重命名为 **`.env.local`** (Next.js 默认最高优先级读取文件)。
+- **如果要跑测试网/本地测试 (模拟盘)**：
+  将 `.env.local.localhost.example` 复制一份并重命名为 **`.env.local`**。
 
-# ⚠️ 必须是 WSS 协议 (WebSocket)
-# 推荐: Alchemy, Infura, QuickNode 的付费版
-NEXT_PUBLIC_RPC_URL="wss://polygon-mainnet.g.alchemy.com/v2/您的API_KEY"
+### 第二步：补全核心机密数据 (Secrets)
+复制完 `.env.local` 模板后，该文件目前是“安全”的缺省状态（不包含真实私钥）。你必须手动在你要发布的机器的 `.env.local` 文件中补入第 `3` 分组（Secrets & Auth）的不公开数据：
 
-# --- 合约地址 (Contracts) ---
-# Executor 合约 (将在部署阶段 1 获得)
-NEXT_PUBLIC_EXECUTOR_ADDRESS="" 
-# Proxy Factory (通常使用官方部署版本，或自己部署一个)
-NEXT_PUBLIC_PROXY_FACTORY_ADDRESS="0xa536e751cc68997e898165b3213eec355e09c6d3"
-# USDC 地址 (Polygon)
-NEXT_PUBLIC_USDC_ADDRESS="0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+1. **`DATABASE_URL`**: 填入你线上真实运行的云数据库的连接 URL (如 PostgreSQL / RDS 等)。
+2. **`TRADING_PRIVATE_KEY`**: 填入你在主网要负责发交易并且支付 MATIC Gas 的那个钱主发单手钱包的真实私钥。
+3. **`POLY_API_KEY` / `POLY_API_SECRET` / `POLY_API_PASSPHRASE`**: 给上方的钱包地址在 Polymarket 官方后台申请得到的配套 CLOB API 密钥这三个值，这是过授权的最后一道关卡。
 
-# --- 敏感密钥 (Secrets) ---
-# 用于生成 Worker Fleet 的助记词
-TRADING_MNEMONIC="verify occur ... (请妥善保管您的 12 个单词)"
+> **💡 高级云端运维做法 (云平台推荐)**
+> 若你使用的是 Vercel、Railway、AWS 等成熟云平台，**完全不需要在服务器创建 `.env.local` 实体文件**。只需对照 `.env.local.mainnet.example` 模板，把那里面的必填项和上述私钥密码，直接在云平台的 **Environment Variables (环境变量设置面板)** 里打标按 Key-Value 填入即可，平台会在启动时自动注入容器。
 
-# --- 数据库 (Database) ---
-DATABASE_URL="postgresql://user:password@db-host:5432/polyhunter?schema=public"
+### 第三步：设置生产级高可用参数 (开启主网火力)
+如果你是直接上线主网真仓跟单营运，千万不要忘了检查并激活模板里这几个关键的控制开关：
 
-# --- 安全 (Security) ---
-NEXTAUTH_SECRET="请生成一个复杂的随机字符串"
-```
+- **`ENABLE_REAL_TRADING=true`**: 这才会真正开启实盘真钱跟投流转；否则系统默认只打日志发模拟单不烧钱。
+- **`COPY_TRADING_RPC_URL="wss://..."`**: 填入你自己花钱购买的专属高速付费节点（如 Alchemy 或 QuickNode WSS 链接）。为了高频发送交易抢单防限流，这必须是一条独立畅通的高速公路。
+- **`SUPERVISOR_REDIS_URL="redis://..."`**: 填上云端独立 Redis。跟单流需要这个服务去吃掉大量轮询状态和缓存积压来扛并发，强烈建议和普通页面的 Redis 分开。
+- （可选救火动作）如果遇到极端行情，可随时在后台把 **`COPY_TRADING_EMERGENCY_PAUSE=true`**。它能作为物理拔网线开关被极速识别，立刻熔断停止全场跟单，但不影响前端页面。
 
-### Copy Trading 执行相关（可选但建议配置）
-
-完整清单见 `web/.env.example`。生产环境常用项：
-
-- `ENABLE_REAL_TRADING=true`
-- `COPY_TRADING_RPC_URLS`（多节点兜底，建议至少 2 个）
-- `COPY_TRADING_EMERGENCY_PAUSE=false`（紧急暂停开关）
-- `COPY_TRADING_DRY_RUN=false`（仅做信号验证，不提交交易）
-- `COPY_TRADING_MAX_TRADE_USD`（单笔上限）
-- `COPY_TRADING_WALLET_DAILY_CAP_USD` / `COPY_TRADING_DAILY_CAP_USD`
-- `COPY_TRADING_MAX_TRADES_PER_WINDOW` + `COPY_TRADING_TRADE_WINDOW_MS`
-- `COPY_TRADING_WORKER_ALLOWLIST`（执行 Worker 白名单）
-- `COPY_TRADING_MARKET_DAILY_CAP_USD` / `COPY_TRADING_MARKET_CAPS`（市场级限额）
-- `COPY_TRADING_EXECUTION_ALLOWLIST`（灰度/风控时使用）
-- `COPY_TRADING_MAX_TRADE_USD`
-- `COPY_TRADING_DAILY_CAP_USD` / `COPY_TRADING_WALLET_DAILY_CAP_USD`
-- `COPY_TRADING_WORKER_KEYS` / `COPY_TRADING_WORKER_INDEX`
-- `COPY_TRADING_MAX_RETRY_ATTEMPTS`
-- `COPY_TRADING_MIN_WALLET_MATIC`（readiness 面板提示用）
-- `COPY_TRADING_MIN_PROXY_USDC`（readiness 面板提示用）
-
-### 性能调优参数 (Performance Tuning - New 2026.02)
-- `COPY_TRADING_PRICE_TTL_MS="5000"` (Quote Cache TTL)
-- `COPY_TRADING_PREFLIGHT_CACHE_TTL_MS="2000"` (Balance/Allowance Cache TTL)
-- `COPY_TRADING_QUOTE_CACHE_MAX_ENTRIES="500"`
-- `COPY_TRADING_PREFLIGHT_CACHE_MAX_ENTRIES="1000"`
-- `COPY_TRADING_RPC_URLS="wss://...,wss://..."` (多节点故障转移)
+### 上线前就绪检查 (Readiness Panel)
 
 资金/授权 Readiness 面板会轮询 `/api/copy-trading/readiness`，展示：
-- 钱包 MATIC / USDC.e 余额
-- Proxy USDC.e 余额
+- 钱包 MATIC / USDC 余额
+- Proxy USDC 余额
 - USDC 与 CTF 授权状态
-- 缺失项的下一步指引（充值或授权）
+- 缺失项的下一步指引
 
-上线前建议执行就绪检查：
-```
+上线前强烈建议先执行一遍控制台层的就绪检查脚本排除所有低级故障：
+```bash
 npx tsx scripts/verify/copy-trading-readiness.ts
 ```
-
 ---
-
-## 3. 部署流程 (Deployment Sequence)
-
-请严格按以下顺序操作：
-
-### 第一步：部署 Executor 合约
-这是 Fleet Commander，负责授权所有 Worker 代理用户执行交易。
-
-```bash
-cd Horus/contracts
-
-# 1. 安装依赖
-npm install
-
-# 2. 部署到 Polygon 主网
-# 确保此时 .env 里是主网配置
-npx hardhat run scripts/deploy-executor.ts --network polygon
-
-# ⚠️ 保存输出的 "PolyHunterExecutor deployed to: 0x..." 地址！
-# 将其更新到 web/.env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS 中。
-```
-
-### 第二步：初始化数据库
-确保 PostgreSQL 数据库已启动并可连接。
-
-```bash
-cd ../frontend
-
-# 1. 安装依赖
-npm install
-
-# 2. 同步数据库结构
-npx prisma generate
-npx prisma db push
-```
-
-### 第三步：启动 Supervisor (核心大脑)
-Supervisor 是后台守护进程，负责监听链上信号并调度 Worker。**它必须 7x24 小时运行。** 我们使用 PM2 来管理它。
-
-```bash
-# 全局安装 PM2
-npm install -g pm2
-
-# 启动 Supervisor
-# --max-memory-restart 2G 防止内存泄漏导致崩盘
-pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
-
-# 设置开机自启
-pm2 save
-pm2 startup
-```
-
-**验证启动**:
-```bash
-pm2 logs poly-supervisor
-# 应看到: [WalletManager] Initializing fleet of 20 wallets...
-# 应看到: [MempoolDetector] 🦈 Starting Mempool Sniffing...
-```
-
-### 第四步：启动 Web 前端
-启动用户界面 (Next.js)。
-
-```bash
-npm run build
-pm2 start "npm start" --name poly-frontend
-```
-
----
-
 ## 7. 部署流程 (Deployment Process)
 
 ### 第一步：部署 Executor 合约
@@ -709,157 +610,22 @@ pm2 flush
 
 ---
 
-## 17. 生产环境部署注意事项 (Production Deployment Notes)
-
-### 本地 vs 生产环境差异
+## 16. 本地与生产环境差异 (Local vs Prod)
 
 | 步骤 | 本地仿真 (Local) | 生产环境 (Production) | 为什么？ |
 |------|------------------|----------------------|----------|
-| 部署 Proxy | setup-local-fork.ts | ❌ 不要运行此脚本 | 本地脚本用的是测试账号。生产环境用户是在前端界面点击"创建账户"来部署 Proxy 的。 |
-| 资金来源 | setup-local-fork.ts (偷大户) | 真实充值 | 生产环境您必须往 Master Wallet 转入真实的 MATIC，用户需往 Proxy 充值真实的 USDC。 |
-| 触发交易 | impersonate- 脚本 (模拟信号) | 真实监听 | Supervisor 会自动监听链上 CTF Exchange 的真实交易。不需要手动脚本触发。 |
-| Mock 模式 | 自动开启 (ChainID 31337) | 自动关闭 | 当您设置 ChainID=137 时，TradingService 会自动尝试连接真实 Polymarket 接口。 |
-
-### 生产环境部署修正清单
-
-#### A. 环境变量修正 (.env)
-将 .env 修改为真实的主网配置：
-
-```bash
-# ⚠️ 必须是 137 (Polygon Mainnet)
-NEXT_PUBLIC_CHAIN_ID=137
-
-# ⚠️ 必须是高质量的节点 (Alchemy/Infura付费版)，必须支持 WebSocket (wss://)
-# 只有 WebSocket 才能做到毫秒级监听 Mempool
-NEXT_PUBLIC_RPC_URL="wss://polygon-mainnet.g.alchemy.com/v2/您的API_KEY"
-
-# ⚠️ 您的真实助记词 (管理整个 Fleet)
-TRADING_MNEMONIC="您的 12 个助记词 ..."
-
-# ⚠️ 生产级数据库 (不要用 SQLite 文件)
-DATABASE_URL="postgresql://user:pass@AWS_RDS_HOST:5432/mydb"
-```
-
-#### B. 基础设施部署 (仅需一次)
-您需要在主网上部署一个属于您的 Executor 合约（Fleet Commander）。
-
-```bash
-cd contracts
-# 注意：确保此时 .env 里是主网配置
-npx hardhat run scripts/deploy-executor.ts --network polygon
-```
-
-执行后，将获得的地址填入 .env 的 `NEXT_PUBLIC_EXECUTOR_ADDRESS`。
-
-#### C. 启动服务 (PM2)
-生产环境不要直接用 `npx tsx` 跑前台，要用 PM2 守护进程。
-
-```bash
-# 启动 Supervisor (7x24小时运行)
-pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
-
-# 启动前端
-npm run build
-pm2 start "npm start" --name poly-frontend
-```
-
-### 特别注意事项
-
-1. **CLOB API 鉴权**:
-   - 在 Mock 模式下我们跳过了鉴权。
-   - 在生产环境，Worker 钱包第一次启动时，会自动签名消息去 Polymarket 申请 API Key。
-   - 确保 Worker 钱包里有少量的 MATIC，虽然申请 Key 只需签名不耗 Gas，但建立连接和后续下单需要 Gas。
-   - Auto-Refuel 机制会自动解决这个问题，只要您的 Master Wallet 有钱。
-
-2. **RPC 速率限制**:
-   - 本地测试没有限制。
-   - 生产环境如果并发 20 个 Worker 同时查余额或下单，可能会瞬间打爆免费的 RPC 节点。
-   - 务必使用付费的 Alchemy/Infura 节点，或者在代码中调大 `src/core/rate-limiter.ts` 的限制。
-
-3. **资金安全**:
-   - `TRADING_MNEMONIC` 控制所有跟单资金。请务必妥善保管。
-   - 建议使用硬件钱包或专业的密钥管理服务。
-
-### 结论
-
-代码逻辑已经 Ready。只要改一下配置（Env），部署一次合约（Executor），并给钱包充钱，这套系统就能在 Polygon 主网上跑起来。
-
-**建议**: 先用小资金（10 USDC）进行一次真实验证，确认一切正常后再扩大规模。
+| 部署 Proxy | `setup-local-fork.ts` | ❌ 不要运行此脚本 | 本地脚本用的是测试账号。生产环境用户是在前端界面点击"创建账户"来部署 Proxy 的。 |
+| 资金来源 | `setup-local-fork.ts` (偷大户) | 真实充值 | 生产环境您必须往 Master Wallet 转入真实的 MATIC，用户需往 Proxy 充值真实的 USDC。 |
+| 触发交易 | `impersonate` 脚本 (模拟信号) | 真实监听 | Supervisor 会自动监听链上 CTF Exchange 的真实交易。不需要手动脚本触发。 |
+| Mock 模式 | 自动开启 (ChainID 1337) | 自动关闭 | 当设置 ChainID=137 时，程序会自动尝试连接真实 Polymarket API。 |
 
 ---
 
-## 18. 联系与支持 (Contact & Support)
+## 17. 联系与支持 (Contact & Support)
 
-- **项目主页**: [Catalyst.fun](https://x.com/catalystdotfun)
-- **构建者**: [@hhhx402](https://x.com/hhhx402)
+- **项目主页**: [Catalyst.fun](https://catalyst.fun)
 - **问题反馈**: GitHub Issues
 
 ---
 
-**最后更新**: 2026-01-21
-
-
-
-要转到 真实生产环境 (Production)，流程大体一致，但有几个关键的“替换”和“注意点”。
-
-以下是生产环境部署的差异与修正清单：
-
-1. 核心差异：不能做的事 (Local vs Prod)
-步骤	本地仿真 (Local)	生产环境 (Production)	为什么？
-部署 Proxy	setup-local-fork.ts	❌ 不要运行此脚本	本地脚本用的是测试账号。生产环境用户是在前端界面点击“创建账户”来部署 Proxy 的。
-资金来源	setup-local-fork.ts (偷大户)	真实充值	生产环境您必须往 Master Wallet 转入真实的 MATIC，用户需往 Proxy 充值真实的 USDC。
-触发交易	impersonate- 脚本 (模拟信号)	真实监听	Supervisor 会自动监听链上 CTF Exchange 的真实交易。不需要手动脚本触发。
-Mock 模式	自动开启 (ChainID 31337)	自动关闭	当您设置 ChainID=137 时，TradingService 会自动尝试连接真实 Polymarket 接口。
-2. 生产环境部署清单 (Checklist)
-请按以下步骤将系统推向 Polygon Mainnet：
-
-A. 环境变量修正 (.env)
-将 .env 修改为真实的主网配置：
-
-bash
-# ⚠️ 必须是 137 (Polygon Mainnet)
-NEXT_PUBLIC_CHAIN_ID=137
-# ⚠️ 必须是高质量的节点 (Alchemy/Infura付费版)，必须支持 WebSocket (wss://)
-# 只有 WebSocket 才能做到毫秒级监听 Mempool
-NEXT_PUBLIC_RPC_URL="wss://polygon-mainnet.g.alchemy.com/v2/您的API_KEY"
-# ⚠️ 您的真实助记词 (管理整个 Fleet)
-TRADING_MNEMONIC="您的 12 个助记词 ..."
-# ⚠️ 生产级数据库 (不要用 SQLite 文件)
-DATABASE_URL="postgresql://user:pass@AWS_RDS_HOST:5432/mydb"
-B. 基础设施部署 (仅需一次)
-您需要在主网上部署一个属于您的 Executor 合约（Fleet Commander）。
-
-bash
-cd contracts
-# 注意：确保此时 .env 里是主网配置
-npx hardhat run scripts/deploy-executor.ts --network polygon
-执行后，将获得的地址填入 .env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS。
-
-C. 启动服务 (PM2)
-生产环境不要直接用 npx tsx 跑前台，要用 PM2 守护进程。 参考 docs/operations/production_deployment.md：
-
-bash
-# 启动 Supervisor (7x24小时运行)
-pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
-# 启动前端
-npm run build
-pm2 start "npm start" --name poly-frontend
-3. 需要特别注意的风险
-CLOB API 鉴权：
-在 Mock 模式下我们跳过了鉴权。
-在生产环境，Worker 钱包第一次启动时，会自动签名消息去 Polymarket 申请 API Key。确保 Worker 钱包里有少量的 MATIC，虽然申请 Key 只需签名不耗 Gas，但建立连接和后续下单需要 Gas。
-Auto-Refuel 机制会自动解决这个问题，只要您的 Master Wallet 有钱。
-RPC 速率限制：
-本地测试没有限制。
-生产环境如果并发 20 个 Worker 同时查余额或下单，可能会瞬间打爆免费的 RPC 节点。务必使用付费的 Alchemy/Infura 节点，或者在代码中调大 src/core/rate-limiter.ts 的限制。
-资金安全：
-TRADING_MNEMONIC 控制所有跟单资金。请务必妥善保管。
-结论： 代码逻辑已经 Ready。只要改一下配置（Env），部署一次合约（Executor），并给钱包充钱，这套系统就能在 Polygon 主网上跑起来。建议先用小资金（10 USDC）进行一次真实验证。
-
-
-
-# 启动 Supervisor (7x24小时运行)
-pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
-# 启动前端
-npm run build
-pm2 start "npm start" --name poly-frontend
+**最后更新**: 2026-02-21
