@@ -16,14 +16,15 @@
     "verify:managed-membership:lifecycle": "npx tsx scripts/verify/managed-membership-lifecycle.ts",
     "cache:update": "tsx scripts/update-leaderboard-cache.ts",
     "copy-worker:speed": "COPY_TRADING_SPEED_MODE=true npx tsx scripts/copy-trading-worker.ts",
-    "env:mainnet": "sh -c \"cat .env.local.mainnet .env.local.secrets 2>/dev/null > .env.local\"",
-    "env:local": "sh -c \"cat .env.local.localhost .env.local.secrets 2>/dev/null > .env.local\""
+    "env:mainnet": "tsx scripts/setup-env.ts mainnet",
+    "env:local": "tsx scripts/setup-env.ts localhost"
   },
   "dependencies": {
     "@catalyst-team/poly-sdk": "file:./vendor/poly-sdk.tgz",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "@privy-io/react-auth": "^3.10.0",
+    "@t3-oss/env-nextjs": "^0.13.10",
     "@types/pg": "^8.16.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -42,7 +43,8 @@
     "recharts": "^3.6.0",
     "sonner": "^2.0.7",
     "swr": "^2.3.8",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
