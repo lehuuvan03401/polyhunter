@@ -6,17 +6,67 @@ import {
 
 const CACHE_TTL = 5 * 60 * 1000;
 
-let cachedTraders: DiscoveredSmartMoneyTrader[] = [];
-let lastFetchTime = 0;
-let inFlight: Promise<DiscoveredSmartMoneyTrader[]> | null = null;
+type TopReasonCode =
+    | 'high_score'
+    | 'low_drawdown'
+    | 'high_profit_factor'
+    | 'copy_friendly'
+    | 'high_activity'
+    | 'strong_recent_pnl';
 
-async function fetchTopTraders(limit: number): Promise<DiscoveredSmartMoneyTrader[]> {
+type TopTraderItem = DiscoveredSmartMoneyTrader & {
+    reasonCodes: TopReasonCode[];
+    reasonSummary: string;
+};
+
+let cachedTraders: TopTraderItem[] = [];
+let lastFetchTime = 0;
+let inFlight: Promise<TopTraderItem[]> | null = null;
+
+function getReasonCodes(trader: DiscoveredSmartMoneyTrader): TopReasonCode[] {
+    const reasons: TopReasonCode[] = [];
+
+    if (trader.score >= 90) reasons.push('high_score');
+    if (trader.maxDrawdown <= 12) reasons.push('low_drawdown');
+    if (trader.profitFactor >= 2) reasons.push('high_profit_factor');
+    if (trader.copyFriendliness >= 70) reasons.push('copy_friendly');
+    if (trader.recentTrades >= 80) reasons.push('high_activity');
+    if (trader.pnl >= 100_000) reasons.push('strong_recent_pnl');
+
+    if (reasons.length === 0) {
+        reasons.push('high_score');
+    }
+
+    return reasons.slice(0, 3);
+}
+
+function buildReasonSummary(codes: TopReasonCode[]): string {
+    const parts: string[] = [];
+    if (codes.includes('high_score')) parts.push('high score');
+    if (codes.includes('low_drawdown')) parts.push('low drawdown');
+    if (codes.includes('high_profit_factor')) parts.push('strong profit factor');
+    if (codes.includes('copy_friendly')) parts.push('copy-friendly execution');
+    if (codes.includes('high_activity')) parts.push('high recent activity');
+    if (codes.includes('strong_recent_pnl')) parts.push('strong recent pnl');
+    return parts.slice(0, 2).join(', ');
+}
+
+async function fetchTopTraders(limit: number): Promise<TopTraderItem[]> {
     if (inFlight) {
         const shared = await inFlight;
         return shared.slice(0, limit);
     }
 
-    inFlight = discoverSmartMoneyTraders(Math.max(limit, 50));
+    inFlight = discoverSmartMoneyTraders(Math.max(limit, 50)).then((traders) =>
+        traders.map((trader) => {
+            const reasonCodes = getReasonCodes(trader);
+            return {
+                ...trader,
+                reasonCodes,
+                reasonSummary: buildReasonSummary(reasonCodes),
+            };
+        })
+    );
     try {
         const traders = await inFlight;
         cachedTraders = traders;

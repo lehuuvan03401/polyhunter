@@ -76,7 +76,15 @@
             "viewAll": "See Smart Money",
             "loading": "Loading recommended traders...",
             "empty": "No recommended traders available right now.",
-            "score": "Copy Score"
+            "score": "Copy Score",
+            "reasons": {
+                "high_score": "High Score",
+                "low_drawdown": "Low Drawdown",
+                "high_profit_factor": "High PF",
+                "copy_friendly": "Copy-Friendly",
+                "high_activity": "High Activity",
+                "strong_recent_pnl": "Strong PnL"
+            }
         }
     },
     "Leaderboard": {

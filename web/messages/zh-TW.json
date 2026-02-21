@@ -76,7 +76,15 @@
             "viewAll": "查看聰明錢榜單",
             "loading": "正在加載推薦交易員...",
             "empty": "目前暫無可推薦交易員",
-            "score": "跟單評分"
+            "score": "跟單評分",
+            "reasons": {
+                "high_score": "高評分",
+                "low_drawdown": "低回撤",
+                "high_profit_factor": "高PF",
+                "copy_friendly": "易複製",
+                "high_activity": "高活躍",
+                "strong_recent_pnl": "強近期PnL"
+            }
         }
     },
     "Leaderboard": {

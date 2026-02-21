@@ -5,6 +5,7 @@
  * Used by background scripts to update cache and by API routes to read cached data.
  */
 
+import type { Prisma } from '@prisma/client';
 import { prisma, isDatabaseEnabled } from '../prisma';
 import { polyClient } from '@/lib/polymarket';
 import {
@@ -67,14 +68,20 @@ function normalizeTimestampSeconds(timestamp: number): number {
 function convertActivitiesToTrades(activities: ActivityLike[]): Trade[] {
     return activities
         .filter(a => a.type === 'TRADE' && a.side && a.size && a.price)
-        .map(a => ({
-            timestamp: normalizeTimestampSeconds(Number(a.timestamp)),
-            side: a.side as 'BUY' | 'SELL',
-            size: Number(a.size),
-            price: Number(a.price),
-            value: Number(a.usdcSize || (a.size * a.price)),
-            pnl: undefined,
-        }));
+        .map(a => {
+            const size = Number(a.size ?? 0);
+            const price = Number(a.price ?? 0);
+            const usdcValue = Number(a.usdcSize ?? (size * price));
+
+            return {
+                timestamp: normalizeTimestampSeconds(Number(a.timestamp)),
+                side: a.side as 'BUY' | 'SELL',
+                size,
+                price,
+                value: usdcValue,
+                pnl: undefined,
+            };
+        });
 }
 
 function enrichTradesWithTotalPnL(trades: Trade[], totalPnL: number): Trade[] {
@@ -242,7 +249,7 @@ export async function updateLeaderboardCache(
             data: ranked.map(trader => ({
                 period,
                 rank: trader.rank,
-                traderData: trader as unknown,
+                traderData: trader as unknown as Prisma.InputJsonValue,
             })),
         });
 
@@ -383,7 +390,7 @@ export async function updateSmartMoneyCache(
                 data: allSmartMoney.map((trader, index) => ({
                     page: Math.floor(index / ITEMS_PER_PAGE) + 1,
                     rank: index + 1,
-                    traderData: trader as unknown,
+                    traderData: trader as unknown as Prisma.InputJsonValue,
                 })),
             });
         }

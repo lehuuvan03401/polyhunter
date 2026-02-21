@@ -13,6 +13,15 @@ type RecommendedTrader = {
     pnl: number;
     score: number;
     rank: number;
+    reasonCodes?: Array<
+        'high_score' |
+        'low_drawdown' |
+        'high_profit_factor' |
+        'copy_friendly' |
+        'high_activity' |
+        'strong_recent_pnl'
+    >;
+    reasonSummary?: string;
 };
 
 export function ImportTraderSection() {
@@ -145,6 +154,18 @@ export function ImportTraderSection() {
                                         <div className="text-sm font-medium text-foreground truncate">
                                             {trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`}
                                         </div>
+                                        {trader.reasonCodes && trader.reasonCodes.length > 0 ? (
+                                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                                {trader.reasonCodes.slice(0, 2).map((reason) => (
+                                                    <span
+                                                        key={`${trader.address}-${reason}`}
+                                                        className="text-[10px] leading-4 px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/20"
+                                                    >
+                                                        {t(`recommended.reasons.${reason}`)}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : null}
                                     </div>
                                     <div className="text-right ml-3">
                                         <div className="text-xs text-muted-foreground">{t('recommended.score')}</div>

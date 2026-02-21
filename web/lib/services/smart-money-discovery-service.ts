@@ -17,6 +17,7 @@ export interface DiscoveredSmartMoneyTrader {
     dataQuality: 'full' | 'limited' | 'insufficient';
     recentTrades: number;
     activePositions: number;
+    reconstructionConfidence: number;
 }
 
 type LeaderboardSource = 'WEEK' | 'MONTH';
@@ -34,6 +35,9 @@ type Candidate = {
 
 const DISCOVERY_LOOKBACK_DAYS = 30;
 const CANDIDATE_LIMIT_PER_SOURCE = 50;
+const CANDIDATE_EVAL_MULTIPLIER = 4;
+const MIN_CANDIDATES_TO_EVAL = 30;
+const MAX_CANDIDATES_TO_EVAL = 45;
 const MIN_RECENT_TRADES = 3;
 const MIN_ACTIVE_POSITIONS = 1;
 const MIN_SCORE = 55;
@@ -51,12 +55,33 @@ type ActivityLike = {
     price?: number;
     timestamp?: number;
     usdcSize?: number;
+    asset?: string;
     conditionId?: string;
     tokenId?: string;
 };
 
+type TradeWithToken = Trade & {
+    tokenKey: string;
+};
+
 const leaderboardCache = createTTLCache<LeaderboardSnapshot>();
 const traderDetailCache = createTTLCache<DiscoveredSmartMoneyTrader | null>();
+const ACTIVITY_MAX_ITEMS = clamp(
+    Number(process.env.SMART_MONEY_ACTIVITY_MAX_ITEMS || '2000'),
+    500,
+    10000
+);
+const FIFO_WARMUP_DAYS = clamp(
+    Number(process.env.SMART_MONEY_FIFO_WARMUP_DAYS || '60'),
+    0,
+    180
+);
+const MIN_RECONSTRUCTION_CONFIDENCE = clamp(
+    Number(process.env.SMART_MONEY_MIN_RECON_CONFIDENCE || '0.35'),
+    0,
+    1
+);
+const EPSILON = 1e-9;
 
 function normalizeTimestampSeconds(timestamp: number): number {
     if (!Number.isFinite(timestamp)) return 0;
@@ -76,32 +101,113 @@ function normalizeLogScore(value: number, min: number, max: number): number {
     return clamp(score, 0, 100);
 }
 
-function convertActivitiesToTrades(activities: ActivityLike[]): Trade[] {
+function convertActivitiesToTrades(activities: ActivityLike[]): TradeWithToken[] {
     return activities
         .filter((a) => a.type === 'TRADE' && a.side && a.size && a.price)
-        .map((a) => ({
-            timestamp: normalizeTimestampSeconds(Number(a.timestamp)),
-            side: a.side as 'BUY' | 'SELL',
-            size: Number(a.size),
-            price: Number(a.price),
-            value: Number(a.usdcSize || (a.size * a.price)),
-            pnl: undefined,
-            marketId: a.conditionId || a.tokenId || undefined,
-        }));
+        .map((a) => {
+            const size = Number(a.size ?? 0);
+            const price = Number(a.price ?? 0);
+            const usdcValue = Number(a.usdcSize ?? (size * price));
+            const tokenKey = String(a.asset || a.tokenId || a.conditionId || 'unknown');
+
+            return {
+                timestamp: normalizeTimestampSeconds(Number(a.timestamp)),
+                side: a.side as 'BUY' | 'SELL',
+                size,
+                price,
+                value: usdcValue,
+                pnl: undefined,
+                marketId: a.conditionId || a.tokenId || undefined,
+                tokenKey,
+            };
+        });
 }
 
-function enrichTradesWithTotalPnL(trades: Trade[], totalPnl: number): Trade[] {
-    const sellTrades = trades.filter((t) => t.side === 'SELL');
-    if (sellTrades.length === 0) return trades;
+function reconstructTradesWithFifoPnl(
+    trades: TradeWithToken[],
+    periodStartSec: number
+): { periodTrades: Trade[]; reconstructionConfidence: number } {
+    const lotsByToken = new Map<string, Array<{ remaining: number; costPerShare: number }>>();
+    const sortedTrades = [...trades].sort((a, b) => a.timestamp - b.timestamp);
 
-    const pnlPerTrade = totalPnl / sellTrades.length;
+    let totalSellSizeInPeriod = 0;
+    let matchedSellSizeInPeriod = 0;
+    const periodTrades: Trade[] = [];
 
-    return trades.map((t) => {
-        if (t.side === 'SELL') {
-            return { ...t, pnl: pnlPerTrade };
+    for (const trade of sortedTrades) {
+        const isInPeriod = trade.timestamp >= periodStartSec;
+        const effectivePrice = trade.size > EPSILON ? trade.value / trade.size : trade.price;
+        const lots = lotsByToken.get(trade.tokenKey) || [];
+
+        if (trade.side === 'BUY') {
+            lots.push({
+                remaining: trade.size,
+                costPerShare: effectivePrice,
+            });
+            lotsByToken.set(trade.tokenKey, lots);
+            if (isInPeriod) {
+                periodTrades.push({
+                    ...trade,
+                    pnl: undefined,
+                });
+            }
+            continue;
         }
-        return t;
-    });
+
+        // SELL path: match with FIFO BUY lots to reconstruct realized PnL.
+        let remainingToMatch = trade.size;
+        let matchedSize = 0;
+        let realizedPnl = 0;
+
+        while (remainingToMatch > EPSILON && lots.length > 0) {
+            const lot = lots[0];
+            const consumed = Math.min(lot.remaining, remainingToMatch);
+            realizedPnl += consumed * (effectivePrice - lot.costPerShare);
+            lot.remaining -= consumed;
+            remainingToMatch -= consumed;
+            matchedSize += consumed;
+
+            if (lot.remaining <= EPSILON) {
+                lots.shift();
+            }
+        }
+        lotsByToken.set(trade.tokenKey, lots);
+
+        if (isInPeriod) {
+            totalSellSizeInPeriod += trade.size;
+            matchedSellSizeInPeriod += matchedSize;
+
+            // If a sell is only partially matchable, only matched notional contributes to scored close-trade metrics.
+            const scoredValue = matchedSize > EPSILON ? matchedSize * effectivePrice : trade.value;
+            periodTrades.push({
+                ...trade,
+                value: scoredValue,
+                pnl: matchedSize > EPSILON ? realizedPnl : undefined,
+            });
+        }
+    }
+
+    const reconstructionConfidence =
+        totalSellSizeInPeriod > EPSILON
+            ? clamp(matchedSellSizeInPeriod / totalSellSizeInPeriod, 0, 1)
+            : 1;
+
+    return { periodTrades, reconstructionConfidence };
+}
+
+async function fetchActivityWindow(address: string, startSec: number): Promise<ActivityLike[]> {
+    try {
+        const activities = await polyClient.dataApi.getAllActivity(
+            address,
+            { start: startSec },
+            ACTIVITY_MAX_ITEMS
+        );
+        return activities as ActivityLike[];
+    } catch (error) {
+        console.warn(`[SmartMoneyDiscovery] getAllActivity fallback for ${address}:`, error);
+        const activities = await polyClient.dataApi.getActivity(address, { limit: 500, start: startSec });
+        return activities as ActivityLike[];
+    }
 }
 
 async function getLeaderboardBySource(source: LeaderboardSource) {
@@ -172,6 +278,14 @@ function computeRecentMetric(weekValue: number, monthValue: number): number {
     return Math.max(weekValue, monthValue, 0);
 }
 
+function computeCandidatePriority(candidate: Candidate): number {
+    const recentPnl = computeRecentMetric(candidate.weekPnl, candidate.monthPnl);
+    const recentVolume = computeRecentMetric(candidate.weekVolume, candidate.monthVolume);
+    const pnlScore = normalizeLogScore(recentPnl, 1_000, 2_000_000);
+    const volumeScore = normalizeLogScore(recentVolume, 10_000, 20_000_000);
+    return pnlScore * 0.7 + volumeScore * 0.3;
+}
+
 function calculateFinalScore(input: {
     scientificScore: number;
     recentPnl: number;
@@ -203,8 +317,9 @@ function calculateFinalScore(input: {
 }
 
 async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartMoneyTrader | null> {
-    const startTimeSec = Math.floor(Date.now() / 1000) - DISCOVERY_LOOKBACK_DAYS * 24 * 60 * 60;
-    const cacheKey = `smart-money:detail:${candidate.address}:${startTimeSec}`;
+    const periodStartSec = Math.floor(Date.now() / 1000) - DISCOVERY_LOOKBACK_DAYS * 24 * 60 * 60;
+    const warmupStartSec = periodStartSec - FIFO_WARMUP_DAYS * 24 * 60 * 60;
+    const cacheKey = `smart-money:detail:${candidate.address}:${periodStartSec}`;
 
     const cached = traderDetailCache.get(cacheKey);
     if (cached !== undefined) {
@@ -214,30 +329,27 @@ async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartM
     try {
         const [positions, activities] = await Promise.all([
             polyClient.dataApi.getPositions(candidate.address, { limit: 100 }),
-            polyClient.dataApi.getActivity(candidate.address, {
-                limit: 200,
-                start: startTimeSec,
-            }),
+            fetchActivityWindow(candidate.address, warmupStartSec),
         ]);
 
-        const periodTrades = activities.filter(
+        const periodTradeActivities = activities.filter(
             (activity) =>
                 activity.type === 'TRADE' &&
-                normalizeTimestampSeconds(Number(activity.timestamp)) >= startTimeSec
+                normalizeTimestampSeconds(Number(activity.timestamp)) >= periodStartSec
         );
 
-        const trades = convertActivitiesToTrades(activities);
+        const allTrades = convertActivitiesToTrades(activities);
         const recentPnl = computeRecentMetric(candidate.weekPnl, candidate.monthPnl);
         const recentVolume = computeRecentMetric(candidate.weekVolume, candidate.monthVolume);
-
-        const enrichedTrades = enrichTradesWithTotalPnL(trades, recentPnl);
-        const metrics = calculateScientificScore(enrichedTrades, { periodDays: DISCOVERY_LOOKBACK_DAYS });
+        const { periodTrades, reconstructionConfidence } = reconstructTradesWithFifoPnl(allTrades, periodStartSec);
+        const metrics = calculateScientificScore(periodTrades, { periodDays: DISCOVERY_LOOKBACK_DAYS });
 
         if (
             positions.length < MIN_ACTIVE_POSITIONS ||
-            periodTrades.length < MIN_RECENT_TRADES ||
+            periodTradeActivities.length < MIN_RECENT_TRADES ||
             metrics.dataQuality === 'insufficient' ||
-            recentPnl <= 0
+            recentPnl <= 0 ||
+            reconstructionConfidence < MIN_RECONSTRUCTION_CONFIDENCE
         ) {
             traderDetailCache.set(cacheKey, null, TRADER_DETAIL_TTL_MS);
             return null;
@@ -248,7 +360,7 @@ async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartM
             recentPnl,
             recentVolume,
             maxDrawdown: metrics.maxDrawdown,
-            tradeCount: periodTrades.length,
+            tradeCount: periodTradeActivities.length,
             dataQuality: metrics.dataQuality,
         });
 
@@ -275,8 +387,9 @@ async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartM
             volumeWeightedWinRate: metrics.volumeWeightedWinRate,
             copyFriendliness: metrics.copyFriendliness,
             dataQuality: metrics.dataQuality,
-            recentTrades: periodTrades.length,
+            recentTrades: periodTradeActivities.length,
             activePositions: positions.length,
+            reconstructionConfidence: Math.round(reconstructionConfidence * 1000) / 1000,
         };
 
         traderDetailCache.set(cacheKey, trader, TRADER_DETAIL_TTL_MS);
@@ -290,12 +403,20 @@ async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartM
 
 export async function discoverSmartMoneyTraders(limit: number): Promise<DiscoveredSmartMoneyTrader[]> {
     const candidates = await buildCandidatePool();
+    const evalLimit = clamp(
+        limit * CANDIDATE_EVAL_MULTIPLIER,
+        MIN_CANDIDATES_TO_EVAL,
+        MAX_CANDIDATES_TO_EVAL
+    );
+    const prioritizedCandidates = [...candidates]
+        .sort((a, b) => computeCandidatePriority(b) - computeCandidatePriority(a))
+        .slice(0, evalLimit);
 
     const results: Array<DiscoveredSmartMoneyTrader | null> = [];
     const batchSize = 5;
 
-    for (let i = 0; i < candidates.length; i += batchSize) {
-        const batch = candidates.slice(i, i + batchSize);
+    for (let i = 0; i < prioritizedCandidates.length; i += batchSize) {
+        const batch = prioritizedCandidates.slice(i, i + batchSize);
         const evaluated = await Promise.all(batch.map((candidate) => evaluateCandidate(candidate)));
         results.push(...evaluated);
     }

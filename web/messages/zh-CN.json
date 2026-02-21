@@ -76,7 +76,15 @@
             "viewAll": "查看聪明钱榜单",
             "loading": "正在加载推荐交易员...",
             "empty": "当前暂无可推荐交易员",
-            "score": "跟单评分"
+            "score": "跟单评分",
+            "reasons": {
+                "high_score": "高评分",
+                "low_drawdown": "低回撤",
+                "high_profit_factor": "高PF",
+                "copy_friendly": "易复制",
+                "high_activity": "高活跃",
+                "strong_recent_pnl": "强近期PnL"
+            }
         }
     },
     "Leaderboard": {
