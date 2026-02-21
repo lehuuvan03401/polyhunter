@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
     PrismaClient,
+    CopyTradeStatus
 } from '@prisma/client';
 import {
     calculateCoverageRatio,
@@ -11,6 +12,7 @@ import {
     calculateManagedSettlement,
     calculateReserveBalance,
 } from '../../lib/managed-wealth/settlement-math';
+import { polyClient } from '../../lib/polymarket';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
 if (!DATABASE_URL) {
@@ -98,10 +100,10 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                     traderAddress: primaryAgent.traderAddress.toLowerCase(),
                     traderName: primaryAgent.traderName ?? primaryAgent.name,
                     strategyProfile: sub.product.strategyProfile,
-                    mode: primaryAgent.mode,
+                    mode: 'FIXED_AMOUNT', // Force FIXED_AMOUNT for deterministic risk based on principal
                     sizeScale: primaryAgent.sizeScale,
-                    fixedAmount: primaryAgent.fixedAmount,
-                    maxSizePerTrade: primaryAgent.maxSizePerTrade,
+                    fixedAmount: Math.max(1, Number((sub.principal * 0.1).toFixed(2))), // 10% per trade
+                    maxSizePerTrade: Math.max(1, Number((sub.principal * 0.2).toFixed(2))), // 20% cap
                     minSizePerTrade: primaryAgent.minSizePerTrade,
                     stopLoss: primaryAgent.stopLoss,
                     takeProfit: primaryAgent.takeProfit,
@@ -143,7 +145,7 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
 
     const runningSubs = await prisma.managedSubscription.findMany({
         where: {
-            status: 'RUNNING',
+            status: { in: ['RUNNING', 'LIQUIDATING'] },
             copyConfigId: { not: null },
         },
         select: {
@@ -152,16 +154,20 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
             highWaterMark: true,
             currentEquity: true,
             copyConfigId: true,
+            walletAddress: true,
         },
         take: NAV_BATCH_SIZE,
     });
 
     let updated = 0;
 
+    // Cache to avoid refetching prices for the same token across multiple subs
+    const currentPriceMap = new Map<string, number>();
+
     for (const sub of runningSubs) {
         if (!sub.copyConfigId) continue;
 
-        const [tradeAgg, previousSnapshot, peakAgg] = await Promise.all([
+        const [tradeAgg, previousSnapshot, peakAgg, openPositions] = await Promise.all([
             prisma.copyTrade.aggregate({
                 where: {
                     configId: sub.copyConfigId,
@@ -183,10 +189,45 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
                 where: { subscriptionId: sub.id },
                 _max: { nav: true },
             }),
+            prisma.userPosition.findMany({
+                where: {
+                    walletAddress: sub.walletAddress,
+                    balance: { gt: 0 }
+                }
+            })
         ]);
 
         const realizedPnl = Number(tradeAgg._sum.realizedPnL ?? 0);
-        const equity = Number((sub.principal + realizedPnl).toFixed(8));
+        let unrealizedPnl = 0;
+
+        // Fetch prices for any open positions that we haven't fetched yet
+        if (openPositions.length > 0) {
+            const tokensToFetch = openPositions.map((p: { tokenId: string }) => p.tokenId).filter((tid: string) => !currentPriceMap.has(tid));
+            if (tokensToFetch.length > 0) {
+                try {
+                    const orderbooks = await polyClient.markets.getTokenOrderbooks(
+                        tokensToFetch.map((id: string) => ({ tokenId: id, side: 'BUY' as const }))
+                    );
+                    orderbooks.forEach((book, tokenId) => {
+                        if (book.bids.length > 0) {
+                            currentPriceMap.set(tokenId, book.bids[0].price);
+                        } else {
+                            // If no bid, fallback to 0 or leave it to fallback
+                            currentPriceMap.set(tokenId, 0);
+                        }
+                    });
+                } catch (err) {
+                    console.warn('[ManagedWealthWorker] Failed to fetch CLOB prices for NAV:', err);
+                }
+            }
+
+            for (const pos of openPositions) {
+                const curPrice = currentPriceMap.get(pos.tokenId) ?? pos.avgEntryPrice;
+                unrealizedPnl += pos.balance * (curPrice - pos.avgEntryPrice);
+            }
+        }
+
+        const equity = Number((sub.principal + realizedPnl + unrealizedPnl).toFixed(8));
         const nav = sub.principal > 0 ? equity / sub.principal : 1;
 
         const prevEquity = previousSnapshot?.equity ?? sub.principal;
@@ -210,7 +251,7 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
                 cumulativeReturn,
                 drawdown,
                 isFallbackPrice: true,
-                priceSource: 'REALIZED_PNL_ONLY',
+                priceSource: 'MARK_TO_MARKET',
             },
             create: {
                 subscriptionId: sub.id,
@@ -222,7 +263,7 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
                 drawdown,
                 volatility: 0,
                 isFallbackPrice: true,
-                priceSource: 'REALIZED_PNL_ONLY',
+                priceSource: 'MARK_TO_MARKET',
             },
         });
 
@@ -258,7 +299,7 @@ async function markMaturedSubscriptions(now: Date): Promise<number> {
 async function settleMaturedSubscriptions(now: Date): Promise<number> {
     const candidates = await prisma.managedSubscription.findMany({
         where: {
-            status: { in: ['MATURED', 'RUNNING'] },
+            status: { in: ['MATURED', 'RUNNING', 'LIQUIDATING'] },
             endAt: { lte: now },
         },
         include: {
@@ -288,6 +329,32 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
     for (const sub of candidates) {
         if (sub.settlement?.status === 'COMPLETED') continue;
 
+        // Check if there are open positions
+        const openPositionsCount = await prisma.userPosition.count({
+            where: {
+                walletAddress: sub.walletAddress,
+                balance: { gt: 0 }
+            }
+        });
+
+        if (openPositionsCount > 0) {
+            if (sub.status !== 'LIQUIDATING') {
+                await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => {
+                    await tx.managedSubscription.update({
+                        where: { id: sub.id },
+                        data: { status: 'LIQUIDATING' }
+                    });
+                    if (sub.copyConfigId) {
+                        await tx.copyTradingConfig.update({
+                            where: { id: sub.copyConfigId },
+                            data: { isActive: false }
+                        });
+                    }
+                });
+            }
+            continue; // Skip settlement until positions are liquidated by the liquidateSubscriptions routine
+        }
+
         const settlementCalc = calculateManagedSettlement({
             principal: sub.principal,
             finalEquity: Number(sub.currentEquity ?? sub.principal),
@@ -302,7 +369,7 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
             minYieldRate: sub.term.minYieldRate,
         });
 
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => {
             const current = await tx.managedSubscription.findUnique({
                 where: { id: sub.id },
                 include: {
@@ -411,7 +478,7 @@ async function enforceGuaranteedPause(): Promise<number> {
         });
 
         const guaranteedLiability = liabilities.reduce(
-            (acc, sub) => acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
+            (acc: number, sub: { principal: number, term: { minYieldRate: number | null } }) => acc + calculateGuaranteeLiability(sub.principal, sub.term.minYieldRate),
             0
         );
 
@@ -432,6 +499,96 @@ async function enforceGuaranteedPause(): Promise<number> {
     return changed;
 }
 
+async function liquidateSubscriptions(now: Date): Promise<number> {
+    const liquidatingSubs = await prisma.managedSubscription.findMany({
+        where: {
+            status: 'LIQUIDATING',
+        },
+        select: {
+            id: true,
+            walletAddress: true,
+            copyConfigId: true,
+        },
+    });
+
+    let liquidatedCount = 0;
+
+    for (const sub of liquidatingSubs) {
+        const openPositions = await prisma.userPosition.findMany({
+            where: {
+                walletAddress: sub.walletAddress,
+                balance: { gt: 0 }
+            }
+        });
+
+        if (openPositions.length === 0) continue;
+        if (!sub.copyConfigId) continue;
+
+        const tokensToFetch = openPositions.map((p: { tokenId: string }) => p.tokenId);
+        const currentPriceMap = new Map<string, number>();
+
+        try {
+            const orderbooks = await polyClient.markets.getTokenOrderbooks(
+                tokensToFetch.map((id: string) => ({ tokenId: id, side: 'BUY' as const }))
+            );
+            orderbooks.forEach((book, tokenId) => {
+                // To liquidate immediately, take the best bid price (meaning selling to someone's bid)
+                if (book.bids.length > 0) {
+                    currentPriceMap.set(tokenId, book.bids[0].price);
+                } else {
+                    currentPriceMap.set(tokenId, 0);
+                }
+            });
+        } catch (err) {
+            console.warn(`[ManagedWealthWorker] Failed to fetch CLOB prices for liquidation sub ${sub.id}:`, err);
+        }
+
+        for (const pos of openPositions) {
+            const curPrice = currentPriceMap.get(pos.tokenId) ?? 0;
+            const proceeds = pos.balance * curPrice;
+            const costBasis = pos.balance * pos.avgEntryPrice;
+            const pnl = proceeds - costBasis;
+
+            await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => {
+                // Log mock settlement copytrade
+                await tx.copyTrade.create({
+                    data: {
+                        configId: sub.copyConfigId!,
+                        originalTrader: 'SYSTEM_LIQUIDATOR',
+                        originalSide: 'SELL',
+                        originalSize: pos.balance,
+                        originalPrice: curPrice,
+                        tokenId: pos.tokenId,
+                        copySize: proceeds,
+                        copyPrice: curPrice,
+                        status: CopyTradeStatus.EXECUTED,
+                        txHash: `sim-liquidation-${Date.now()}-${pos.tokenId.substring(0, 6)}`,
+                        realizedPnL: pnl,
+                        executedAt: now,
+                    }
+                });
+
+                // Delete or zero out user position
+                await tx.userPosition.update({
+                    where: {
+                        walletAddress_tokenId: {
+                            walletAddress: pos.walletAddress,
+                            tokenId: pos.tokenId
+                        }
+                    },
+                    data: {
+                        balance: 0,
+                        totalCost: 0,
+                    }
+                });
+            });
+            liquidatedCount++;
+        }
+    }
+
+    return liquidatedCount;
+}
+
 async function runCycle(): Promise<void> {
     if (running) {
         console.warn('[ManagedWealthWorker] Previous cycle still running, skip this tick.');
@@ -444,14 +601,20 @@ async function runCycle(): Promise<void> {
 
     try {
         const mapped = await ensureExecutionMappings(now);
-        const navUpdated = await refreshNavSnapshots(now);
+        // Step 2: Handle any running/matured limits, transitions them to MATURED
         const matured = await markMaturedSubscriptions(now);
+        // Step 3: Settles zero-balance MATURED/RUNNING/LIQUIDATING, or puts them iteratively into LIQUIDATING
         const settled = await settleMaturedSubscriptions(now);
+        // Step 4: Liquidate anything sitting in LIQUIDATING state
+        const liquidated = await liquidateSubscriptions(now);
+        // Step 5: Refresh NAV for running + liquidating items
+        const navUpdated = await refreshNavSnapshots(now);
+
         const pausedOrResumed = await enforceGuaranteedPause();
 
         const durationMs = Date.now() - started;
         console.log(
-            `[ManagedWealthWorker] cycle done in ${durationMs}ms | mapped=${mapped} nav=${navUpdated} matured=${matured} settled=${settled} statusChanges=${pausedOrResumed}`
+            `[ManagedWealthWorker] cycle done in ${durationMs}ms | mapped=${mapped} matured=${matured} settled=${settled} liquidated=${liquidated} nav=${navUpdated} statusChanges=${pausedOrResumed}`
         );
     } catch (error) {
         console.error('[ManagedWealthWorker] cycle failed:', error);

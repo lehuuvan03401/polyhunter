@@ -113,7 +113,7 @@ export async function POST(
             if (subscription.walletAddress !== walletContext.wallet) {
                 throw new ApiError(403, 'Subscription does not belong to wallet');
             }
-            if (subscription.status !== 'RUNNING' && subscription.status !== 'MATURED') {
+            if (subscription.status !== 'RUNNING' && subscription.status !== 'MATURED' && subscription.status !== 'LIQUIDATING') {
                 throw new ApiError(400, 'Subscription is not active or eligible for withdrawal');
             }
             if (subscription.settlement?.status === 'COMPLETED') {
@@ -140,6 +140,39 @@ export async function POST(
                         remainingMinutes,
                     },
                 });
+            }
+
+            const openPositionsCount = await tx.userPosition.count({
+                where: {
+                    walletAddress: walletContext.wallet,
+                    balance: { gt: 0 }
+                }
+            });
+
+            if (openPositionsCount > 0) {
+                let updatedSubscription = subscription;
+                if (subscription.status !== 'LIQUIDATING') {
+                    updatedSubscription = await tx.managedSubscription.update({
+                        where: { id: subscription.id },
+                        data: { status: 'LIQUIDATING' },
+                        include: {
+                            term: true,
+                            product: true,
+                            settlement: { select: { status: true } }
+                        }
+                    });
+                    if (subscription.copyConfigId) {
+                        await tx.copyTradingConfig.update({
+                            where: { id: subscription.copyConfigId },
+                            data: { isActive: false }
+                        });
+                    }
+                }
+
+                return {
+                    action: 'LIQUIDATE',
+                    updatedSubscription,
+                };
             }
 
             const settlementCalc = calculateManagedSettlement({
@@ -254,6 +287,7 @@ export async function POST(
             });
 
             return {
+                action: 'SETTLE',
                 updatedSubscription,
                 settlement,
                 guaranteeEligible,
@@ -267,6 +301,15 @@ export async function POST(
                 },
             };
         });
+
+        if (result.action === 'LIQUIDATE') {
+            return NextResponse.json({
+                success: true,
+                subscription: result.updatedSubscription,
+                message: 'Liquidation process started. Please wait for open positions to be closed.',
+                status: 'LIQUIDATING'
+            }, { status: 202 });
+        }
 
         return NextResponse.json({
             success: true,

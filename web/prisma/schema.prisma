@@ -75,15 +75,15 @@ model TeamClosure {
 
 // Referral - user referred by an affiliate
 model Referral {
-  id               String    @id @default(cuid())
-  referrer         Referrer  @relation(fields: [referrerId], references: [id])
-  referrerId       String
-  refereeAddress   String    @unique
-  lifetimeVolume   Float     @default(0)
-  last30DaysVolume Float     @default(0)
+  id                         String    @id @default(cuid())
+  referrer                   Referrer  @relation(fields: [referrerId], references: [id])
+  referrerId                 String
+  refereeAddress             String    @unique
+  lifetimeVolume             Float     @default(0)
+  last30DaysVolume           Float     @default(0)
   subscriptionBonusGrantedAt DateTime?
-  createdAt        DateTime  @default(now())
-  lastActiveAt     DateTime?
+  createdAt                  DateTime  @default(now())
+  lastActiveAt               DateTime?
 
   @@index([referrerId])
 }
@@ -227,6 +227,7 @@ enum ManagedSubscriptionStatus {
   PENDING
   RUNNING
   MATURED
+  LIQUIDATING
   SETTLED
   CANCELLED
 }
@@ -582,19 +583,19 @@ model ManagedRiskEvent {
 }
 
 model ManagedMembership {
-  id           String                    @id @default(cuid())
+  id            String                    @id @default(cuid())
   walletAddress String
-  planType     ManagedMembershipPlanType
-  status       ManagedMembershipStatus   @default(ACTIVE)
-  paymentToken String                    @default("USDC") // USDC | MCN
-  basePriceUsd Float
-  discountRate Float                     @default(0)
+  planType      ManagedMembershipPlanType
+  status        ManagedMembershipStatus   @default(ACTIVE)
+  paymentToken  String                    @default("USDC") // USDC | MCN
+  basePriceUsd  Float
+  discountRate  Float                     @default(0)
   finalPriceUsd Float
-  startsAt     DateTime
-  endsAt       DateTime
-  paidAt       DateTime                  @default(now())
-  createdAt    DateTime                  @default(now())
-  updatedAt    DateTime                  @updatedAt
+  startsAt      DateTime
+  endsAt        DateTime
+  paidAt        DateTime                  @default(now())
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
 
   @@index([walletAddress, status, endsAt])
   @@index([walletAddress, createdAt])
