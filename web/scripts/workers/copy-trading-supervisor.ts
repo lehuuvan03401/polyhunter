@@ -33,7 +33,7 @@ import { MarketService } from '../../../sdk/src/services/market-service';
 import { GammaApiClient } from '../../../sdk/src/clients/gamma-api';
 import { DataApiClient, type Activity as DataActivity } from '../../../sdk/src/clients/data-api';
 
-import { PrismaDebtLogger, PrismaDebtRepository } from './services/debt-adapters';
+import { PrismaDebtLogger, PrismaDebtRepository } from '../services/debt-adapters';
 import { AffiliateEngine } from '../../lib/services/affiliate-engine';
 import { PositionService } from '../../lib/services/position-service';
 import { RealtimeServiceV2, ActivityTrade, Subscription } from '../../../sdk/src/services/realtime-service-v2';

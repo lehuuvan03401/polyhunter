@@ -9,7 +9,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // Load environment
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const dbPath = path.join(process.cwd(), 'dev.db');
 const adapter = new PrismaLibSql({ url: `file:${dbPath}` });

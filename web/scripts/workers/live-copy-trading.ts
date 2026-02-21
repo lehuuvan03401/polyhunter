@@ -34,9 +34,9 @@ import { CtfEventListener } from '../../../sdk/src/services/ctf-event-listener.t
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // Prefer .env.local + .env.local.secrets, fallback to .env
-dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
-dotenv.config({ path: path.join(__dirname, '..', '.env.local.secrets') });
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+dotenv.config({ path: path.join(__dirname, '../..', '.env.local') });
+dotenv.config({ path: path.join(__dirname, '../..', '.env.local.secrets') });
+dotenv.config({ path: path.join(__dirname, '../..', '.env') });
 
 // --- CONFIG ---
 const TARGET_TRADER = process.env.TARGET_TRADER || '0x63ce342161250d705dc0b16df89036c8e5f9ba9a';

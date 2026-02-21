@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 
 // Load env
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 

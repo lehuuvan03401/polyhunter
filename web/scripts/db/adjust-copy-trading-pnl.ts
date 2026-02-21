@@ -20,8 +20,8 @@ import readline from 'readline';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+dotenv.config({ path: path.join(__dirname, '../..', '.env.local') });
+dotenv.config({ path: path.join(__dirname, '../..', '.env') });
 
 const FOLLOWER_WALLET = process.env.FOLLOWER_WALLET || '0xfbEeDa7Fd22Bc34fBF4A8Ed49e0C0e9276532dE0';
 
