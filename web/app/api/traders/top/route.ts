@@ -1,22 +1,32 @@
-/**
- * Top Traders API
- * 
- * Cached endpoint for fetching top traders leaderboard
- * This reduces API calls by caching results for 5 minutes
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { polyClient } from '@/lib/polymarket';
+import {
+    discoverSmartMoneyTraders,
+    type DiscoveredSmartMoneyTrader,
+} from '@/lib/services/smart-money-discovery-service';
 
-// Simple in-memory cache
-let cachedTraders: unknown[] = [];
+const CACHE_TTL = 5 * 60 * 1000;
+
+let cachedTraders: DiscoveredSmartMoneyTrader[] = [];
 let lastFetchTime = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+let inFlight: Promise<DiscoveredSmartMoneyTrader[]> | null = null;
 
-/**
- * GET /api/traders/top
- * Get cached top traders list
- */
+async function fetchTopTraders(limit: number): Promise<DiscoveredSmartMoneyTrader[]> {
+    if (inFlight) {
+        const shared = await inFlight;
+        return shared.slice(0, limit);
+    }
+
+    inFlight = discoverSmartMoneyTraders(Math.max(limit, 50));
+    try {
+        const traders = await inFlight;
+        cachedTraders = traders;
+        lastFetchTime = Date.now();
+        return traders.slice(0, limit);
+    } finally {
+        inFlight = null;
+    }
+}
+
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '10');
@@ -24,14 +34,14 @@ export async function GET(request: NextRequest) {
 
     try {
         const now = Date.now();
-
-        // Check cache validity
         if (!forceRefresh && cachedTraders.length > 0 && (now - lastFetchTime) < CACHE_TTL) {
             return NextResponse.json({
                 traders: cachedTraders.slice(0, limit),
                 cached: true,
+                source: 'memory',
                 cachedAt: new Date(lastFetchTime).toISOString(),
                 ttlRemaining: Math.round((CACHE_TTL - (now - lastFetchTime)) / 1000),
+                algorithm: 'smart-money-discovery-v2',
             }, {
                 headers: {
                     'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
@@ -39,33 +49,16 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // Fetch fresh data
-        // Use getLeaderboard directly for speed (skip profile verification)
-        const leaderboardPage = await polyClient.wallets.getLeaderboard(0, Math.max(limit, 20));
-        const entries = leaderboardPage.entries;
-
-        // Transform to simpler format for frontend
-        const traders = entries
-            .filter(trader => trader.pnl > 0) // Only profitable traders
-            .slice(0, limit)
-            .map((trader, index) => ({
-                address: trader.address.toLowerCase(),
-                name: trader.userName || null,
-                pnl: trader.pnl,
-                volume: trader.volume,
-                score: Math.min(100, Math.round((trader.pnl / 100000) * 50 + (trader.volume / 1000000) * 50)),
-                rank: trader.rank || index + 1,
-            }));
-
-        // Update cache
-        cachedTraders = traders;
-        lastFetchTime = now;
+        const traders = await fetchTopTraders(limit);
+        const fetchTime = lastFetchTime || Date.now();
 
         return NextResponse.json({
             traders,
             cached: false,
-            cachedAt: new Date(now).toISOString(),
+            source: 'live',
+            cachedAt: new Date(fetchTime).toISOString(),
             ttlRemaining: Math.round(CACHE_TTL / 1000),
+            algorithm: 'smart-money-discovery-v2',
         }, {
             headers: {
                 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
@@ -74,12 +67,12 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         console.error('[TopTraders] Error:', error);
 
-        // Return cached data if available, even if stale
         if (cachedTraders.length > 0) {
             return NextResponse.json({
                 traders: cachedTraders.slice(0, limit),
                 cached: true,
                 stale: true,
+                source: 'memory-fallback',
                 error: 'Failed to refresh, returning stale data',
             });
         }

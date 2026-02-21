@@ -70,6 +70,13 @@
             "nonCustodial": "Non-custodial",
             "gasSponsored": "Gas sponsored",
             "tradersTracked": "2,110 traders tracked"
+        },
+        "recommended": {
+            "title": "Recommended Targets",
+            "viewAll": "See Smart Money",
+            "loading": "Loading recommended traders...",
+            "empty": "No recommended traders available right now.",
+            "score": "Copy Score"
         }
     },
     "Leaderboard": {

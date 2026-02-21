@@ -70,6 +70,13 @@
             "nonCustodial": "非托管",
             "gasSponsored": "Gas 赞助",
             "tradersTracked": "追踪 2,110 名交易员"
+        },
+        "recommended": {
+            "title": "推荐跟单目标",
+            "viewAll": "查看聪明钱榜单",
+            "loading": "正在加载推荐交易员...",
+            "empty": "当前暂无可推荐交易员",
+            "score": "跟单评分"
         }
     },
     "Leaderboard": {

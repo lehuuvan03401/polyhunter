@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Shield, Zap, Users } from 'lucide-react';
+import { Shield, Zap, Users } from 'lucide-react';
+import Link from 'next/link';
 
 import { useTranslations } from 'next-intl';
+
+type RecommendedTrader = {
+    address: string;
+    name: string | null;
+    pnl: number;
+    score: number;
+    rank: number;
+};
 
 export function ImportTraderSection() {
     const t = useTranslations('ImportTrader');
@@ -12,6 +21,26 @@ export function ImportTraderSection() {
     const [address, setAddress] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [recommended, setRecommended] = useState<RecommendedTrader[]>([]);
+    const [isRecommendedLoading, setIsRecommendedLoading] = useState(true);
+
+    useEffect(() => {
+        const loadRecommended = async () => {
+            try {
+                const response = await fetch('/api/traders/top?limit=5');
+                if (!response.ok) throw new Error('Failed to fetch top traders');
+                const data = await response.json();
+                setRecommended(data.traders || []);
+            } catch (fetchError) {
+                console.error('[ImportTraderSection] Failed to load recommended traders', fetchError);
+                setRecommended([]);
+            } finally {
+                setIsRecommendedLoading(false);
+            }
+        };
+
+        loadRecommended();
+    }, []);
 
     const handleImport = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -36,7 +65,7 @@ export function ImportTraderSection() {
         // Then navigate
         try {
             router.push(`/traders/${trimmedAddress}`);
-        } catch (err) {
+        } catch {
             setError(t('errorNavigate'));
             setIsLoading(false);
         }
@@ -89,6 +118,42 @@ export function ImportTraderSection() {
                         <Users className="w-5 h-5 text-blue-500" />
                         <span>{t('features.tradersTracked')}</span>
                     </div>
+                </div>
+
+                <div className="mt-10 text-left">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-foreground">{t('recommended.title')}</h3>
+                        <Link href="/smart-money" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                            {t('recommended.viewAll')}
+                        </Link>
+                    </div>
+
+                    {isRecommendedLoading ? (
+                        <div className="text-sm text-muted-foreground">{t('recommended.loading')}</div>
+                    ) : recommended.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">{t('recommended.empty')}</div>
+                    ) : (
+                        <div className="grid gap-2">
+                            {recommended.map((trader) => (
+                                <Link
+                                    key={trader.address}
+                                    href={`/traders/${trader.address}`}
+                                    className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 hover:bg-white/10 transition-colors"
+                                >
+                                    <div className="min-w-0">
+                                        <div className="text-xs text-muted-foreground mb-0.5">#{trader.rank}</div>
+                                        <div className="text-sm font-medium text-foreground truncate">
+                                            {trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`}
+                                        </div>
+                                    </div>
+                                    <div className="text-right ml-3">
+                                        <div className="text-xs text-muted-foreground">{t('recommended.score')}</div>
+                                        <div className="text-sm font-semibold text-green-400">{trader.score}</div>
+                                    </div>
+                                </Link>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </section>

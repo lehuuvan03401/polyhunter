@@ -36,6 +36,10 @@ const DISCOVERY_LOOKBACK_DAYS = 30;
 const CANDIDATE_LIMIT_PER_SOURCE = 50;
 const MIN_RECENT_TRADES = 3;
 const MIN_ACTIVE_POSITIONS = 1;
+const MIN_SCORE = 55;
+const MIN_COPY_FRIENDLINESS = 45;
+const MAX_DRAWDOWN = 55;
+const MIN_PROFIT_FACTOR = 1.05;
 const LEADERBOARD_TTL_MS = 60 * 1000;
 const TRADER_DETAIL_TTL_MS = 5 * 60 * 1000;
 const TRADER_ERROR_TTL_MS = 30 * 1000;
@@ -173,11 +177,13 @@ function calculateFinalScore(input: {
     recentPnl: number;
     recentVolume: number;
     maxDrawdown: number;
+    tradeCount: number;
     dataQuality: 'full' | 'limited' | 'insufficient';
 }): number {
     const pnlScore = normalizeLogScore(input.recentPnl, 1_000, 2_000_000);
     const volumeScore = normalizeLogScore(input.recentVolume, 10_000, 20_000_000);
     const drawdownStability = 100 - clamp(input.maxDrawdown, 0, 100);
+    const confidence = clamp(Math.sqrt(Math.max(input.tradeCount, 0) / 30), 0.35, 1);
 
     const qualityBonus =
         input.dataQuality === 'full'
@@ -193,7 +199,7 @@ function calculateFinalScore(input: {
         drawdownStability * 0.05 +
         qualityBonus;
 
-    return clamp(Math.round(weighted), 0, 100);
+    return clamp(Math.round(weighted * confidence), 0, 100);
 }
 
 async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartMoneyTrader | null> {
@@ -242,8 +248,19 @@ async function evaluateCandidate(candidate: Candidate): Promise<DiscoveredSmartM
             recentPnl,
             recentVolume,
             maxDrawdown: metrics.maxDrawdown,
+            tradeCount: periodTrades.length,
             dataQuality: metrics.dataQuality,
         });
+
+        if (
+            score < MIN_SCORE ||
+            metrics.copyFriendliness < MIN_COPY_FRIENDLINESS ||
+            metrics.maxDrawdown > MAX_DRAWDOWN ||
+            metrics.profitFactor < MIN_PROFIT_FACTOR
+        ) {
+            traderDetailCache.set(cacheKey, null, TRADER_DETAIL_TTL_MS);
+            return null;
+        }
 
         const trader: DiscoveredSmartMoneyTrader = {
             address: candidate.address,
