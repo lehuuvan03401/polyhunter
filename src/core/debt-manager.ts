@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { ERC20_ABI, EXECUTOR_ABI, CONTRACT_ADDRESSES, USDC_DECIMALS } from './contracts.js'; // Use .js for SDK
 import { WalletManager } from './wallet-manager.js';
+import { getErrorMessage } from './errors.js';
 
 export interface DebtItem {
     id: string;
@@ -54,8 +55,8 @@ export class DebtManager {
                     recoveredCount++;
                     console.log(`[DebtManager] ✅ Recovered $${debt.amount} for Bot ${debt.botAddress} from Proxy ${debt.proxyAddress}`);
                 }
-            } catch (err: any) {
-                console.error(`[DebtManager] ❌ Recovery failed for Debt ${debt.id}: ${err.message}`);
+            } catch (err: unknown) {
+                console.error(`[DebtManager] ❌ Recovery failed for Debt ${debt.id}: ${getErrorMessage(err)}`);
                 errorCount++;
             }
         }

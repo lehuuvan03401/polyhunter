@@ -12,6 +12,7 @@ import {
 } from '../core/contracts.js';
 import { scopedTxMutex } from '../core/tx-mutex.js';
 import { TxMonitor, TrackedTx } from '../core/tx-monitor.js';
+import { getErrorMessage } from '../core/errors.js';
 
 export interface ExecutionParams {
     tradeId: string;
@@ -146,8 +147,8 @@ export class CopyTradingExecutionService {
             this.txSignerByHash.delete(tx.hash);
             this.txSignerByHash.set(replacement.hash, signer);
             return replacement.hash;
-        } catch (error: any) {
-            console.error('[CopyExec] ❌ Tx replacement failed:', error?.message || error);
+        } catch (error: unknown) {
+            console.error('[CopyExec] ❌ Tx replacement failed:', getErrorMessage(error));
             return null;
         }
     }
@@ -326,9 +327,10 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Proxy Push (USDC) complete: ${receipt.transactionHash}`);
             return { success: true, txHash: receipt.transactionHash };
-        } catch (error: any) {
-            console.error('[CopyExec] Proxy Fund Push failed:', error.message);
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            console.error('[CopyExec] Proxy Fund Push failed:', message);
+            return { success: false, error: message };
         }
     }
 
@@ -348,9 +350,10 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Return transfer complete: ${receipt.transactionHash}`);
             return { success: true, txHash: receipt.transactionHash };
-        } catch (error: any) {
-            console.error('[CopyExec] Transfer to Proxy failed:', error.message);
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            console.error('[CopyExec] Transfer to Proxy failed:', message);
+            return { success: false, error: message };
         }
     }
 
@@ -393,9 +396,10 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Token Pull complete: ${receipt.transactionHash}`);
             return { success: true, txHash: receipt.transactionHash };
-        } catch (error: any) {
-            console.error('[CopyExec] Token Pull failed:', error.message);
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            console.error('[CopyExec] Token Pull failed:', message);
+            return { success: false, error: message };
         }
     }
 
@@ -427,9 +431,10 @@ export class CopyTradingExecutionService {
 
             console.log(`[CopyExec] Token Push complete: ${receipt.transactionHash}`);
             return { success: true, txHash: receipt.transactionHash };
-        } catch (error: any) {
-            console.error('[CopyExec] Token Push failed:', error.message);
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            console.error('[CopyExec] Token Push failed:', message);
+            return { success: false, error: message };
         }
     }
 
@@ -644,8 +649,8 @@ export class CopyTradingExecutionService {
                 tokenPullTxHash = pullResult.txHash;
             });
 
-        } catch (e: any) {
-            return { success: false, error: `Proxy prep failed: ${e.message}`, usedBotFloat, proxyAddress };
+        } catch (e: unknown) {
+            return { success: false, error: `Proxy prep failed: ${getErrorMessage(e)}`, usedBotFloat, proxyAddress };
         }
 
         // 3) CLOB 下单：
@@ -676,7 +681,8 @@ export class CopyTradingExecutionService {
                 orderType: 'FOK',
             });
 
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const errMessage = getErrorMessage(err);
             // 下单异常后立即回滚，把此前资金准备阶段搬出的资产退回 Proxy。
             if (useProxyFunds) {
                 console.log(`[CopyExec] ⚠️ Order Failed. refunding...`);
@@ -689,7 +695,7 @@ export class CopyTradingExecutionService {
                     }
                 });
             }
-            return { success: false, error: err.message || 'Execution error', useProxyFunds, usedBotFloat };
+            return { success: false, error: errMessage || 'Execution error', useProxyFunds, usedBotFloat };
         }
 
         if (!orderResult.success) {
@@ -854,8 +860,8 @@ export class CopyTradingExecutionService {
                 }
                 return { success: true, txHash: returnResult.txHash };
             }
-        } catch (e: any) {
-            return { success: false, error: e.message };
+        } catch (e: unknown) {
+            return { success: false, error: getErrorMessage(e) };
         }
     }
 
@@ -906,9 +912,10 @@ export class CopyTradingExecutionService {
             console.log(`[CopyExec] ✅ Redemption Complete: ${receipt.transactionHash}`);
             return { success: true, txHash: receipt.transactionHash };
 
-        } catch (error: any) {
-            console.error('[CopyExec] ❌ Redemption Failed:', error.message);
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            console.error('[CopyExec] ❌ Redemption Failed:', message);
+            return { success: false, error: message };
         }
     }
 

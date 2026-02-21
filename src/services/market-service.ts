@@ -22,7 +22,7 @@ import { GammaApiClient, GammaMarket } from '../clients/gamma-api.js';
 import type { UnifiedCache } from '../core/unified-cache.js';
 import { CACHE_TTL } from '../core/unified-cache.js';
 import { RateLimiter, ApiType } from '../core/rate-limiter.js';
-import { PolymarketError, ErrorCode } from '../core/errors.js';
+import { PolymarketError, ErrorCode, getErrorMessage } from '../core/errors.js';
 import type {
   UnifiedMarket,
   MarketToken as UnifiedMarketToken,
@@ -190,10 +190,12 @@ export class MarketService {
             const market = await client.getMarket(conditionId);
             return this.normalizeClobMarket(market as ClobMarket);
           });
-        } catch (err: any) {
+        } catch (err: unknown) {
           // Retry on Network Error (up to 3 times)
           // 只对网络抖动错误重试，业务错误直接抛出给上层处理。
-          const isNetworkError = err?.message?.includes('Network Error') || err?.message?.includes('ECONNRESET') || err?.code === 'ECONNRESET';
+          const message = getErrorMessage(err);
+          const errorCode = err && typeof err === 'object' && 'code' in err ? (err as { code?: string }).code : undefined;
+          const isNetworkError = message.includes('Network Error') || message.includes('ECONNRESET') || errorCode === 'ECONNRESET';
           if (attempt < 3 && isNetworkError) {
             attempt++;
             console.warn(`[CLOB] Network Error fetching market ${conditionId}. Retrying (${attempt}/3)...`);

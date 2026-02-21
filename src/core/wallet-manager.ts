@@ -3,6 +3,7 @@ import { TradingService } from '../services/trading-service.js';
 import { RateLimiter } from './rate-limiter.js';
 import { UnifiedCache } from './unified-cache.js';
 import { MulticallService } from './multicall.js';
+import { getErrorMessage } from './errors.js';
 
 export interface WorkerContext {
     address: string;
@@ -95,8 +96,8 @@ export class WalletManager {
             try {
                 await worker.tradingService.initialize();
                 // console.debug(`[WalletManager] Worker ${worker.address.slice(0,6)} initialized.`);
-            } catch (e: any) {
-                console.error(`[WalletManager] ❌ Failed to init worker ${worker.address.slice(0, 6)}:`, e.message);
+            } catch (e: unknown) {
+                console.error(`[WalletManager] ❌ Failed to init worker ${worker.address.slice(0, 6)}:`, getErrorMessage(e));
                 // We don't throw here to allow partial fleet startup? 
                 // Strict mode: Throw
                 throw e;
