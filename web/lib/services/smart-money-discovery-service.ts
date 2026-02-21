@@ -1,6 +1,7 @@
 import { polyClient } from '@/lib/polymarket';
 import { createTTLCache } from '@/lib/server-cache';
 import { calculateScientificScore, Trade } from './trader-scoring-service';
+import { fetchTraderActivities, resolveActivityMaxItems } from './trader-activity-service';
 
 export interface DiscoveredSmartMoneyTrader {
     address: string;
@@ -66,15 +67,18 @@ type TradeWithToken = Trade & {
 
 const leaderboardCache = createTTLCache<LeaderboardSnapshot>();
 const traderDetailCache = createTTLCache<DiscoveredSmartMoneyTrader | null>();
-const ACTIVITY_MAX_ITEMS = clamp(
-    Number(process.env.SMART_MONEY_ACTIVITY_MAX_ITEMS || '2000'),
-    500,
-    10000
-);
 const FIFO_WARMUP_DAYS = clamp(
     Number(process.env.SMART_MONEY_FIFO_WARMUP_DAYS || '60'),
     0,
     180
+);
+const DEFAULT_DISCOVERY_ACTIVITY_MAX_ITEMS = resolveActivityMaxItems(
+    DISCOVERY_LOOKBACK_DAYS + FIFO_WARMUP_DAYS
+);
+const ACTIVITY_MAX_ITEMS = clamp(
+    Number(process.env.SMART_MONEY_ACTIVITY_MAX_ITEMS || String(DEFAULT_DISCOVERY_ACTIVITY_MAX_ITEMS)),
+    500,
+    10000
 );
 const MIN_RECONSTRUCTION_CONFIDENCE = clamp(
     Number(process.env.SMART_MONEY_MIN_RECON_CONFIDENCE || '0.35'),
@@ -196,18 +200,12 @@ function reconstructTradesWithFifoPnl(
 }
 
 async function fetchActivityWindow(address: string, startSec: number): Promise<ActivityLike[]> {
-    try {
-        const activities = await polyClient.dataApi.getAllActivity(
-            address,
-            { start: startSec },
-            ACTIVITY_MAX_ITEMS
-        );
-        return activities as ActivityLike[];
-    } catch (error) {
-        console.warn(`[SmartMoneyDiscovery] getAllActivity fallback for ${address}:`, error);
-        const activities = await polyClient.dataApi.getActivity(address, { limit: 500, start: startSec });
-        return activities as ActivityLike[];
-    }
+    const activities = await fetchTraderActivities(address, {
+        startSec,
+        maxItems: ACTIVITY_MAX_ITEMS,
+        type: 'TRADE',
+    });
+    return activities as ActivityLike[];
 }
 
 async function getLeaderboardBySource(source: LeaderboardSource) {

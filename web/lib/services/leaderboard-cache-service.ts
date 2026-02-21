@@ -13,6 +13,12 @@ import {
     Trade,
 } from './trader-scoring-service';
 import { discoverSmartMoneyTraders } from './smart-money-discovery-service';
+import {
+    ActivityLike,
+    fetchTraderActivities,
+    normalizeTimestampSeconds,
+    resolveActivityMaxItems,
+} from './trader-activity-service';
 
 // Type definitions matching /api/traders/active
 export interface CachedTrader {
@@ -48,21 +54,6 @@ export interface SmartMoneyCacheMetadata {
     status: 'SUCCESS' | 'FAILED' | 'IN_PROGRESS';
     traderCount: number | null;
     errorMessage: string | null;
-}
-
-// Helper functions from /api/traders/active
-type ActivityLike = {
-    type?: string;
-    side?: 'BUY' | 'SELL';
-    size?: number;
-    price?: number;
-    usdcSize?: number;
-    timestamp?: number;
-};
-
-function normalizeTimestampSeconds(timestamp: number): number {
-    if (!Number.isFinite(timestamp)) return 0;
-    return timestamp > 1e12 ? Math.floor(timestamp / 1000) : Math.floor(timestamp);
 }
 
 function convertActivitiesToTrades(activities: ActivityLike[]): Trade[] {
@@ -108,6 +99,16 @@ function mapPeriodToSdk(period: Period): 'WEEK' | 'MONTH' | 'ALL' {
         case '30d': return 'MONTH';
         case '90d': return 'ALL';
         default: return 'WEEK';
+    }
+}
+
+function mapPeriodToDays(period: Period): number {
+    switch (period) {
+        case '7d': return 7;
+        case '15d': return 15;
+        case '30d': return 30;
+        case '90d': return 90;
+        default: return 7;
     }
 }
 
@@ -162,21 +163,19 @@ export async function updateLeaderboardCache(
         });
 
         const nowSeconds = Math.floor(Date.now() / 1000);
-        let days = 7;
-        if (period === '15d') days = 15;
-        if (period === '30d') days = 30;
-        if (period === '90d') days = 90;
-
+        const days = mapPeriodToDays(period);
         const startTime = nowSeconds - days * 24 * 60 * 60;
+        const activityMaxItems = resolveActivityMaxItems(days);
 
         const enrichedTraders = await Promise.all(
             leaderboard.entries.map(async (trader) => {
                 try {
                     const [positions, activities] = await Promise.all([
                         polyClient.dataApi.getPositions(trader.address, { limit: 50 }),
-                        polyClient.dataApi.getActivity(trader.address, {
-                            limit: 100,
-                            start: startTime,
+                        fetchTraderActivities(trader.address, {
+                            startSec: startTime,
+                            maxItems: activityMaxItems,
+                            type: 'TRADE',
                         }),
                     ]);
 
@@ -190,7 +189,7 @@ export async function updateLeaderboardCache(
                         : 0;
 
                     const lastTradeTime = periodTrades.length > 0
-                        ? periodTrades[0].timestamp
+                        ? Math.max(...periodTrades.map(a => normalizeTimestampSeconds(Number(a.timestamp))))
                         : 0;
 
                     const trades = convertActivitiesToTrades(activities);

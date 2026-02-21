@@ -25,6 +25,12 @@ import {
     Period as CachePeriod
 } from '@/lib/services/leaderboard-cache-service';
 import { isDatabaseEnabled } from '@/lib/prisma';
+import {
+    ActivityLike,
+    fetchTraderActivities,
+    normalizeTimestampSeconds,
+    resolveActivityMaxItems,
+} from '@/lib/services/trader-activity-service';
 
 // ===== Types =====
 
@@ -83,24 +89,30 @@ const TRADER_ERROR_TTL_MS = 30 * 1000; // 30 seconds
 // In-memory cache by period
 const memoryCache: Record<string, CachedData> = {};
 const inFlightRequests: Record<string, Promise<ActiveTraderResponse> | undefined> = {};
-const leaderboardCache = createTTLCache<any>();
+type LeaderboardSnapshot = Awaited<ReturnType<typeof polyClient.dataApi.getLeaderboard>>;
+const leaderboardCache = createTTLCache<LeaderboardSnapshot>();
 const traderDetailCache = createTTLCache<ActiveTrader | null>();
 
 // ===== Score Calculation =====
 // Now uses trader-scoring-service for scientific scoring
 
-function convertActivitiesToTrades(activities: any[]): Trade[] {
+function convertActivitiesToTrades(activities: ActivityLike[]): Trade[] {
     return activities
         .filter(a => a.type === 'TRADE' && a.side && a.size && a.price)
-        .map(a => ({
-            timestamp: a.timestamp,
-            side: a.side as 'BUY' | 'SELL',
-            size: a.size,
-            price: a.price,
-            value: a.usdcSize || (a.size * a.price),
-            pnl: undefined,
-            marketId: a.conditionId || a.tokenId || undefined, // Track market for diversification
-        }));
+        .map(a => {
+            const size = Number(a.size ?? 0);
+            const price = Number(a.price ?? 0);
+
+            return {
+                timestamp: normalizeTimestampSeconds(Number(a.timestamp)),
+                side: a.side as 'BUY' | 'SELL',
+                size,
+                price,
+                value: Number(a.usdcSize ?? (size * price)),
+                pnl: undefined,
+                marketId: a.conditionId || a.tokenId || undefined, // Track market for diversification
+            };
+        });
 }
 
 function enrichTradesWithTotalPnL(trades: Trade[], totalPnL: number): Trade[] {
@@ -134,6 +146,16 @@ function mapPeriodToSdk(period: Period): 'WEEK' | 'MONTH' | 'ALL' {
     }
 }
 
+function mapPeriodToDays(period: Period): number {
+    switch (period) {
+        case '7d': return 7;
+        case '15d': return 15;
+        case '30d': return 30;
+        case '90d': return 90;
+        default: return 7;
+    }
+}
+
 async function fetchActiveTraders(limit: number, period: Period): Promise<ActiveTrader[]> {
     const timePeriod = mapPeriodToSdk(period);
 
@@ -152,12 +174,9 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
     // Step 2: For each candidate, fetch positions and activity in parallel
     // Calculate start time based on actual period for activity filtering
     const nowSeconds = Math.floor(Date.now() / 1000);
-    let days = 7;
-    if (period === '15d') days = 15;
-    if (period === '30d') days = 30;
-    if (period === '90d') days = 90;
-
+    const days = mapPeriodToDays(period);
     const startTime = nowSeconds - days * 24 * 60 * 60;
+    const activityMaxItems = resolveActivityMaxItems(days);
 
     const results: Array<ActiveTrader | null> = [];
     const batchSize = 5;
@@ -174,14 +193,17 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
             try {
                 const [positions, activities] = await Promise.all([
                     polyClient.dataApi.getPositions(trader.address, { limit: 50 }),
-                    polyClient.dataApi.getActivity(trader.address, {
-                        limit: 100,
-                        start: startTime,
+                    fetchTraderActivities(trader.address, {
+                        startSec: startTime,
+                        maxItems: activityMaxItems,
+                        type: 'TRADE',
                     }),
                 ]);
 
                 // Count recent trades (only TRADE type) in the specific period
-                const periodTrades = activities.filter(a => a.type === 'TRADE' && a.timestamp >= startTime);
+                const periodTrades = activities.filter(
+                    a => normalizeTimestampSeconds(Number(a.timestamp)) >= startTime
+                );
 
                 // Calculate simple win rate from positions for display
                 const profitablePositions = positions.filter(p => (p.cashPnl || 0) > 0);
@@ -191,7 +213,7 @@ async function fetchActiveTraders(limit: number, period: Period): Promise<Active
 
                 // Get last trade time
                 const lastTradeTime = periodTrades.length > 0
-                    ? periodTrades[0].timestamp
+                    ? Math.max(...periodTrades.map(a => normalizeTimestampSeconds(Number(a.timestamp))))
                     : 0;
 
                 // Convert activities to trades and enrich with PnL for scientific scoring
