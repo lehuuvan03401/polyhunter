@@ -1,10 +1,10 @@
 ## 1. Implementation
-- [ ] 1.1 Install `next-intl` dependency in `frontend/package.json`
-- [ ] 1.2 Create `frontend/i18n` folder and `request.ts` configuration
-- [ ] 1.3 Create `frontend/messages` folder with `en.json`, `zh-CN.json`, `zh-TW.json`
-- [ ] 1.4 Update `frontend/next.config.ts` with `createNextIntlPlugin`
-- [ ] 1.5 Create `frontend/middleware.ts` for locale routing
-- [ ] 1.6 Refactor `frontend/app/` to `frontend/app/[locale]/` structure
+- [ ] 1.1 Install `next-intl` dependency in `web/package.json`
+- [ ] 1.2 Create `web/i18n` folder and `request.ts` configuration
+- [ ] 1.3 Create `web/messages` folder with `en.json`, `zh-CN.json`, `zh-TW.json`
+- [ ] 1.4 Update `web/next.config.ts` with `createNextIntlPlugin`
+- [ ] 1.5 Create `web/middleware.ts` for locale routing
+- [ ] 1.6 Refactor `web/app/` to `web/app/[locale]/` structure
 - [ ] 1.7 Wrap root layout with `NextIntlClientProvider`
 - [ ] 1.8 Create `LanguageSwitcher` component
 - [ ] 1.9 Integrate `LanguageSwitcher` into Navbar or Homepage

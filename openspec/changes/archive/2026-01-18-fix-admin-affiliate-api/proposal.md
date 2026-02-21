@@ -10,4 +10,4 @@ The admin affiliates API endpoint has performance issues (N+1 queries) and secur
 
 ## Impact
 - **Affected specs**: `affiliate-system`
-- **Affected code**: `frontend/app/api/admin/affiliates/route.ts`
+- **Affected code**: `web/app/api/admin/affiliates/route.ts`

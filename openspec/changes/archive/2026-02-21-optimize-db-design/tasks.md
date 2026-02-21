@@ -2,7 +2,7 @@
 
 ## P0: Hot-Path Indexes & Query Alignment
 - [x] Audit CopyTrade/CommissionLog query patterns (worker + API) and map to indexes. <!-- id: 1 -->
-- [x] Add composite indexes in `frontend/prisma/schema.prisma` for status/time-window scans. <!-- id: 2 -->
+- [x] Add composite indexes in `web/prisma/schema.prisma` for status/time-window scans. <!-- id: 2 -->
 - [x] Generate migration + ensure index names are stable. <!-- id: 3 -->
 - [x] Update hot queries (if needed) to align with index ordering. <!-- id: 4 -->
 - [x] Capture before/after EXPLAIN notes (optional if env available). <!-- id: 5 -->

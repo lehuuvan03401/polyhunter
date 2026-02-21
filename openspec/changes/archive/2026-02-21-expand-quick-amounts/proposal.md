@@ -15,4 +15,4 @@ Users want to easily select smaller "test" amounts ($1, $5) without typing. The 
     -   Use a Grid layout (`grid grid-cols-3 gap-2`) to display them in two neat rows.
 
 ## Dependencies
-- `frontend/components/copy-trading/copy-trade-modal.tsx`
+- `web/components/copy-trading/copy-trade-modal.tsx`

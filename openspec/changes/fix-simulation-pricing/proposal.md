@@ -7,7 +7,7 @@
 
 ## Problem
 Users monitoring simulated copy trading positions observe that "Current Price" often exactly matches "Entry Price" in the dashboard, and position counts seem lower than expected. This occurs because:
-1. The `frontend/app/api/copy-trading/positions/route.ts` endpoint fails to fetch live orderbook prices (CLOB) for simulated positions (likely due to API limitations or errors) and defaults to `avgEntryPrice`.
+1. The `web/app/api/copy-trading/positions/route.ts` endpoint fails to fetch live orderbook prices (CLOB) for simulated positions (likely due to API limitations or errors) and defaults to `avgEntryPrice`.
 2. The simulation script (`simulate-copy-trading.ts`) explicitly calculates unrealized PnL assuming current price equals entry price for its summary.
 
 ## Solution

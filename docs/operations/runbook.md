@@ -7,7 +7,7 @@
 bash
 cd contracts
 export ENABLE_FORK=true
-# 确保 frontend/.env 中已设置 NEXT_PUBLIC_CHAIN_ID=1337
+# 确保 web/.env 中已设置 NEXT_PUBLIC_CHAIN_ID=1337
 npx hardhat node
 
 🖥️ 终端 2: 部署基础设施 (合约 & Proxy)
@@ -21,7 +21,7 @@ npx hardhat run scripts/deploy-executor.ts --network localhost
 # ✅ 脚本会根据 USDC_ADDRESS / CTF_ADDRESS 自动设置 Executor allowlist
 
 # 2. 部署 Factory & 创建 User Proxy
-# 注意：此脚本会读取 frontend/.env
+# 注意：此脚本会读取 web/.env
 npx hardhat run scripts/setup-local-fork.ts --network localhost
 # ✅ 脚本会自动更新 .env 中的 NEXT_PUBLIC_PROXY_FACTORY_ADDRESS
 # ✅ 新 Proxy 默认绑定 Executor，并在 Proxy/Executor 上初始化 allowlist（USDC + CTF）
@@ -154,7 +154,7 @@ MW_VERIFY_BASE_URL=http://localhost:3000 npm run verify:managed-wealth:lifecycle
 
 ## Copy Trading 执行环境变量（核心）
 
-完整清单见 `frontend/.env.example`。以下是执行相关的核心项：
+完整清单见 `web/.env.example`。以下是执行相关的核心项：
 
 - `ENABLE_REAL_TRADING`：真实执行开关
 - `COPY_TRADING_EXECUTION_ALLOWLIST`：执行白名单（可选）
@@ -202,7 +202,7 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 - `REDIS_URL`（兜底）
 
 若未设置，将退回内存模式（仅适用于单实例）。
-如需启用 Redis，请确保已安装 `ioredis`（在 `frontend` 目录执行 `npm install ioredis`）。
+如需启用 Redis，请确保已安装 `ioredis`（在 `web` 目录执行 `npm install ioredis`）。
 
 ### 2) 分片（避免多实例重复处理）
 每个实例设置不同分片：

@@ -1,4 +1,4 @@
-- [x] Update `frontend/app/portfolio/page.tsx`
+- [x] Update `web/app/portfolio/page.tsx`
   - [x] Set "Avg. Price" to 4 decimals
   - [x] Set "Current" to 4 decimals
   - [x] Set "Total Invested" to 4 decimals

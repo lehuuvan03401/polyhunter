@@ -20,5 +20,5 @@ Fix the PnL discrepancies in the simulation and portfolio metrics by ensuring th
 -   Changing the metrics fallback logic will alter the displayed historical PnL for existing buggy records. This is desired (it currently shows wrong numbers), but might look like a sudden jump.
 
 ## Dependencies
--   `frontend/scripts/simulate-copy-trading.ts`
--   `frontend/app/api/copy-trading/metrics/route.ts`
+-   `web/scripts/simulate-copy-trading.ts`
+-   `web/app/api/copy-trading/metrics/route.ts`

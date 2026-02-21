@@ -13,10 +13,10 @@
   - Added signal-source metrics and WS unhealthy degrade handling in hybrid mode.
   - Added env examples + runbook sections (mode selection, troubleshooting, migration rollback).
 - Files created/modified:
-  - frontend/scripts/copy-trading-supervisor.ts (modified)
-  - frontend/prisma/schema.prisma (modified)
-  - frontend/prisma/migrations/20260213230000_add_signal_cursor/migration.sql (created)
-  - frontend/.env.example (modified)
+  - web/scripts/copy-trading-supervisor.ts (modified)
+  - web/prisma/schema.prisma (modified)
+  - web/prisma/migrations/20260213230000_add_signal_cursor/migration.sql (created)
+  - web/.env.example (modified)
   - docs/operations/runbook.md (modified)
   - openspec/changes/add-hybrid-signal-ingestion/tasks.md (modified)
   - openspec/changes/add-hybrid-signal-ingestion/verification.md (created)
@@ -261,10 +261,10 @@
   - src/services/copy-trading-execution-service.ts
   - scripts/verify/copy-trading-readiness.ts
   - scripts/verify-local-fork.ts
-  - frontend/lib/contracts/abis.ts
-  - frontend/lib/contracts/useProxy.ts
-  - frontend/components/proxy/proxy-action-center.tsx
-  - frontend/components/proxy/proxy-wallet-card.tsx
+  - web/lib/contracts/abis.ts
+  - web/lib/contracts/useProxy.ts
+  - web/components/proxy/proxy-action-center.tsx
+  - web/components/proxy/proxy-wallet-card.tsx
   - docs/guides/real_trading_architecture.md
   - openspec/changes/add-contract-execution-guards/verification.md
 - Files created/modified:
@@ -394,7 +394,7 @@
 ### Phase 4: Supervisor EOA Fix
 - **Status:** complete
 - Actions taken:
-  - Implemented EOA execution path in `frontend/scripts/copy-trading-supervisor.ts` using user-specific `TradingService`.
+  - Implemented EOA execution path in `web/scripts/copy-trading-supervisor.ts` using user-specific `TradingService`.
   - Added per-user TradingService cache + encrypted API credential decryption for EOA.
   - Ensured EOA path bypasses proxy execution and does not enqueue into fleet queue.
 
@@ -409,7 +409,7 @@
 - **Status:** complete
 - Actions taken:
   - Initial run failed due to TS path alias resolution (`@/lib/prisma`) when using plain `tsx`.
-  - Re-ran with `npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts`.
+  - Re-ran with `npx tsx --tsconfig web/tsconfig.json web/scripts/copy-trading-supervisor.ts`.
   - Supervisor booted in DRY_RUN: wallet fleet initialized, configs loaded, WS + TransferSingle listeners started.
 
 ### Phase 7: Supervisor Selftest Trade
@@ -446,11 +446,11 @@
   - Ran supervisor dry-run selftest (local mock, DRY_RUN=true). Output recorded in `openspec/changes/scale-copy-trading-supervisor/verification.md`.
   - Verified shard routing with `SUPERVISOR_SHARD_COUNT=2` and `SUPERVISOR_SHARD_INDEX=0/1`.
   - Verified Redis shared store initialization on both shards (local Redis warned that password is supplied for `default` user with no password).
-  - Added `frontend/scripts/verify/queue-backpressure.ts` and ran queue saturation (5200 attempts, 5000 enqueued, 200 dropped).
-  - Added `frontend/scripts/verify/dedup-shared.ts` and verified Redis dedup rejects duplicate key within TTL.
+  - Added `web/scripts/verify/queue-backpressure.ts` and ran queue saturation (5200 attempts, 5000 enqueued, 200 dropped).
+  - Added `web/scripts/verify/dedup-shared.ts` and verified Redis dedup rejects duplicate key within TTL.
   - Ran dual-supervisor real-event test with shared Redis; only one instance logged signals, confirming cross-instance dedup.
-  - Added `frontend/scripts/verify/seed-supervisor-config.ts` to create/cleanup test config for dedup runs.
-  - Added `frontend/scripts/verify/supervisor-load-model.ts` and recorded load model + synthetic simulation results for 10k-user assumptions.
+  - Added `web/scripts/verify/seed-supervisor-config.ts` to create/cleanup test config for dedup runs.
+  - Added `web/scripts/verify/supervisor-load-model.ts` and recorded load model + synthetic simulation results for 10k-user assumptions.
 
 ### Phase 5: Capacity Controls Proposal
 **Status:** complete
@@ -459,7 +459,7 @@
   - Validated change with `openspec validate add-supervisor-capacity-controls --strict --no-interactive`.
   - Implemented worker pool sizing + incremental/full config refresh + metrics.
   - Added config refresh index and runbook capacity controls.
-  - Created Prisma migration `frontend/prisma/migrations/20260206111203_add_config_refresh_index/`.
+  - Created Prisma migration `web/prisma/migrations/20260206111203_add_config_refresh_index/`.
   - Verified worker pool override, incremental refresh, and full refresh reconciliation (see `openspec/changes/add-supervisor-capacity-controls/verification.md`).
   - Added deployment checklist `docs/operations/deploy-supervisor-capacity-controls.md`.
   - Added rollout SOP `docs/operations/sop-supervisor-capacity-controls.md`.
@@ -482,8 +482,8 @@
 - Files modified:
   - src/services/copy-trading-execution-service.ts
   - scripts/copy-trading-worker.ts
-  - frontend/scripts/copy-trading-supervisor.ts
-  - frontend/app/api/copy-trading/execute/route.ts
+  - web/scripts/copy-trading-supervisor.ts
+  - web/app/api/copy-trading/execute/route.ts
   - docs/operations/runbook.md
   - src/services/copy-trading-execution-service.test.ts
   - openspec/changes/optimize-copy-execution-throughput/tasks.md

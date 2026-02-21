@@ -6,7 +6,7 @@
 - 版本：v1.0（重构版）
 - 更新日期：2026-02-18
 - 目标：将原营销提案整理为可执行规则，并与当前系统实现对齐，避免“宣传口径与产品能力不一致”。
-- 对外宣发参考：`/Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/docs/prds/marketing_rule_public.md`
+- 对外宣发参考：`/Users/baronchan/Desktop/Polymarket/poly-sdk/Horus/docs/prds/marketing_rule_public.md`
 
 ---
 

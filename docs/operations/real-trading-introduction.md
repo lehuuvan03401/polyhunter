@@ -8,7 +8,7 @@
 建议先充 5–20 USDC 做验证
 
 **[High Performance Optional]**: 如果你想启用 **Smart Buffer** 策略（极速模式），请也往 **Worker Bot (TRADING_MNEMONIC)** 对应的地址充值 50-100 USDC。这样 Bot 可以直接垫资买入，无需等待 Proxy 转账，由于减少了 50% 的链上交互，速度会有显著提升。
-本地环境变量（frontend/.env）
+本地环境变量（web/.env）
 至少要有：
 TRADING_PRIVATE_KEY=你的私钥（小额测试专用）
 NEXT_PUBLIC_RPC_URL=你自己的稳定RPC（比如 Alchemy/Ankr）
@@ -22,7 +22,7 @@ NEXT_PUBLIC_CTF_ADDRESS=...
 NEXT_PUBLIC_TREASURY_ADDRESS=...
 NEXT_PUBLIC_EXECUTOR_ADDRESS=...
 二、运行 setup‑real‑trading（配置授权）
-进入 frontend/：
+进入 web/：
 
 cd frontend
 npx tsx scripts/setup-real-trading.ts
@@ -35,7 +35,7 @@ npx tsx scripts/setup-real-trading.ts
 
 三、验证“真实成交能力”（小额、低频）
 
-在 frontend/.env 临时添加：
+在 web/.env 临时添加：
 COPY_TRADING_DRY_RUN=false
 运行真实执行器（server 端路由已经支持）
 npm run dev

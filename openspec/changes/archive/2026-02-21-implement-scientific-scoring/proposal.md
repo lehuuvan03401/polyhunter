@@ -31,4 +31,4 @@ Copy traders need scientifically sound metrics to maximize their profits while m
   - `app/api/traders/active/route.ts` - Enhanced scoring algorithm
   - `components/home/leaderboard-table.tsx` - Display new metrics  
   - `components/smart-money/smart-money-table.tsx` - Display new metrics
-  - `poly-hunter/src/services/smart-money-service.ts` - SDK scoring updates
+  - `Horus/src/services/smart-money-service.ts` - SDK scoring updates

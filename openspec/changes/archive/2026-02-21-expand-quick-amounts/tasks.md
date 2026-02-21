@@ -1,3 +1,3 @@
-- [x] Update `frontend/components/copy-trading/copy-trade-modal.tsx`
+- [x] Update `web/components/copy-trading/copy-trade-modal.tsx`
   - [x] Update `QUICK_AMOUNTS` constant.
   - [x] Change container to `grid grid-cols-3 gap-2`.

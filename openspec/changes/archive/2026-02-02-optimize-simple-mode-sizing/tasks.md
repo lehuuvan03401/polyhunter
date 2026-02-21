@@ -8,7 +8,7 @@ Change Simple Mode from Fixed $ to Range Mode with proportional sizing (10%, $5-
 ## Tasks
 
 - [x] **1. Update Simple Mode UI to Range Mode**
-  - File: `frontend/components/copy-trading/copy-trader-modal.tsx`
+  - File: `web/components/copy-trading/copy-trader-modal.tsx`
   - Change Simple Mode form from single "Amount per Trade" input to:
     - Proportional % input (default 10%)
     - Max per Trade input (default $100)
@@ -16,7 +16,7 @@ Change Simple Mode from Fixed $ to Range Mode with proportional sizing (10%, $5-
   - Update preview text to explain Range behavior
 
 - [x] **2. Update API payload defaults for Simple Mode**
-  - File: `frontend/components/copy-trading/copy-trader-modal.tsx`
+  - File: `web/components/copy-trading/copy-trader-modal.tsx`
   - Modify `handleStartCopying()` to send:
     - `mode: 'percentage'` instead of `'fixed_amount'`
     - `sizeScale: 0.10` (10%)

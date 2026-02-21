@@ -23,7 +23,7 @@ graph TD
         CTF -.->|盈利| P
     end
 ### 2. 核心组件详解
-A. 链下脚本 (The Brain) - frontend/scripts/*.ts
+A. 链下脚本 (The Brain) - web/scripts/*.ts
 这是运行在您服务器上的 Node.js 程序。
 
 copy-trading-supervisor.ts

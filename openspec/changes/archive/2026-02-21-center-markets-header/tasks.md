@@ -1,3 +1,3 @@
-- [x] Update `frontend/app/markets/page.tsx`
+- [x] Update `web/app/markets/page.tsx`
   - [x] Apply `text-center`, `text-4xl`, `text-lg` to Unauthenticated View
   - [x] Apply `text-center`, `text-4xl`, `text-lg` to Authenticated View

@@ -1,3 +1,3 @@
-- [ ] Update `frontend/app/api/copy-trading/metrics/route.ts`
+- [ ] Update `web/app/api/copy-trading/metrics/route.ts`
   - [ ] Add `realizedWins += profit` logic to fallback loop
   - [ ] Add `realizedLosses += profit` logic to fallback loop

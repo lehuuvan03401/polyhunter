@@ -1,6 +1,6 @@
-- [x] Update `frontend/app/api/traders/[address]/route.ts`
+- [x] Update `web/app/api/traders/[address]/route.ts`
   - [x] Update `time` field to include seconds.
-- [x] Update `frontend/app/traders/[address]/page.tsx`
+- [x] Update `web/app/traders/[address]/page.tsx`
   - [x] Update `Trade` interface.
   - [x] Render `price`, `shares`, and `time`.
   - [x] Improve card layout to fit details.

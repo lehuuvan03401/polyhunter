@@ -1,7 +1,7 @@
-- [x] Update `frontend/app/api/traders/[address]/route.ts`
+- [x] Update `web/app/api/traders/[address]/route.ts`
   - [x] Use `profile.tradeCount` for `totalTrades`.
   - [x] Remove heuristic "Method 2" for win rate.
   - [x] Only return win rate if data is reliable.
-- [x] Update `frontend/app/traders/[address]/page.tsx`
+- [x] Update `web/app/traders/[address]/page.tsx`
   - [x] Add "ALL TIME" label to PnL and Volume.
   - [x] Handle missing/null Win Rate gracefully or rename to "Active Accuracy" if using position data.

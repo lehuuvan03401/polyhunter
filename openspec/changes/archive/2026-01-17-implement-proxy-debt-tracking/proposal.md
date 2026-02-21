@@ -11,6 +11,6 @@ When using the "Optimized Float" strategy (where the Bot uses its own funds to b
 ## Impact
 - **Affected Specs**: `copy-execution`
 - **Affected Code**: 
-    - `frontend/prisma/schema.prisma`
+    - `web/prisma/schema.prisma`
     - `src/services/copy-trading-execution-service.ts`
     - `scripts/copy-trading-supervisor.ts`

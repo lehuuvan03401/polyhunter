@@ -1,6 +1,6 @@
-- [x] Update `frontend/app/api/copy-trading/strategies/route.ts`
+- [x] Update `web/app/api/copy-trading/strategies/route.ts`
   - [x] Add `executionMode`, `autoExecute`, `slippageType`, `maxSlippage`, `infiniteMode`, `direction` to select query.
-- [x] Update `frontend/components/copy-trading/active-strategies-panel.tsx`
+- [x] Update `web/components/copy-trading/active-strategies-panel.tsx`
   - [x] Update `Strategy` interface with new fields.
   - [x] Add badges for Execution Mode (Security/Speed).
   - [x] Add badge for Hands-Free/Auto.

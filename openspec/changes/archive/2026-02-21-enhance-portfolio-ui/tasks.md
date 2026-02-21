@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] Modify `frontend/app/portfolio/page.tsx`
+- [ ] Modify `web/app/portfolio/page.tsx`
     - [ ] Rename table header "Outcome" to "Side"
     - [ ] Rename table header "Entry" to "Avg. Price"
     - [ ] Rename table header "Size" to "Shares"

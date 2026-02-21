@@ -26,7 +26,7 @@ These issues create confusion and potential data integrity problems.
 ## Scope
 
 ### In Scope
-- `frontend/components/copy-trading/copy-trader-modal.tsx`
+- `web/components/copy-trading/copy-trader-modal.tsx`
 - Input validation logic
 - UI polish
 

@@ -61,7 +61,7 @@
     *   查询某人的完整上级链路: `SELECT * WHERE descendantId = X`
 
 ### B. 佣金引擎 (Affiliate Engine)
-核心计算模块位于: `frontend/lib/services/affiliate-engine.ts`
+核心计算模块位于: `web/lib/services/affiliate-engine.ts`
 
 **计算流程 (每笔交易触发)**:
 1.  **Fetch Ancestry**: 一次性拉取交易者的完整上级链 (Ancestry Chain)。

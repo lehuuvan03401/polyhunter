@@ -12,9 +12,9 @@
 ### 整体架构
 
 ```
-poly-hunter/
+Horus/
 ├── @catalyst-team/poly-sdk/    # TypeScript SDK (核心)
-├── frontend/                    # Next.js 16 前端应用
+├── web/                    # Next.js 16 前端应用
 ├── contracts/                   # Hardhat 智能合约
 ├── backend/                     # Spring Boot 后端服务
 └── scripts/                     # 实用脚本和示例
@@ -441,7 +441,7 @@ pnpm example:arb-service        # 套利服务
 ## 项目结构
 
 ```
-poly-hunter/
+Horus/
 ├── src/                        # SDK 源代码
 │   ├── index.ts                # SDK 入口点
 │   ├── core/                   # 核心基础设施
@@ -468,7 +468,7 @@ poly-hunter/
 │   │   └── swap-service.ts         # 交换服务
 │   └── utils/                   # 工具函数
 │       └── price-utils.ts       # 价格计算工具
-├── frontend/                   # Next.js 前端应用
+├── web/                   # Next.js 前端应用
 │   ├── app/                    # App Router 页面
 │   │   ├── affiliate/          # 联盟推广页面
 │   │   ├── api/                # API 路由

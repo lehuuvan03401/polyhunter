@@ -10,4 +10,4 @@ Current supervisor throughput is capped by a fixed worker pool size and repeated
 
 ## Impact
 - Affected specs: `copy-trading`
-- Affected code: `frontend/scripts/copy-trading-supervisor.ts`, DB indexes for `CopyTradingConfig` (optional), runbook updates
+- Affected code: `web/scripts/copy-trading-supervisor.ts`, DB indexes for `CopyTradingConfig` (optional), runbook updates

@@ -821,9 +821,9 @@ MIT
 ## Project Structure
 
 ```
-poly-hunter/
+Horus/
 ├── src/                  # SDK core (clients, services, types)
-├── frontend/             # Next.js web application
+├── web/             # Next.js web application
 ├── contracts/            # Solidity smart contracts (Hardhat)
 │   └── deployed-addresses.json
 ├── backend/              # Backend services (affiliate-service)
@@ -851,7 +851,7 @@ poly-hunter/
 
 ## Copy Trading Environment Variables (Core)
 
-Full list lives in `frontend/.env.example`. Common execution variables:
+Full list lives in `web/.env.example`. Common execution variables:
 
 - `ENABLE_REAL_TRADING`
 - `COPY_TRADING_RPC_URL` / `COPY_TRADING_RPC_URLS`

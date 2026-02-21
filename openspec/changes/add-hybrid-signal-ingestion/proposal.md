@@ -17,7 +17,7 @@ Upstream `poly-sdk` has shifted Smart Money ingestion from Activity WebSocket to
 ## Impact
 - Affected specs: `copy-trading`, `storage`
 - Affected code:
-  - `frontend/scripts/copy-trading-supervisor.ts`
+  - `web/scripts/copy-trading-supervisor.ts`
   - `scripts/copy-trading-worker.ts`
   - polling/dedup utilities
   - Prisma schema + migration for cursor persistence

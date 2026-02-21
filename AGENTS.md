@@ -33,14 +33,14 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ## 项目结构
 
 ```
-poly-hunter/
+Horus/
 ├── src/                        # SDK 源代码 (@catalyst-team/poly-sdk)
 │   ├── core/                   # 核心基础设施（速率限制、缓存、错误处理）
 │   ├── clients/                # API 客户端（Data API、Gamma API、Subgraph 等）
 │   ├── services/               # 高级服务（交易、市场、智能资金、套利等）
 │   ├── utils/                  # 工具函数
 │   └── index.ts                # SDK 入口点
-├── frontend/                   # Next.js 16 前端应用
+├── web/                   # Next.js 16 前端应用
 │   ├── app/                    # App Router 页面
 │   │   ├── [locale]/           # 国际化路由
 │   │   ├── api/                # API 路由
@@ -221,7 +221,7 @@ poly-hunter/
 
 ### 9. 复制交易系统
 - **复制交易工作器** (`scripts/copy-trading-worker.ts`) - 后台处理跟单交易
-- **复制交易监控器** (`frontend/scripts/copy-trading-supervisor.ts`) - 实时监控和执行
+- **复制交易监控器** (`web/scripts/copy-trading-supervisor.ts`) - 实时监控和执行
 - **预写执行** - 防止孤儿订单
 - **智能路由** - EOA 和代理模式自动选择
 - **性能优化** - Redis 共享存储、队列去重、缓存机制

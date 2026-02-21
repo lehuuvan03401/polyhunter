@@ -15,4 +15,4 @@ Users reported "100% Win Rate" as impossible/fake. Calculating accurate all-time
     -   Format large numbers (e.g., 1.2K).
 
 ## Dependencies
-- `frontend/app/traders/[address]/page.tsx`
+- `web/app/traders/[address]/page.tsx`

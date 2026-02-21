@@ -15,7 +15,7 @@ Refactor the Managed Wealth pages to use a modernized UI architecture with:
 5.  **UX Improvements**: Enhance empty states, loading states (skeletons), and navigation flows.
 
 ## Scope
--   `frontend/app/[locale]/managed-wealth/page.tsx`
--   `frontend/app/[locale]/managed-wealth/[id]/page.tsx`
--   `frontend/app/[locale]/managed-wealth/my/page.tsx`
--   New components in `frontend/components/managed-wealth/`
+-   `web/app/[locale]/managed-wealth/page.tsx`
+-   `web/app/[locale]/managed-wealth/[id]/page.tsx`
+-   `web/app/[locale]/managed-wealth/my/page.tsx`
+-   New components in `web/components/managed-wealth/`

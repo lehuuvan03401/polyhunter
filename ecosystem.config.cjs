@@ -3,8 +3,8 @@ module.exports = {
         {
             name: 'copy-trading-supervisor',
             script: 'npx',
-            args: 'tsx scripts/copy-trading-supervisor.ts',
-            cwd: './frontend',
+            args: 'tsx scripts/workers/copy-trading-supervisor.ts',
+            cwd: './web',
             interpreter: 'none',
             env: {
                 NODE_ENV: 'production',

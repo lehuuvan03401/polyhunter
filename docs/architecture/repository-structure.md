@@ -8,7 +8,7 @@ This document summarizes the major repository modules, current hierarchy issues,
    - Core abstractions, clients, services, and shared utilities.
    - Published package source (`@catalyst-team/poly-sdk`).
 
-2. `frontend/` (Next.js app)
+2. `web/` (Next.js app)
    - App routes, API routes, UI components, Prisma models, and frontend operational scripts.
 
 3. `contracts/` (Hardhat)
@@ -25,7 +25,7 @@ This document summarizes the major repository modules, current hierarchy issues,
 
 ## Current Hierarchy Pain Points
 
-1. Script ownership is split across `scripts/` and `frontend/scripts/` with overlapping copy-trading context.
+1. Script ownership is split across `scripts/` and `web/scripts/` with overlapping copy-trading context.
 2. Runtime entrypoints are not consistently documented, causing “which script is canonical” confusion.
 3. Existing script docs were stale and did not reflect new verify/supervisor/capacity flows.
 4. Operational documents are rich but lack a single “script boundary” reference.
@@ -33,7 +33,7 @@ This document summarizes the major repository modules, current hierarchy issues,
 ## Optimization Applied (Non-breaking)
 
 1. Rewrote `scripts/README.md` to reflect actual directory layout and canonical root entrypoints.
-2. Added `frontend/scripts/README.md` to define app-layer script scope and execution conventions.
+2. Added `web/scripts/README.md` to define app-layer script scope and execution conventions.
 3. Clarified root-vs-frontend runtime ownership for copy-trading operations.
 
 ## Recommended Next Refactor (Breaking / Proposal Required)
@@ -50,9 +50,9 @@ If we want stricter hierarchy, apply in a dedicated OpenSpec change:
 ## Target Layout (Proposed)
 
 ```text
-poly-hunter/
+Horus/
 ├── src/                     # SDK source
-├── frontend/                # Next.js app
+├── web/                # Next.js app
 ├── contracts/               # Solidity + Hardhat
 ├── scripts/
 │   ├── runtime/             # Worker/supervisor orchestration entrypoints

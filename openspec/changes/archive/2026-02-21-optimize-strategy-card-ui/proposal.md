@@ -17,4 +17,4 @@ User feedback indicates the Risk Settings details are not detailed enough and th
     -   **Styling**: Use a subtle background for the stats block to distinguish it from the header.
 
 ## Dependencies
-- `frontend/components/copy-trading/active-strategies-panel.tsx`
+- `web/components/copy-trading/active-strategies-panel.tsx`

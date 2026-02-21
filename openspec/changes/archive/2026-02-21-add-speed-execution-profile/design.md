@@ -10,7 +10,7 @@ Speed mode aims to minimize latency and maximize execution reliability during re
   - Replacing the execution engine or adding new external dependencies.
 
 ## Decisions
-- Use a JSON/TS config file in `frontend/config/` with safe defaults.
+- Use a JSON/TS config file in `web/config/` with safe defaults.
 - Use orderbook best bid/ask to compute spread and available depth.
 - Skip trades that exceed guardrail thresholds, logging the reason.
 

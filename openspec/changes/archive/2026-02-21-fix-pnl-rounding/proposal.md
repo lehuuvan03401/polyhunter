@@ -10,10 +10,10 @@ Enforce mathematical consistency in the Metrics API by recalculating the total `
 Due to floating-point precision issues during the aggregation of thousands of trades, the independently calculated `tradingPnL` can differ slightly (e.g., by 1 cent) from the sum of its components (`realizedWins` and `realizedLosses`). This causes "W + L != Total" on the user dashboard.
 
 ## Solution
-In `frontend/app/api/copy-trading/metrics/route.ts`:
+In `web/app/api/copy-trading/metrics/route.ts`:
 - After all accumulations (DB + Fallback) are complete:
 - Set `realizedPnL = realizedWins + realizedLosses`
 - Set `tradingPnL = realizedWins + realizedLosses`
 
 ## Dependencies
-- `frontend/app/api/copy-trading/metrics/route.ts`
+- `web/app/api/copy-trading/metrics/route.ts`

@@ -1,4 +1,4 @@
-- [x] Update `frontend/components/copy-trading/active-strategies-panel.tsx`
+- [x] Update `web/components/copy-trading/active-strategies-panel.tsx`
   - [x] Redesign `StrategyCard` layout.
   - [x] Implement 4-column status bar with icons.
   - [x] Improve label-value proximity.

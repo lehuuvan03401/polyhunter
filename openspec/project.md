@@ -36,7 +36,7 @@ Poly Hunter is a comprehensive toolkit and dashboard for Polymarket traders. It 
 ### Architecture Patterns
 - **Monorepo-style**:
     - Root: SDK logic (`src/`), Scripts (`scripts/`), Examples (`examples/`).
-    - `frontend/`: Next.js application consuming the SDK.
+    - `web/`: Next.js application consuming the SDK.
     - `contracts/`: Solidity smart contracts (Proxy wallets, etc.).
 - **SDK Design**: Modular services (`TradingService`, `CopyTradingService`).
 - **Frontend Design**:

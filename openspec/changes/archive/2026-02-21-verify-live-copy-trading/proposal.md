@@ -30,6 +30,6 @@ Target trader: `0x63ce342161250d705dc0b16df89036c8e5f9ba9a` ([@0x8dxd](https://p
 ## Impact
 - Affected specs: `copy-trading`
 - Affected code: 
-  - `frontend/scripts/` (new verification script)
-  - `frontend/scripts/copy-trading-supervisor.ts` (dry-run mode)
+  - `web/scripts/` (new verification script)
+  - `web/scripts/copy-trading-supervisor.ts` (dry-run mode)
   - `src/services/realtime-service-v2.ts` (possible fixes)

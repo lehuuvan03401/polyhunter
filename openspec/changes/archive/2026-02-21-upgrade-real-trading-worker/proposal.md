@@ -21,5 +21,5 @@ Upgrade the `copy-trading-worker.ts` script to support **Real On-Chain Redemptio
 -   **Double Redemption**: Logic must ensure we don't try to redeem already redeemed positions (the DB check handles this).
 
 ## Dependencies
--   `frontend/scripts/copy-trading-worker.ts`
+-   `web/scripts/copy-trading-worker.ts`
 -   `src/services/copy-trading-execution-service.ts`

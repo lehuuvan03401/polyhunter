@@ -11,7 +11,7 @@
 
 ### 1️⃣ 用户配置 (Frontend -> DB)
 *   **交互**: 用户在 `CopyTraderModal` 设置参数（如 "Fixed $10", "Auto-Slippage"）并启动任务。
-*   **代码**: `frontend/components/copy-trading/copy-trader-modal.tsx`
+*   **代码**: `web/components/copy-trading/copy-trader-modal.tsx`
 *   **动作**: 发送 POST 请求到 `/api/copy-trading/config`。
 *   **结果**: 在数据库 `CopyTradingConfig` 表中根据用户签名创建一条配置记录。此步骤**不触发**任何交易，仅完成“意图注册”。
 
@@ -44,7 +44,7 @@
         *   要么全部成交，要么全部失败。不留残单。
 
 ### 5️⃣ 记录与反馈 (DB -> UI)
-*   **代码**: `frontend/lib/hooks/useOrderStatus.ts`
+*   **代码**: `web/lib/hooks/useOrderStatus.ts`
 *   **交互**:
     *   Worker 将最终结果写入 `CopyTrade` 数据库表 (状态: `EXECUTED` / `FAILED`)。
     *   前端 `PortfolioPage` 轮询 `/api/copy-trading/orders`。

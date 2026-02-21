@@ -809,9 +809,9 @@ MIT
 ## 项目结构
 
 ```
-poly-hunter/
+Horus/
 ├── src/                  # SDK 核心 (客户端、服务、类型)
-├── frontend/             # Next.js Web 应用
+├── web/             # Next.js Web 应用
 ├── contracts/            # Solidity 智能合约 (Hardhat)
 │   └── deployed-addresses.json
 ├── backend/              # 后端服务 (affiliate-service)
@@ -839,7 +839,7 @@ poly-hunter/
 
 ## Copy Trading 环境变量（核心）
 
-完整清单见 `frontend/.env.example`。执行相关常用项：
+完整清单见 `web/.env.example`。执行相关常用项：
 
 - `ENABLE_REAL_TRADING`
 - `COPY_TRADING_RPC_URL` / `COPY_TRADING_RPC_URLS`

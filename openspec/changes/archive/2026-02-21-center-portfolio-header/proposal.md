@@ -10,10 +10,10 @@ Update the Portfolio page header to be centered and larger, matching the specifi
 The user explicitly requested the "red marked text" (Dashboard header) to be centered "like" the Smart Money page. The current left-aligned, smaller text is visually inconsistent with this request.
 
 ## Solution
-In `frontend/app/portfolio/page.tsx`:
+In `web/app/portfolio/page.tsx`:
 - Add `text-center` to the header wrapper.
 - Increase `h1` size to `text-4xl`.
 - Increase spacing to `space-y-4`.
 
 ## Dependencies
-- `frontend/app/portfolio/page.tsx`
+- `web/app/portfolio/page.tsx`

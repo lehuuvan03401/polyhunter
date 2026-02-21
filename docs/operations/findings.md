@@ -71,7 +71,7 @@
 | Session-catchup script path missing (CLAUDE_PLUGIN_ROOT unset) | Used local skill templates directory |
 | Session-catchup script still unavailable (CLAUDE_PLUGIN_ROOT unset) | Proceeded without session-catchup using existing plan files |
 | `openspec show optimize-real-copy-trading --json --deltas-only` failed (missing Why section) | Will inspect change files directly |
-| `.env.local` generation concatenated comments onto values | Added trailing newline in `frontend/.env.local.localhost` |
+| `.env.local` generation concatenated comments onto values | Added trailing newline in `web/.env.local.localhost` |
 | Verification script failed to init Prisma (adapter missing / Pool export mismatch) | Added adapter fallback with robust module export handling |
 | Worker dry-run WS returned 400: "CLOB messages are not supported anymore" | Blocks live-trade validation; needs updated WS/channel config |
 | CLOB API key creation failed (400: Could not create api key) | Likely missing/invalid POLY API credentials or wallet permissions |

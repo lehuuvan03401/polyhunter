@@ -17,4 +17,4 @@ The "Stopped" strategies list currently looks identical to the "Active" list (sh
     -   Display "Stopped: [Date]" alongside the Start Date in the card footer.
 
 ## Dependencies
-- `frontend/components/copy-trading/active-strategies-panel.tsx`
+- `web/components/copy-trading/active-strategies-panel.tsx`

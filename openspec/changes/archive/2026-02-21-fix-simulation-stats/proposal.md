@@ -15,4 +15,4 @@ Correct the volume calculation logic in the simulation script (`simulate-copy-tr
 2.  **Align Pricing**: Update `printSummary` to attempt fetching CLOB prices for active tokens before falling back to Gamma, mirroring the Frontend's logic.
 
 ## Dependencies
--   `frontend/scripts/simulate-copy-trading.ts`
+-   `web/scripts/simulate-copy-trading.ts`

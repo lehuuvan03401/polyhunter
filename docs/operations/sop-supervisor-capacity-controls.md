@@ -3,7 +3,7 @@
 This SOP covers staged rollout, monitoring, and rollback for supervisor capacity controls.
 
 ## 1) Preflight checklist
-- Confirm migration applied (`frontend/prisma/migrations/20260206111203_add_config_refresh_index`).
+- Confirm migration applied (`web/prisma/migrations/20260206111203_add_config_refresh_index`).
 - Confirm Redis is reachable for shared dedup/queue.
 - Confirm `SUPERVISOR_WORKER_POOL_SIZE`, `SUPERVISOR_CONFIG_REFRESH_MS`, and `SUPERVISOR_CONFIG_FULL_REFRESH_MS` are set.
 - Confirm shard settings are correct (`SUPERVISOR_SHARD_COUNT`, `SUPERVISOR_SHARD_INDEX`).

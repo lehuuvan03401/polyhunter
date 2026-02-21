@@ -1,4 +1,4 @@
-- [x] Update `frontend/app/affiliate/page.tsx`
+- [x] Update `web/app/affiliate/page.tsx`
   - [x] Increase `h1` size to `text-4xl`
   - [x] Add subtitle "Track earnings and manage your team"
   - [x] Ensure `text-center` and spacing

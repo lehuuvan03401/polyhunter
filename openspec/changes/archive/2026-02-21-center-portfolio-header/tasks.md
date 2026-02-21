@@ -1,4 +1,4 @@
-- [x] Update `frontend/app/portfolio/page.tsx`
+- [x] Update `web/app/portfolio/page.tsx`
   - [x] Apply `text-center` to header container
   - [x] Update `h1` to `text-4xl`
   - [x] Update subtitle to `text-lg`

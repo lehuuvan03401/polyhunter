@@ -17,5 +17,5 @@ CopyTrade/CommissionLog remain high-volume tables. Recent work (async prewrite +
 
 ## Impact
 - **Affected specs:** storage, copy-trading
-- **Affected code:** `frontend/prisma/schema.prisma`, migrations, `scripts/copy-trading-worker.ts`, `scripts/archive-data.ts`, cache adapter configuration
+- **Affected code:** `web/prisma/schema.prisma`, migrations, `scripts/copy-trading-worker.ts`, `scripts/archive-data.ts`, cache adapter configuration
 - **Risk:** Schema migration (new indexes/columns), recovery logic changes, optional dependency on Redis

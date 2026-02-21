@@ -13,7 +13,7 @@ ENABLE_REAL_TRADING=true \
 DRY_RUN=true \
 SUPERVISOR_SELFTEST=true \
 SUPERVISOR_SELFTEST_EXIT=true \
-npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts
+npx tsx --tsconfig web/tsconfig.json web/scripts/copy-trading-supervisor.ts
 ```
 Result:
 - PASS: supervisor booted, fleet initialized, configs refreshed, positions preloaded.
@@ -25,8 +25,8 @@ Result:
 Status: PARTIAL (Redis connectivity verified; shared dedup/queue not explicitly exercised).
 Commands:
 ```
-SUPERVISOR_SHARD_COUNT=2 SUPERVISOR_SHARD_INDEX=0 ... npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts
-SUPERVISOR_SHARD_COUNT=2 SUPERVISOR_SHARD_INDEX=1 ... npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts
+SUPERVISOR_SHARD_COUNT=2 SUPERVISOR_SHARD_INDEX=0 ... npx tsx --tsconfig web/tsconfig.json web/scripts/copy-trading-supervisor.ts
+SUPERVISOR_SHARD_COUNT=2 SUPERVISOR_SHARD_INDEX=1 ... npx tsx --tsconfig web/tsconfig.json web/scripts/copy-trading-supervisor.ts
 ```
 Result:
 - PASS: shard ownership logged as `Shard 1/2` and `Shard 2/2`.
@@ -38,8 +38,8 @@ Result:
 ### Dedup Test (Redis shared store)
 Command:
 ```
-DOTENV_CONFIG_PATH=frontend/.env.local SUPERVISOR_DEDUP_TEST_TTL_MS=2000 SUPERVISOR_DEDUP_TEST_WAIT_MS=2500 \\
-  npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/dedup-shared.ts
+DOTENV_CONFIG_PATH=web/.env.local SUPERVISOR_DEDUP_TEST_TTL_MS=2000 SUPERVISOR_DEDUP_TEST_WAIT_MS=2500 \\
+  npx tsx --tsconfig web/tsconfig.json web/scripts/verify/dedup-shared.ts
 ```
 Result:
 - PASS: first set OK, second set DUPLICATE, after TTL OK.
@@ -52,12 +52,12 @@ Setup:
 
 Commands (abridged):
 ```
-DOTENV_CONFIG_PATH=frontend/.env.local npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/seed-supervisor-config.ts
-DOTENV_CONFIG_PATH=frontend/.env.local ENABLE_REAL_TRADING=true DRY_RUN=true SUPERVISOR_SHARD_COUNT=1 \\
-  npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts > logs/supervisor-dedup/supervisor-a.log 2>&1 &
-DOTENV_CONFIG_PATH=frontend/.env.local ENABLE_REAL_TRADING=true DRY_RUN=true SUPERVISOR_SHARD_COUNT=1 \\
-  npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/copy-trading-supervisor.ts > logs/supervisor-dedup/supervisor-b.log 2>&1 &
-NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545 npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/impersonate-mainnet-trade.ts
+DOTENV_CONFIG_PATH=web/.env.local npx tsx --tsconfig web/tsconfig.json web/scripts/verify/seed-supervisor-config.ts
+DOTENV_CONFIG_PATH=web/.env.local ENABLE_REAL_TRADING=true DRY_RUN=true SUPERVISOR_SHARD_COUNT=1 \\
+  npx tsx --tsconfig web/tsconfig.json web/scripts/copy-trading-supervisor.ts > logs/supervisor-dedup/supervisor-a.log 2>&1 &
+DOTENV_CONFIG_PATH=web/.env.local ENABLE_REAL_TRADING=true DRY_RUN=true SUPERVISOR_SHARD_COUNT=1 \\
+  npx tsx --tsconfig web/tsconfig.json web/scripts/copy-trading-supervisor.ts > logs/supervisor-dedup/supervisor-b.log 2>&1 &
+NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545 npx tsx --tsconfig web/tsconfig.json web/scripts/impersonate-mainnet-trade.ts
 ```
 
 Result:
@@ -68,7 +68,7 @@ Result:
 ### Load model + synthetic simulation (10k users baseline)
 Command (model only):
 ```
-npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/supervisor-load-model.ts
+npx tsx --tsconfig web/tsconfig.json web/scripts/verify/supervisor-load-model.ts
 ```
 Result (model):
 - Total copy trades/day: 50,000,000
@@ -82,7 +82,7 @@ Command (synthetic simulation):
 ```
 SUPERVISOR_LOAD_SIMULATE=true SUPERVISOR_LOAD_SIM_EVENTS=200 SUPERVISOR_LOAD_SIM_EVENTS_PER_SEC=20 \\
 SUPERVISOR_LOAD_SIM_FOLLOWERS=100 SUPERVISOR_LOAD_SIM_EXEC_LATENCY_MS=30 SUPERVISOR_LOAD_SIM_WORKERS=20 \\
-npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/supervisor-load-model.ts
+npx tsx --tsconfig web/tsconfig.json web/scripts/verify/supervisor-load-model.ts
 ```
 Result (simulation):
 - 20k tasks processed in ~31.3s (throughput ~637 tasks/sec)
@@ -92,8 +92,8 @@ Result (simulation):
 Status: PASS (synthetic load generator).
 Command:
 ```
-DOTENV_CONFIG_PATH=frontend/.env.local SUPERVISOR_QUEUE_STRESS_COUNT=5200 \\
-  npx tsx --tsconfig frontend/tsconfig.json frontend/scripts/verify/queue-backpressure.ts
+DOTENV_CONFIG_PATH=web/.env.local SUPERVISOR_QUEUE_STRESS_COUNT=5200 \\
+  npx tsx --tsconfig web/tsconfig.json web/scripts/verify/queue-backpressure.ts
 ```
 Result:
 - PASS: queue capped at 5000 entries.

@@ -20,4 +20,4 @@ Update `processRedemptions` in `simulate-copy-trading.ts`:
 -   Improved redemption might trigger a wave of redemptions for old positions if the user restarts the script without clearing the DB (though currently it clears DB on start).
 
 ## Dependencies
--   `frontend/scripts/simulate-copy-trading.ts`
+-   `web/scripts/simulate-copy-trading.ts`

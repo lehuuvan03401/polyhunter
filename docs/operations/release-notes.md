@@ -15,7 +15,7 @@
 
 **DB / Migration**
 - 新增索引：`CopyTradingConfig(updatedAt, isActive, autoExecute, channel)`
-- Migration：`frontend/prisma/migrations/20260206111203_add_config_refresh_index`
+- Migration：`web/prisma/migrations/20260206111203_add_config_refresh_index`
 
 **Verification Summary**
 - Worker pool override 生效（日志显示 `Worker pool size: N`）

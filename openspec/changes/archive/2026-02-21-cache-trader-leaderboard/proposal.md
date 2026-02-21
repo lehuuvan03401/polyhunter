@@ -39,10 +39,10 @@ Currently, when users first visit the homepage, the frontend fetches trader data
 ## Impact
 - **Affected Specs**: Creates new `trader-leaderboard` capability
 - **Affected Code**:
-  - `frontend/prisma/schema.prisma` - New table
-  - `frontend/app/api/traders/active/route.ts` - Read from cache
-  - `frontend/scripts/update-leaderboard-cache.ts` - New background job
-  - `frontend/lib/services/leaderboard-cache-service.ts` - Cache management logic
+  - `web/prisma/schema.prisma` - New table
+  - `web/app/api/traders/active/route.ts` - Read from cache
+  - `web/scripts/update-leaderboard-cache.ts` - New background job
+  - `web/lib/services/leaderboard-cache-service.ts` - Cache management logic
 
 ## Trade-offs
 - **Data Freshness**: Leaderboard data will be X minutes stale (configurable)

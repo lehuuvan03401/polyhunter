@@ -162,7 +162,7 @@
 
 ## 6. 环境变量配置 (Environment Setup)
 
-在服务器创建 `frontend/.env` 文件，填入真实生产配置：
+在服务器创建 `web/.env` 文件，填入真实生产配置：
 
 ```env
 # --- 区块链网络 (Blockchain) ---
@@ -194,7 +194,7 @@ NEXTAUTH_SECRET="请生成一个复杂的随机字符串"
 
 ### Copy Trading 执行相关（可选但建议配置）
 
-完整清单见 `frontend/.env.example`。生产环境常用项：
+完整清单见 `web/.env.example`。生产环境常用项：
 
 - `ENABLE_REAL_TRADING=true`
 - `COPY_TRADING_RPC_URLS`（多节点兜底，建议至少 2 个）
@@ -241,7 +241,7 @@ npx tsx scripts/verify/copy-trading-readiness.ts
 这是 Fleet Commander，负责授权所有 Worker 代理用户执行交易。
 
 ```bash
-cd poly-hunter/contracts
+cd Horus/contracts
 
 # 1. 安装依赖
 npm install
@@ -251,7 +251,7 @@ npm install
 npx hardhat run scripts/deploy-executor.ts --network polygon
 
 # ⚠️ 保存输出的 "PolyHunterExecutor deployed to: 0x..." 地址！
-# 将其更新到 frontend/.env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS 中。
+# 将其更新到 web/.env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS 中。
 ```
 
 ### 第二步：初始化数据库
@@ -307,7 +307,7 @@ pm2 start "npm start" --name poly-frontend
 这是 Fleet Commander，负责授权所有 Worker 代理用户执行交易。
 
 ```bash
-cd poly-hunter/contracts
+cd Horus/contracts
 
 # 1. 安装依赖
 npm install
@@ -317,7 +317,7 @@ npm install
 npx hardhat run scripts/deploy-executor.ts --network polygon
 
 # ⚠️ 保存输出的 "PolyHunterExecutor deployed to: 0x..." 地址！
-# 将其更新到 frontend/.env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS 中。
+# 将其更新到 web/.env 的 NEXT_PUBLIC_EXECUTOR_ADDRESS 中。
 ```
 
 ### 第二步：初始化数据库
@@ -447,7 +447,7 @@ pm2 monit
 ```
 
 ### 扩容 (Scaling)
-修改 `frontend/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
+修改 `web/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
 *注意: 增加 Worker 数量意味着需要更多的 Gas 储备。*
 
 ### 版本管理
@@ -604,7 +604,7 @@ pm2 monit
 ```
 
 ### 扩容 (Scaling)
-若需支持更多并发用户，修改 `frontend/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
+若需支持更多并发用户，修改 `web/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
 *注意: 增加 Worker 数量意味着需要更多的 Gas 储备。*
 
 ### 数据库操作

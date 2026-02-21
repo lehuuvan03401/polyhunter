@@ -15,4 +15,4 @@ In `printSummary` via `simulate-copy-trading.ts`:
 - Rename the label from "Trades Recorded" to "Total Orders Recorded" to accurately reflect that it includes settlements.
 
 ## Dependencies
-- `frontend/scripts/simulate-copy-trading.ts`
+- `web/scripts/simulate-copy-trading.ts`

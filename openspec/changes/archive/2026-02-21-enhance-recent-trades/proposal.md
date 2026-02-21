@@ -17,5 +17,5 @@ The current display is too simple. It lacks execution price, share count, and pr
     -   Display precise timestamp.
 
 ## Dependencies
-- `frontend/app/traders/[address]/page.tsx`
-- `frontend/app/api/traders/[address]/route.ts`
+- `web/app/traders/[address]/page.tsx`
+- `web/app/api/traders/[address]/route.ts`

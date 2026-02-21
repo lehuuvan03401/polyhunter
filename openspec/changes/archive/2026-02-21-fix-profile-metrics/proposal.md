@@ -19,5 +19,5 @@ The UI lacks time period context for metrics. The "Win Rate" calculation uses he
     -   Prioritize upstream `winRate` if available.
 
 ## Dependencies
-- `frontend/app/traders/[address]/page.tsx`
-- `frontend/app/api/traders/[address]/route.ts`
+- `web/app/traders/[address]/page.tsx`
+- `web/app/api/traders/[address]/route.ts`

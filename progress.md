@@ -14,20 +14,20 @@
 - 已执行 `pnpm run build`，TypeScript 编译通过。
 - 第二批已完成以下文件中文注释增强：
   - `scripts/copy-trading-worker.ts`
-  - `frontend/app/api/copy-trading/execute/route.ts`
-  - `frontend/app/api/copy-trading/config/route.ts`
-  - `frontend/app/api/copy-trading/detect/route.ts`
-  - `frontend/app/api/copy-trading/readiness/route.ts`
-- 已执行 `frontend` lint：失败（仓库已有大量历史 lint 问题，非本次注释改动引入）。
+  - `web/app/api/copy-trading/execute/route.ts`
+  - `web/app/api/copy-trading/config/route.ts`
+  - `web/app/api/copy-trading/detect/route.ts`
+  - `web/app/api/copy-trading/readiness/route.ts`
+- 已执行 `web` lint：失败（仓库已有大量历史 lint 问题，非本次注释改动引入）。
 - 第三批已完成以下文件中文注释增强：
-  - `frontend/app/api/copy-trading/orders/route.ts`
-  - `frontend/app/api/copy-trading/positions/route.ts`
-  - `frontend/app/api/copy-trading/metrics/route.ts`
-  - `frontend/lib/services/guardrail-service.ts`
-  - `frontend/scripts/copy-trading-supervisor.ts`
+  - `web/app/api/copy-trading/orders/route.ts`
+  - `web/app/api/copy-trading/positions/route.ts`
+  - `web/app/api/copy-trading/metrics/route.ts`
+  - `web/lib/services/guardrail-service.ts`
+  - `web/scripts/copy-trading-supervisor.ts`
 - 已再次执行 `pnpm run build`，TypeScript 编译通过。
 - 第四批已完成以下文件中文注释增强：
-  - `frontend/scripts/copy-trading-supervisor.ts`（配置区分组注释增强）
+  - `web/scripts/copy-trading-supervisor.ts`（配置区分组注释增强）
   - `scripts/copy-trading-worker.ts`（配置区分组注释增强）
   - `src/services/smart-money-service.ts`（候选筛选与评分口径注释增强）
 - 已再次执行 `pnpm run build`，TypeScript 编译通过。
@@ -48,7 +48,7 @@
 
 ## 2026-02-19
 - 第七批已完成以下文件中文注释增强：
-  - `frontend/app/api/copy-trading/readiness/route.ts`（RPC 选择、降级容错、动作阈值口径注释增强）
+  - `web/app/api/copy-trading/readiness/route.ts`（RPC 选择、降级容错、动作阈值口径注释增强）
   - `src/services/market-service.ts`（历史/实时 spread 语义边界与信号阈值注释增强）
   - `src/services/copy-trading-execution-service.ts`（Executor 代理执行、锁分层、AUTO 滑点与结算 fallback 注释增强）
 - 已执行 `pnpm run build`，TypeScript 编译通过。

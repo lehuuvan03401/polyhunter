@@ -15,7 +15,7 @@ Non-professional users currently need to configure copy-trading parameters manua
 ## Impact
 - Affected specs: `managed-wealth` (new), `copy-trading` (integration reuse, no normative behavior change in this proposal).
 - Affected code:
-  - `frontend/prisma/schema.prisma`
-  - `frontend/app/api/*` (new managed wealth routes)
-  - `frontend/components/*` and `frontend/app/[locale]/*` (new pages)
-  - `frontend/scripts/*` (NAV + settlement scheduler)
+  - `web/prisma/schema.prisma`
+  - `web/app/api/*` (new managed wealth routes)
+  - `web/components/*` and `web/app/[locale]/*` (new pages)
+  - `web/scripts/*` (NAV + settlement scheduler)

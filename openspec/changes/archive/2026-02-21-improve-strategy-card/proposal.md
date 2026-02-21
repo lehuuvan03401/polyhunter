@@ -18,5 +18,5 @@ Users reported that the strategy list "info is too brief". Critical settings cho
     -   Win Rate / PnL (if available in future, but for now just config).
 
 ## Dependencies
-- `frontend/app/api/copy-trading/strategies/route.ts`
-- `frontend/components/copy-trading/active-strategies-panel.tsx`
+- `web/app/api/copy-trading/strategies/route.ts`
+- `web/components/copy-trading/active-strategies-panel.tsx`

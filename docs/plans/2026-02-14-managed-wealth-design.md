@@ -2,7 +2,7 @@
 
 - 日期：2026-02-14
 - 作者：Codex（与产品方共创）
-- 适用范围：`frontend`（产品/UI/API/Prisma）、复用现有 copy-trading 执行体系
+- 适用范围：`web`（产品/UI/API/Prisma）、复用现有 copy-trading 执行体系
 - 设计状态：已确认，可进入实现规划
 
 ## 1. 背景与目标

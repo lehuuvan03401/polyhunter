@@ -22,5 +22,5 @@ The current "Open" and "History" tabs provide limited utility as they overlap si
 -   "Buy" and "Sell" might be ambiguous if some orders are complex, but currently `Order` model supports explicit `side` string.
 
 ## Dependencies
--   `frontend/components/copy-trading/order-status-panel.tsx`
--   `frontend/lib/hooks/useOrderStatus.ts` (Data provider)
+-   `web/components/copy-trading/order-status-panel.tsx`
+-   `web/lib/hooks/useOrderStatus.ts` (Data provider)

@@ -14,7 +14,7 @@ During code review of the recently implemented affiliate/MLM system, several cri
 ## Impact
 - Affected specs: `affiliate-system` (new capability)
 - Affected code:
-  - `frontend/lib/services/affiliate-engine.ts`
-  - `frontend/app/api/affiliate/payouts/route.ts`
-  - `frontend/app/api/affiliate/team/route.ts`
-  - `frontend/scripts/copy-trading-supervisor.ts`
+  - `web/lib/services/affiliate-engine.ts`
+  - `web/app/api/affiliate/payouts/route.ts`
+  - `web/app/api/affiliate/team/route.ts`
+  - `web/scripts/copy-trading-supervisor.ts`

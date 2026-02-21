@@ -24,7 +24,7 @@ Enable critical trading flow corrections:
 ## Scope
 
 ### In Scope
-- `frontend/scripts/copy-trading-supervisor.ts` - Event handling, deduplication
+- `web/scripts/copy-trading-supervisor.ts` - Event handling, deduplication
 - `src/services/copy-trading-execution-service.ts` - Debt logging, balance checks
 - Filter validation logic in processJob
 

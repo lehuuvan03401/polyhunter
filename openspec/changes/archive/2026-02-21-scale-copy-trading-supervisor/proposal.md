@@ -13,4 +13,4 @@ Current supervisor execution is optimized for small/medium workloads but will bo
 
 ## Impact
 - Affected specs: `copy-trading`, `storage`
-- Affected code: `frontend/scripts/copy-trading-supervisor.ts`, queue/dedup utilities, guardrail accounting, metrics/logging, runbooks
+- Affected code: `web/scripts/copy-trading-supervisor.ts`, queue/dedup utilities, guardrail accounting, metrics/logging, runbooks

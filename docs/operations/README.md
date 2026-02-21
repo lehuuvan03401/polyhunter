@@ -23,7 +23,7 @@ Operational entrypoint for deployment, verification, and runbook workflows.
 ## Runtime Scripts
 
 - Worker (root): `scripts/copy-trading-worker.ts`
-- Supervisor (frontend): `frontend/scripts/copy-trading-supervisor.ts`
+- Supervisor (frontend): `web/scripts/copy-trading-supervisor.ts`
 
 ## Safety Checklist
 
