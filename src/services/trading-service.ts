@@ -177,6 +177,15 @@ export class TradingService {
     this.credentials = config.credentials || null;
   }
 
+  /**
+   * Check if running on local/hardhat network
+   * Local networks don't require real API credentials
+   */
+  private isLocalChain(): boolean {
+    const chainId = this.chainId as number;
+    return chainId === LOCAL_CHAIN_ID || chainId === 1337;
+  }
+
   // ============================================================================
   // Initialization
   // ============================================================================
@@ -184,7 +193,7 @@ export class TradingService {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
+    if (this.isLocalChain()) {
       // 本地链路不强依赖真实 API Key，主要用于流程联调与单测。
       console.log(`[TradingService] ⚠️ Localhost detected. Mocking CLOB initialization.`);
       this.credentials = {
@@ -255,7 +264,7 @@ export class TradingService {
     }
 
     // 本地链路下返回固定 tick，便于本地联调不依赖远端 market 元信息。
-    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) return { minimum_tick_size: 0.01 } as any;
+    if (this.isLocalChain()) return { minimum_tick_size: 0.01 } as any;
 
     const client = await this.ensureInitialized();
     const tickSize = await client.getTickSize(tokenId);
@@ -273,7 +282,7 @@ export class TradingService {
     }
 
     // 本地环境默认非 neg-risk，避免依赖线上特性开关。
-    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) return false;
+    if (this.isLocalChain()) return false;
 
     const client = await this.ensureInitialized();
     const negRisk = await client.getNegRisk(tokenId);
@@ -292,7 +301,7 @@ export class TradingService {
     const client = await this.ensureInitialized();
 
     return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
-      if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
+      if (this.isLocalChain()) {
         // Mock success for localhost
         console.log(`[TradingService] ⚠️ Localhost: Mocking Limit Order for ${params.tokenId}`);
         return {
@@ -352,7 +361,7 @@ export class TradingService {
   async createMarketOrder(params: MarketOrderParams): Promise<OrderResult> {
     const client = await this.ensureInitialized();
 
-    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
+    if (this.isLocalChain()) {
       // Mock success for localhost
       console.log(`[TradingService] ⚠️ Localhost: Mocking Market Order for ${params.tokenId}`);
       return {
@@ -512,7 +521,7 @@ export class TradingService {
   async getOrderBook(tokenId: string): Promise<Orderbook> {
     const client = await this.ensureInitialized();
     // 本地 mock 盘口用于避免空数据触发上层逻辑分支（如自动滑点计算）。
-    if ((this.chainId as any) === LOCAL_CHAIN_ID || (this.chainId as any) === 1337) {
+    if (this.isLocalChain()) {
       return {
         hash: "mock-hash",
         asks: [{ price: "0.55", size: "1000" }],

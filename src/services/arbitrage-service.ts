@@ -32,6 +32,7 @@ import { GammaApiClient } from '../clients/gamma-api.js';
 import { RateLimiter } from '../core/rate-limiter.js';
 import { createUnifiedCache } from '../core/unified-cache.js';
 import { getEffectivePrices } from '../utils/price-utils.js';
+import { getErrorMessage } from '../core/errors.js';
 import type { BookUpdate } from '../core/types.js';
 
 // ===== Types =====
@@ -751,12 +752,13 @@ export class ArbitrageService extends EventEmitter {
       const rebalanceResult: RebalanceResult = { success: true, action: rebalanceAction, txHash };
       this.emit('rebalance', rebalanceResult);
       return rebalanceResult;
-    } catch (error: any) {
-      this.log(`   ❌ Failed: ${error.message}`);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      this.log(`   ❌ Failed: ${message}`);
       const rebalanceResult: RebalanceResult = {
         success: false,
         action: rebalanceAction,
-        error: error.message,
+        error: message,
       };
       this.emit('rebalance', rebalanceResult);
       return rebalanceResult;
@@ -842,9 +844,10 @@ export class ArbitrageService extends EventEmitter {
         result.usdcRecovered = mergeAmount;
         this.log(`   ✅ Merge TX: ${mergeResult.txHash}`);
         this.log(`   ✅ Recovered: $${mergeAmount.toFixed(2)} USDC`);
-      } catch (error: any) {
-        result.error = error.message;
-        this.log(`   ❌ Merge failed: ${error.message}`);
+      } catch (error: unknown) {
+        const message = getErrorMessage(error);
+        result.error = message;
+        this.log(`   ❌ Merge failed: ${message}`);
       }
     } else if (pairedTokens >= 1) {
       this.log(`   💡 Run settlePosition(market, true) to recover $${pairedTokens.toFixed(2)} USDC`);
@@ -1061,15 +1064,16 @@ export class ArbitrageService extends EventEmitter {
           });
           totalUsdcRecovered = winningBalance;
           this.log(`   ✅ Redeemed: ${winningBalance.toFixed(4)} tokens → $${winningBalance.toFixed(2)} USDC`);
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message = getErrorMessage(error);
           actions.push({
             type: 'redeem',
             amount: winningBalance,
             usdcResult: 0,
             success: false,
-            error: error.message,
+            error: message,
           });
-          this.log(`   ❌ Redeem failed: ${error.message}`);
+          this.log(`   ❌ Redeem failed: ${message}`);
         }
       }
     } else {
@@ -1096,15 +1100,16 @@ export class ArbitrageService extends EventEmitter {
           });
           totalUsdcRecovered += mergeAmount;
           this.log(`   ✅ Merged: ${mergeAmount.toFixed(4)} pairs → $${mergeAmount.toFixed(2)} USDC`);
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message = getErrorMessage(error);
           actions.push({
             type: 'merge',
             amount: mergeAmount,
             usdcResult: 0,
             success: false,
-            error: error.message,
+            error: message,
           });
-          this.log(`   ❌ Merge failed: ${error.message}`);
+          this.log(`   ❌ Merge failed: ${message}`);
           // Update unpaired amounts since merge failed
           unpairedYes = yesBalance;
           unpairedNo = noBalance;
@@ -1135,15 +1140,16 @@ export class ArbitrageService extends EventEmitter {
           } else {
             throw new Error(result.errorMsg || 'Sell failed');
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message = getErrorMessage(error);
           actions.push({
             type: 'sell_yes',
             amount: unpairedYes,
             usdcResult: 0,
             success: false,
-            error: error.message,
+            error: message,
           });
-          this.log(`   ❌ Sell YES failed: ${error.message}`);
+          this.log(`   ❌ Sell YES failed: ${message}`);
         }
       }
 
@@ -1170,15 +1176,16 @@ export class ArbitrageService extends EventEmitter {
           } else {
             throw new Error(result.errorMsg || 'Sell failed');
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message = getErrorMessage(error);
           actions.push({
             type: 'sell_no',
             amount: unpairedNo,
             usdcResult: 0,
             success: false,
-            error: error.message,
+            error: message,
           });
-          this.log(`   ❌ Sell NO failed: ${error.message}`);
+          this.log(`   ❌ Sell NO failed: ${message}`);
         }
       }
     }
@@ -1332,8 +1339,8 @@ export class ArbitrageService extends EventEmitter {
           this.log(`   ✅ Sold ${sellAmount.toFixed(2)} excess NO to restore balance`);
         }
       }
-    } catch (error: any) {
-      this.log(`   ❌ Failed to fix imbalance: ${error.message}`);
+    } catch (error: unknown) {
+      this.log(`   ❌ Failed to fix imbalance: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1458,15 +1465,16 @@ export class ArbitrageService extends EventEmitter {
             txHashes,
             executionTimeMs: Date.now() - startTime,
           };
-        } catch (mergeError: any) {
-          this.log(`  ⚠️ Merge failed: ${mergeError.message}`);
+        } catch (mergeError: unknown) {
+          const message = getErrorMessage(mergeError);
+          this.log(`  ⚠️ Merge failed: ${message}`);
           return {
             success: false,
             type: 'long',
             size,
             profit: 0,
             txHashes,
-            error: `Merge failed: ${mergeError.message}`,
+            error: `Merge failed: ${message}`,
             executionTimeMs: Date.now() - startTime,
           };
         }
@@ -1481,14 +1489,14 @@ export class ArbitrageService extends EventEmitter {
         error: `Insufficient pairs for merge: ${heldPairs.toFixed(2)}`,
         executionTimeMs: Date.now() - startTime,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         type: 'long',
         size,
         profit: 0,
         txHashes,
-        error: error.message,
+        error: getErrorMessage(error),
         executionTimeMs: Date.now() - startTime,
       };
     }
@@ -1567,14 +1575,14 @@ export class ArbitrageService extends EventEmitter {
         txHashes,
         executionTimeMs: Date.now() - startTime,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         type: 'short',
         size,
         profit: 0,
         txHashes,
-        error: error.message,
+        error: getErrorMessage(error),
         executionTimeMs: Date.now() - startTime,
       };
     }

@@ -34,6 +34,41 @@ export enum ErrorCode {
   INVALID_CONFIG = 'INVALID_CONFIG',
 }
 
+/**
+ * Safely extract error message from unknown error
+ * Use this in catch blocks instead of (error: any).message
+ *
+ * @example
+ * try {
+ *   await riskyOperation();
+ * } catch (error: unknown) {
+ *   const message = getErrorMessage(error);
+ *   logger.error('Operation failed', { error: message });
+ * }
+ */
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return 'Unknown error';
+}
+
+/**
+ * Safely extract error object with message and optional stack
+ */
+export function getErrorInfo(error: unknown): { message: string; stack?: string } {
+  if (error instanceof Error) {
+    return { message: error.message, stack: error.stack };
+  }
+  return { message: getErrorMessage(error) };
+}
+
 export class PolymarketError extends Error {
   constructor(
     public code: ErrorCode,
