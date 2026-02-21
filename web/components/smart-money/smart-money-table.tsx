@@ -37,7 +37,7 @@ interface SmartMoneyTableProps {
 
 export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTableProps) {
     const t = useTranslations('SmartMoney.table');
-    const { authenticated, login, ready, isLoggingIn } = usePrivyLogin();
+    const { authenticated, login, isLoggingIn } = usePrivyLogin();
 
     // Use SWR for caching and "keepPreviousData" behavior
     const { data: result, error, isLoading, mutate } = useSWR(
@@ -131,7 +131,9 @@ export function SmartMoneyTable({ currentPage, onPageChange }: SmartMoneyTablePr
                                     </Link>
                                 </td>
                                 <td className="p-4 align-middle text-right whitespace-nowrap">${wallet.volume.toLocaleString()}</td>
-                                <td className="p-4 align-middle text-right text-green-500 whitespace-nowrap">+${wallet.pnl.toLocaleString()}</td>
+                                <td className={`p-4 align-middle text-right whitespace-nowrap ${wallet.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {wallet.pnl >= 0 ? '+' : '-'}${Math.abs(wallet.pnl).toLocaleString()}
+                                </td>
                                 <td className="p-4 align-middle text-right whitespace-nowrap">
                                     <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary text-primary-foreground hover:bg-primary/80">
                                         {wallet.score}

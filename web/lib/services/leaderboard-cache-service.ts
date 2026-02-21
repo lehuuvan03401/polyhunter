@@ -11,6 +11,7 @@ import {
     calculateScientificScore,
     Trade,
 } from './trader-scoring-service';
+import { discoverSmartMoneyTraders } from './smart-money-discovery-service';
 
 // Type definitions matching /api/traders/active
 export interface CachedTrader {
@@ -49,15 +50,29 @@ export interface SmartMoneyCacheMetadata {
 }
 
 // Helper functions from /api/traders/active
-function convertActivitiesToTrades(activities: any[]): Trade[] {
+type ActivityLike = {
+    type?: string;
+    side?: 'BUY' | 'SELL';
+    size?: number;
+    price?: number;
+    usdcSize?: number;
+    timestamp?: number;
+};
+
+function normalizeTimestampSeconds(timestamp: number): number {
+    if (!Number.isFinite(timestamp)) return 0;
+    return timestamp > 1e12 ? Math.floor(timestamp / 1000) : Math.floor(timestamp);
+}
+
+function convertActivitiesToTrades(activities: ActivityLike[]): Trade[] {
     return activities
         .filter(a => a.type === 'TRADE' && a.side && a.size && a.price)
         .map(a => ({
-            timestamp: a.timestamp,
+            timestamp: normalizeTimestampSeconds(Number(a.timestamp)),
             side: a.side as 'BUY' | 'SELL',
-            size: a.size,
-            price: a.price,
-            value: a.usdcSize || (a.size * a.price),
+            size: Number(a.size),
+            price: Number(a.price),
+            value: Number(a.usdcSize || (a.size * a.price)),
             pnl: undefined,
         }));
 }
@@ -158,7 +173,9 @@ export async function updateLeaderboardCache(
                         }),
                     ]);
 
-                    const periodTrades = activities.filter(a => a.type === 'TRADE' && a.timestamp >= startTime);
+                    const periodTrades = activities.filter(
+                        a => a.type === 'TRADE' && normalizeTimestampSeconds(Number(a.timestamp)) >= startTime
+                    );
 
                     const profitablePositions = positions.filter(p => (p.cashPnl || 0) > 0);
                     const winRate = positions.length > 0
@@ -225,7 +242,7 @@ export async function updateLeaderboardCache(
             data: ranked.map(trader => ({
                 period,
                 rank: trader.rank,
-                traderData: trader as any,
+                traderData: trader as unknown,
             })),
         });
 
@@ -287,7 +304,7 @@ export async function getLeaderboardFromCache(
             return null;
         }
 
-        return cached.map(entry => entry.traderData as any as CachedTrader);
+        return cached.map(entry => entry.traderData as unknown as CachedTrader);
     } catch (error) {
         console.error(`[LeaderboardCache] Failed to read cache for ${period}:`, error);
         return null;
@@ -356,36 +373,19 @@ export async function updateSmartMoneyCache(
             },
         });
 
-        // SmartMoneyService uses a page-based approach to build its cache.
-        // We will fetch multiple pages to populate our database cache.
+        const allSmartMoney = await discoverSmartMoneyTraders(limit);
         const ITEMS_PER_PAGE = 20;
-        const totalPages = Math.ceil(limit / ITEMS_PER_PAGE);
-        let allSmartMoney: any[] = [];
 
-        for (let page = 1; page <= totalPages; page++) {
-            console.log(`[SmartMoneyCache] Fetching page ${page}...`);
-            // We use the SDK directly to fetch smart money list
-            const smartMoneyList = await polyClient.smartMoney.getSmartMoneyList({ page, limit: ITEMS_PER_PAGE });
+        await prisma.cachedSmartMoney.deleteMany({});
 
-            if (smartMoneyList && smartMoneyList.length > 0) {
-                // Save this page to database
-                await prisma.cachedSmartMoney.deleteMany({
-                    where: { page },
-                });
-
-                await prisma.cachedSmartMoney.createMany({
-                    data: smartMoneyList.map((trader, index) => ({
-                        page,
-                        rank: (page - 1) * ITEMS_PER_PAGE + index + 1,
-                        traderData: trader as any,
-                    })),
-                });
-
-                allSmartMoney = [...allSmartMoney, ...smartMoneyList];
-            } else {
-                console.log(`[SmartMoneyCache] No more traders found at page ${page}`);
-                break;
-            }
+        if (allSmartMoney.length > 0) {
+            await prisma.cachedSmartMoney.createMany({
+                data: allSmartMoney.map((trader, index) => ({
+                    page: Math.floor(index / ITEMS_PER_PAGE) + 1,
+                    rank: index + 1,
+                    traderData: trader as unknown,
+                })),
+            });
         }
 
         // Update metadata
@@ -430,7 +430,7 @@ export async function updateSmartMoneyCache(
 export async function getSmartMoneyFromCache(
     page: number = 1,
     limit: number = 20
-): Promise<any[] | null> {
+): Promise<unknown[] | null> {
     if (!ensureDatabaseEnabled('smart money cache read')) return null;
     try {
         const skip = (page - 1) * limit;
@@ -444,7 +444,7 @@ export async function getSmartMoneyFromCache(
             return null;
         }
 
-        return cached.map(entry => entry.traderData as any);
+        return cached.map(entry => entry.traderData as unknown);
     } catch (error) {
         console.error(`[SmartMoneyCache] Failed to read cache for page ${page}:`, error);
         return null;
