@@ -18,7 +18,11 @@ export interface OrchestratorResult {
     reason?: string;
     copySizeUsdc?: number;
     copyShares?: number;
-    execPrice?: number;
+    execPrice?: number;         // Actual execution price (VWAP in sim mode)
+    leaderPrice?: number;       // Leader's original price
+    slippageBps?: number;       // execPrice vs leaderPrice in BPS
+    latencyMs?: number;         // Detection delay vs leader's trade timestamp
+    feePaid?: number;           // Taker fee in USDC
     side?: string;
     tokenId?: string;
     txHash?: string;
@@ -33,6 +37,10 @@ const DEFAULT_SPEED_PROFILE: SpeedProfile = {
 };
 
 const MAX_DYNAMIC_DEVIATION = 0.2; // 20% hard cap
+
+// Polymarket taker fee rate (0.1% = 10 bps)
+const POLYMARKET_TAKER_FEE_RATE = 0.001;
+const CLOB_PUBLIC_API = 'https://clob.polymarket.com';
 
 export class TradeOrchestrator {
     private executionService: CopyTradingExecutionService;
@@ -63,6 +71,64 @@ export class TradeOrchestrator {
 
     private getLevelSize(level: any): number {
         return Number(level?.size ?? level?.amount ?? level?.quantity ?? 0);
+    }
+
+    /**
+     * Fetch real public CLOB orderbook (no auth required) and compute VWAP execution price.
+     * Used in simulation mode to get an accurate cost estimate for the copy trade.
+     * Falls back to leaderPrice if CLOB is unreachable.
+     */
+    private async getSimulationPrice(params: {
+        tokenId: string;
+        side: 'BUY' | 'SELL';
+        copySizeUsdc: number;
+        leaderPrice: number;
+    }): Promise<{ execPrice: number; slippageBps: number; fromClob: boolean }> {
+        const { tokenId, side, copySizeUsdc, leaderPrice } = params;
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            const resp = await fetch(`${CLOB_PUBLIC_API}/book?token_id=${tokenId}`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error(`CLOB HTTP ${resp.status}`);
+            const book = await resp.json();
+
+            const levels: Array<{ price: string; size: string }> =
+                side === 'BUY' ? (book.asks ?? []) : (book.bids ?? []);
+
+            if (!levels.length) throw new Error('Empty orderbook');
+
+            // Walk levels and compute VWAP up to copySizeUsdc
+            let remainingUsdc = copySizeUsdc;
+            let totalUsdc = 0;
+            let totalShares = 0;
+            for (const lvl of levels) {
+                const px = Number(lvl.price);
+                const sz = Number(lvl.size); // size in shares
+                if (px <= 0 || sz <= 0) continue;
+                const levelUsdc = sz * px;
+                const consumedUsdc = Math.min(levelUsdc, remainingUsdc);
+                const consumedShares = consumedUsdc / px;
+                totalUsdc += consumedUsdc;
+                totalShares += consumedShares;
+                remainingUsdc -= consumedUsdc;
+                if (remainingUsdc <= 0.001) break;
+            }
+
+            if (totalShares <= 0) throw new Error('No tradeable depth');
+            const vwap = totalUsdc / totalShares;
+            const slippageBps = leaderPrice > 0
+                ? Math.round(((vwap - leaderPrice) / leaderPrice) * 10000)
+                : 0;
+
+            return { execPrice: vwap, slippageBps, fromClob: true };
+        } catch (e: any) {
+            // CLOB unavailable — fall back to leader price silently
+            return { execPrice: leaderPrice, slippageBps: 0, fromClob: false };
+        }
     }
 
     private async getOrderbookPrice(tokenId: string, side: 'BUY' | 'SELL') {
@@ -517,9 +583,35 @@ export class TradeOrchestrator {
 
         // 9. Execute On-Chain
         let result: { success: boolean; orderId?: string; error?: string; usedBotFloat?: boolean; transactionHashes?: string[] } = { success: false };
+        let execPrice = marketPrice;
+        let simSlippageBps = 0;
+        let simLatencyMs = 0;
+        let simFeePaid = 0;
 
         if (this.isSimulation) {
             console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
+
+            // Realistic price: fetch live CLOB public orderbook and compute VWAP
+            const simPrice = await this.getSimulationPrice({
+                tokenId,
+                side: copySide as 'BUY' | 'SELL',
+                copySizeUsdc,
+                leaderPrice,
+            });
+            execPrice = simPrice.execPrice;
+            simSlippageBps = simPrice.slippageBps;
+
+            // Taker fee: 0.1% of collateral spent
+            simFeePaid = copySizeUsdc * POLYMARKET_TAKER_FEE_RATE;
+
+            // Detection latency: time from leader's trade to now
+            if (trade.timestamp) {
+                const leaderTs = trade.timestamp > 1e10  // ms vs s
+                    ? trade.timestamp
+                    : trade.timestamp * 1000;
+                simLatencyMs = Math.max(0, Date.now() - leaderTs);
+            }
+
             result = {
                 success: true,
                 transactionHashes: [`sim-${Date.now()}`],
@@ -604,7 +696,11 @@ export class TradeOrchestrator {
                 executed: true,
                 copySizeUsdc,
                 copyShares: Math.abs(shares),
-                execPrice: marketPrice,
+                execPrice,
+                leaderPrice,
+                slippageBps: simSlippageBps,
+                latencyMs: simLatencyMs,
+                feePaid: simFeePaid,
                 side: copySide,
                 tokenId: tokenId,
                 txHash: result.transactionHashes[0]

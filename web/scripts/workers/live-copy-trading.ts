@@ -148,6 +148,7 @@ let tradesRecorded = 0;
 let totalBuyVolume = 0;
 let totalSellVolume = 0;
 let realizedPnL = 0;
+let totalFeesPaid = 0; // Accumulated Polymarket taker fees
 let budgetUsed = 0; // Track how much of budget has been used
 let tradesSkippedBudget = 0; // Track trades skipped due to budget
 const startTime = Date.now();
@@ -385,7 +386,7 @@ async function handleTrade(trade: ActivityTrade) {
         return;
     }
 
-    const { copyShares, copySizeUsdc: copyAmount, execPrice, side: execSide, tokenId, txHash } = result;
+    const { copyShares, copySizeUsdc: copyAmount, execPrice, leaderPrice: resultLeaderPrice, slippageBps, latencyMs, feePaid, side: execSide, tokenId, txHash } = result;
     if (!copyShares || !copyAmount || !execPrice || !execSide || !tokenId) return;
 
     if (dedupeKey) seenTrades.add(dedupeKey);
@@ -407,12 +408,15 @@ async function handleTrade(trade: ActivityTrade) {
         tradePnL = updatePositionOnSell(tokenId, copyShares, execPrice);
         realizedPnL += tradePnL;
         totalSellVolume += copyAmount;
-        // The orchestrator creates the copy trade. We need to optionally back-update the PnL 
-        // if we want it recorded, but for simulation, stdout is usually enough.
         const pos = tracker.metrics(tokenId);
         const remaining = pos ? pos.shares.toFixed(2) : '0';
         pnlLine = `   💰 Gross P&L: $${tradePnL >= 0 ? '+' : ''}${tradePnL.toFixed(4)}`;
         remainingLine = `   💼 Remaining: ${remaining} shares`;
+    }
+
+    // Accumulate fees for session summary
+    if (feePaid && feePaid > 0) {
+        totalFeesPaid += feePaid;
     }
 
     // Optional: High-Frequency Logging (NDJSON)
@@ -442,7 +446,19 @@ async function handleTrade(trade: ActivityTrade) {
     console.log(`   ⏰ ${now.toISOString()}`);
     console.log(`   📊 Leader: ${trade.size.toFixed(2)} shares ($${(trade.size * trade.price).toFixed(2)})`);
     console.log(`   📊 Copy:   ${execSide} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
-    console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)}`);
+    // Price line: show real slippage vs leader if available
+    const slippageStr = (slippageBps !== undefined && slippageBps !== null)
+        ? ` | Slippage: ${slippageBps >= 0 ? '+' : ''}${slippageBps} bps`
+        : '';
+    const leaderPx = resultLeaderPrice ?? trade.price;
+    console.log(`      Price: $${leaderPx.toFixed(4)} → Exec: $${execPrice.toFixed(4)}${slippageStr}`);
+    if (latencyMs && latencyMs > 0) {
+        const latStr = latencyMs >= 1000 ? `${(latencyMs / 1000).toFixed(1)}s` : `${latencyMs}ms`;
+        console.log(`      ⏱  Detection latency: ${latStr}`);
+    }
+    if (feePaid && feePaid > 0) {
+        console.log(`      💸 Taker fee: $${feePaid.toFixed(4)}`);
+    }
     console.log(`   💵 Budget: $${budgetUsed.toFixed(2)}/$${MAX_BUDGET} used (${budgetPercent}%) | Remaining: $${budgetRemaining.toFixed(2)}`);
     console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
     console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
@@ -947,8 +963,10 @@ async function printSummary() {
     console.log(`  Realized P&L (Gross): $${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(4)}`);
     console.log(`  Unrealized P&L:       $${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(4)}`);
     console.log(`  Est. Fees (Gas):      -$${totalFees.toFixed(2)}`);
-    console.log(`  Net P&L (Realized):   $${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(4)}`);
-    console.log(`  TOTAL P&L:            $${totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(4)}`);
+    console.log(`  Est. Fees (CLOB):     -$${totalFeesPaid.toFixed(4)}  (0.1% taker)`);
+    const netPnLAfterFees = netPnL - totalFeesPaid;
+    console.log(`  Net P&L (After Fees): $${netPnLAfterFees >= 0 ? '+' : ''}${netPnLAfterFees.toFixed(4)}`);
+    console.log(`  TOTAL P&L:            $${(totalPnL - totalFeesPaid) >= 0 ? '+' : ''}${(totalPnL - totalFeesPaid).toFixed(4)}`);
     console.log('═══════════════════════════════════════════════════════════════');
 
     console.log('\n📁 DATABASE RECORDS');
