@@ -301,7 +301,20 @@ export class TradeOrchestrator {
         }
 
         // 6. Orderbook Guardrails
-        let orderbookSnapshot = await this.getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
+        // In simulation mode: skip real CLOB fetch (avoids API-key 400 spam) and use the
+        // leader's actual execution price — that's the ground truth for copy-trading simulation.
+        let orderbookSnapshot: Awaited<ReturnType<typeof this.getOrderbookPrice>>;
+        if (this.isSimulation) {
+            // Build a synthetic orderbook at the leader's price so guardrails always pass
+            const syntheticBook = {
+                hash: 'sim',
+                asks: [{ price: String(leaderPrice), size: String(copySizeUsdc * 10) }],
+                bids: [{ price: String(leaderPrice), size: String(copySizeUsdc * 10) }],
+            };
+            orderbookSnapshot = { orderbook: syntheticBook, price: leaderPrice, bestAsk: leaderPrice, bestBid: leaderPrice };
+        } else {
+            orderbookSnapshot = await this.getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
+        }
         let marketPrice = orderbookSnapshot.price;
 
         if (!orderbookSnapshot.orderbook) {

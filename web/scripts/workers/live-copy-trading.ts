@@ -996,18 +996,46 @@ async function main() {
     });
 
     // 2b. Setup Event Listener (Deterministic source of truth)
-    // Uses POLYGON_RPC_URL (HTTP) by default for stability, or POLYGON_WS if only that is available.
-    // HTTP Polling is preferred for long-running "safety net" to avoid WS crashes.
+    // HTTP polling (POLYGON_RPC_URL) is preferred over WebSocket to avoid the ethers v5
+    // phantom-callback crash. Falls back to POLYGON_WS if that's all we have.
     const polygonRpc = process.env.POLYGON_RPC_URL || process.env.POLYGON_WS;
     let eventListener: CtfEventListener | null = null;
 
-    if (polygonRpc) {
+    function startCtfListener() {
+        if (!polygonRpc) return;
+        if (eventListener) {
+            try { eventListener.stop(); } catch (_) { }
+        }
         console.log('🔌 Initializing CTF Event Listener (Safety Net)...');
         eventListener = new CtfEventListener(polygonRpc, TARGET_TRADER);
         eventListener.start(handleTrade);
+    }
+
+    if (polygonRpc) {
+        startCtfListener();
     } else {
         console.log('⚠️  No POLYGON_RPC_URL or POLYGON_WS provided. CTF Event Listener disabled (relying on API only).');
     }
+
+    // Guard against the ethers v5 WebSocketProvider phantom-callback uncaughtException.
+    // When the WS reconnects, pending RPC requests lose their callback entries, and any
+    // late-arriving message throws "Cannot read properties of undefined (reading 'callback')".
+    // This error escapes all try/catch because it fires inside the WS `onmessage` handler.
+    process.on('uncaughtException', (err: Error) => {
+        const isEthersCbBug =
+            err instanceof TypeError &&
+            err.message.includes("reading 'callback'") &&
+            err.stack?.includes('websocket-provider');
+        if (isEthersCbBug) {
+            console.warn('\n⚠️  [CtfEvent] ethers v5 WS phantom-callback error — restarting listener...');
+            // Restart the listener after a short delay to let the stale WS fully close
+            setTimeout(() => startCtfListener(), 3000);
+        } else {
+            // Re-throw unknown errors so they still surface
+            console.error('\n💥 Uncaught Exception:', err);
+            process.exit(1);
+        }
+    });
 
     console.log('🔌 Connecting to Polymarket WebSocket...');
     realtimeService.connect();
@@ -1097,7 +1125,7 @@ async function main() {
     await processRedemptions();
     await printSummary();
 
-    if (eventListener) eventListener.stop();
+    if (eventListener) (eventListener as CtfEventListener).stop();
     realtimeService.disconnect();
     await prisma.$disconnect();
 
