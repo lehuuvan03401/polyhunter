@@ -1,7 +1,7 @@
 
 import { PrismaClient } from '@prisma/client';
-import { DebtLogger } from '../../../../sdk/src/services/copy-trading-execution-service.js';
-import { DebtRepository, DebtItem } from '../../../../sdk/src/core/debt-manager.js';
+import { DebtLogger } from '../../../sdk/src/services/copy-trading-execution-service.js';
+import { DebtRepository, DebtItem } from '../../../sdk/src/core/debt-manager.js';
 
 export class PrismaDebtLogger implements DebtLogger {
     private prisma: PrismaClient;
@@ -31,6 +31,15 @@ export class PrismaDebtLogger implements DebtLogger {
         } catch (e) {
             console.error('[PrismaDebtLogger] Failed to persist debt record:', e);
         }
+    }
+    async getProxyDebt(proxyAddress: string): Promise<number> {
+        const records = await this.prisma.debtRecord.findMany({
+            where: {
+                proxyAddress: proxyAddress.toLowerCase(),
+                status: 'PENDING'
+            }
+        });
+        return records.reduce((sum, r) => sum + r.amount, 0);
     }
 }
 
@@ -64,5 +73,15 @@ export class PrismaDebtRepository implements DebtRepository {
                 repaidAt: new Date()
             }
         });
+    }
+
+    async getProxyDebt(proxyAddress: string): Promise<number> {
+        const records = await this.prisma.debtRecord.findMany({
+            where: {
+                proxyAddress: proxyAddress.toLowerCase(),
+                status: 'PENDING'
+            }
+        });
+        return records.reduce((sum, r) => sum + r.amount, 0);
     }
 }

@@ -15,6 +15,7 @@ export interface DebtItem {
 export interface DebtRepository {
     getPendingDebts(): Promise<DebtItem[]>;
     markRepaid(id: string): Promise<void>;
+    getProxyDebt(proxyAddress: string): Promise<number>;
 }
 
 export class DebtManager {
@@ -22,6 +23,7 @@ export class DebtManager {
     private walletManager: WalletManager;
     private provider: ethers.providers.Provider;
     private chainId: number;
+    private recoveryTimer?: NodeJS.Timeout;
 
     constructor(
         repository: DebtRepository,
@@ -33,6 +35,42 @@ export class DebtManager {
         this.walletManager = walletManager;
         this.provider = provider;
         this.chainId = chainId;
+    }
+
+    /**
+     * Start a background loop to continuously recover pending debts.
+     * @param intervalMs How often to scan and recover (e.g. 1800000 for 30m)
+     */
+    startDebtRecoveryLoop(intervalMs: number = 1800000): void {
+        if (this.recoveryTimer) {
+            clearInterval(this.recoveryTimer);
+        }
+        console.log(`[DebtManager] 🔄 Starting Debt Recovery Loop (interval: ${intervalMs}ms)`);
+        this.recoveryTimer = setInterval(async () => {
+            try {
+                await this.recoverPendingDebts();
+            } catch (err) {
+                console.error(`[DebtManager] Error in recovery loop: ${getErrorMessage(err)}`);
+            }
+        }, intervalMs);
+    }
+
+    /**
+     * Stop the background recovery loop.
+     */
+    stopDebtRecoveryLoop(): void {
+        if (this.recoveryTimer) {
+            clearInterval(this.recoveryTimer);
+            this.recoveryTimer = undefined;
+            console.log(`[DebtManager] 🛑 Stopped Debt Recovery Loop`);
+        }
+    }
+
+    /**
+     * Gets the total active USDC debt currently owed by a proxy.
+     */
+    async getProxyDebt(proxyAddress: string): Promise<number> {
+        return this.repository.getProxyDebt(proxyAddress);
     }
 
     /**

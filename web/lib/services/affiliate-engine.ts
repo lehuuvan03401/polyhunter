@@ -423,5 +423,5 @@ export class AffiliateEngine {
 }
 
 // Singleton instance for API routes
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../prisma.js';
 export const affiliateEngine = new AffiliateEngine(prisma);

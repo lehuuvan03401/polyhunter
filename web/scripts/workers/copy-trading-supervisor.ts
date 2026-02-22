@@ -16,12 +16,13 @@ import 'dotenv/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import path from 'path';
+import * as path from 'path';
 import { ethers } from 'ethers';
 import { createHash, randomUUID } from 'crypto';
 import { EncryptionService } from '../../../sdk/src/core/encryption.js'; // Import EncryptionService
 import { CONTRACT_ADDRESSES, CTF_ABI, ERC20_ABI, USDC_DECIMALS } from '../../../sdk/src/core/contracts';
 import { CopyTradingExecutionService, ExecutionParams } from '../../../sdk/src/services/copy-trading-execution-service';
+import { TradeOrchestrator } from '../../../sdk/src/core/trade-orchestrator.js';
 import { TradingService, TradeInfo } from '../../../sdk/src/services/trading-service';
 import { RateLimiter } from '../../../sdk/src/core/rate-limiter';
 import { createUnifiedCache, UnifiedCache } from '../../../sdk/src/core/unified-cache';
@@ -219,6 +220,16 @@ const masterTradingService = new TradingService(
 
 // 2. Execution Service (Logic Container)
 const executionService = new CopyTradingExecutionService(masterTradingService, masterTradingService.getWallet(), CHAIN_ID, debtLogger);
+
+// 2a. Trade Orchestrator (Centralized Risk & Execution)
+let tradeOrchestrator = new TradeOrchestrator(
+    executionService,
+    tokenMetadataService,
+    masterTradingService,
+    prisma,
+    undefined, // Use default SpeedProfile
+    ASYNC_SETTLEMENT
+);
 
 // 3. Wallet Manager (The Fleet)
 let walletManager: WalletManager | null = null;
@@ -561,7 +572,7 @@ function recordSignalSource(key: string, source: SignalSource) {
 }
 
 function flushSignalSourceWindow(now = Date.now()) {
-    for (const [key, entry] of signalSourceWindow.entries()) {
+    for (const [key, entry] of Array.from(signalSourceWindow.entries())) {
         if (now - entry.firstSeenAt < SIGNAL_SOURCE_WINDOW_MS) continue;
         if (entry.ws && entry.polling) sourceStats.closedBoth += 1;
         else if (entry.ws) sourceStats.closedWsOnly += 1;
@@ -1129,7 +1140,7 @@ class MemoryDedupStore implements DedupStore {
         }
         this.store.set(key, now + ttlMs);
         if (this.store.size > 5000) {
-            for (const [k, v] of this.store.entries()) {
+            for (const [k, v] of Array.from(this.store.entries())) {
                 if (v <= now) this.store.delete(k);
             }
         }
@@ -2084,334 +2095,24 @@ async function executeJobInternal(
             return;
         }
 
-        let adjustedCopyAmount = copyAmount;
-        let adjustedCopyShares = 0;
+        // Map real-time trade signature to the generalized Activity schema expected by Orchestrator
+        const mappedTrade = {
+            name: originalTrader,
+            side: side,
+            size: originalSize,
+            price: approxPrice,
+            asset: tokenId,
+            transactionHash: originalSignalId,
+            timestamp: Date.now() / 1000,
+            type: 'TRADE'
+        } as any; // Cast as any because Activity schema expects exact matching
 
-        if (config.executionMode === 'EOA') {
-            const preflight = await preflightExecutionEOA(
-                config.walletAddress,
-                side,
-                tokenId,
-                copyAmount,
-                approxPrice
-            );
-
-            if (!preflight.allowed) {
-                const metadata = await getMarketMetadata(tokenId);
-                await safeCreateCopyTrade({
-                    configId: config.id,
-                    originalTrader: originalTrader,
-                    originalSide: side,
-                    originalSize: originalSize,
-                    originalPrice: approxPrice,
-                    originalTxHash: originalSignalId,
-                    tokenId: tokenId,
-                    copySize: copyAmount,
-                    copyPrice: approxPrice,
-                    status: 'SKIPPED',
-                    errorMessage: preflight.reason || 'EOA_PREFLIGHT_FAILED',
-                    executedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, 'EOA_PREFLIGHT_FAILED');
-                return;
-            }
-
-            adjustedCopyAmount = preflight.adjustedCopySize;
-            adjustedCopyShares = preflight.adjustedCopyShares;
-        }
-
-        const guardrailMeta = (MARKET_DAILY_CAP_USD > 0 || MARKET_CAPS.size > 0)
-            ? await getMarketMetadata(tokenId)
-            : null;
-        const guardrail = await checkExecutionGuardrails(config.walletAddress, adjustedCopyAmount, {
-            source: 'supervisor',
-            marketSlug: guardrailMeta?.marketSlug,
-            tradeId: `auto-${Date.now()}-${config.id}`,
-            tokenId,
-        });
-
-        if (!guardrail.allowed) {
-            // guardrail 拦截也写入 copyTrade（SKIPPED），保证执行审计链完整。
-            if (guardrail.reason === 'DRY_RUN') {
-                // DRY_RUN Mode: Log execution decision without placing order
-                const latencyMs = Date.now() - startTime;
-                console.log(`[DRY_RUN] ════════════════════════════════════════`);
-                console.log(`[DRY_RUN] Would execute: ${side} $${adjustedCopyAmount.toFixed(2)} of token ${tokenId.substring(0, 20)}...`);
-                console.log(`[DRY_RUN]   User: ${config.walletAddress}`);
-                console.log(`[DRY_RUN]   Price: $${approxPrice.toFixed(4)}`);
-                console.log(`[DRY_RUN]   Slippage: ${config.maxSlippage}% (${config.slippageType})`);
-                console.log(`[DRY_RUN]   Mode: ${config.executionMode}`);
-                console.log(`[DRY_RUN]   Original: ${originalTrader} ${side} ${originalSize.toFixed(2)} shares`);
-                console.log(`[DRY_RUN]   Latency: ${latencyMs}ms`);
-                console.log(`[DRY_RUN] ════════════════════════════════════════`);
-
-                recordExecution(true, latencyMs);
-
-                const metadata = guardrailMeta || await getMarketMetadata(tokenId);
-                await safeCreateCopyTrade({
-                    configId: config.id,
-                    originalTrader: originalTrader,
-                    originalSide: side,
-                    originalSize: originalSize,
-                    originalPrice: approxPrice,
-                    originalTxHash: originalSignalId,
-                    tokenId: tokenId,
-                    copySize: adjustedCopyAmount,
-                    copyPrice: approxPrice,
-                    status: 'SKIPPED',
-                    errorMessage: 'DRY_RUN mode - execution skipped',
-                    executedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, 'GUARDRAIL_DRY_RUN');
-            } else {
-                const metadata = guardrailMeta || await getMarketMetadata(tokenId);
-                await safeCreateCopyTrade({
-                    configId: config.id,
-                    originalTrader: originalTrader,
-                    originalSide: side,
-                    originalSize: originalSize,
-                    originalPrice: approxPrice,
-                    originalTxHash: originalSignalId,
-                    tokenId: tokenId,
-                    copySize: adjustedCopyAmount,
-                    copyPrice: approxPrice,
-                    status: 'SKIPPED',
-                    errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
-                    executedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, 'GUARDRAIL_BLOCKED');
-            }
-            return;
-        }
-
-        // DRY_RUN Mode: Log execution decision without placing order
-        if (DRY_RUN) {
-            const latencyMs = Date.now() - startTime;
-            console.log(`[DRY_RUN] ════════════════════════════════════════`);
-            console.log(`[DRY_RUN] Would execute: ${side} $${adjustedCopyAmount.toFixed(2)} of token ${tokenId.substring(0, 20)}...`);
-            console.log(`[DRY_RUN]   User: ${config.walletAddress}`);
-            console.log(`[DRY_RUN]   Price: $${approxPrice.toFixed(4)}`);
-            console.log(`[DRY_RUN]   Slippage: ${config.maxSlippage}% (${config.slippageType})`);
-            console.log(`[DRY_RUN]   Mode: ${config.executionMode}`);
-            console.log(`[DRY_RUN]   Original: ${originalTrader} ${side} ${originalSize.toFixed(2)} shares`);
-            console.log(`[DRY_RUN]   Latency: ${latencyMs}ms`);
-            console.log(`[DRY_RUN] ════════════════════════════════════════`);
-
-            recordExecution(true, latencyMs);
-
-            // Async Metadata Backfill for Dry Run
-            const meta = await getMarketMetadata(tokenId);
-
-            // Log to DB as SKIPPED
-            await safeCreateCopyTrade({
-                configId: config.id,
-                originalTrader: originalTrader,
-                originalSide: side,
-                originalSize: originalSize,
-                originalPrice: approxPrice,
-                originalTxHash: originalSignalId,
-                tokenId: tokenId,
-                copySize: adjustedCopyAmount,
-                copyPrice: approxPrice,
-                status: 'SKIPPED',
-                errorMessage: 'DRY_RUN mode - execution skipped',
-                executedAt: new Date(),
-                marketSlug: meta.marketSlug,
-                conditionId: meta.conditionId,
-                outcome: meta.outcome
-            }, 'DRY_RUN');
-            return;
-        }
-
-        // 3. Execute
-        let result: { success: boolean; orderId?: string; error?: string } = { success: false, error: 'UNKNOWN' };
-        let executionDetail: any = null;
-
-        if (config.executionMode === 'EOA') {
-            const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
-            const execPrice = side === 'BUY'
-                ? approxPrice * (1 + fixedSlippage)
-                : approxPrice * (1 - fixedSlippage);
-            const orderAmount = side === 'BUY'
-                ? adjustedCopyAmount
-                : (adjustedCopyShares || (execPrice > 0 ? adjustedCopyAmount / execPrice : 0));
-
-            const orderResult = await worker.tradingService.createMarketOrder({
-                tokenId,
-                side,
-                amount: orderAmount,
-                price: execPrice,
-                orderType: 'FOK',
-            });
-
-            result = {
-                success: orderResult.success,
-                orderId: orderResult.orderId,
-                error: orderResult.errorMsg,
-            };
-        } else {
-            const baseParams: ExecutionParams = {
-                tradeId: `auto-${Date.now()}-${config.id}`,
-                walletAddress: config.walletAddress, // User
-                tokenId: tokenId,
-                side: side,
-                amount: adjustedCopyAmount,
-                price: approxPrice,
-                maxSlippage: config.maxSlippage,
-                slippageMode: config.slippageType,
-                signer: worker.signer, // DYNAMIC SIGNER
-                tradingService: worker.tradingService, // DYNAMIC SERVICE
-                overrides: overrides, // GAS OVERRIDES
-                executionMode: config.executionMode, // PROXY
-                deferSettlement: ASYNC_SETTLEMENT,
-            };
-
-            const proxyResult = await executionService.executeOrderWithProxy(baseParams);
-            executionDetail = proxyResult;
-            result = {
-                success: proxyResult.success,
-                orderId: proxyResult.orderId,
-                error: proxyResult.error,
-            };
-        }
-
-        // Record metrics
-        const latencyMs = Date.now() - startTime;
-        recordExecution(result.success, latencyMs);
-
-        // 4. Log Result (Async DB write)
-        // Fetch Metadata BEFORE Create
-        const metadata = await getMarketMetadata(tokenId);
-
-        const isSettled = result.success && executionDetail
-            ? (executionDetail.settlementDeferred
-                ? false
-                : (side === 'BUY'
-                    ? Boolean(executionDetail.tokenPushTxHash)
-                    : Boolean(executionDetail.returnTransferTxHash)))
-            : result.success;
-        const status = result.success ? (isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING') : 'FAILED';
-        const errorMessage = result.success ? (isSettled ? null : 'Settlement Pending') : result.error;
-
-        const inserted = await safeCreateCopyTrade({
-            configId: config.id,
-            originalTrader: originalTrader,
-            originalSide: side,
-            originalSize: originalSize,
-            originalPrice: approxPrice,
-            originalTxHash: originalSignalId,
-            tokenId: tokenId,
-            copySize: adjustedCopyAmount,
-            copyPrice: approxPrice,
-            status,
-            txHash: result.orderId,
-            errorMessage,
-            usedBotFloat: executionDetail?.usedBotFloat ?? false,
-            executedAt: new Date(),
-            marketSlug: metadata.marketSlug,
-            conditionId: metadata.conditionId,
-            outcome: metadata.outcome
-        }, 'EXECUTION_RESULT');
-
-        if (!inserted) {
-            return;
-        }
-
-        if (result.success) {
-            await incrementGuardrailCounters({
-                walletAddress: config.walletAddress,
-                amount: adjustedCopyAmount,
-                marketSlug: metadata.marketSlug,
-            });
-        }
-
-        console.log(`[Supervisor] ✅ Job Complete for User ${config.walletAddress}: ${result.success ? "Success" : "Failed (" + result.error + ")"} (${latencyMs}ms)`);
-
-        if (result.success) {
-            // --- POSITION TRACKING & PROFIT-BASED FEE ---
-            try {
-                // Import is already at top level in this script
-                const tradeValue = adjustedCopyAmount; // USDC value of this trade
-                const shares = tradeValue / approxPrice; // Approx shares traded
-
-                if (side === 'BUY') {
-                    // On BUY: Update position cost basis (no fee yet)
-                    await positionService.recordBuy({
-                        walletAddress: config.walletAddress,
-                        tokenId: tokenId,
-                        side: 'BUY',
-                        amount: shares,
-                        price: approxPrice,
-                        totalValue: tradeValue
-                    });
-                    console.log(`[Supervisor] 📊 Position updated for BUY.`);
-
-                    // Update position cache for fast sell-skip checks
-                    updatePositionCache(config.walletAddress, tokenId, shares);
-
-                    // Also update volume in referral record (legacy volume-based tracking)
-                    await affiliateEngine.distributeCommissions({
-                        tradeId: result.orderId || `trade-${Date.now()}`,
-                        traderAddress: config.walletAddress,
-                        volume: tradeValue,
-                        platformFee: 0 // No fee on BUY
-                    });
-
-                } else {
-                    // On SELL: Calculate profit and charge fee if profitable
-                    const profitResult = await positionService.recordSell({
-                        walletAddress: config.walletAddress,
-                        tokenId: tokenId,
-                        side: 'SELL',
-                        amount: shares,
-                        price: approxPrice,
-                        totalValue: tradeValue
-                    });
-
-                    console.log(`[Supervisor] 💰 Sell Result: Profit=$${profitResult.profit.toFixed(4)} (${(profitResult.profitPercent * 100).toFixed(2)}%)`);
-
-                    // Store realizedPnL in the CopyTrade record
-                    // Find the trade we just created and update it
-                    try {
-                        await prisma.copyTrade.updateMany({
-                            where: {
-                                configId: config.id,
-                                tokenId: tokenId,
-                                originalSide: 'SELL',
-                                txHash: result.orderId
-                            },
-                            data: {
-                                realizedPnL: profitResult.profit
-                            }
-                        });
-                    } catch (updateErr) {
-                        console.error('[Supervisor] Failed to update realizedPnL:', updateErr);
-                    }
-
-                    // Update position cache (negative for sell)
-                    updatePositionCache(config.walletAddress, tokenId, -shares);
-
-                    if (profitResult.profit > 0) {
-                        // Charge profit-based fee
-                        await affiliateEngine.distributeProfitFee(
-                            config.walletAddress,
-                            profitResult.profit,
-                            result.orderId || `trade-${Date.now()}`
-                        );
-                    } else {
-                        console.log(`[Supervisor] ❌ No profit, skipping fee.`);
-                    }
-                }
-            } catch (affError) {
-                console.error(`[Supervisor] ⚠️ Position/Affiliate Trigger Failed:`, affError);
-            }
-        }
+        // Delegate entire complex execution pipeline to Orchestrator
+        await tradeOrchestrator.evaluateAndExecuteTrade(
+            mappedTrade,
+            config,
+            config.executionMode === 'EOA' ? worker.tradingService : undefined
+        );
 
     } catch (e: any) {
         // Record failed execution
@@ -2522,6 +2223,9 @@ async function main() {
         if (recovery.recovered > 0 || recovery.errors > 0) {
             console.log(`[Supervisor] 💰 Debt recovery: ${recovery.recovered} recovered, ${recovery.errors} errors`);
         }
+
+        // Start background autonomous loop (30 minutes)
+        debtManager.startDebtRecoveryLoop(1800000);
     }
 
     console.log(`[Supervisor] 🧰 Worker pool size: ${WORKER_POOL_SIZE}`);

@@ -64,6 +64,7 @@ export interface DebtLogger {
         currency: string;
         error: string;
     }): Promise<void>;
+    getProxyDebt?(proxyAddress: string): Promise<number>;
 }
 
 export class CopyTradingExecutionService {
@@ -619,9 +620,22 @@ export class CopyTradingExecutionService {
                 if (side === 'BUY') {
                     // FLOAT 模式：优先消耗 bot 浮动资金，减少一次链上 pull。
                     if (allowBotFloat && botBalance >= amount) {
-                        console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
-                        usedBotFloat = true;
-                        return;
+                        // Anti-Piercing Guardrail: Prevent float usage if the proxy is heavily indebted
+                        let pendingDebt = 0;
+                        if (this.debtLogger && this.debtLogger.getProxyDebt) {
+                            pendingDebt = await this.debtLogger.getProxyDebt(proxyAddress);
+                        }
+
+                        const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
+                        const effectiveProxyBalance = proxyBalance - pendingDebt;
+
+                        if (effectiveProxyBalance < amount) {
+                            console.warn(`[CopyExec] 🛡️ Anti-Piercing: Proxy ${proxyAddress} has low effective balance (${proxyBalance} - ${pendingDebt} debt < ${amount}). Bypassing Float.`);
+                        } else {
+                            console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
+                            usedBotFloat = true;
+                            return;
+                        }
                     }
 
                     // 余额不足则走标准路径：从 proxy 拉取对应 USDC。
@@ -768,17 +782,17 @@ export class CopyTradingExecutionService {
                     return;
                 }
 
-                    if (useProxyFunds) {
-                        if (side === 'BUY') {
-                            // 标准 BUY：把新买到的份额推回 proxy，闭合资产归属。
-                            const sharesBought = amount / price;
-                            const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
-                            if (pushResult.success) tokenPushTxHash = pushResult.txHash;
-                        } else {
-                            // SELL：把 bot 收到的 USDC 归还 proxy，维持账务一致。
-                            const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-                            const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
-                            if (returnResult.success) returnTransferTxHash = returnResult.txHash;
+                if (useProxyFunds) {
+                    if (side === 'BUY') {
+                        // 标准 BUY：把新买到的份额推回 proxy，闭合资产归属。
+                        const sharesBought = amount / price;
+                        const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
+                        if (pushResult.success) tokenPushTxHash = pushResult.txHash;
+                    } else {
+                        // SELL：把 bot 收到的 USDC 归还 proxy，维持账务一致。
+                        const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
+                        if (returnResult.success) returnTransferTxHash = returnResult.txHash;
                     }
                 }
             });

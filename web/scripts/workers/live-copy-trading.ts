@@ -33,6 +33,8 @@ import { getStrategyConfig, StrategyProfile } from '../../../sdk/src/config/stra
 import { normalizeTradeSizing } from '../../../sdk/src/utils/trade-sizing.js';
 import { PositionTracker } from '../../../sdk/src/core/tracking/position-tracker.js';
 import { CtfEventListener } from '../../../sdk/src/services/ctf-event-listener.js';
+import { TradeOrchestrator } from '../../../sdk/src/core/trade-orchestrator.js';
+import { TradingService } from '../../../sdk/src/services/trading-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,6 +74,9 @@ const SCALE_FACTOR = MAX_BUDGET / ESTIMATED_LEADER_VOLUME; // e.g., 3000/100000 
 // Maximum trade size per single trade
 const MAX_TRADE_SIZE = parseFloat(process.env.MAX_TRADE_SIZE || '100'); // $100 max per trade
 
+const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
+const CLOB_API_URL = 'https://clob.polymarket.com';
+
 // No validation needed - using local dev.db
 
 console.log('═══════════════════════════════════════════════════════════════');
@@ -103,6 +108,22 @@ const dataApi = new DataApiClient(rateLimiter, cache);
 const chainId = parseInt(process.env.CHAIN_ID || "31337");
 const marketService = new MarketService(gammaClient, dataApi, rateLimiter, cache, { chainId });
 const tokenMetadataService = new TokenMetadataService(marketService, cache);
+
+// Dummy trading service for orderbook lookups (simulation mode doesn't sign transactions)
+const fallbackTradingService = new TradingService(rateLimiter, cache, {
+    privateKey: '0xac0974bec39a17e36bad4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+    chainId: chainId
+});
+
+const tradeOrchestrator = new TradeOrchestrator(
+    null as any, // No ExecutionService needed for simulation
+    tokenMetadataService,
+    fallbackTradingService,
+    prisma,
+    undefined,
+    false,
+    true // isSimulation = true
+);
 
 // --- TRACKING STATE ---
 // --- TRACKING STATE ---
@@ -250,248 +271,7 @@ function updatePositionOnSell(tokenId: string, shares: number, price: number): n
     return tracker.onSell(tokenId, shares, price);
 }
 
-function calculateCopySize(
-    config: {
-        mode: string;
-        sizeScale: number | null;
-        fixedAmount: number | null;
-        maxSizePerTrade: number;
-        minSizePerTrade?: number | null;
-    },
-    originalShares: number,
-    originalPrice: number
-): number {
-    const originalValue = originalShares * originalPrice;
-
-    if (config.mode === 'FIXED_AMOUNT' && config.fixedAmount) {
-        return Math.min(config.fixedAmount, config.maxSizePerTrade);
-    }
-
-    const scaledValue = originalValue * (config.sizeScale || 1);
-    const minSize = config.minSizePerTrade ?? 0;
-    return Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
-}
-
-// Cache for market metadata to avoid repeated API calls
-// Cache for market metadata to avoid repeated API calls
-const marketCache = new Map<string, { slug: string; tokens: any[]; _isFailure?: boolean; timestamp?: number }>();
-const CLOB_API_URL = 'https://clob.polymarket.com';
-
-/**
- * Fetch market metadata from CLOB API
- */
-const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
-
-/**
- * Fetch market metadata from CLOB API or Gamma API (Fallback)
- */
-async function fetchMarketFromClob(conditionId: string): Promise<{ slug: string; tokens: any[] } | null> {
-    // 1. Try CLOB API first
-    try {
-        const resp = await fetch(`${CLOB_API_URL}/markets/${conditionId}`);
-        if (resp.ok) {
-            const data = await resp.json();
-            return {
-                slug: data.market_slug || '',
-                tokens: (data.tokens || []).map((t: any) => ({
-                    tokenId: t.token_id,
-                    outcome: t.outcome
-                }))
-            };
-        } else {
-            console.warn(`   ⚠️ CLOB API Error for ${conditionId}: ${resp.status} ${resp.statusText}`);
-        }
-    } catch (e) {
-        // Ignore network errors, try fallback
-    }
-
-    // 2. Fallback to Gamma API
-    try {
-        const url = `${GAMMA_API_URL}/markets?condition_id=${conditionId}`;
-        const resp = await fetch(url);
-        if (resp.ok) {
-            const data = await resp.json();
-
-            let marketData: any = null;
-            if (Array.isArray(data) && data.length > 0) {
-                marketData = data[0];
-            } else if (data.slug) {
-                marketData = data;
-            }
-
-            if (marketData) {
-                return {
-                    slug: marketData.slug || '',
-                    tokens: (marketData.tokens || []).map((t: any) => ({
-                        tokenId: t.tokenId || t.token_id,
-                        outcome: t.outcome
-                    }))
-                };
-            } else {
-                console.warn(`   ⚠️ Gamma API returned no market data for ${conditionId}`);
-                const fs = require('fs');
-                fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - Gamma returned empty/invalid data: ${JSON.stringify(data)}\n`);
-            }
-        } else {
-            console.warn(`   ⚠️ Gamma API Error for ${conditionId}: ${resp.status} ${resp.statusText}`);
-            const fs = require('fs');
-            fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - Gamma API HTTP Error: ${resp.status}\n`);
-        }
-    } catch (e: any) {
-        console.warn(`   ❌ Metadata fetch failed for ${conditionId}:`, e.message);
-        // Log to file for debugging
-        const fs = require('fs');
-        fs.appendFileSync('metadata-errors.log', `${new Date().toISOString()} - ${conditionId} - ${e.message}\n`);
-    }
-
-    // 3. Cache Failure (Negative Cache for 5 mins) to prevent spamming
-    marketCache.set(conditionId, { slug: '', tokens: [], _isFailure: true, timestamp: Date.now() });
-
-    return null;
-}
-
-/**
- * Enrich trade with market metadata if missing
- * Uses conditionId to fetch from CLOB API
- */
-async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
-    marketSlug: string | null;
-    conditionId: string | null;
-    outcome: string | null;
-}> {
-    // If we already have all data, return as-is
-    if (trade.marketSlug && trade.conditionId && trade.outcome) {
-        return {
-            marketSlug: trade.marketSlug,
-            conditionId: trade.conditionId,
-            outcome: trade.outcome
-        };
-    }
-
-    // Attempt to get from Metadata service
-    const meta = await tokenMetadataService.getMetadata(trade.asset);
-
-    if (meta) {
-        return {
-            marketSlug: meta.marketSlug,
-            conditionId: meta.conditionId,
-            outcome: meta.outcome
-        };
-    }
-
-    // Return whatever we have if fallback fails
-    return {
-        marketSlug: trade.marketSlug || null,
-        conditionId: trade.conditionId || null,
-        outcome: trade.outcome || null
-    };
-}
-
-// --- DATABASE RECORDING ---
-async function recordCopyTrade(
-    trade: ActivityTrade,
-    copyAmount: number,
-    execPrice: number,
-    originalShares: number,
-    pnl?: number
-): Promise<boolean> {
-    try {
-        // Enrich trade metadata if missing
-        const enriched = await enrichTradeMetadata(trade);
-
-        const baseData = {
-            configId: configId,
-            originalTrader: trade.trader?.address || '',
-            originalSide: trade.side,
-            originalSize: originalShares,
-            originalPrice: trade.price,
-            tokenId: trade.asset,
-            conditionId: enriched.conditionId,
-            marketSlug: enriched.marketSlug,
-            outcome: enriched.outcome,
-            copySize: copyAmount, // USDC amount (cost for BUY, proceeds for SELL)
-            copyPrice: execPrice,
-            status: CopyTradeStatus.EXECUTED,
-            txHash: trade.transactionHash ? `${TX_PREFIX}${trade.transactionHash}` : `${TX_PREFIX}${Date.now()}`,
-            originalTxHash: trade.transactionHash || null,
-            executedAt: new Date(),
-            realizedPnL: pnl,
-        };
-
-        if (trade.transactionHash) {
-            await prisma.copyTrade.upsert({
-                where: {
-                    configId_originalTxHash: {
-                        configId: configId,
-                        originalTxHash: trade.transactionHash,
-                    }
-                },
-                create: baseData,
-                update: {
-                    ...baseData,
-                    detectedAt: new Date(),
-                }
-            });
-        } else {
-            await prisma.copyTrade.create({ data: baseData });
-        }
-
-        // Update or create position in DB
-        const tokenId = trade.asset;
-        const position = tracker.metrics(tokenId);
-
-        // High-Frequency Logging (NDJSON)
-        appendNdjson(ORDERS_LOG_PATH, {
-            t: Date.now(),
-            status: 'EXECUTED',
-            side: trade.side,
-            tokenID: trade.asset,
-            shares: originalShares, // Leader size
-            copyShares: copyAmount / execPrice,
-            price: trade.price,
-            execPrice: execPrice,
-            notionalUSDC: trade.size * trade.price,
-            copyUSDC: copyAmount,
-            marketSlug: enriched.marketSlug,
-            outcome: enriched.outcome,
-            tx: trade.transactionHash,
-            pnl: pnl
-        });
-
-        if (position) {
-            await prisma.userPosition.upsert({
-                where: {
-                    walletAddress_tokenId: {
-                        walletAddress: FOLLOWER_WALLET.toLowerCase(),
-                        tokenId: tokenId,
-                    }
-                },
-                update: {
-                    balance: position.shares,
-                    avgEntryPrice: position.avgPrice,
-                    totalCost: position.costUSDC,
-                },
-                create: {
-                    walletAddress: FOLLOWER_WALLET.toLowerCase(),
-                    tokenId: tokenId,
-                    balance: position.shares,
-                    avgEntryPrice: position.avgPrice,
-                    totalCost: position.costUSDC,
-                }
-            });
-        }
-
-        tradesRecorded++;
-        return true;
-    } catch (err: any) {
-        if (err?.code === 'P2002') {
-            console.log('   ⏭️  Duplicate trade detected, skipping record.');
-            return false;
-        }
-        console.error('   ❌ Failed to record trade:', err);
-        return false;
-    }
-}
+// Obsolete functions (fetchMarketFromClob, enrichTradeMetadata, recordCopyTrade) removed because TradeOrchestrator handles metadata and DB recording natively.
 
 // --- TRADE HANDLER ---
 async function handleTrade(trade: ActivityTrade) {
@@ -520,10 +300,10 @@ async function handleTrade(trade: ActivityTrade) {
     // CtfEventListener (On-Chain) trades have no metadata initially. We must fetch it now.
     if (!trade.conditionId && !trade.marketSlug) {
         // console.log(`[DEBUG] 🔍 Enriching metadata for token ${trade.asset}...`);
-        const enriched = await enrichTradeMetadata(trade);
-        if (enriched.conditionId) trade.conditionId = enriched.conditionId;
-        if (enriched.marketSlug) trade.marketSlug = enriched.marketSlug;
-        if (enriched.outcome) trade.outcome = enriched.outcome;
+        const enriched = await tokenMetadataService.getMetadata(trade.asset);
+        if (enriched?.conditionId) trade.conditionId = enriched.conditionId;
+        if (enriched?.marketSlug) trade.marketSlug = enriched.marketSlug;
+        if (enriched?.outcome) trade.outcome = enriched.outcome;
     }
 
     // Skip trades without conditionId (can't get metadata)
@@ -566,130 +346,79 @@ async function handleTrade(trade: ActivityTrade) {
         return;
     }
 
-    const { tradeShares, tradeNotional } = normalizeTradeSizing(activeConfig, trade.size, trade.price);
-
-    // APPLY SLIPPAGE MODEL
-    const slipFactor = trade.side === 'BUY' ? (1 + SLIPPAGE_BPS / 10000) : (1 - SLIPPAGE_BPS / 10000);
-    const execPrice = trade.price * slipFactor;
-
-    let copyShares = 0;
-    let copyAmount = 0;
-
-    // --- BUDGET-CONSTRAINED COPY SIZING ---
+    // --- BUDGET-CONSTRAINED SIZING CAPPED BY OVERRIDE ---
+    let configForExecution = { ...activeConfig };
     if (COPY_MODE === 'BUDGET_CONSTRAINED' || COPY_MODE === 'PERCENTAGE') {
-        // Calculate target shares based on Leader's shares directly
-        // This ensures stricter 1:1 share copying (or X% scaling) rather than matching Notionals which vary by price
-        let targetShares = tradeShares * SCALE_FACTOR;
-        let estimatedCost = targetShares * execPrice;
-
-        // Apply max trade size cap (reduce shares if cost is too high)
-        if (estimatedCost > MAX_TRADE_SIZE) {
-            targetShares = MAX_TRADE_SIZE / execPrice;
-            estimatedCost = targetShares * execPrice;
-        }
-
-        // For BUY trades, check budget constraint
         if (trade.side === 'BUY') {
             const remainingBudget = MAX_BUDGET - budgetUsed;
-
             if (remainingBudget <= 0) {
                 console.log(`\n💸 BUDGET EXHAUSTED! Used: $${budgetUsed.toFixed(2)}/$${MAX_BUDGET}. Skipping BUY...`);
                 tradesSkippedBudget++;
                 return;
             }
-
-            // Cap to remaining budget
-            if (estimatedCost > remainingBudget) {
-                console.log(`   ⚠️ Reducing trade from $${estimatedCost.toFixed(2)} to $${remainingBudget.toFixed(2)} (budget limit)`);
-                targetShares = remainingBudget / execPrice;
-                estimatedCost = remainingBudget;
-            }
-        }
-
-        copyShares = targetShares;
-        copyAmount = estimatedCost;
-
-    } else if (COPY_MODE === 'LEADER_SHARES') {
-        copyShares = tradeShares;
-        copyAmount = copyShares * execPrice;
-    } else if (COPY_MODE === 'FIXED_AMOUNT') {
-        copyAmount = FIXED_COPY_AMOUNT;
-        copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
-    } else {
-        copyAmount = calculateCopySize(activeConfig, tradeShares, trade.price);
-        if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
-            console.log(`\n⏭️  SKIPPED (invalid copy size): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
-            return;
-        }
-        copyShares = execPrice > 0 ? (copyAmount / execPrice) : 0;
-    }
-
-    // 🔥 CRITICAL: Skip SELL trades if we don't have a position
-    // In real copy trading, we only sell what we've bought
-    if (trade.side === 'SELL') {
-        const existing = tracker.metrics(trade.asset);
-        if (!existing || existing.shares <= 0) {
-            console.log(`\n⏭️  SKIPPED SELL (no position): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
-            return;
-        }
-
-        if (copyShares > existing.shares) {
-            copyShares = existing.shares;
-            copyAmount = copyShares * execPrice;
+            configForExecution.maxSizePerTrade = Math.min(MAX_TRADE_SIZE, remainingBudget);
+        } else {
+            configForExecution.maxSizePerTrade = MAX_TRADE_SIZE;
         }
     }
 
-    // Process trade
+    // Delegate to TradeOrchestrator (Simulation Mode)
+    // Orchestrator handles Guardrails, Sizing, DB Writing, Slippage.
+    const result = await tradeOrchestrator.evaluateAndExecuteTrade(trade as any, configForExecution, fallbackTradingService);
+
+    if (!result.executed) {
+        console.log(`\n⏭️  SKIPPED (${result.reason}): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+        return;
+    }
+
+    const { copyShares, copySizeUsdc: copyAmount, execPrice, side: execSide, tokenId, txHash } = result;
+    if (!copyShares || !copyAmount || !execPrice || !execSide || !tokenId) return;
+
+    if (dedupeKey) seenTrades.add(dedupeKey);
+    tradesRecorded++;
+
+    // Track simulated metrics
     let tradePnL: number | undefined = undefined;
     let positionLine: string | null = null;
     let pnlLine: string | null = null;
     let remainingLine: string | null = null;
 
-    if (trade.side === 'BUY') {
-        const enriched = await enrichTradeMetadata(trade);
-        const conditionId = enriched.conditionId || trade.conditionId;
-        const marketSlug = enriched.marketSlug || trade.marketSlug || '';
-        const outcome = enriched.outcome || trade.outcome || 'N/A';
-
-        updatePositionOnBuy(trade.asset, copyShares, execPrice, marketSlug, outcome, conditionId || undefined);
+    if (execSide === 'BUY') {
+        updatePositionOnBuy(tokenId, copyShares, execPrice, trade.marketSlug || '', trade.outcome || '', trade.conditionId || undefined);
         totalBuyVolume += copyAmount;
         budgetUsed += copyAmount; // Track budget usage
-
-        const pos = tracker.metrics(trade.asset);
+        const pos = tracker.metrics(tokenId);
         positionLine = `   💼 Position: ${pos.shares.toFixed(2)} shares @ avg $${pos.avgPrice.toFixed(4)}`;
     } else {
-        const pnl = updatePositionOnSell(trade.asset, copyShares, execPrice);
-        tradePnL = pnl;
-        realizedPnL += pnl;
+        tradePnL = updatePositionOnSell(tokenId, copyShares, execPrice);
+        realizedPnL += tradePnL;
         totalSellVolume += copyAmount;
-
-        const pos = tracker.metrics(trade.asset);
+        // The orchestrator creates the copy trade. We need to optionally back-update the PnL 
+        // if we want it recorded, but for simulation, stdout is usually enough.
+        const pos = tracker.metrics(tokenId);
         const remaining = pos ? pos.shares.toFixed(2) : '0';
-
-        // Fee impact
-        const netPnl = pnl - (ESTIMATED_GAS_FEE_USD * 2); // Deduct for Buy (past) and Sell (now) approx? 
-        // Or just deduct current fee? Let's deduct 1x fee per action usually.
-        // But PnL is realized, so it covers the full cycle cost.
-        // Let's just log Gross vs Net for this specific trade action?
-        // Actually, let's track Total Fees separately to deduct at end.
-
-        pnlLine = `   💰 Gross P&L: $${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}`;
+        pnlLine = `   💰 Gross P&L: $${tradePnL >= 0 ? '+' : ''}${tradePnL.toFixed(4)}`;
         remainingLine = `   💼 Remaining: ${remaining} shares`;
     }
 
-    // Record to database
-    // We record the EXECUTION price (simulated)
-    // Pass the trade-specific PnL (calculated above for sells)
-    const recorded = await recordCopyTrade(trade, copyAmount, execPrice, tradeShares, tradePnL);
-    if (!recorded) {
-        return;
-    }
+    // Optional: High-Frequency Logging (NDJSON)
+    appendNdjson(ORDERS_LOG_PATH, {
+        t: Date.now(),
+        status: 'EXECUTED',
+        side: execSide,
+        tokenID: tokenId,
+        shares: trade.size, // Leader size
+        copyShares: copyShares,
+        price: trade.price,
+        execPrice: execPrice,
+        notionalUSDC: trade.size * trade.price,
+        copyUSDC: copyAmount,
+        marketSlug: trade.marketSlug,
+        outcome: trade.outcome,
+        tx: txHash,
+        pnl: tradePnL
+    });
 
-    if (dedupeKey) {
-        seenTrades.add(dedupeKey);
-    }
-
-    // Budget status
     const budgetRemaining = MAX_BUDGET - budgetUsed;
     const budgetPercent = ((budgetUsed / MAX_BUDGET) * 100).toFixed(1);
 
@@ -697,13 +426,13 @@ async function handleTrade(trade: ActivityTrade) {
     console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded})`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
-    console.log(`   📊 Leader: ${tradeShares.toFixed(2)} shares ($${tradeNotional.toFixed(2)})`);
-    console.log(`   📊 Copy:   ${trade.side} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
-    console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)} (Slippage ${SLIPPAGE_BPS / 100}%)`);
+    console.log(`   📊 Leader: ${trade.size.toFixed(2)} shares ($${(trade.size * trade.price).toFixed(2)})`);
+    console.log(`   📊 Copy:   ${execSide} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
+    console.log(`      Price: $${trade.price.toFixed(4)} → Exec: $${execPrice.toFixed(4)}`);
     console.log(`   💵 Budget: $${budgetUsed.toFixed(2)}/$${MAX_BUDGET} used (${budgetPercent}%) | Remaining: $${budgetRemaining.toFixed(2)}`);
     console.log(`   📈 Market: ${trade.marketSlug || 'N/A'}`);
     console.log(`   🎯 Outcome: ${trade.outcome || 'N/A'}`);
-    console.log(`   🔗 TX: ${trade.transactionHash?.substring(0, 30)}...`);
+    console.log(`   🔗 TX: ${txHash?.substring(0, 30)}...`);
     if (positionLine) console.log(positionLine);
     if (pnlLine) console.log(pnlLine);
     if (remainingLine) console.log(remainingLine);

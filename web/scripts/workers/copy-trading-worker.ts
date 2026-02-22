@@ -28,8 +28,8 @@ import { TokenMetadataService } from '../../../sdk/src/services/token-metadata-s
 import { MarketService } from '../../../sdk/src/services/market-service';
 import { DataApiClient } from '../../../sdk/src/clients/data-api';
 import { GammaApiClient } from '../../../sdk/src/index';
-import { normalizeTradeSizing } from '../../../sdk/src/utils/trade-sizing.js';
 import { getSpeedProfile } from '../../config/speed-profile';
+import { TradeOrchestrator } from '../../../sdk/src/core/trade-orchestrator.js';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -78,6 +78,7 @@ const gammaClient = new GammaApiClient(rateLimiter, cache);
 const dataApi = new DataApiClient(rateLimiter, cache);
 const marketService = new MarketService(gammaClient, dataApi, rateLimiter, cache);
 const tokenMetadataService = new TokenMetadataService(marketService, cache);
+const tradeOrchestrator = new TradeOrchestrator(executionService, tokenMetadataService, tradingService, prisma, speedProfile, false);
 
 // State
 let activeConfigs: any[] = [];
@@ -85,153 +86,10 @@ let monitoredAddresses: Set<string> = new Set();
 let isProcessing = false;
 
 // --- HELPERS ---
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const toNumber = (value: any) => {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
 };
-
-function buildOriginalSignalId(
-    txHash: string | undefined,
-    tokenId: string,
-    side: string,
-    timestamp?: number
-): string {
-    if (txHash) {
-        return `${txHash.toLowerCase()}:${tokenId}:${side}`;
-    }
-    const ts = Number.isFinite(Number(timestamp)) ? Math.floor(Number(timestamp)) : 0;
-    return `local:${tokenId}:${side}:${ts}`;
-}
-
-const slippageStats = {
-    count: 0,
-    totalNotionalUsd: 0,
-    sumCostPct: 0,
-    sumAbsPct: 0,
-    maxCostPct: 0,
-    maxAbsPct: 0,
-    worstTx: '',
-    lastReportAt: 0,
-};
-
-function calcSlippageCostPct(params: { leader: number; exec: number; side: 'BUY' | 'SELL' }) {
-    const { leader, exec, side } = params;
-    if (leader <= 0 || exec <= 0) return 0;
-    if (side === 'BUY') return ((exec - leader) / leader) * 100;
-    return ((leader - exec) / leader) * 100;
-}
-
-function recordSlippageSample(params: {
-    leader: number;
-    exec: number;
-    side: 'BUY' | 'SELL';
-    notionalUsd: number;
-    txHash?: string;
-}) {
-    const { leader, exec, side, notionalUsd, txHash } = params;
-    if (leader <= 0 || exec <= 0) return;
-    const costPct = calcSlippageCostPct({ leader, exec, side });
-    const absPct = Math.abs(((exec - leader) / leader) * 100);
-
-    slippageStats.count += 1;
-    slippageStats.totalNotionalUsd += notionalUsd;
-    slippageStats.sumCostPct += costPct;
-    slippageStats.sumAbsPct += absPct;
-    if (costPct > slippageStats.maxCostPct) {
-        slippageStats.maxCostPct = costPct;
-        slippageStats.worstTx = txHash || '';
-    }
-    if (absPct > slippageStats.maxAbsPct) {
-        slippageStats.maxAbsPct = absPct;
-    }
-
-    const now = Date.now();
-    if (slippageStats.count % 20 === 0 || now - slippageStats.lastReportAt > 60000) {
-        const avgCost = slippageStats.sumCostPct / slippageStats.count;
-        const avgAbs = slippageStats.sumAbsPct / slippageStats.count;
-        console.log(`[Worker] 📊 Slippage stats | trades=${slippageStats.count} | avgCost=${avgCost.toFixed(2)}% | avgAbs=${avgAbs.toFixed(2)}% | maxCost=${slippageStats.maxCostPct.toFixed(2)}% | maxAbs=${slippageStats.maxAbsPct.toFixed(2)}% | notional=$${slippageStats.totalNotionalUsd.toFixed(2)}${slippageStats.worstTx ? ` | worstTx=${slippageStats.worstTx.slice(0, 10)}...` : ''}`);
-        slippageStats.lastReportAt = now;
-    }
-}
-
-async function fetchClobExecutionPrice(orderId: string): Promise<{ price: number; size: number; source: string } | null> {
-    try {
-        if (!tradingService.isInitialized()) {
-            await tradingService.initialize();
-        }
-        const client = tradingService.getClobClient();
-        if (!client) return null;
-
-        const order = await client.getOrder(orderId);
-        const orderPrice = toNumber(order?.price);
-        const orderMatched = toNumber(order?.size_matched);
-        const tradeIds = Array.isArray(order?.associate_trades) ? order.associate_trades : [];
-
-        if (!tradeIds.length) {
-            if (orderPrice > 0 && orderMatched > 0) {
-                return { price: orderPrice, size: orderMatched, source: 'order' };
-            }
-            return orderPrice > 0 ? { price: orderPrice, size: orderMatched, source: 'order' } : null;
-        }
-
-        let total = 0;
-        let qty = 0;
-        for (const tradeId of tradeIds) {
-            const trades = await client.getTrades({ id: tradeId });
-            const trade = trades?.[0];
-            const price = toNumber(trade?.price);
-            const size = toNumber(trade?.size);
-            if (price > 0 && size > 0) {
-                total += price * size;
-                qty += size;
-            }
-        }
-
-        if (qty > 0) {
-            return { price: total / qty, size: qty, source: 'trades' };
-        }
-        if (orderPrice > 0) {
-            return { price: orderPrice, size: orderMatched, source: 'order' };
-        }
-        return null;
-    } catch (error) {
-        console.warn('[Worker] ⚠️ Failed to fetch CLOB execution price:', error);
-        return null;
-    }
-}
-
-async function logSkippedTrade(data: any, reason: string) {
-    const payload = {
-        ...data,
-        status: 'SKIPPED',
-        errorMessage: reason,
-    };
-    const compositeKey = data?.configId && data?.originalTxHash
-        ? { configId: data.configId, originalTxHash: data.originalTxHash }
-        : null;
-    try {
-        if (compositeKey) {
-            const existing = await prisma.copyTrade.findUnique({
-                where: { configId_originalTxHash: compositeKey },
-                select: { status: true },
-            });
-            if (existing) {
-                if (existing.status === 'SKIPPED') {
-                    await prisma.copyTrade.update({
-                        where: { configId_originalTxHash: compositeKey },
-                        data: { errorMessage: reason },
-                    });
-                }
-                return;
-            }
-        }
-        await prisma.copyTrade.create({ data: payload });
-    } catch (e: any) {
-        if (e?.code === 'P2002') return;
-        console.log(`[Worker] Failed to log SKIPPED trade:`, e);
-    }
-}
 
 async function refreshConfigs() {
     try {
@@ -250,113 +108,6 @@ async function refreshConfigs() {
     } catch (e) {
         console.error('[Worker] Failed to refresh configs:', e);
     }
-}
-
-async function getOrderbookPrice(tokenId: string, side: 'BUY' | 'SELL') {
-    try {
-        const orderbook = await tradingService.getOrderBook(tokenId);
-        if (!orderbook?.asks || !orderbook?.bids || (!orderbook.asks.length && !orderbook.bids.length)) {
-            return { orderbook: null, price: 0.5, bestAsk: 0, bestBid: 0 };
-        }
-        const bestAsk = Number(orderbook.asks[0]?.price || 0);
-        const bestBid = Number(orderbook.bids[0]?.price || 0);
-        const price = side === 'BUY' ? (bestAsk || bestBid || 0.5) : (bestBid || bestAsk || 0.5);
-        return { orderbook, price, bestAsk, bestBid };
-    } catch (e) {
-        console.warn(`[Worker] Failed to fetch orderbook for ${tokenId}`, e);
-        return { orderbook: null, price: 0.5, bestAsk: 0, bestBid: 0 };
-    }
-}
-
-function getLevelSize(level: any): number {
-    return Number(level?.size ?? level?.amount ?? level?.quantity ?? 0);
-}
-
-function evaluateOrderbookGuardrails(params: {
-    orderbook: any;
-    side: 'BUY' | 'SELL';
-    notionalUsd: number;
-    profile: ReturnType<typeof getSpeedProfile>;
-}) {
-    const { orderbook, side, notionalUsd, profile } = params;
-    const bestAsk = Number(orderbook?.asks?.[0]?.price || 0);
-    const bestBid = Number(orderbook?.bids?.[0]?.price || 0);
-
-    if (bestAsk <= 0 || bestBid <= 0) {
-        return { allowed: false, reason: 'ORDERBOOK_EMPTY', bestAsk, bestBid };
-    }
-
-    const mid = (bestAsk + bestBid) / 2;
-    const spreadBps = mid > 0 ? ((bestAsk - bestBid) / mid) * 10000 : 0;
-    if (profile.maxSpreadBps > 0 && spreadBps > profile.maxSpreadBps) {
-        return { allowed: false, reason: `SPREAD_${spreadBps.toFixed(1)}BPS`, spreadBps, bestAsk, bestBid };
-    }
-
-    const levels = side === 'BUY' ? orderbook.asks : orderbook.bids;
-    const maxLevels = profile.depthLevels;
-    const requiredShares = bestAsk > 0 ? notionalUsd / (side === 'BUY' ? bestAsk : bestBid) : 0;
-    let depthShares = 0;
-    for (let i = 0; i < Math.min(levels.length, maxLevels); i++) {
-        depthShares += getLevelSize(levels[i]);
-        if (requiredShares > 0 && depthShares >= requiredShares * profile.minDepthRatio) break;
-    }
-    const depthUsd = depthShares * (side === 'BUY' ? bestAsk : bestBid);
-
-    if (profile.minDepthUsd > 0 && depthUsd < profile.minDepthUsd) {
-        return { allowed: false, reason: `DEPTH_USD_${depthUsd.toFixed(2)}`, depthUsd, depthShares, bestAsk, bestBid };
-    }
-
-    if (requiredShares > 0 && depthShares < requiredShares * profile.minDepthRatio) {
-        return { allowed: false, reason: `DEPTH_RATIO_${depthShares.toFixed(2)}`, depthUsd, depthShares, bestAsk, bestBid };
-    }
-
-    return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
-}
-
-const MAX_DYNAMIC_DEVIATION = 0.2; // 20% hard cap to avoid extreme overpay
-
-function getDynamicMaxDeviation(params: {
-    baseMaxDeviation: number;
-    depthUsd?: number;
-}) {
-    const { baseMaxDeviation, depthUsd = 0 } = params;
-    if (baseMaxDeviation <= 0) {
-        return { maxDeviation: 0, tier: 'disabled', multiplier: 0 };
-    }
-
-    let multiplier = 1;
-    let tier = 'deep';
-    if (depthUsd >= 1000) {
-        multiplier = 1;
-        tier = 'deep';
-    } else if (depthUsd >= 200) {
-        multiplier = 1.5;
-        tier = 'mid';
-    } else if (depthUsd >= 50) {
-        multiplier = 2;
-        tier = 'shallow';
-    } else {
-        multiplier = 3;
-        tier = 'thin';
-    }
-
-    const maxDeviation = Math.min(baseMaxDeviation * multiplier, MAX_DYNAMIC_DEVIATION);
-    return { maxDeviation, tier, multiplier };
-}
-
-// Replaced getMarketMetadata logic with TokenMetadataService
-
-function calculateCopySize(config: any, originalSize: number, originalPrice: number): number {
-    const originalValue = originalSize * originalPrice;
-
-    if (config.mode === 'FIXED_AMOUNT' && config.fixedAmount) {
-        return Math.min(config.fixedAmount, config.maxSizePerTrade);
-    }
-
-    // PROPORTIONAL
-    const scaledValue = originalValue * (config.sizeScale || 1);
-    const minSize = config.minSizePerTrade ?? 0;
-    return Math.max(minSize, Math.min(scaledValue, config.maxSizePerTrade));
 }
 
 async function resolveConfigIdForPosition(walletAddress: string, tokenId: string): Promise<string | null> {
@@ -519,13 +270,6 @@ async function resolvePositions(conditionId: string): Promise<void> {
                         } else {
                             console.error(`       ❌ Redemption Failed: ${result.error}`);
                             errorMsg = result.error;
-                            // Ensure we don't delete position if on-chain fail? 
-                            // Actually if on-chain fails, we should probably NOT delete the position DB record 
-                            // so we can retry? 
-                            // But for now, let's log error and maybe NOT delete if critical?
-                            // Currently simulation DELETES anyway. logic below deletes.
-                            // Let's keep deleting to avoid double-processing loop for now, 
-                            // but in prod we'd want a retry queue.
                         }
                     } else {
                         console.error(`       ❌ No Proxy found for ${pos.walletAddress}`);
@@ -555,12 +299,6 @@ async function resolvePositions(conditionId: string): Promise<void> {
                     }
                 });
 
-                // 3. Clear Position (If success or Loss)
-                // If it was a WIN but failed on-chain, maybe we shouldn't delete?
-                // But if we don't delete, we might infinite loop if we re-run.
-                // For this upgrades, let's assume if it failed, we still mark as "Processed" 
-                // but maybe with a flag? 
-                // Safest for User Funds: If WIN and Failed, DO NOT delete.
                 if (settlementType === 'WIN' && errorMsg) {
                     console.warn(`       ⚠️ Skipping DB deletion due to on-chain failure.`);
                     continue;
@@ -577,8 +315,6 @@ async function resolvePositions(conditionId: string): Promise<void> {
         console.error(`   ❌ Error in resolvePositions:`, error);
     }
 }
-
-// --- EVENT LISTENER ---
 
 // --- EVENT LISTENER ---
 
@@ -601,7 +337,6 @@ async function startListener() {
 
     // Pre-warm token metadata cache to prevent event-loop blocking on first trades
     await tokenMetadataService.prewarmCache();
-    // Refresh it every 10 minutes to catch newly created markets
     setInterval(() => tokenMetadataService.prewarmCache(), 600000);
 
     // 2. Setup WebSocket Listener
@@ -642,537 +377,27 @@ async function startListener() {
 // --- EVENT HANDLER ---
 
 async function handleWebsocketTrade(trade: ActivityTrade) {
-    // 1. Check if trader is monitored
-    // trade.trader.address is the maker/taker who initiated?
-    // ActivityTrade usually has 'trader' object with address.
     const traderAddress = trade.trader?.address?.toLowerCase();
 
     if (!traderAddress || !monitoredAddresses.has(traderAddress)) {
         return;
     }
 
-    const tokenId = trade.asset;
-    const leaderPrice = trade.price;
-    const rawSize = trade.size;
-    const side = trade.side; // BUY or SELL
-    const txHash = trade.transactionHash;
-
-    console.log(`[Worker] 🔔 Detected Trade! Tx: ${txHash?.slice(0, 8)}...`);
-
     // Find configs for this trader
     const configs = activeConfigs.filter(c => c.traderAddress.toLowerCase() === traderAddress);
 
     for (const config of configs) {
         try {
-            const { tradeShares, tradeNotional } = normalizeTradeSizing(config, rawSize, leaderPrice);
+            // Re-map real-time socket payload to the generalized Activity schema expected by Orchestrator
+            const mappedTrade = {
+                ...trade,
+                name: traderAddress,
+                slug: trade.marketSlug || '',
+            } as any; // Cast as any because Activity schema expects exact matching
 
-            console.log(`[Worker] 🎯 Target: ${traderAddress} | Side: ${side} | Token: ${tokenId} | Size: ${tradeShares.toFixed(2)} | Price: $${leaderPrice.toFixed(4)}`);
-
-            // Apply Basic Filters
-            if (config.sideFilter && config.sideFilter !== side) continue;
-
-            if (config.minTriggerSize && tradeNotional < config.minTriggerSize) continue;
-
-            // --- 1. Max Loss Protection (Global Stop Loss) ---
-            if (config.stopLoss && config.stopLoss > 0) {
-                const stats = await prisma.copyTrade.aggregate({
-                    where: { configId: config.id, realizedPnL: { not: null } },
-                    _sum: { realizedPnL: true }
-                });
-                const totalPnL = stats._sum.realizedPnL || 0;
-                // If total loss (negative PnL) exceeds stopLoss amount
-                if (totalPnL < -Math.abs(config.stopLoss)) {
-                    console.warn(`[Worker] 🛑 Max Loss Hit for ${config.walletAddress}: PnL $${totalPnL.toFixed(2)} vs Limit -$${config.stopLoss}`);
-                    // Auto-Disable
-                    await prisma.copyTradingConfig.update({
-                        where: { id: config.id },
-                        data: { isActive: false }
-                    });
-                    continue; // Skip trade
-                }
-            }
-
-            // --- 2. Smart Risk Filters ---
-
-            // A. Max Odds Check
-            if (config.maxOdds && config.maxOdds > 0) {
-                // maxOdds is 0-100 or 0-1 depending on storage. tRPC/schema says Float. 
-                // UI sends 95 for 95%. Worker usually sees price 0-1.
-                // Let's assume schema stores as percentage (e.g. 95) or decimal (0.95)? 
-                // FrontEnd: `Number(maxOdds) / 100` if not simple mode.
-                // So DB stores 0.95.
-                // Let's being safe: check if > 1.
-                const limit = config.maxOdds > 1 ? config.maxOdds / 100 : config.maxOdds;
-                if (leaderPrice > limit) {
-                    await logSkippedTrade({
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: side,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: 0,
-                        copyPrice: leaderPrice,
-                        originalTxHash: buildOriginalSignalId(txHash, tokenId, side, trade.timestamp),
-                        detectedAt: new Date(),
-                        marketSlug: trade.marketSlug,
-                        conditionId: trade.conditionId,
-                        outcome: trade.outcome
-                    }, `ODDS_TOO_HIGH_${leaderPrice.toFixed(2)}`);
-                    continue;
-                }
-            }
-
-            // Logic for COUNTER trade
-            let copySide = side;
-            if (config.direction === 'COUNTER') {
-                copySide = side === 'BUY' ? 'SELL' : 'BUY';
-            }
-
-            // Calc Size
-            let copySizeUsdc = calculateCopySize(config, tradeShares, leaderPrice);
-            if (copySizeUsdc <= 0) continue;
-
-            // Get Strategy Parameters
-            const strategy = getStrategyConfig(config.strategyProfile);
-
-            // Map Gas Priority to Overrides
-            let overrides = {};
-            if (strategy.gasPriority === 'fast') {
-                overrides = { maxPriorityFeePerGas: 40000000000 }; // 40 Gwei
-            } else if (strategy.gasPriority === 'instant') {
-                overrides = { maxPriorityFeePerGas: 100000000000 }; // 100 Gwei
-            }
-
-            console.log(`[Worker] 🚀 Auto-Executing for ${config.walletAddress}: ${copySide} $${copySizeUsdc.toFixed(2)} [${strategy.description.split('.')[0]}]`);
-
-            // Fetch Token Metadata from fast prewarmed cache
-            let fetched = await tokenMetadataService.getMetadata(tokenId);
-            let metadata: { marketSlug: string; conditionId: string; outcome: string; endDate?: string; volume?: number } = {
-                marketSlug: trade.marketSlug || '',
-                conditionId: trade.conditionId || '',
-                outcome: trade.outcome || 'Yes'
-            };
-
-            if (fetched) {
-                metadata = { ...metadata, ...fetched };
-            }
-
-            console.log(`[Worker] ℹ️  Market: ${metadata.marketSlug} | ${metadata.outcome}`);
-
-            // 1.6 Orderbook guardrails + dynamic slippage tiers
-            let orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
-            let marketPrice = orderbookSnapshot.price;
-
-            if (!orderbookSnapshot.orderbook) {
-                await logSkippedTrade({
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: tradeShares,
-                    originalPrice: leaderPrice,
-                    tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: marketPrice,
-                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, 'ORDERBOOK_UNAVAILABLE');
-                continue;
-            }
-
-            // --- Smart Filters B/C/D (Post-Orderbook) ---
-
-            // B. Min Liquidity Check (Smart Filter)
-            if (config.minLiquidity && config.minLiquidity > 0) {
-                const book = orderbookSnapshot.orderbook;
-                const relevantSide = (copySide === 'BUY' ? book.asks : book.bids) || [];
-                let totalLiq = 0;
-                // Sum up liquidity in first 20 levels
-                for (let i = 0; i < Math.min(relevantSide.length, 20); i++) {
-                    const level = relevantSide[i];
-                    const sz = getLevelSize(level);
-                    const px = Number(level.price);
-                    totalLiq += (sz * px);
-                }
-
-                if (totalLiq < config.minLiquidity) {
-                    await logSkippedTrade({
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: copySide,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: copySizeUsdc,
-                        copyPrice: marketPrice,
-                        originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                        detectedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }, `LOW_LIQUIDITY_$${totalLiq.toFixed(0)}`);
-                    continue;
-                }
-            }
-
-            // C. Max Days Out (Smart Filter)
-            if (config.maxDaysOut && config.maxDaysOut > 0 && metadata.endDate) {
-                const end = new Date(metadata.endDate).getTime();
-                const now = Date.now();
-                const days = (end - now) / (1000 * 60 * 60 * 24);
-                if (days > config.maxDaysOut) {
-                    await logSkippedTrade({
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: copySide,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: copySizeUsdc,
-                        copyPrice: marketPrice,
-                        originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                        detectedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }, `MARKET_DAYS_OUT_${days.toFixed(0)}`);
-                    continue;
-                }
-            }
-
-            // D. Min Volume (Smart Filter)
-            if (config.minVolume && config.minVolume > 0 && (metadata.volume || 0) < config.minVolume) {
-                await logSkippedTrade({
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: tradeShares,
-                    originalPrice: leaderPrice,
-                    tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: marketPrice,
-                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, `LOW_VOLUME_$${(metadata.volume || 0).toFixed(0)}`);
-                continue;
-            }
-
-            let orderbookGuard = evaluateOrderbookGuardrails({
-                orderbook: orderbookSnapshot.orderbook,
-                side: copySide as 'BUY' | 'SELL',
-                notionalUsd: copySizeUsdc,
-                profile: speedProfile,
-            });
-
-            if (!orderbookGuard.allowed && orderbookGuard.reason?.startsWith('DEPTH_')) {
-                const safeDepthUsd = (orderbookGuard.depthUsd || 0) * 0.95; // 5% buffer
-                if (safeDepthUsd >= speedProfile.minDepthUsd && copySizeUsdc > safeDepthUsd) {
-                    console.warn(`[Worker] ⚠️ Orderbook depth low. Scaling down ${copySide} from $${copySizeUsdc.toFixed(2)} to $${safeDepthUsd.toFixed(2)}`);
-                    copySizeUsdc = safeDepthUsd;
-                    orderbookGuard = evaluateOrderbookGuardrails({
-                        orderbook: orderbookSnapshot.orderbook,
-                        side: copySide as 'BUY' | 'SELL',
-                        notionalUsd: copySizeUsdc,
-                        profile: speedProfile,
-                    });
-                }
-            }
-
-            if (!orderbookGuard.allowed) {
-                console.warn(`[Worker] 🛑 Orderbook guardrail: ${orderbookGuard.reason}`);
-                GuardrailService.recordGuardrailTrigger({
-                    reason: `ORDERBOOK_${orderbookGuard.reason}`,
-                    source: 'worker',
-                    walletAddress: config.walletAddress,
-                    amount: copySizeUsdc,
-                    tokenId,
-                });
-                await logSkippedTrade({
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: tradeShares,
-                    originalPrice: leaderPrice,
-                    tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: marketPrice,
-                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, `ORDERBOOK_${orderbookGuard.reason}`);
-                continue;
-            }
-
-            const baseMaxDeviation = (config.maxSlippage ?? 0) / 100;
-            const dynamicMax = getDynamicMaxDeviation({
-                baseMaxDeviation,
-                depthUsd: orderbookGuard.depthUsd,
-            });
-            const maxDeviation = dynamicMax.maxDeviation;
-            if (baseMaxDeviation > 0 && maxDeviation !== baseMaxDeviation) {
-                console.log(`[Worker] 🧪 Liquidity tier=${dynamicMax.tier} depth=$${(orderbookGuard.depthUsd || 0).toFixed(2)} -> maxSlippage ${(maxDeviation * 100).toFixed(2)}% (base ${(baseMaxDeviation * 100).toFixed(2)}%)`);
-            }
-
-            // 1.7 Price guard + optional FOK limit fallback
-            let useLimitFallback = false;
-            let limitPrice = marketPrice;
-            let deviationPct = 0;
-
-            if (leaderPrice > 0 && maxDeviation > 0) {
-                const deviation = Math.abs(marketPrice - leaderPrice) / leaderPrice;
-                deviationPct = deviation * 100;
-
-                if (deviation > maxDeviation) {
-                    limitPrice = copySide === 'BUY'
-                        ? leaderPrice * (1 + maxDeviation)
-                        : leaderPrice * (1 - maxDeviation);
-                    useLimitFallback = true;
-                    console.warn(`[Worker] 🛑 Price guard: deviation ${deviationPct.toFixed(2)}% > max ${(maxDeviation * 100).toFixed(2)}%`);
-                    console.warn(`[Worker] 🧭 FOK limit fallback: cap=${limitPrice.toFixed(4)} (leader=${leaderPrice.toFixed(4)}, book=${marketPrice.toFixed(4)})`);
-                } else {
-                    const maxExecPrice = leaderPrice * (1 + maxDeviation);
-                    const minExecPrice = leaderPrice * (1 - maxDeviation);
-                    if (copySide === 'BUY' && marketPrice > maxExecPrice) {
-                        console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} > max ${maxExecPrice.toFixed(4)}`);
-                        await logSkippedTrade({
-                            configId: config.id,
-                            originalTrader: traderAddress,
-                            originalSide: copySide,
-                            originalSize: tradeShares,
-                            originalPrice: leaderPrice,
-                            tokenId: tokenId,
-                            copySize: copySizeUsdc,
-                            copyPrice: marketPrice,
-                            originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                            detectedAt: new Date(),
-                            marketSlug: metadata.marketSlug,
-                            conditionId: metadata.conditionId,
-                            outcome: metadata.outcome
-                        }, 'PRICE_MAX_EXCEEDED');
-                        continue;
-                    }
-                    if (copySide === 'SELL' && marketPrice < minExecPrice) {
-                        console.warn(`[Worker] 🛑 Price guard: exec price ${marketPrice.toFixed(4)} < min ${minExecPrice.toFixed(4)}`);
-                        await logSkippedTrade({
-                            configId: config.id,
-                            originalTrader: traderAddress,
-                            originalSide: copySide,
-                            originalSize: tradeShares,
-                            originalPrice: leaderPrice,
-                            tokenId: tokenId,
-                            copySize: copySizeUsdc,
-                            copyPrice: marketPrice,
-                            originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                            detectedAt: new Date(),
-                            marketSlug: metadata.marketSlug,
-                            conditionId: metadata.conditionId,
-                            outcome: metadata.outcome
-                        }, 'PRICE_MIN_EXCEEDED');
-                        continue;
-                    }
-                }
-            }
-
-            if (leaderPrice > 0) {
-                const compareLine = useLimitFallback
-                    ? `cap=$${limitPrice.toFixed(4)}`
-                    : `book=$${marketPrice.toFixed(4)}`;
-                console.log(`[Worker] 📈 Price compare | leader=$${leaderPrice.toFixed(4)} | ${compareLine} | deviation=${deviationPct.toFixed(2)}%`);
-            }
-
-            // 1. Guardrail Check (NEW)
-            const guardrail = await GuardrailService.checkExecutionGuardrails(config.walletAddress, copySizeUsdc, {
-                source: 'worker',
-                workerAddress: WORKER_ADDRESS,
-                marketSlug: metadata.marketSlug,
-                tokenId,
-            });
-            if (!guardrail.allowed) {
-                console.warn(`[Worker] 🛑 Guardrail Blocked: ${guardrail.reason}`);
-                // Log skipped trade to DB so user knows
-                await logSkippedTrade({
-                    configId: config.id,
-                    originalTrader: traderAddress,
-                    originalSide: copySide,
-                    originalSize: tradeShares,
-                    originalPrice: leaderPrice,
-                    tokenId: tokenId,
-                    copySize: copySizeUsdc,
-                    copyPrice: marketPrice,
-                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                    detectedAt: new Date(),
-                    marketSlug: metadata.marketSlug,
-                    conditionId: metadata.conditionId,
-                    outcome: metadata.outcome
-                }, guardrail.reason || 'GUARDRAIL_BLOCKED');
-                continue;
-            }
-
-            // 2. Create PENDING Record (Prevent Ghost Trades)
-            let tradeId: string;
-            let executionPrice = useLimitFallback ? limitPrice : marketPrice;
-            const effectiveMaxSlippagePct = maxDeviation > 0 ? (maxDeviation * 100) : (config.maxSlippage ?? 0);
-            try {
-                const pendingTrade = await prisma.copyTrade.create({
-                    data: {
-                        configId: config.id,
-                        originalTrader: traderAddress,
-                        originalSide: copySide,
-                        originalSize: tradeShares,
-                        originalPrice: leaderPrice,
-                        tokenId: tokenId,
-                        copySize: copySizeUsdc,
-                        copyPrice: executionPrice,
-                        status: 'PENDING', // Start as PENDING
-                        originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                        detectedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome,
-                    }
-                });
-                tradeId = pendingTrade.id;
-                console.log(`[Worker] 📝 Logged PENDING trade: ${tradeId}`);
-            } catch (dbErr: any) {
-                if (dbErr.code === 'P2002') {
-                    console.log(`[Worker] ⚠️ Duplicate trade detected (P2002). Skipping.`);
-                } else {
-                    console.error(`[Worker] ❌ Failed to create PENDING record. Aborting to save funds.`, dbErr);
-                }
-                continue; // ABORT if we can't record the trade
-            }
-
-            if (DRY_RUN) {
-                await prisma.copyTrade.update({
-                    where: { id: tradeId },
-                    data: {
-                        status: 'SKIPPED',
-                        errorMessage: 'DRY_RUN',
-                        copyPrice: executionPrice,
-                        executedAt: new Date(),
-                    }
-                });
-                console.log(`[Worker] 🧪 DRY_RUN enabled. Skipped execution.`);
-                continue;
-            }
-
-            // 3. Execute
-            let result: { success: boolean; orderId?: string; transactionHashes?: string[]; error?: string; usedBotFloat?: boolean } = { success: false, error: 'Initialization Failed' };
-            try {
-                const maxAttempts = useLimitFallback ? 2 : 1;
-                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                    if (attempt > 1) {
-                        await sleep(200);
-                        orderbookSnapshot = await getOrderbookPrice(tokenId, copySide as 'BUY' | 'SELL');
-                        marketPrice = orderbookSnapshot.price;
-                        executionPrice = limitPrice;
-                        console.log(`[Worker] 🔁 Retry ${attempt}/${maxAttempts} | leader=$${leaderPrice.toFixed(4)} | book=$${marketPrice.toFixed(4)} | cap=$${executionPrice.toFixed(4)}`);
-                    } else if (leaderPrice > 0 && useLimitFallback) {
-                        console.log(`[Worker] 🧾 Exec attempt ${attempt}/${maxAttempts} | leader=$${leaderPrice.toFixed(4)} | book=$${marketPrice.toFixed(4)} | cap=$${executionPrice.toFixed(4)}`);
-                    }
-
-                    result = await executionService.executeOrderWithProxy({
-                        tradeId: tradeId, // Use the DB ID
-                        walletAddress: config.walletAddress,
-                        tokenId: tokenId,
-                        side: copySide,
-                        amount: copySizeUsdc,
-                        price: executionPrice,
-                        slippage: useLimitFallback ? 0 : (config.slippageType === 'FIXED' ? (effectiveMaxSlippagePct / 100) : undefined),
-                        maxSlippage: useLimitFallback ? 0 : effectiveMaxSlippagePct,
-                        slippageMode: useLimitFallback ? 'FIXED' : (config.slippageType as 'FIXED' | 'AUTO'),
-                        orderType: 'market',
-                    });
-
-                    if (result?.success) break;
-                    if (!useLimitFallback) break;
-                }
-            } catch (execErr: any) {
-                result = { success: false, error: execErr.message || 'Execution Exception' };
-            }
-
-            let finalExecutionPrice = executionPrice;
-            let executionPriceSource = 'cap';
-
-            if (result.success && result.orderId) {
-                for (let attempt = 1; attempt <= 2; attempt++) {
-                    const execInfo = await fetchClobExecutionPrice(result.orderId);
-                    if (execInfo?.price) {
-                        finalExecutionPrice = execInfo.price;
-                        executionPriceSource = execInfo.source;
-                        console.log(`[Worker] 💵 CLOB fill price: $${finalExecutionPrice.toFixed(4)} (source=${execInfo.source}, size=${execInfo.size.toFixed(4)})`);
-                        break;
-                    }
-                    await sleep(250);
-                }
-            }
-
-            // 4. Update Record
-            await prisma.copyTrade.update({
-                where: { id: tradeId },
-                data: {
-                    status: result.success ? 'EXECUTED' : 'FAILED',
-                    executedAt: result.success ? new Date() : null,
-                    txHash: result.transactionHashes?.[0] || result.orderId || null,
-                    errorMessage: result.error || null,
-                    usedBotFloat: (result as any).usedBotFloat ?? false,
-                    copyPrice: finalExecutionPrice,
-                }
-            });
-
-            if (result.success) {
-                console.log(`[Worker] ✅ Execution Success! Tx: ${result.transactionHashes?.[0]}`);
-                console.log(`[Worker] 💰 Exec price (${executionPriceSource}): $${finalExecutionPrice.toFixed(4)} | Leader: $${leaderPrice.toFixed(4)} | Book: $${marketPrice.toFixed(4)} | Cap: $${executionPrice.toFixed(4)}`);
-                recordSlippageSample({
-                    leader: leaderPrice,
-                    exec: finalExecutionPrice,
-                    side: copySide as 'BUY' | 'SELL',
-                    notionalUsd: copySizeUsdc,
-                    txHash: result.transactionHashes?.[0] || result.orderId,
-                });
-                // 5. Update Position
-                try {
-                    const sharesBought = copySizeUsdc / finalExecutionPrice;
-                    if (copySide === 'BUY') {
-                        await positionService.recordBuy({
-                            walletAddress: config.walletAddress,
-                            tokenId: tokenId,
-                            side: 'BUY',
-                            amount: sharesBought,
-                            price: finalExecutionPrice,
-                            totalValue: copySizeUsdc
-                        });
-                        console.log(`[Worker] 📊 Position updated +${sharesBought.toFixed(2)}`);
-                    } else {
-                        await positionService.recordSell({
-                            walletAddress: config.walletAddress,
-                            tokenId: tokenId,
-                            side: 'SELL',
-                            amount: sharesBought,
-                            price: finalExecutionPrice,
-                            totalValue: copySizeUsdc
-                        });
-                        console.log(`[Worker] 📊 Position updated -${sharesBought.toFixed(2)}`);
-                    }
-                } catch (posErr) {
-                    console.error(`[Worker] ⚠️ Failed to update position:`, posErr);
-                }
-            } else {
-                console.error(`[Worker] ❌ Execution Failed: ${result.error}`);
-            }
-
-            console.log(`[Worker] ✅ Execution Result: ${result.success ? 'Success' : 'Failed'}`);
-
-        } catch (err) {
-            console.error(`[Worker] Execution failed for config ${config.id}:`, err);
+            await tradeOrchestrator.evaluateAndExecuteTrade(mappedTrade, config);
+        } catch (error) {
+            console.error(`[Worker] ❌ Error executing trade for config ${config.id}:`, error);
         }
     }
 }

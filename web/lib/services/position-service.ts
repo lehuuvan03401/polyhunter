@@ -134,5 +134,5 @@ export class PositionService {
 }
 
 // Singleton instance
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../prisma.js';
 export const positionService = new PositionService(prisma);
