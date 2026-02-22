@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseMarketSlug, parseOutcome } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
 import { createTTLCache } from '@/lib/server-cache';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -10,16 +11,16 @@ export const revalidate = 0;
 const RESPONSE_TTL_MS = 20000;
 const responseCache = createTTLCache<any>();
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
-    const walletAddress = searchParams.get('wallet');
     const type = searchParams.get('type') as 'REDEEMED' | 'SETTLED_LOSS' | 'ALL' | 'COUNTS';
-
-    if (!walletAddress) {
-        return NextResponse.json({ error: 'Wallet address required' }, { status: 400 });
+    const walletCheck = resolveCopyTradingWalletContext(request, {
+        queryWallet: searchParams.get('wallet'),
+    });
+    if (!walletCheck.ok) {
+        return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
     }
-
-    const normalizedWallet = walletAddress.toLowerCase();
+    const normalizedWallet = walletCheck.wallet;
 
     // 1. Find Config ID for user
     // 1. Find ALL Config IDs for user (to support multiple simulations/traders)

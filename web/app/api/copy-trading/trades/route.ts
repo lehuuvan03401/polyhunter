@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 /**
  * GET /api/copy-trading/trades
@@ -14,16 +15,15 @@ import { prisma } from '@/lib/prisma';
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet');
         const status = searchParams.get('status'); // Optional filter
         const limit = parseInt(searchParams.get('limit') || '50');
-
-        if (!walletAddress) {
-            return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
-            );
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
+        const walletAddress = walletCheck.wallet;
 
         // Build where clause
         const where: Record<string, unknown> = {

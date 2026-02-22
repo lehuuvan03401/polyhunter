@@ -182,7 +182,10 @@ export function useOrderStatus(
         try {
             const response = await fetch('/api/copy-trading/orders', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-wallet-address': walletAddress.toLowerCase(),
+                },
                 body: JSON.stringify({
                     walletAddress,
                     orderIds,

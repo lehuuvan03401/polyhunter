@@ -165,6 +165,12 @@ export type {
   ExecutionResult,
 } from './services/copy-trading-execution-service.js';
 
+// TokenMetadataService - Pre-warmed market mapping cache
+export { TokenMetadataService } from './services/token-metadata-service.js';
+export type {
+  TokenMetadata,
+} from './services/token-metadata-service.js';
+
 // TradingService - Unified trading and market data
 export { TradingService, POLYGON_MAINNET, POLYGON_AMOY } from './services/trading-service.js';
 export type {
@@ -315,6 +321,7 @@ import { MarketService } from './services/market-service.js';
 import { TradingService } from './services/trading-service.js';
 import { RealtimeServiceV2 } from './services/realtime-service-v2.js';
 import { SmartMoneyService } from './services/smart-money-service.js';
+import { TokenMetadataService } from './services/token-metadata-service.js';
 import type { UnifiedMarket, ProcessedOrderbook, ArbitrageOpportunity, KLineInterval, KLineCandle, DualKLineData, PolySDKOptions } from './core/types.js';
 import { createUnifiedCache, type UnifiedCache } from './core/unified-cache.js';
 
@@ -337,6 +344,7 @@ export class PolymarketSDK {
   public readonly markets: MarketService;
   public readonly realtime: RealtimeServiceV2;
   public readonly smartMoney: SmartMoneyService;
+  public readonly metadata: TokenMetadataService;
 
   // Initialization state
   private _initialized = false;
@@ -371,6 +379,7 @@ export class PolymarketSDK {
       this.realtime,
       this.tradingService
     );
+    this.metadata = new TokenMetadataService(this.markets, this.cache);
   }
 
   // ===== Static Factory Methods =====

@@ -168,7 +168,10 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName, ag
             // Save to API for backend copy trading
             const apiResponse = await fetch('/api/copy-trading/config', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-wallet-address': walletAddress.toLowerCase(),
+                },
                 body: JSON.stringify({
                     walletAddress: walletAddress.toLowerCase(),
                     traderAddress,

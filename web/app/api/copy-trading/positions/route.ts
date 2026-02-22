@@ -1,9 +1,10 @@
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
 import { parseMarketSlug, parseOutcome } from '@/lib/utils';
 import { createTTLCache } from '@/lib/server-cache';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 const GAMMA_API_BASE = process.env.GAMMA_API_URL || 'https://gamma-api.polymarket.com';
 // Force recompile
@@ -136,15 +137,15 @@ const applyGammaMarket = (
     }
 };
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
-    const walletAddress = searchParams.get('wallet');
-
-    if (!walletAddress) {
-        return NextResponse.json({ error: 'Wallet address required' }, { status: 400 });
+    const walletCheck = resolveCopyTradingWalletContext(request, {
+        queryWallet: searchParams.get('wallet'),
+    });
+    if (!walletCheck.ok) {
+        return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
     }
-
-    const normalizedWallet = walletAddress.toLowerCase();
+    const normalizedWallet = walletCheck.wallet;
 
     try {
         const cacheKey = `positions:${normalizedWallet}`;

@@ -47,7 +47,10 @@ export function PendingTradesAlert({ walletAddress }: PendingTradesAlertProps) {
             // Step 1: Try server-side CLOB execution
             const serverResponse = await fetch('/api/copy-trading/execute', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-wallet-address': walletAddress.toLowerCase(),
+                },
                 body: JSON.stringify({
                     tradeId: trade.id,
                     walletAddress: walletAddress,
@@ -99,8 +102,14 @@ export function PendingTradesAlert({ walletAddress }: PendingTradesAlertProps) {
                     await executeCall(approveCall.target, approveCall.data);
                 }
 
-                // Mark as executed (manual mode)
-                const success = await executeTrade(trade.id, 'executed', undefined);
+                // Manual path no longer marks EXECUTED without a real tx hash.
+                // Persist as skipped so performance metrics remain truthful.
+                const success = await executeTrade(
+                    trade.id,
+                    'skipped',
+                    undefined,
+                    'MANUAL_EXECUTION_REQUIRED'
+                );
                 if (success) {
                     toast.success(
                         <div className="flex flex-col gap-1">

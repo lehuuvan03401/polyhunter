@@ -87,6 +87,9 @@ export function ActiveStrategiesPanel({ walletAddress, className }: ActiveStrate
         try {
             const response = await fetch(`/api/copy-trading/config?id=${strategyId}&wallet=${walletAddress}`, {
                 method: 'DELETE',
+                headers: {
+                    'x-wallet-address': walletAddress.toLowerCase(),
+                },
             });
 
             if (!response.ok) throw new Error('Failed to stop strategy');

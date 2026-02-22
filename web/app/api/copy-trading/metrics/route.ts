@@ -1,8 +1,9 @@
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
 import { createTTLCache } from '@/lib/server-cache';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -28,16 +29,16 @@ async function fetchWithTimeout(url: string, timeoutMs: number) {
     }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
-    const walletAddress = searchParams.get('wallet');
-
-    if (!walletAddress) {
-        return NextResponse.json({ error: 'Wallet address required' }, { status: 400 });
+    const walletCheck = resolveCopyTradingWalletContext(request, {
+        queryWallet: searchParams.get('wallet'),
+    });
+    if (!walletCheck.ok) {
+        return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
     }
-
     // Standardize to lowercase for consistent DB matching
-    const normalizedWallet = walletAddress.toLowerCase();
+    const normalizedWallet = walletCheck.wallet;
 
     try {
         const cacheKey = `metrics:${normalizedWallet}`;

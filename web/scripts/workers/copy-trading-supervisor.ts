@@ -30,6 +30,7 @@ import { MempoolDetector } from '../../../sdk/src/core/mempool-detector';
 import { TaskQueue } from '../../../sdk/src/core/task-queue';
 import { DebtManager } from '../../../sdk/src/core/debt-manager';
 import { MarketService } from '../../../sdk/src/services/market-service';
+import { TokenMetadataService } from '../../../sdk/src/services/token-metadata-service';
 import { GammaApiClient } from '../../../sdk/src/clients/gamma-api';
 import { DataApiClient, type Activity as DataActivity } from '../../../sdk/src/clients/data-api';
 
@@ -204,6 +205,7 @@ let activitySubscriptionKey = '';
 const gammaApi = new GammaApiClient(rateLimiter, cache);
 const dataApi = new DataApiClient(rateLimiter, cache);
 const marketService = new MarketService(gammaApi, dataApi, rateLimiter, cache, { chainId: CHAIN_ID });
+const tokenMetadataService = new TokenMetadataService(marketService, cache);
 
 // 1. Master Trading Service (for read-only or fallback)
 const masterTradingService = new TradingService(
@@ -419,10 +421,16 @@ interface JobQueueItem {
     approxPrice: number;
     originalTrader: string;
     originalSize: number;
+    originalSignalId: string;
     isPreflight: boolean;
     overrides?: ethers.Overrides;
     enqueuedAt?: number;
 }
+
+type SignalIdentity = {
+    txHash?: string;
+    logIndex?: number;
+};
 
 interface QueueStore<T> {
     enqueue(item: T): Promise<boolean>;
@@ -1184,6 +1192,45 @@ async function isEventDuplicate(params: { txHash: string; logIndex?: number; tok
     return false;
 }
 
+function buildOriginalSignalId(params: {
+    signal?: SignalIdentity;
+    tokenId: string;
+    side: 'BUY' | 'SELL';
+    originalTrader: string;
+    originalSize: number;
+    approxPrice: number;
+}): string {
+    const txHash = params.signal?.txHash?.toLowerCase();
+    if (txHash) {
+        const logIndexPart = params.signal?.logIndex !== undefined && params.signal?.logIndex !== null
+            ? `:${params.signal.logIndex}`
+            : '';
+        return `${txHash}${logIndexPart}:${params.tokenId}:${params.side}`;
+    }
+
+    const fingerprint = [
+        params.originalTrader.toLowerCase(),
+        params.tokenId,
+        params.side,
+        params.originalSize.toFixed(6),
+        params.approxPrice.toFixed(6),
+    ].join(':');
+    return `synthetic:${createHash('sha256').update(fingerprint).digest('hex').slice(0, 24)}`;
+}
+
+async function safeCreateCopyTrade(data: Prisma.CopyTradeCreateInput, context: string): Promise<boolean> {
+    try {
+        await prisma.copyTrade.create({ data });
+        return true;
+    } catch (error: any) {
+        if (error?.code === 'P2002') {
+            console.log(`[Supervisor] ♻️ Duplicate copyTrade skipped (${context}).`);
+            return false;
+        }
+        throw error;
+    }
+}
+
 // --- FILTER VALIDATION ---
 interface FilterResult {
     passes: boolean;
@@ -1234,6 +1281,13 @@ async function checkQueue() {
             queueStats.maxLagMs = Math.max(queueStats.maxLagMs, lagMs);
 
             console.log(`[Supervisor] 📥 Dequeued job for User ${job.config.walletAddress}.`);
+            const originalSignalId = job.originalSignalId || buildOriginalSignalId({
+                tokenId: job.tokenId,
+                side: job.side,
+                originalTrader: job.originalTrader,
+                originalSize: job.originalSize,
+                approxPrice: job.approxPrice,
+            });
             void executeJobInternal(
                 worker,
                 job.config,
@@ -1242,6 +1296,7 @@ async function checkQueue() {
                 job.approxPrice,
                 job.originalTrader,
                 job.originalSize,
+                originalSignalId,
                 job.isPreflight,
                 job.overrides
             );
@@ -1425,7 +1480,9 @@ async function handlePolledActivityTrade(traderAddress: string, trade: DataActiv
     console.log(`[Supervisor] 🛰️ POLL DETECTED: ${traderAddress} ${side} ${tokenId} ($${price})`);
 
     await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
-        await processJob(sub, side, tokenId, price, traderAddress, size);
+        await processJob(sub, side, tokenId, price, traderAddress, size, false, undefined, {
+            txHash: trade.transactionHash,
+        });
     });
     return true;
 }
@@ -1710,46 +1767,15 @@ async function refreshConfigs(options: { full?: boolean } = {}) {
 }
 
 async function getMarketMetadata(tokenId: string) {
-    try {
-        const cached = marketMetaCache.get(tokenId);
-        if (cached && Date.now() - cached.fetchedAt < MARKET_META_TTL_MS) {
-            return cached.data;
-        }
+    const meta = await tokenMetadataService.getMetadata(tokenId);
+    if (meta) return meta;
 
-        if (CHAIN_ID === 31337 || CHAIN_ID === 1337 || tokenId.startsWith('mock-')) {
-            const fallback = {
-                marketSlug: 'unknown-simulated',
-                conditionId: '0x0',
-                outcome: 'Yes'
-            };
-            marketMetaCache.set(tokenId, { data: fallback, fetchedAt: Date.now() });
-            return fallback;
-        }
-        // Use MarketService to get CLOB Market info via Orderbook
-        const book = await marketService.getTokenOrderbook(tokenId);
-        if (!book.market) throw new Error("No market ID in orderbook");
-        const market = await marketService.getClobMarket(book.market);
-
-        // Find specific token outcome
-        const token = market.tokens.find(t => t.tokenId === tokenId);
-
-        const data = {
-            marketSlug: market.marketSlug || 'unknown-market',
-            conditionId: market.conditionId,
-            outcome: token?.outcome || 'Yes'
-        };
-        marketMetaCache.set(tokenId, { data, fetchedAt: Date.now() });
-        return data;
-    } catch (e) {
-        // Fallback for missing simulated markets
-        const fallback = {
-            marketSlug: 'unknown-simulated',
-            conditionId: '0x0',
-            outcome: 'Yes'
-        };
-        marketMetaCache.set(tokenId, { data: fallback, fetchedAt: Date.now() });
-        return fallback;
-    }
+    // Fallback for missing simulated markets
+    return {
+        marketSlug: 'unknown-simulated',
+        conditionId: '0x0',
+        outcome: 'Yes'
+    };
 }
 
 async function runWithConcurrency<T>(
@@ -1832,7 +1858,10 @@ async function handleTransfer(
 
         await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
             const { tradeShares } = normalizeTradeSizingFromShares(sub, rawShares, price);
-            await processJob(sub, side!, tokenId, price, trader!, tradeShares);
+            await processJob(sub, side!, tokenId, price, trader!, tradeShares, false, undefined, {
+                txHash,
+                logIndex: event.logIndex,
+            });
         });
 
     } catch (error) {
@@ -1901,7 +1930,9 @@ const handleSniffedTx = async (
 
         await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (config) => {
             const { tradeShares } = normalizeTradeSizingFromShares(config, rawShares, PRICE_PLACEHOLDER);
-            await processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, tradeShares, true, overrides);
+            await processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, tradeShares, true, overrides, {
+                txHash,
+            });
         });
 
     } catch (e) {
@@ -1917,12 +1948,22 @@ async function processJob(
     originalTrader: string,
     originalSize: number,
     isPreflight: boolean = false,
-    overrides?: ethers.Overrides
+    overrides?: ethers.Overrides,
+    signal?: SignalIdentity
 ) {
     if (isShuttingDown) {
         console.log(`[Supervisor] 🛑 Order Skipped (Shutting Down): ${config.walletAddress} ${side} ${tokenId}`);
         return;
     }
+
+    const originalSignalId = buildOriginalSignalId({
+        signal,
+        tokenId,
+        side,
+        originalTrader,
+        originalSize,
+        approxPrice,
+    });
 
     // 0. Fast SELL-skip check (no database query needed)
     if (side === 'SELL') {
@@ -1991,6 +2032,7 @@ async function processJob(
                 approxPrice,
                 originalTrader,
                 originalSize,
+                originalSignalId,
                 isPreflight,
                 overrides: queueOverrides,
                 enqueuedAt: Date.now()
@@ -2015,7 +2057,7 @@ async function processJob(
     const effectiveWorker: WorkerContext = worker;
 
     // 5. Execute
-    await executeJobInternal(effectiveWorker, config, side, tokenId, approxPrice, originalTrader, originalSize, isPreflight, overrides);
+    await executeJobInternal(effectiveWorker, config, side, tokenId, approxPrice, originalTrader, originalSize, originalSignalId, isPreflight, overrides);
 }
 
 async function executeJobInternal(
@@ -2026,6 +2068,7 @@ async function executeJobInternal(
     approxPrice: number,
     originalTrader: string,
     originalSize: number,
+    originalSignalId: string,
     isPreflight: boolean,
     overrides?: ethers.Overrides
 ) {
@@ -2055,24 +2098,23 @@ async function executeJobInternal(
 
             if (!preflight.allowed) {
                 const metadata = await getMarketMetadata(tokenId);
-                await prisma.copyTrade.create({
-                    data: {
-                        configId: config.id,
-                        originalTrader: originalTrader,
-                        originalSide: side,
-                        originalSize: originalSize,
-                        originalPrice: approxPrice,
-                        tokenId: tokenId,
-                        copySize: copyAmount,
-                        copyPrice: approxPrice,
-                        status: 'SKIPPED',
-                        errorMessage: preflight.reason || 'EOA_PREFLIGHT_FAILED',
-                        executedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }
-                });
+                await safeCreateCopyTrade({
+                    configId: config.id,
+                    originalTrader: originalTrader,
+                    originalSide: side,
+                    originalSize: originalSize,
+                    originalPrice: approxPrice,
+                    originalTxHash: originalSignalId,
+                    tokenId: tokenId,
+                    copySize: copyAmount,
+                    copyPrice: approxPrice,
+                    status: 'SKIPPED',
+                    errorMessage: preflight.reason || 'EOA_PREFLIGHT_FAILED',
+                    executedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, 'EOA_PREFLIGHT_FAILED');
                 return;
             }
 
@@ -2108,44 +2150,42 @@ async function executeJobInternal(
                 recordExecution(true, latencyMs);
 
                 const metadata = guardrailMeta || await getMarketMetadata(tokenId);
-                await prisma.copyTrade.create({
-                    data: {
-                        configId: config.id,
-                        originalTrader: originalTrader,
-                        originalSide: side,
-                        originalSize: originalSize,
-                        originalPrice: approxPrice,
-                        tokenId: tokenId,
-                        copySize: adjustedCopyAmount,
-                        copyPrice: approxPrice,
-                        status: 'SKIPPED',
-                        errorMessage: 'DRY_RUN mode - execution skipped',
-                        executedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }
-                });
+                await safeCreateCopyTrade({
+                    configId: config.id,
+                    originalTrader: originalTrader,
+                    originalSide: side,
+                    originalSize: originalSize,
+                    originalPrice: approxPrice,
+                    originalTxHash: originalSignalId,
+                    tokenId: tokenId,
+                    copySize: adjustedCopyAmount,
+                    copyPrice: approxPrice,
+                    status: 'SKIPPED',
+                    errorMessage: 'DRY_RUN mode - execution skipped',
+                    executedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, 'GUARDRAIL_DRY_RUN');
             } else {
                 const metadata = guardrailMeta || await getMarketMetadata(tokenId);
-                await prisma.copyTrade.create({
-                    data: {
-                        configId: config.id,
-                        originalTrader: originalTrader,
-                        originalSide: side,
-                        originalSize: originalSize,
-                        originalPrice: approxPrice,
-                        tokenId: tokenId,
-                        copySize: adjustedCopyAmount,
-                        copyPrice: approxPrice,
-                        status: 'SKIPPED',
-                        errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
-                        executedAt: new Date(),
-                        marketSlug: metadata.marketSlug,
-                        conditionId: metadata.conditionId,
-                        outcome: metadata.outcome
-                    }
-                });
+                await safeCreateCopyTrade({
+                    configId: config.id,
+                    originalTrader: originalTrader,
+                    originalSide: side,
+                    originalSize: originalSize,
+                    originalPrice: approxPrice,
+                    originalTxHash: originalSignalId,
+                    tokenId: tokenId,
+                    copySize: adjustedCopyAmount,
+                    copyPrice: approxPrice,
+                    status: 'SKIPPED',
+                    errorMessage: guardrail.reason || 'GUARDRAIL_BLOCKED',
+                    executedAt: new Date(),
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    outcome: metadata.outcome
+                }, 'GUARDRAIL_BLOCKED');
             }
             return;
         }
@@ -2169,24 +2209,23 @@ async function executeJobInternal(
             const meta = await getMarketMetadata(tokenId);
 
             // Log to DB as SKIPPED
-            await prisma.copyTrade.create({
-                data: {
-                    configId: config.id,
-                    originalTrader: originalTrader,
-                    originalSide: side,
-                    originalSize: originalSize,
-                    originalPrice: approxPrice,
-                    tokenId: tokenId,
-                    copySize: adjustedCopyAmount,
-                    copyPrice: approxPrice,
-                    status: 'SKIPPED',
-                    errorMessage: 'DRY_RUN mode - execution skipped',
-                    executedAt: new Date(),
-                    marketSlug: meta.marketSlug,
-                    conditionId: meta.conditionId,
-                    outcome: meta.outcome
-                }
-            });
+            await safeCreateCopyTrade({
+                configId: config.id,
+                originalTrader: originalTrader,
+                originalSide: side,
+                originalSize: originalSize,
+                originalPrice: approxPrice,
+                originalTxHash: originalSignalId,
+                tokenId: tokenId,
+                copySize: adjustedCopyAmount,
+                copyPrice: approxPrice,
+                status: 'SKIPPED',
+                errorMessage: 'DRY_RUN mode - execution skipped',
+                executedAt: new Date(),
+                marketSlug: meta.marketSlug,
+                conditionId: meta.conditionId,
+                outcome: meta.outcome
+            }, 'DRY_RUN');
             return;
         }
 
@@ -2260,26 +2299,29 @@ async function executeJobInternal(
         const status = result.success ? (isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING') : 'FAILED';
         const errorMessage = result.success ? (isSettled ? null : 'Settlement Pending') : result.error;
 
-        await prisma.copyTrade.create({
-            data: {
-                configId: config.id,
-                originalTrader: originalTrader,
-                originalSide: side,
-                originalSize: originalSize,
-                originalPrice: approxPrice,
-                tokenId: tokenId,
-                copySize: adjustedCopyAmount,
-                copyPrice: approxPrice,
-                status,
-                txHash: result.orderId,
-                errorMessage,
-                usedBotFloat: executionDetail?.usedBotFloat ?? false,
-                executedAt: new Date(),
-                marketSlug: metadata.marketSlug,
-                conditionId: metadata.conditionId,
-                outcome: metadata.outcome
-            }
-        });
+        const inserted = await safeCreateCopyTrade({
+            configId: config.id,
+            originalTrader: originalTrader,
+            originalSide: side,
+            originalSize: originalSize,
+            originalPrice: approxPrice,
+            originalTxHash: originalSignalId,
+            tokenId: tokenId,
+            copySize: adjustedCopyAmount,
+            copyPrice: approxPrice,
+            status,
+            txHash: result.orderId,
+            errorMessage,
+            usedBotFloat: executionDetail?.usedBotFloat ?? false,
+            executedAt: new Date(),
+            marketSlug: metadata.marketSlug,
+            conditionId: metadata.conditionId,
+            outcome: metadata.outcome
+        }, 'EXECUTION_RESULT');
+
+        if (!inserted) {
+            return;
+        }
 
         if (result.success) {
             await incrementGuardrailCounters({
@@ -2416,7 +2458,9 @@ async function handleActivityTrade(trade: ActivityTrade) {
         // 3. Execution
         await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
             try {
-                await processJob(sub, side!, tokenId, price, traderAddress!, size);
+                await processJob(sub, side!, tokenId, price, traderAddress!, size, false, undefined, {
+                    txHash: trade.transactionHash,
+                });
             } catch (execError) {
                 console.error(`[Supervisor] WS Execution error for ${sub.walletAddress}:`, execError);
             }
@@ -2482,6 +2526,11 @@ async function main() {
 
     console.log(`[Supervisor] 🧰 Worker pool size: ${WORKER_POOL_SIZE}`);
     await refreshConfigs({ full: true });
+
+    // Pre-warm token metadata cache to prevent event-loop blocking on first WS signal
+    await tokenMetadataService.prewarmCache();
+    // Keep hydrated mapping every 10m
+    setInterval(() => tokenMetadataService.prewarmCache(), 600000);
 
     // Preload user positions for fast sell-skip checks
     await preloadUserPositions();

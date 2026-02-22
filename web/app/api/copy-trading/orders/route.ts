@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseMarketSlug } from '@/lib/utils';
 import { createTTLCache } from '@/lib/server-cache';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 // Order status types
 export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'SETTLEMENT_PENDING';
 
@@ -36,16 +37,15 @@ const responseCache = createTTLCache<any>();
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet');
         const tradeId = searchParams.get('tradeId');
         const status = searchParams.get('status');
-
-        if (!walletAddress) {
-            return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
-            );
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
+        const walletAddress = walletCheck.wallet;
 
         const cacheKey = `orders:${walletAddress.toLowerCase()}:${tradeId || 'all'}:${status || 'all'}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
@@ -222,13 +222,14 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const { walletAddress, orderIds } = body;
-
-        if (!walletAddress) {
-            return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
-            );
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            bodyWallet: walletAddress,
+            requireHeader: true,
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
+        const normalizedWallet = walletCheck.wallet;
 
         /**
          * CLOB STATUS CHECK
@@ -264,7 +265,7 @@ export async function POST(request: NextRequest) {
         const orders = await prisma.copyTrade.findMany({
             where: {
                 config: {
-                    walletAddress: walletAddress.toLowerCase(),
+                    walletAddress: normalizedWallet,
                 },
                 txHash: {
                     in: orderIds || undefined,

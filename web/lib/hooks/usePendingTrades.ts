@@ -75,7 +75,10 @@ export function usePendingTrades(walletAddress: string | undefined) {
         try {
             const response = await fetch('/api/copy-trading/execute', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-wallet-address': walletAddress.toLowerCase(),
+                },
                 body: JSON.stringify({
                     tradeId,
                     walletAddress,

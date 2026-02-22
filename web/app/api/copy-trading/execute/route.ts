@@ -10,6 +10,7 @@ import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 import { createTTLCache } from '@/lib/server-cache';
 import { getSpeedProfile } from '@/config/speed-profile';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
@@ -294,19 +295,28 @@ export async function POST(request: NextRequest) {
             slippage = 0.02,
         } = body;
 
-        if (!tradeId || !walletAddress) {
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            bodyWallet: walletAddress,
+            requireHeader: true,
+        });
+
+        if (!tradeId) {
             return NextResponse.json(
-                { error: 'Missing tradeId or walletAddress' },
+                { error: 'Missing tradeId' },
                 { status: 400 }
             );
         }
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
+        }
+        const normalizedWallet = walletCheck.wallet;
 
         // 先校验交易归属，避免跨钱包越权执行。
         const trade = await prisma.copyTrade.findFirst({
             where: {
                 id: tradeId,
                 config: {
-                    walletAddress: walletAddress.toLowerCase(),
+                    walletAddress: normalizedWallet,
                 },
             },
             include: {
@@ -338,7 +348,7 @@ export async function POST(request: NextRequest) {
                 : undefined;
             // 先用 amount=0 做“全局开关检查”（Kill-Switch / Dry-Run / Emergency Pause），
             // 这样能在初始化交易服务之前快速失败，减少无效开销。
-            const guardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, 0, {
+            const guardrail = await GuardrailService.checkExecutionGuardrails(normalizedWallet, 0, {
                 source: 'api',
                 workerAddress,
                 tradeId: trade.id,
@@ -385,7 +395,7 @@ export async function POST(request: NextRequest) {
             }
 
             // 再按真实交易金额做一次完整 guardrail 校验（额度、频率等）。
-            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(walletAddress, trade.copySize, {
+            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(normalizedWallet, trade.copySize, {
                 source: 'api',
                 workerAddress,
                 tradeId: trade.id,
@@ -442,7 +452,7 @@ export async function POST(request: NextRequest) {
                     GuardrailService.recordGuardrailTrigger({
                         reason: `ORDERBOOK_${orderbookGuard.reason}`,
                         source: 'api',
-                        walletAddress,
+                        walletAddress: normalizedWallet,
                         amount: trade.copySize,
                         tokenId: trade.tokenId || undefined,
                         tradeId: trade.id,
@@ -468,7 +478,7 @@ export async function POST(request: NextRequest) {
                 const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID) as ExecutionServiceWithAllowance;
                 const workerAddress = await signer.getAddress();
 
-                const proxyAddress = await executionService.resolveProxyAddress(walletAddress);
+                const proxyAddress = await executionService.resolveProxyAddress(normalizedWallet);
                 if (!proxyAddress) {
                     return NextResponse.json({
                         success: false,
@@ -510,7 +520,7 @@ export async function POST(request: NextRequest) {
                 // 避免把尚未资产归集完成的交易误记为最终成功。
                 const result = await executionService.executeOrderWithProxy({
                     tradeId: trade.id,
-                    walletAddress: walletAddress,
+                    walletAddress: normalizedWallet,
                     tokenId: trade.tokenId,
                     side: trade.originalSide as 'BUY' | 'SELL',
                     amount: trade.copySize, // In USDC
@@ -580,6 +590,13 @@ export async function POST(request: NextRequest) {
         }
 
         // === MANUAL EXECUTION (Frontend already executed) ===
+        if (status === 'executed' && !txHash) {
+            return NextResponse.json(
+                { error: 'txHash is required when marking trade as executed manually' },
+                { status: 400 }
+            );
+        }
+
         const executionStatus = status === 'executed' ? 'EXECUTED' :
             status === 'failed' ? 'FAILED' :
                 status === 'skipped' ? 'SKIPPED' : 'FAILED';
@@ -621,14 +638,13 @@ export async function GET(request: NextRequest) {
         }
 
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet');
-
-        if (!walletAddress) {
-            return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
-            );
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
+        const walletAddress = walletCheck.wallet;
 
         const cacheKey = `pending:${walletAddress.toLowerCase()}`;
         const responsePayload = await pendingTradesCache.getOrSet(cacheKey, PENDING_TRADES_TTL_MS, async () => {

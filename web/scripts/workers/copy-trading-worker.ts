@@ -24,6 +24,9 @@ import { createUnifiedCache } from '../../../sdk/src/core/unified-cache';
 import { PositionService } from '../../lib/services/position-service';
 import { GuardrailService } from '../../lib/services/guardrail-service';
 import { RealtimeServiceV2, ActivityTrade, MarketEvent } from '../../../sdk/src/services/realtime-service-v2';
+import { TokenMetadataService } from '../../../sdk/src/services/token-metadata-service';
+import { MarketService } from '../../../sdk/src/services/market-service';
+import { DataApiClient } from '../../../sdk/src/clients/data-api';
 import { GammaApiClient } from '../../../sdk/src/index';
 import { normalizeTradeSizing } from '../../../sdk/src/utils/trade-sizing.js';
 import { getSpeedProfile } from '../../config/speed-profile';
@@ -72,6 +75,9 @@ const tradingService = new TradingService(rateLimiter, cache, {
 const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID);
 const realtimeService = new RealtimeServiceV2({ autoReconnect: true });
 const gammaClient = new GammaApiClient(rateLimiter, cache);
+const dataApi = new DataApiClient(rateLimiter, cache);
+const marketService = new MarketService(gammaClient, dataApi, rateLimiter, cache);
+const tokenMetadataService = new TokenMetadataService(marketService, cache);
 
 // State
 let activeConfigs: any[] = [];
@@ -84,6 +90,19 @@ const toNumber = (value: any) => {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
 };
+
+function buildOriginalSignalId(
+    txHash: string | undefined,
+    tokenId: string,
+    side: string,
+    timestamp?: number
+): string {
+    if (txHash) {
+        return `${txHash.toLowerCase()}:${tokenId}:${side}`;
+    }
+    const ts = Number.isFinite(Number(timestamp)) ? Math.floor(Number(timestamp)) : 0;
+    return `local:${tokenId}:${side}:${ts}`;
+}
 
 const slippageStats = {
     count: 0,
@@ -325,105 +344,7 @@ function getDynamicMaxDeviation(params: {
     return { maxDeviation, tier, multiplier };
 }
 
-// Cache to prevent API spam and rate limits
-const metadataCache = new Map<string, { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; endDate?: string; volume?: number; timestamp: number }>();
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache (metadata rarely changes)
-
-async function getMarketMetadata(tokenId: string): Promise<{ marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; endDate?: string; volume?: number }> {
-    // 1. Check Cache
-    const cached = metadataCache.get(tokenId);
-    if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-        return cached;
-    }
-
-    try {
-        // 1. Get Condition ID from Orderbook (CLOB)
-        const orderbook = await tradingService.getOrderBook(tokenId) as any;
-        const conditionId = orderbook.market;
-
-        if (!conditionId) {
-            console.warn(`[Worker] ⚠️ No conditionId found in orderbook for ${tokenId}`);
-            return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
-        }
-
-        // 2. Get Market Details from CLOB Client
-        // Ensure initialized (usually is by startListener)
-        if (!tradingService.isInitialized()) await tradingService.initialize();
-        const client = tradingService.getClobClient();
-        if (!client) {
-            console.warn(`[Worker] ⚠️ CLOB client not available`);
-            return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
-        }
-
-        const market = await client.getMarket(conditionId) as any;
-
-        if (market) {
-            // 3. Determine Outcome
-            // ClobMarket tokens: [{token_id, outcome}, ...]
-            const tokenData = market.tokens?.find((t: any) => t.token_id === tokenId);
-            const outcome = tokenData?.outcome || 'Yes';
-            const slug = market.market_slug || '';
-            const question = market.question || '';
-            const endDate = market.end_date_iso || market.endDate;
-            const volume = Number(market.volume || market.volume24hr || 0);
-
-            const data = {
-                marketSlug: slug,
-                conditionId: conditionId,
-                outcome: outcome,
-                marketQuestion: question,
-                endDate,
-                volume
-            };
-            // Cache valid CLOB result
-            if (slug) metadataCache.set(tokenId, { ...data, timestamp: Date.now() });
-
-            return data;
-        }
-
-        return {
-            marketSlug: '',
-            conditionId: conditionId,
-            outcome: 'Yes',
-            marketQuestion: ''
-        };
-    } catch (e) {
-        console.warn(`[Worker] ⚠️ CLOB Metadata fetch failed for ${tokenId}, trying Gamma...`);
-    }
-
-    // 4. Fallback to Gamma API
-    try {
-        const orderbook = await tradingService.getOrderBook(tokenId) as any;
-        const conditionId = orderbook.market;
-
-        if (conditionId) {
-            const url = `${GAMMA_API_URL}/markets?condition_id=${conditionId}`;
-            const resp = await fetch(url);
-            if (resp.ok) {
-                const data = await resp.json();
-                let marketData: any = null;
-                if (Array.isArray(data) && data.length > 0) marketData = data[0];
-                else if (data.slug) marketData = data;
-
-                if (marketData) {
-                    const tokenData = (marketData.tokens || []).find((t: any) => (t.tokenId || t.token_id) === tokenId);
-                    return {
-                        marketSlug: marketData.slug || '',
-                        conditionId: conditionId,
-                        outcome: tokenData?.outcome || 'Yes',
-                        marketQuestion: marketData.question || '',
-                        endDate: marketData.endDate || marketData.end_date_iso,
-                        volume: Number(marketData.volume || marketData.volumeNum || 0)
-                    };
-                }
-            }
-        }
-    } catch (e) {
-        console.warn(`[Worker] ⚠️ Gamma Metadata fetch failed for ${tokenId}:`, e);
-    }
-
-    return { marketSlug: '', conditionId: '', outcome: 'Yes', marketQuestion: '' };
-}
+// Replaced getMarketMetadata logic with TokenMetadataService
 
 function calculateCopySize(config: any, originalSize: number, originalPrice: number): number {
     const originalValue = originalSize * originalPrice;
@@ -466,22 +387,38 @@ async function resolveConfigIdForPosition(walletAddress: string, tokenId: string
 // ============================================================================
 
 const SETTLEMENT_CACHE = new Set<string>();
+const SETTLEMENT_QUEUE: string[] = [];
+let isProcessingSettlement = false;
 
-async function handleMarketResolution(event: MarketEvent): Promise<void> {
+function handleMarketResolution(event: MarketEvent): void {
     if (event.type !== 'resolved') return;
 
     const conditionId = event.conditionId;
     if (SETTLEMENT_CACHE.has(conditionId)) return;
     SETTLEMENT_CACHE.add(conditionId);
 
-    console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}`);
+    console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}. Queueing for async settlement.`);
+    SETTLEMENT_QUEUE.push(conditionId);
+}
+
+async function processSettlementQueue() {
+    if (isProcessingSettlement || SETTLEMENT_QUEUE.length === 0) return;
+    isProcessingSettlement = true;
 
     try {
-        await resolvePositions(conditionId);
+        const conditionId = SETTLEMENT_QUEUE.shift();
+        if (conditionId) {
+            await resolvePositions(conditionId);
+        }
     } catch (error) {
-        console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
+        console.error(`   ❌ Failed to settle positions:`, error);
+    } finally {
+        isProcessingSettlement = false;
     }
 }
+
+// Start background settlement processor
+setInterval(processSettlementQueue, 5000);
 
 async function resolvePositions(conditionId: string): Promise<void> {
     console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
@@ -662,6 +599,11 @@ async function startListener() {
     await refreshConfigs();
     console.log(`[Worker] ⚡ Speed profile: ${speedProfile.name} | maxSpreadBps=${speedProfile.maxSpreadBps} | minDepthUsd=${speedProfile.minDepthUsd} | minDepthRatio=${speedProfile.minDepthRatio}`);
 
+    // Pre-warm token metadata cache to prevent event-loop blocking on first trades
+    await tokenMetadataService.prewarmCache();
+    // Refresh it every 10 minutes to catch newly created markets
+    setInterval(() => tokenMetadataService.prewarmCache(), 600000);
+
     // 2. Setup WebSocket Listener
     console.log('[Worker] 🔌 Connecting to Polymarket WebSocket...');
     realtimeService.connect();
@@ -771,7 +713,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         tokenId: tokenId,
                         copySize: 0,
                         copyPrice: leaderPrice,
-                        originalTxHash: txHash || `skip-${Date.now()}`,
+                        originalTxHash: buildOriginalSignalId(txHash, tokenId, side, trade.timestamp),
                         detectedAt: new Date(),
                         marketSlug: trade.marketSlug,
                         conditionId: trade.conditionId,
@@ -788,7 +730,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
             }
 
             // Calc Size
-            const copySizeUsdc = calculateCopySize(config, tradeShares, leaderPrice);
+            let copySizeUsdc = calculateCopySize(config, tradeShares, leaderPrice);
             if (copySizeUsdc <= 0) continue;
 
             // Get Strategy Parameters
@@ -804,18 +746,15 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
 
             console.log(`[Worker] 🚀 Auto-Executing for ${config.walletAddress}: ${copySide} $${copySizeUsdc.toFixed(2)} [${strategy.description.split('.')[0]}]`);
 
-            // 1.5 Fetch Metadata (Or use trade data if available)
-            // ActivityTrade has marketSlug and outcome!
-            let metadata: { marketSlug: string; conditionId: string; outcome: string; marketQuestion: string; endDate?: string; volume?: number } = {
+            // Fetch Token Metadata from fast prewarmed cache
+            let fetched = await tokenMetadataService.getMetadata(tokenId);
+            let metadata: { marketSlug: string; conditionId: string; outcome: string; endDate?: string; volume?: number } = {
                 marketSlug: trade.marketSlug || '',
                 conditionId: trade.conditionId || '',
-                outcome: trade.outcome || '',
-                marketQuestion: ''
+                outcome: trade.outcome || 'Yes'
             };
 
-            // If missing, try fetch (fallback)
-            if (!metadata.marketSlug || !metadata.conditionId) {
-                const fetched = await getMarketMetadata(tokenId);
+            if (fetched) {
                 metadata = { ...metadata, ...fetched };
             }
 
@@ -835,7 +774,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     copySize: copySizeUsdc,
                     copyPrice: marketPrice,
-                    originalTxHash: txHash || `auto-${Date.now()}`,
+                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                     detectedAt: new Date(),
                     marketSlug: metadata.marketSlug,
                     conditionId: metadata.conditionId,
@@ -869,7 +808,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         tokenId: tokenId,
                         copySize: copySizeUsdc,
                         copyPrice: marketPrice,
-                        originalTxHash: txHash || `skip-${Date.now()}`,
+                        originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                         detectedAt: new Date(),
                         marketSlug: metadata.marketSlug,
                         conditionId: metadata.conditionId,
@@ -894,7 +833,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         tokenId: tokenId,
                         copySize: copySizeUsdc,
                         copyPrice: marketPrice,
-                        originalTxHash: txHash || `skip-${Date.now()}`,
+                        originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                         detectedAt: new Date(),
                         marketSlug: metadata.marketSlug,
                         conditionId: metadata.conditionId,
@@ -915,7 +854,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     copySize: copySizeUsdc,
                     copyPrice: marketPrice,
-                    originalTxHash: txHash || `skip-${Date.now()}`,
+                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                     detectedAt: new Date(),
                     marketSlug: metadata.marketSlug,
                     conditionId: metadata.conditionId,
@@ -924,12 +863,26 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                 continue;
             }
 
-            const orderbookGuard = evaluateOrderbookGuardrails({
+            let orderbookGuard = evaluateOrderbookGuardrails({
                 orderbook: orderbookSnapshot.orderbook,
                 side: copySide as 'BUY' | 'SELL',
                 notionalUsd: copySizeUsdc,
                 profile: speedProfile,
             });
+
+            if (!orderbookGuard.allowed && orderbookGuard.reason?.startsWith('DEPTH_')) {
+                const safeDepthUsd = (orderbookGuard.depthUsd || 0) * 0.95; // 5% buffer
+                if (safeDepthUsd >= speedProfile.minDepthUsd && copySizeUsdc > safeDepthUsd) {
+                    console.warn(`[Worker] ⚠️ Orderbook depth low. Scaling down ${copySide} from $${copySizeUsdc.toFixed(2)} to $${safeDepthUsd.toFixed(2)}`);
+                    copySizeUsdc = safeDepthUsd;
+                    orderbookGuard = evaluateOrderbookGuardrails({
+                        orderbook: orderbookSnapshot.orderbook,
+                        side: copySide as 'BUY' | 'SELL',
+                        notionalUsd: copySizeUsdc,
+                        profile: speedProfile,
+                    });
+                }
+            }
 
             if (!orderbookGuard.allowed) {
                 console.warn(`[Worker] 🛑 Orderbook guardrail: ${orderbookGuard.reason}`);
@@ -949,7 +902,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     copySize: copySizeUsdc,
                     copyPrice: marketPrice,
-                    originalTxHash: txHash || `auto-${Date.now()}`,
+                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                     detectedAt: new Date(),
                     marketSlug: metadata.marketSlug,
                     conditionId: metadata.conditionId,
@@ -998,7 +951,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                             tokenId: tokenId,
                             copySize: copySizeUsdc,
                             copyPrice: marketPrice,
-                            originalTxHash: txHash || `auto-${Date.now()}`,
+                            originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                             detectedAt: new Date(),
                             marketSlug: metadata.marketSlug,
                             conditionId: metadata.conditionId,
@@ -1017,7 +970,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                             tokenId: tokenId,
                             copySize: copySizeUsdc,
                             copyPrice: marketPrice,
-                            originalTxHash: txHash || `auto-${Date.now()}`,
+                            originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                             detectedAt: new Date(),
                             marketSlug: metadata.marketSlug,
                             conditionId: metadata.conditionId,
@@ -1054,7 +1007,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                     tokenId: tokenId,
                     copySize: copySizeUsdc,
                     copyPrice: marketPrice,
-                    originalTxHash: txHash || `auto-${Date.now()}`, // Ensure unique if no txHash
+                    originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                     detectedAt: new Date(),
                     marketSlug: metadata.marketSlug,
                     conditionId: metadata.conditionId,
@@ -1079,7 +1032,7 @@ async function handleWebsocketTrade(trade: ActivityTrade) {
                         copySize: copySizeUsdc,
                         copyPrice: executionPrice,
                         status: 'PENDING', // Start as PENDING
-                        originalTxHash: txHash || `auto-${Date.now()}`,
+                        originalTxHash: buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
                         detectedAt: new Date(),
                         marketSlug: metadata.marketSlug,
                         conditionId: metadata.conditionId,

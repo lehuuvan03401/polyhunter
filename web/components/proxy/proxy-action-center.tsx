@@ -109,7 +109,10 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
                     // 1. API Update
                     await fetch('/api/copy-trading/config', {
                         method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-wallet-address': (user?.wallet?.address || config.traderAddress).toLowerCase(),
+                        },
                         body: JSON.stringify({
                             id: config.id,
                             walletAddress: user?.wallet?.address || config.traderAddress, // Use user wallet or fallback to traderAddress (unlikely correct fallback but ensures non-empty string)

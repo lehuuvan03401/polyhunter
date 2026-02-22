@@ -8,6 +8,7 @@ import { polyClient } from '@/lib/polymarket';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { EncryptionService } from '@/lib/encryption'; // Import EncryptionService
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 const redactConfigSecrets = (config: any) => {
     if (!config) return config;
@@ -30,14 +31,13 @@ const redactConfigSecrets = (config: any) => {
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
-        const walletAddress = searchParams.get('wallet');
-
-        if (!walletAddress) {
-            return NextResponse.json(
-                { error: 'Missing wallet address' },
-                { status: 400 }
-            );
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
+        const walletAddress = walletCheck.wallet;
 
         const configs = await prisma.copyTradingConfig.findMany({
             where: { walletAddress: walletAddress.toLowerCase() },
@@ -110,18 +110,27 @@ export async function POST(request: NextRequest) {
             apiPassphrase
         } = body;
 
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            bodyWallet: walletAddress,
+            requireHeader: true,
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
+        }
+
         // Validation
-        if (!walletAddress || !traderAddress) {
+        if (!traderAddress) {
             return NextResponse.json(
-                { error: 'Missing required fields: walletAddress, traderAddress' },
+                { error: 'Missing required field: traderAddress' },
                 { status: 400 }
             );
         }
+        const normalizedWallet = walletCheck.wallet;
 
         // Check if already copying this trader
         const existing = await prisma.copyTradingConfig.findFirst({
             where: {
-                walletAddress: walletAddress.toLowerCase(),
+                walletAddress: normalizedWallet,
                 traderAddress: traderAddress.toLowerCase(),
                 isActive: true,
             },
@@ -197,7 +206,7 @@ export async function POST(request: NextRequest) {
 
         const config = await prisma.copyTradingConfig.create({
             data: {
-                walletAddress: walletAddress.toLowerCase(),
+                walletAddress: normalizedWallet,
                 traderAddress: traderAddress.toLowerCase(),
                 traderName: finalTraderName || null,
                 mode: copyMode,
@@ -253,20 +262,26 @@ export async function DELETE(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const configId = searchParams.get('id');
-        const walletAddress = searchParams.get('wallet');
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            queryWallet: searchParams.get('wallet'),
+            requireHeader: true,
+        });
 
-        if (!configId || !walletAddress) {
+        if (!configId) {
             return NextResponse.json(
-                { error: 'Missing id or wallet address' },
+                { error: 'Missing id' },
                 { status: 400 }
             );
+        }
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
 
         // Verify ownership
         const config = await prisma.copyTradingConfig.findFirst({
             where: {
                 id: configId,
-                walletAddress: walletAddress.toLowerCase(),
+                walletAddress: walletCheck.wallet,
             },
         });
 
@@ -301,19 +316,26 @@ export async function PATCH(request: NextRequest) {
     try {
         const body = await request.json();
         const { id, walletAddress, ...updates } = body;
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            bodyWallet: walletAddress,
+            requireHeader: true,
+        });
 
-        if (!id || !walletAddress) {
+        if (!id) {
             return NextResponse.json(
-                { error: 'Missing id or wallet address' },
+                { error: 'Missing id' },
                 { status: 400 }
             );
+        }
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
 
         // Verify ownership
         const config = await prisma.copyTradingConfig.findFirst({
             where: {
                 id,
-                walletAddress: walletAddress.toLowerCase(),
+                walletAddress: walletCheck.wallet,
             },
         });
 

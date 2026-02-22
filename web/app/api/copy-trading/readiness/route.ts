@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, ERC20_ABI, USDC_DECIMALS, PROXY_FACTORY_ABI } from '@/lib/contracts/abis';
 import { GuardrailService } from '@/lib/services/guardrail-service';
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,9 +34,13 @@ const parseAddress = (input: string | null) => {
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
-    const walletParam = searchParams.get('wallet');
-    const walletAddress = parseAddress(walletParam);
-
+    const walletCheck = resolveCopyTradingWalletContext(request, {
+        queryWallet: searchParams.get('wallet'),
+    });
+    if (!walletCheck.ok) {
+        return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
+    }
+    const walletAddress = parseAddress(walletCheck.wallet);
     if (!walletAddress) {
         return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 });
     }

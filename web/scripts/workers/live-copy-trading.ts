@@ -21,15 +21,18 @@ import dotenv from 'dotenv';
 import { PrismaClient, CopyTradeStatus } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { RealtimeServiceV2 } from '../../../sdk/src/services/realtime-service-v2.ts';
-import type { ActivityTrade, MarketEvent } from '../../../sdk/src/services/realtime-service-v2.ts';
+import { RealtimeServiceV2 } from '../../../sdk/src/services/realtime-service-v2.js';
+import type { ActivityTrade, MarketEvent } from '../../../sdk/src/services/realtime-service-v2.js';
 import { GammaApiClient } from '../../../sdk/src/index';
+import { DataApiClient } from '../../../sdk/src/clients/data-api';
+import { MarketService } from '../../../sdk/src/services/market-service';
+import { TokenMetadataService } from '../../../sdk/src/services/token-metadata-service';
 import { RateLimiter } from '../../../sdk/src/core/rate-limiter';
 import { createUnifiedCache } from '../../../sdk/src/core/unified-cache';
 import { getStrategyConfig, StrategyProfile } from '../../../sdk/src/config/strategy-profiles';
 import { normalizeTradeSizing } from '../../../sdk/src/utils/trade-sizing.js';
-import { PositionTracker } from '../../../sdk/src/core/tracking/position-tracker.ts';
-import { CtfEventListener } from '../../../sdk/src/services/ctf-event-listener.ts';
+import { PositionTracker } from '../../../sdk/src/core/tracking/position-tracker.js';
+import { CtfEventListener } from '../../../sdk/src/services/ctf-event-listener.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,6 +99,10 @@ const prisma = new PrismaClient({ adapter, log: ['error'] });
 const rateLimiter = new RateLimiter();
 const cache = createUnifiedCache();
 const gammaClient = new GammaApiClient(rateLimiter, cache);
+const dataApi = new DataApiClient(rateLimiter, cache);
+const chainId = parseInt(process.env.CHAIN_ID || "31337");
+const marketService = new MarketService(gammaClient, dataApi, rateLimiter, cache, { chainId });
+const tokenMetadataService = new TokenMetadataService(marketService, cache);
 
 // --- TRACKING STATE ---
 // --- TRACKING STATE ---
@@ -361,58 +368,21 @@ async function enrichTradeMetadata(trade: ActivityTrade): Promise<{
         };
     }
 
-    let conditionId = trade.conditionId;
+    // Attempt to get from Metadata service
+    const meta = await tokenMetadataService.getMetadata(trade.asset);
 
-    // 1. If Condition ID is missing, fetch it from Orderbook
-    if (!conditionId) {
-        try {
-            const fetchUrl = `${CLOB_API_URL}/book?token_id=${trade.asset}`;
-            const resp = await fetch(fetchUrl);
-            if (resp.ok) {
-                const book = await resp.json();
-                // console.log(`[DEBUG] /book resp for ${trade.asset}:`, JSON.stringify(book));
-                conditionId = book.market; // 'market' field is conditionId
-                if (!conditionId) {
-                    console.warn(`[DEBUG] 'market' field missing in book for ${trade.asset}`);
-                }
-            } else {
-                console.warn(`[DEBUG] /book fetch failed: ${resp.status} ${resp.statusText}`);
-            }
-        } catch (e) {
-            console.warn(`Error fetching conditionId for ${trade.asset}:`, e);
-        }
+    if (meta) {
+        return {
+            marketSlug: meta.marketSlug,
+            conditionId: meta.conditionId,
+            outcome: meta.outcome
+        };
     }
 
-    // 2. Now try to fetch metadata via conditionId
-    if (conditionId) {
-        // Check cache first
-        if (marketCache.has(conditionId)) {
-            const cached = marketCache.get(conditionId)!;
-            const tokenOutcome = cached.tokens.find((t: any) => t.tokenId === trade.asset)?.outcome;
-            return {
-                marketSlug: cached.slug,
-                conditionId: conditionId,
-                outcome: tokenOutcome || trade.outcome || null
-            };
-        }
-
-        const market = await fetchMarketFromClob(conditionId);
-        if (market && market.slug) {
-            marketCache.set(conditionId, market);
-            const tokenOutcome = market.tokens.find((t: any) => t.tokenId === trade.asset)?.outcome;
-            console.log(`   📦 Fetched market metadata: ${market.slug}`);
-            return {
-                marketSlug: market.slug,
-                conditionId: conditionId,
-                outcome: tokenOutcome || trade.outcome || null
-            };
-        }
-    }
-
-    // Return whatever we have
+    // Return whatever we have if fallback fails
     return {
         marketSlug: trade.marketSlug || null,
-        conditionId: conditionId || null,
+        conditionId: trade.conditionId || null,
         outcome: trade.outcome || null
     };
 }
@@ -745,6 +715,8 @@ async function handleTrade(trade: ActivityTrade) {
 const SETTLEMENT_CACHE = new Set<string>();
 const SETTLED_TOKENS = new Set<string>();
 const SETTLEMENT_IN_FLIGHT = new Set<string>();
+const SETTLEMENT_QUEUE: string[] = [];
+let isProcessingSettlement = false;
 
 function startSettlement(tokenId: string): boolean {
     if (SETTLED_TOKENS.has(tokenId) || SETTLEMENT_IN_FLIGHT.has(tokenId)) return false;
@@ -759,21 +731,35 @@ function finishSettlement(tokenId: string, success: boolean): void {
     }
 }
 
-async function handleMarketResolution(event: MarketEvent): Promise<void> {
+function handleMarketResolution(event: MarketEvent): void {
     if (event.type !== 'resolved') return;
 
     const conditionId = event.conditionId;
     if (SETTLEMENT_CACHE.has(conditionId)) return;
     SETTLEMENT_CACHE.add(conditionId);
 
-    console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}`);
+    console.log(`\n⚖️ [Settlement] Market Resolved: ${conditionId}. Queueing for async settlement.`);
+    SETTLEMENT_QUEUE.push(conditionId);
+}
+
+async function processSettlementQueue() {
+    if (isProcessingSettlement || SETTLEMENT_QUEUE.length === 0) return;
+    isProcessingSettlement = true;
 
     try {
-        await resolveSimulatedPositions(conditionId);
+        const conditionId = SETTLEMENT_QUEUE.shift();
+        if (conditionId) {
+            await resolveSimulatedPositions(conditionId);
+        }
     } catch (error) {
-        console.error(`   ❌ Failed to settle positions for ${conditionId}:`, error);
+        console.error(`   ❌ Failed to settle positions:`, error);
+    } finally {
+        isProcessingSettlement = false;
     }
 }
+
+// Start background settlement processor
+setInterval(processSettlementQueue, 5000);
 
 async function resolveSimulatedPositions(conditionId: string): Promise<void> {
     console.log(`\n🔍 Resolving positions for condition ${conditionId}...`);
@@ -1253,6 +1239,11 @@ async function printSummary() {
 async function main() {
     // 1. Setup
     await seedConfig();
+
+    console.log('🔌 Pre-warming initial metadata cache... This might take ~5 seconds.');
+    await tokenMetadataService.prewarmCache();
+    // Re-hydrate mapping incrementally every 10 mins
+    setInterval(() => tokenMetadataService.prewarmCache(), 600000);
 
     // 2. Connect to WebSocket
     const realtimeService = new RealtimeServiceV2({

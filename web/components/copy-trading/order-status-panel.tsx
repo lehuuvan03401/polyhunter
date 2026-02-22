@@ -135,6 +135,9 @@ export function OrderStatusPanel({ walletAddress, className }: OrderStatusPanelP
         try {
             const response = await fetch(`/api/copy-trading/config?id=${configId}&wallet=${walletAddress}`, {
                 method: 'DELETE',
+                headers: {
+                    'x-wallet-address': walletAddress.toLowerCase(),
+                },
             });
 
             if (!response.ok) {
