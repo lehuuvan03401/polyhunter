@@ -16,6 +16,11 @@ export class TokenMetadataService {
     private cache: UnifiedCache;
     private isPrewarming: boolean = false;
     private memoryMap: Map<string, TokenMetadata> = new Map();
+    // Negative cache: tokens that failed to fetch are blocked from retrying for NEGATIVE_CACHE_TTL_MS
+    private failedFetchMap: Map<string, number> = new Map();
+    private static readonly NEGATIVE_CACHE_TTL_MS = 30_000; // 30 seconds
+    // In-flight deduplication: avoid parallel duplicate fetches for the same tokenId
+    private inflight: Map<string, Promise<TokenMetadata | null>> = new Map();
 
     constructor(marketService: MarketService, cache: UnifiedCache) {
         this.marketService = marketService;
@@ -102,15 +107,36 @@ export class TokenMetadataService {
             return this.memoryMap.get(tokenId)!;
         }
 
-        // 2. Redis/Unified Cache Check
+        // 2. Negative cache: don't retry recently-failed fetches
+        const failedAt = this.failedFetchMap.get(tokenId);
+        if (failedAt && Date.now() - failedAt < TokenMetadataService.NEGATIVE_CACHE_TTL_MS) {
+            return null; // Silent: we already logged the error when it first failed
+        }
+
+        // 3. In-flight deduplication: if already fetching, wait for that promise
+        if (this.inflight.has(tokenId)) {
+            return this.inflight.get(tokenId)!;
+        }
+
+        // 4. Redis/Unified Cache Check
         const cached = await this.cache.get<TokenMetadata>(`token_meta:${tokenId}`);
         if (cached) {
             this.memoryMap.set(tokenId, cached); // Hydrate local memory
             return cached;
         }
 
-        // 3. Fallback to API (Only happens for a token created *between* prewarm intervals)
+        // 5. Fallback to API (Only happens for a token created *between* prewarm intervals)
         console.log(`⚠️ [TokenMetadata] Cache miss for ${tokenId}, fetching dynamically...`);
+        const fetchPromise = this._fetchMetadataFromApi(tokenId);
+        this.inflight.set(tokenId, fetchPromise);
+        try {
+            return await fetchPromise;
+        } finally {
+            this.inflight.delete(tokenId);
+        }
+    }
+
+    private async _fetchMetadataFromApi(tokenId: string): Promise<TokenMetadata | null> {
         try {
             // Check Gamma API first for rich metadata
             const url = `${GAMMA_API_BASE}/markets?condition_id=${tokenId}`; // Actually conditionId mapping is complex, check token_id or use orderbook
@@ -170,6 +196,8 @@ export class TokenMetadataService {
             return meta;
         } catch (error) {
             console.error(`❌ [TokenMetadata] Failed to fetch metadata for ${tokenId}:`, error);
+            // Record failure in negative cache to prevent retry storms
+            this.failedFetchMap.set(tokenId, Date.now());
             // Fallback for missing simulated markets
             if (tokenId.startsWith('mock-')) {
                 return {

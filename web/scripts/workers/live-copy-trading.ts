@@ -11,7 +11,7 @@
  * 
  * Usage:
  * export $(grep -v '^#' .env | xargs)
- * MODE=1 npx tsx scripts/live-copy-trading.ts
+ * MODE=1 npx tsx scripts/workers/live-copy-trading.ts
  */
 
 import { fileURLToPath } from 'url';
@@ -98,7 +98,7 @@ console.log('DEBUG: DATABASE_URL loaded:', process.env.DATABASE_URL?.replace(/:[
 const connectionString = `${process.env.DATABASE_URL}`;
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter, log: ['error'] });
+const prisma = new PrismaClient({ adapter, log: [] });
 
 // --- SERVICES ---
 const rateLimiter = new RateLimiter();
@@ -111,16 +111,27 @@ const tokenMetadataService = new TokenMetadataService(marketService, cache);
 
 // Dummy trading service for orderbook lookups (simulation mode doesn't sign transactions)
 const fallbackTradingService = new TradingService(rateLimiter, cache, {
-    privateKey: '0xac0974bec39a17e36bad4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+    // Use the trading key from env (simulation mode won't submit real txs, but ethers validates key format)
+    privateKey: process.env.TRADING_PRIVATE_KEY!,
     chainId: chainId
 });
+
+// Relaxed speed profile for copy trading: skip spread check (btc-updown-5m markets
+// have wide spreads by design), but still enforce depth guardrails.
+const COPY_TRADING_SPEED_PROFILE = {
+    name: 'CopyTrading',
+    maxSpreadBps: 0,      // Disabled: leader already did price discovery for us
+    depthLevels: 3,
+    minDepthUsd: 5,       // $5 minimum depth (small trades)
+    minDepthRatio: 1.0,   // 1x depth vs trade size (relaxed)
+};
 
 const tradeOrchestrator = new TradeOrchestrator(
     null as any, // No ExecutionService needed for simulation
     tokenMetadataService,
     fallbackTradingService,
     prisma,
-    undefined,
+    COPY_TRADING_SPEED_PROFILE,
     false,
     true // isSimulation = true
 );
@@ -367,7 +378,10 @@ async function handleTrade(trade: ActivityTrade) {
     const result = await tradeOrchestrator.evaluateAndExecuteTrade(trade as any, configForExecution, fallbackTradingService);
 
     if (!result.executed) {
-        console.log(`\n⏭️  SKIPPED (${result.reason}): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+        // Suppress DUPLICATE_TX_HASH — expected race between CTF listener + WebSocket, not actionable
+        if (result.reason !== 'DUPLICATE_TX_HASH') {
+            console.log(`\n⏭️  SKIPPED (${result.reason}): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+        }
         return;
     }
 

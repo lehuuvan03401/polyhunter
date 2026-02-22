@@ -469,24 +469,36 @@ export class TradeOrchestrator {
         }
 
         // 8. Log the PENDING trade
-        const copyTrade = await this.prisma.copyTrade.create({
-            data: {
-                configId: config.id,
-                originalTrader: traderAddress,
-                originalSide: copySide,
-                leaderSide: side !== copySide ? side : undefined,
-                originalSize: tradeShares,
-                originalPrice: leaderPrice,
-                marketSlug: metadata.marketSlug,
-                conditionId: metadata.conditionId,
-                tokenId: tokenId,
-                outcome: metadata.outcome,
-                copySize: copySizeUsdc,
-                copyPrice: marketPrice,
-                originalTxHash: this.buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp),
-                detectedAt: new Date()
+        // Use upsert-style pattern: try create, on P2002 (race between CTF listener + WebSocket)
+        // fetch the existing record and reuse it to avoid duplicate execution.
+        const originalTxHash = this.buildOriginalSignalId(txHash, tokenId, copySide, trade.timestamp);
+        let copyTrade: any;
+        try {
+            copyTrade = await this.prisma.copyTrade.create({
+                data: {
+                    configId: config.id,
+                    originalTrader: traderAddress,
+                    originalSide: copySide,
+                    leaderSide: side !== copySide ? side : undefined,
+                    originalSize: tradeShares,
+                    originalPrice: leaderPrice,
+                    marketSlug: metadata.marketSlug,
+                    conditionId: metadata.conditionId,
+                    tokenId: tokenId,
+                    outcome: metadata.outcome,
+                    copySize: copySizeUsdc,
+                    copyPrice: marketPrice,
+                    originalTxHash,
+                    detectedAt: new Date()
+                }
+            });
+        } catch (e: any) {
+            if (e?.code === 'P2002') {
+                // Duplicate: another event source already inserted this trade — skip silently.
+                return { executed: false, reason: 'DUPLICATE_TX_HASH' };
             }
-        });
+            throw e;
+        }
 
         console.log(`[Orchestrator] 🚀 Dispatching Execution -> Tx: ${copyTrade.id}`);
 
