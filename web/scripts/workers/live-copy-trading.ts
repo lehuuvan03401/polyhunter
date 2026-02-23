@@ -77,6 +77,38 @@ const MAX_TRADE_SIZE = parseFloat(process.env.MAX_TRADE_SIZE || '100'); // $100 
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
 const CLOB_API_URL = 'https://clob.polymarket.com';
 
+// --- MARKET-AWARE LATENCY THRESHOLDS ---
+// Max tolerable detection delay before skipping a trade (simulates FOK rejection when price has moved)
+const LATENCY_THRESHOLDS: Array<{ pattern: RegExp; maxMs: number; label: string }> = [
+    { pattern: /btc-updown-5m/, maxMs: 2_000, label: '5m' },
+    { pattern: /btc-updown-15m/, maxMs: 5_000, label: '15m' },
+    { pattern: /btc-updown-1h/, maxMs: 15_000, label: '1h' },
+    { pattern: /.*/, maxMs: 30_000, label: 'other' }, // Events/news markets
+];
+
+// --- MARKET-TYPE SIZE CAPS ---
+// Shorter markets resolve faster → smaller stake, less risk if signal is stale
+const MARKET_SIZE_CAPS: Array<{ pattern: RegExp; maxUsdc: number }> = [
+    { pattern: /btc-updown-5m/, maxUsdc: 10 },
+    { pattern: /btc-updown-15m/, maxUsdc: 30 },
+    { pattern: /btc-updown-1h/, maxUsdc: 50 },
+    { pattern: /.*/, maxUsdc: MAX_TRADE_SIZE }, // Default for all other markets
+];
+
+function getMarketMaxSize(slug: string): number {
+    for (const rule of MARKET_SIZE_CAPS) {
+        if (rule.pattern.test(slug)) return rule.maxUsdc;
+    }
+    return MAX_TRADE_SIZE;
+}
+
+function getLatencyThreshold(slug: string): { maxMs: number; label: string } {
+    for (const rule of LATENCY_THRESHOLDS) {
+        if (rule.pattern.test(slug)) return { maxMs: rule.maxMs, label: rule.label };
+    }
+    return { maxMs: 30_000, label: 'other' };
+}
+
 // No validation needed - using local dev.db
 
 console.log('═══════════════════════════════════════════════════════════════');
@@ -116,14 +148,16 @@ const fallbackTradingService = new TradingService(rateLimiter, cache, {
     chainId: chainId
 });
 
-// Relaxed speed profile for copy trading: skip spread check (btc-updown-5m markets
-// have wide spreads by design), but still enforce depth guardrails.
+// Relaxed speed profile for copy trading: skip spread + depth checks.
+// - Spread: leader already did price discovery for us
+// - Depth: simulation uses a synthetic orderbook (depth = copySizeUsdc×10×leaderPrice)
+//   which is meaningless for guardrail purposes. Real depth is captured by getSimulationPrice().
 const COPY_TRADING_SPEED_PROFILE = {
     name: 'CopyTrading',
-    maxSpreadBps: 0,      // Disabled: leader already did price discovery for us
+    maxSpreadBps: 0,     // Disabled: see above
     depthLevels: 3,
-    minDepthUsd: 5,       // $5 minimum depth (small trades)
-    minDepthRatio: 1.0,   // 1x depth vs trade size (relaxed)
+    minDepthUsd: 0,      // Disabled: synthetic book depth is not meaningful
+    minDepthRatio: 0,    // Disabled: same reason
 };
 
 const tradeOrchestrator = new TradeOrchestrator(
@@ -151,6 +185,22 @@ let realizedPnL = 0;
 let totalFeesPaid = 0; // Accumulated Polymarket taker fees
 let budgetUsed = 0; // Track how much of budget has been used
 let tradesSkippedBudget = 0; // Track trades skipped due to budget
+
+// --- SIGNAL STATS ---
+const signalStats = {
+    total: 0,
+    ctf: 0,          // Detected by CTF on-chain listener
+    ws: 0,           // Detected by WebSocket activity feed
+    stale: 0,        // Skipped: detection latency exceeded threshold
+    noMeta: 0,       // Skipped: no token metadata
+    duplicate: 0,    // Skipped: duplicate tx hash (race condition)
+    executed: 0,     // Successfully executed
+    failed: 0,       // Execution failed (non-FOK)
+    fokRejected: 0,  // Simulated FOK rejection (insufficient depth)
+    latencySum: 0,   // Sum of all detection latencies (ms) for avg calculation
+    latencyCount: 0, // Count of valid latency readings
+};
+
 const startTime = Date.now();
 const seenTrades = new Set<string>();
 
@@ -260,6 +310,11 @@ async function seedConfig() {
             sizeScale: SCALE_FACTOR, // 100% of leader trades
             fixedAmount: FIXED_COPY_AMOUNT, // Fallback
             maxSizePerTrade: MAX_TRADE_SIZE, // Cap per trade
+            // NO_SELL: we don't mirror the leader's exits. For btc-updown-5m/15m markets,
+            // hold to expiry is optimal — winners auto-settle at $1/share via redemption.
+            // SELL signals would fail anyway (NO_CURRENT_POSITION) for leader's pre-existing
+            // positions that we never mirrored before the script started.
+            sellMode: 'NO_SELL',
             isActive: true,
         }
     });
@@ -286,11 +341,14 @@ function updatePositionOnSell(tokenId: string, shares: number, price: number): n
 // Obsolete functions (fetchMarketFromClob, enrichTradeMetadata, recordCopyTrade) removed because TradeOrchestrator handles metadata and DB recording natively.
 
 // --- TRADE HANDLER ---
-async function handleTrade(trade: ActivityTrade) {
+async function handleTrade(trade: ActivityTrade, source: 'CTF' | 'WS' = 'WS') {
     const traderAddress = trade.trader?.address?.toLowerCase();
     const targetLower = TARGET_TRADER.toLowerCase();
 
     if (traderAddress !== targetLower) return;
+
+    signalStats.total++;
+    if (source === 'CTF') signalStats.ctf++; else signalStats.ws++;
 
     // // Filter for 15m Options only (as requested by User)
     // if (!trade.marketSlug?.includes('-15m-')) {
@@ -320,7 +378,29 @@ async function handleTrade(trade: ActivityTrade) {
 
     // Skip trades without conditionId (can't get metadata)
     if (!trade.conditionId && !trade.marketSlug) {
+        signalStats.noMeta++;
         console.log(`\n⏭️  SKIPPED (no metadata): tokenId ${trade.asset.slice(0, 20)}...`);
+        return;
+    }
+
+    // --- LATENCY FILTER ---
+    // Skip signals that are too stale for the given market type (simulates FOK rejection)
+    const detectionLatencyMs = trade.timestamp
+        ? Math.max(0, Date.now() - (trade.timestamp > 1e10 ? trade.timestamp : trade.timestamp * 1000))
+        : 0;
+    if (detectionLatencyMs > 0) {
+        signalStats.latencySum += detectionLatencyMs;
+        signalStats.latencyCount++;
+    }
+    const slug = trade.marketSlug || '';
+    const latencyThreshold = getLatencyThreshold(slug);
+    if (detectionLatencyMs > latencyThreshold.maxMs) {
+        signalStats.stale++;
+        // Only log 1 in 10 stale skips to avoid spam
+        if (signalStats.stale % 10 === 1) {
+            const latStr = detectionLatencyMs >= 1000 ? `${(detectionLatencyMs / 1000).toFixed(1)}s` : `${detectionLatencyMs}ms`;
+            console.log(`⏭️  STALE_SIGNAL (${latStr} > ${latencyThreshold.maxMs / 1000}s limit for ${latencyThreshold.label}): ${slug.substring(0, 40)}`);
+        }
         return;
     }
 
@@ -358,7 +438,17 @@ async function handleTrade(trade: ActivityTrade) {
         return;
     }
 
-    // --- BUDGET-CONSTRAINED SIZING CAPPED BY OVERRIDE ---
+    // --- SKIP SELL SIGNALS (NO_SELL mode) ---
+    // We hold all positions to expiry (binary market settlement at $1/$0).
+    // Silently skip SELL signals here — avoids NO_CURRENT_POSITION spam from the orchestrator
+    // for positions the leader opened before this session started.
+    if (trade.side === 'SELL') {
+        signalStats.duplicate++; // Count as deduped/ignored, not failed
+        return;
+    }
+
+    // --- BUDGET-CONSTRAINED SIZING CAPPED BY MARKET TYPE ---
+    const marketMaxSize = getMarketMaxSize(slug);
     let configForExecution = { ...activeConfig };
     if (COPY_MODE === 'BUDGET_CONSTRAINED' || COPY_MODE === 'PERCENTAGE') {
         if (trade.side === 'BUY') {
@@ -368,7 +458,8 @@ async function handleTrade(trade: ActivityTrade) {
                 tradesSkippedBudget++;
                 return;
             }
-            configForExecution.maxSizePerTrade = Math.min(MAX_TRADE_SIZE, remainingBudget);
+            // Apply the tighter of: remaining budget, market type cap, global cap
+            configForExecution.maxSizePerTrade = Math.min(marketMaxSize, remainingBudget);
         } else {
             configForExecution.maxSizePerTrade = MAX_TRADE_SIZE;
         }
@@ -379,8 +470,13 @@ async function handleTrade(trade: ActivityTrade) {
     const result = await tradeOrchestrator.evaluateAndExecuteTrade(trade as any, configForExecution, fallbackTradingService);
 
     if (!result.executed) {
-        // Suppress DUPLICATE_TX_HASH — expected race between CTF listener + WebSocket, not actionable
-        if (result.reason !== 'DUPLICATE_TX_HASH') {
+        if (result.reason === 'DUPLICATE_TX_HASH') {
+            signalStats.duplicate++;
+        } else if (result.reason === 'SIM_FOK_REJECTED') {
+            signalStats.fokRejected++;
+            console.log(`\n❌ FOK REJECTED: ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
+        } else {
+            signalStats.failed++;
             console.log(`\n⏭️  SKIPPED (${result.reason}): ${trade.marketSlug || trade.asset.substring(0, 20)}...`);
         }
         return;
@@ -391,6 +487,7 @@ async function handleTrade(trade: ActivityTrade) {
 
     if (dedupeKey) seenTrades.add(dedupeKey);
     tradesRecorded++;
+    signalStats.executed++;
 
     // Track simulated metrics
     let tradePnL: number | undefined = undefined;
@@ -399,7 +496,11 @@ async function handleTrade(trade: ActivityTrade) {
     let remainingLine: string | null = null;
 
     if (execSide === 'BUY') {
-        updatePositionOnBuy(tokenId, copyShares, execPrice, trade.marketSlug || '', trade.outcome || '', trade.conditionId || undefined);
+        // Use actual cost per share (copyAmount / copyShares) instead of VWAP execPrice.
+        // This ensures tracker.costUSDC exactly equals the USDC amount spent,
+        // preventing inflated loss calculations during settlement.
+        const trueAvgCost = copyShares > 0 ? copyAmount / copyShares : execPrice;
+        updatePositionOnBuy(tokenId, copyShares, trueAvgCost, trade.marketSlug || '', trade.outcome || '', trade.conditionId || undefined);
         totalBuyVolume += copyAmount;
         budgetUsed += copyAmount; // Track budget usage
         const pos = tracker.metrics(tokenId);
@@ -441,11 +542,12 @@ async function handleTrade(trade: ActivityTrade) {
     const budgetPercent = ((budgetUsed / MAX_BUDGET) * 100).toFixed(1);
 
     console.log('\\n🎯 ═══════════════════════════════════════════════════════════');
-    console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded})`);
+    const sourceLabel = source === 'CTF' ? '[CTF⛓️]' : '[WS📡]';
+    console.log(`   [${elapsed}s] COPY TRADE EXECUTED (#${tradesRecorded}) ${sourceLabel}`);
     console.log('   ───────────────────────────────────────────────────────────');
     console.log(`   ⏰ ${now.toISOString()}`);
     console.log(`   📊 Leader: ${trade.size.toFixed(2)} shares ($${(trade.size * trade.price).toFixed(2)})`);
-    console.log(`   📊 Copy:   ${execSide} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)})`);
+    console.log(`   📊 Copy:   ${execSide} ${copyShares.toFixed(2)} shares ($${copyAmount.toFixed(2)}) | Cap: $${marketMaxSize}`);
     // Price line: show real slippage vs leader if available
     const slippageStr = (slippageBps !== undefined && slippageBps !== null)
         ? ` | Slippage: ${slippageBps >= 0 ? '+' : ''}${slippageBps} bps`
@@ -996,6 +1098,31 @@ async function printSummary() {
     console.log('═══════════════════════════════════════════════════════════════\n');
 }
 
+// --- LIVE STATS (every 60s) ---
+function printLiveStats() {
+    const uptimeMin = ((Date.now() - startTime) / 60000).toFixed(1);
+    const total = signalStats.total;
+    const hitRate = total > 0 ? ((signalStats.executed / total) * 100).toFixed(1) : '0.0';
+    const staleRate = total > 0 ? ((signalStats.stale / total) * 100).toFixed(1) : '0.0';
+    const avgLatencyMs = signalStats.latencyCount > 0
+        ? (signalStats.latencySum / signalStats.latencyCount)
+        : 0;
+    const avgLatStr = avgLatencyMs >= 1000
+        ? `${(avgLatencyMs / 1000).toFixed(1)}s`
+        : `${avgLatencyMs.toFixed(0)}ms`;
+    const budgetPct = ((budgetUsed / MAX_BUDGET) * 100).toFixed(1);
+
+    const fokRate = total > 0 ? ((signalStats.fokRejected / total) * 100).toFixed(1) : '0.0';
+
+    console.log(`\n📊 [${uptimeMin}m] SESSION STATS`);
+    console.log(`   Signals:   ${total} total | CTF⛓️ ${signalStats.ctf} / WS📡 ${signalStats.ws}`);
+    console.log(`   Executed:  ${signalStats.executed} (${hitRate}%) | Failed/Skip: ${signalStats.failed}`);
+    console.log(`   FOK Reject:${signalStats.fokRejected} (${fokRate}%) | Stale: ${signalStats.stale} (${staleRate}%) | Dupes: ${signalStats.duplicate}`);
+    console.log(`   Latency:   avg ${avgLatStr} (incl ~2.5s exec delay)`);
+    console.log(`   Budget:    $${budgetUsed.toFixed(2)} / $${MAX_BUDGET} used (${budgetPct}%)`);
+    console.log(`   Fees:      -$${totalFeesPaid.toFixed(3)} taker | PnL: $${(realizedPnL - totalFeesPaid).toFixed(3)}`);
+}
+
 // --- MAIN ---
 async function main() {
     // 1. Setup
@@ -1026,7 +1153,7 @@ async function main() {
         }
         console.log('🔌 Initializing CTF Event Listener (Safety Net)...');
         eventListener = new CtfEventListener(polygonRpc, TARGET_TRADER);
-        eventListener.start(handleTrade);
+        eventListener.start((trade) => handleTrade(trade, 'CTF'));
     }
 
     if (polygonRpc) {
@@ -1124,15 +1251,11 @@ async function main() {
     console.log(`🎧 Live Trading started - tracking ${filterLabel}...`);
     console.log(`   (Will run for ${(SIMULATION_DURATION_MS / 1000 / 60).toFixed(0)} minutes)\n`);
 
-    // 4. Progress updates
+    // 4. Live stats every 60s (signal quality dashboard)
     const progressInterval = setInterval(async () => {
-        const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
-        const remaining = ((SIMULATION_DURATION_MS - (Date.now() - startTime)) / 1000 / 60).toFixed(1);
-        console.log(`⏱️  Progress: ${elapsed}min elapsed, ${remaining}min remaining | Trades: ${tradesRecorded}`);
-
-        // Process Redemptions periodically
+        printLiveStats();
         await processRedemptions();
-    }, 60000); // Every minute
+    }, 60000);
 
     // 5. Run for configured duration
     await new Promise(resolve => setTimeout(resolve, SIMULATION_DURATION_MS));

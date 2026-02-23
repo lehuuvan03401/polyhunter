@@ -83,7 +83,7 @@ export class TradeOrchestrator {
         side: 'BUY' | 'SELL';
         copySizeUsdc: number;
         leaderPrice: number;
-    }): Promise<{ execPrice: number; slippageBps: number; fromClob: boolean }> {
+    }): Promise<{ execPrice: number; slippageBps: number; fromClob: boolean; fillRatio: number; depthUsdc: number }> {
         const { tokenId, side, copySizeUsdc, leaderPrice } = params;
         try {
             const controller = new AbortController();
@@ -124,10 +124,13 @@ export class TradeOrchestrator {
                 ? Math.round(((vwap - leaderPrice) / leaderPrice) * 10000)
                 : 0;
 
-            return { execPrice: vwap, slippageBps, fromClob: true };
+            // Fill ratio: 1.0 = fully filled, <1.0 = insufficient depth for FOK
+            const fillRatio = copySizeUsdc > 0 ? Math.min(1.0, totalUsdc / copySizeUsdc) : 1.0;
+
+            return { execPrice: vwap, slippageBps, fromClob: true, fillRatio, depthUsdc: totalUsdc };
         } catch (e: any) {
-            // CLOB unavailable — fall back to leader price silently
-            return { execPrice: leaderPrice, slippageBps: 0, fromClob: false };
+            // CLOB unavailable — fall back to leader price silently (assume full fill)
+            return { execPrice: leaderPrice, slippageBps: 0, fromClob: false, fillRatio: 1.0, depthUsdc: copySizeUsdc };
         }
     }
 
@@ -514,8 +517,13 @@ export class TradeOrchestrator {
             }
         }
 
-        // 7.SELL Guard
-        if (copySide === 'SELL' || config.sellMode === 'NO_SELL') {
+        // 7. SELL Guard — only applies when we are actually executing a SELL
+        if (copySide === 'SELL') {
+            // If configured to never sell, silently skip before even checking positions
+            if (config.sellMode === 'NO_SELL') {
+                return { executed: false, reason: 'NO_SELL_CONFIGURED' };
+            }
+
             const positions = await this.prisma.userPosition.findMany({
                 where: { walletAddress: config.walletAddress.toLowerCase(), tokenId: tokenId, balance: { gt: 0 } }
             });
@@ -539,9 +547,7 @@ export class TradeOrchestrator {
                 return { executed: false, reason: 'NO_CURRENT_POSITION' };
             }
 
-            if (config.sellMode === 'NO_SELL') {
-                return { executed: false, reason: 'NO_SELL_CONFIGURED' }; // Silently skip
-            } else if (config.sellMode === 'CLOSE_ALL') {
+            if (config.sellMode === 'CLOSE_ALL') {
                 const totalShares = positions.reduce((acc, p) => acc + p.balance, 0);
                 copySizeUsdc = totalShares * marketPrice;
             }
@@ -591,25 +597,91 @@ export class TradeOrchestrator {
         if (this.isSimulation) {
             console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
 
-            // Realistic price: fetch live CLOB public orderbook and compute VWAP
+            // --- Step 1: Initial price check (CLOB VWAP) ---
             const simPrice = await this.getSimulationPrice({
                 tokenId,
                 side: copySide as 'BUY' | 'SELL',
                 copySizeUsdc,
                 leaderPrice,
             });
+
+            // --- Step 2: FOK Rejection Simulation ---
+            // Real Polymarket uses Fill-Or-Kill: if the orderbook can't fill the full order,
+            // the entire order is rejected. Simulate this when fill ratio < 95%.
+            if (simPrice.fromClob && simPrice.fillRatio < 0.95) {
+                console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED: depth $${simPrice.depthUsdc.toFixed(2)} < order $${copySizeUsdc.toFixed(2)} (fill: ${(simPrice.fillRatio * 100).toFixed(0)}%)`);
+
+                // Update DB record to FAILED
+                await this.prisma.copyTrade.update({
+                    where: { id: copyTrade.id },
+                    data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED (fill ${(simPrice.fillRatio * 100).toFixed(0)}%)` }
+                });
+                return { executed: false, reason: 'SIM_FOK_REJECTED' };
+            }
+
             execPrice = simPrice.execPrice;
             simSlippageBps = simPrice.slippageBps;
+
+            // --- Step 3: Execution Delay Simulation ---
+            // Real chain submission takes 1-4 seconds. During this time, the price may drift.
+            const execDelayMs = 1000 + Math.random() * 3000; // 1-4 seconds
+
+            // --- Step 4: Post-Delay FOK Check ---
+            // In real trading, you submit a LIMIT order at ~initialVWAP + slippage tolerance.
+            // If the market moves beyond your tolerance during the 1-4s submission window,
+            // the order is REJECTED (FOK failure) — you do NOT get filled at the drifted price.
+            // The execution price remains the initial VWAP (the price your order was submitted at).
+            const postDelayPrice = await this.getSimulationPrice({
+                tokenId,
+                side: copySide as 'BUY' | 'SELL',
+                copySizeUsdc,
+                leaderPrice,
+            });
+
+            if (postDelayPrice.fromClob) {
+                // Check if price drifted beyond slippage tolerance
+                const slippageTolerance = (config.maxSlippage ?? 2.0) / 100; // e.g. 2% → 0.02
+                const priceDrift = Math.abs(postDelayPrice.execPrice - execPrice) / execPrice;
+
+                if (priceDrift > slippageTolerance) {
+                    console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (price drift ${(priceDrift * 100).toFixed(1)}% > ${(slippageTolerance * 100).toFixed(1)}% tolerance): $${execPrice.toFixed(4)} → $${postDelayPrice.execPrice.toFixed(4)}`);
+                    await this.prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: { status: 'FAILED' as any, errorMessage: `SIM_PRICE_DRIFT_${(priceDrift * 100).toFixed(0)}PCT` }
+                    });
+                    return { executed: false, reason: 'SIM_FOK_REJECTED' };
+                }
+
+                // Post-delay depth check: depth may have decreased during delay
+                if (postDelayPrice.fillRatio < 0.95) {
+                    console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (post-delay depth): fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%`);
+                    await this.prisma.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED_POST_DELAY (fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%)` }
+                    });
+                    return { executed: false, reason: 'SIM_FOK_REJECTED' };
+                }
+
+                // Within tolerance: apply a small realistic price impact (half of drift)
+                // since some movement is expected but you wouldn't get the full adverse move
+                if (copySide === 'BUY' && postDelayPrice.execPrice > execPrice) {
+                    execPrice += (postDelayPrice.execPrice - execPrice) * 0.3; // 30% of adverse move
+                } else if (copySide === 'SELL' && postDelayPrice.execPrice < execPrice) {
+                    execPrice -= (execPrice - postDelayPrice.execPrice) * 0.3;
+                }
+            }
 
             // Taker fee: 0.1% of collateral spent
             simFeePaid = copySizeUsdc * POLYMARKET_TAKER_FEE_RATE;
 
-            // Detection latency: time from leader's trade to now
+            // Total simulated latency: detection + execution delay
             if (trade.timestamp) {
                 const leaderTs = trade.timestamp > 1e10  // ms vs s
                     ? trade.timestamp
                     : trade.timestamp * 1000;
-                simLatencyMs = Math.max(0, Date.now() - leaderTs);
+                simLatencyMs = Math.max(0, Date.now() - leaderTs) + execDelayMs;
+            } else {
+                simLatencyMs = execDelayMs;
             }
 
             result = {
@@ -679,11 +751,12 @@ export class TradeOrchestrator {
         if (result.success && result.transactionHashes && result.transactionHashes.length > 0) {
             console.log(`[Orchestrator] ✅ Trade Executed: ${result.transactionHashes[0]}`);
 
-            // DB Record position
-            const shares = copySide === 'BUY' ? copySizeUsdc / marketPrice : -(copySizeUsdc / marketPrice);
+            // DB Record position — use execPrice (real or simulated VWAP) for shares & avgEntry
+            const shares = copySide === 'BUY' ? copySizeUsdc / execPrice : -(copySizeUsdc / execPrice);
+            const totalCostInsert = copySide === 'BUY' ? copySizeUsdc : 0;
             await this.prisma.$executeRaw`
                 INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "totalCost", "avgEntryPrice", "updatedAt")
-                VALUES (gen_random_uuid(), ${config.walletAddress.toLowerCase()}, ${tokenId}, ${shares}, ${side === 'BUY' ? copySizeUsdc : 0}, ${marketPrice}, CURRENT_TIMESTAMP)
+                VALUES (gen_random_uuid(), ${config.walletAddress.toLowerCase()}, ${tokenId}, ${shares}, ${totalCostInsert}, ${execPrice}, CURRENT_TIMESTAMP)
                 ON CONFLICT ("walletAddress", "tokenId") 
                 DO UPDATE SET 
                     "balance" = GREATEST("UserPosition"."balance" + EXCLUDED."balance", 0),
