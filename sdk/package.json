@@ -70,7 +70,9 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "@types/jest": "^30.0.0",
     "tailwindcss": "^4.1.18",
+    "ts-jest": "^29.4.6",
     "tsx": "^4.7.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

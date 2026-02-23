@@ -33,6 +33,7 @@ export interface ExecutionParams {
     deferSettlement?: boolean; // Optional: defer settlement transfers (async queue)
     allowBotFloat?: boolean; // Optional: disable float usage (force proxy-funded path)
     deferReimbursement?: boolean; // Optional: defer reimbursement (ledger batching)
+    allowPartialFill?: boolean; // Optional: allow scaling down the order if FOK fails (defaults to true for SELL)
 }
 
 export interface ExecutionResult {
@@ -48,6 +49,8 @@ export interface ExecutionResult {
     usedBotFloat?: boolean;
     proxyAddress?: string;
     settlementDeferred?: boolean;
+    executedAmount?: number; // The actual amount that was successfully executed (may be less than requested if scaled down)
+    scaledDown?: boolean; // Flag indicating if the order was scaled down due to FOK failure
 }
 
 export interface AllowanceCheckResult {
@@ -667,39 +670,85 @@ export class CopyTradingExecutionService {
             return { success: false, error: `Proxy prep failed: ${getErrorMessage(e)}`, usedBotFloat, proxyAddress };
         }
 
-        // 3) CLOB 下单：
+        // 3) CLOB 下单 - 带降级重试逻辑 (FOK Fallback Scale-down)
         // 统一使用 MARKET + FOK，保证“要么全成，要么全撤”，避免复制单产生残单状态。
+        // 如果 FOK 失败（通常是深度不足导致），允许进行降级（默认 SELL 订单或明确开启 allowPartialFill 时生效）。
         let orderResult;
-        try {
-            // 动态滑点只在 AUTO 模式启用；最终值还会被 maxSlippage 上限裁剪。
-            let finalSlippage = slippage;
-            if (params.slippageMode === 'AUTO') {
-                const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, amount, price, orderbook);
-                finalSlippage = Math.min(calculatedSlippage, params.maxSlippage ? (params.maxSlippage / 100) : 0.05);
+        let attemptAmount = amount;
+        let finalExecutionPrice = price; // Store the exact price used
+        let scaledDown = false;
+
+        // Retry scaling factors: 100%, 75%, 50%
+        const scaleFactors = (side === 'SELL' || params.allowPartialFill) ? [1.0, 0.75, 0.5] : [1.0];
+
+        let executionError: unknown = null;
+
+        for (const scale of scaleFactors) {
+            try {
+                attemptAmount = amount * scale;
+                if (scale < 1.0) {
+                    scaledDown = true;
+                    console.log(`[CopyExec] ⚠️ Retrying ${side} order with scaled-down amount: ${(scale * 100).toFixed(0)}% -> $${attemptAmount.toFixed(2)}`);
+                }
+
+                // 动态滑点只在 AUTO 模式启用；最终值还会被 maxSlippage 上限裁剪。
+                let finalSlippage = slippage;
+                if (params.slippageMode === 'AUTO') {
+                    const calculatedSlippage = await this.calculateDynamicSlippage(tokenId, side, attemptAmount, price, orderbook);
+                    finalSlippage = Math.min(calculatedSlippage, params.maxSlippage ? (params.maxSlippage / 100) : 0.05);
+                }
+
+                finalExecutionPrice = side === 'BUY' ? price * (1 + finalSlippage) : price * (1 - finalSlippage);
+                const orderShares = side === 'BUY' ? attemptAmount : attemptAmount / price;
+
+                console.log(`[CopyExec] Placing MARKET FOK order. Size: ${orderShares.toFixed(4)}, Price: ${finalExecutionPrice}`);
+
+                // 下单关键点：
+                // 1. 使用 Market Order 确保立即执行
+                // 2. 传入 price 作为保护 (Slippage Cap)
+                // 3. 强制 FOK (Fill-Or-Kill)：要么全部成交，要么完全失败。不留残单 (Partial Fill Risk)。
+                orderResult = await execService.createMarketOrder({
+                    tokenId,
+                    side,
+                    amount: orderShares,
+                    price: finalExecutionPrice,
+                    orderType: 'FOK',
+                });
+
+                // If we get here without throwing, the order succeeded (or failed gracefully but didn't throw)
+                if (orderResult.success) {
+                    executionError = null;
+                    break; // Exit retry loop on success
+                } else {
+                    // Record the error msg and try next scale factor
+                    executionError = new Error(orderResult.errorMsg || "Order failed (FOK)");
+                    if (orderResult.errorMsg?.includes('Fill-or-kill')) {
+                        console.warn(`[CopyExec] FOK rejection at ${scale * 100}% scale. Attempting further scale-down if available.`);
+                    } else {
+                        break; // For non-liquidity/FOK errors, don't retry scale down
+                    }
+                }
+
+            } catch (err: unknown) {
+                executionError = err;
+                const errMessage = getErrorMessage(err).toLowerCase();
+                // Typically Polymarket API throws FOK errors or Slippage errors when depth is insufficient
+                if (errMessage.includes('fill') || errMessage.includes('kill') || errMessage.includes('liquidity') || errMessage.includes('slippage')) {
+                    console.warn(`[CopyExec] FOK rejection caught at ${scale * 100}% scale. Attempting further scale-down if available.`);
+                    continue; // Try next scale factor
+                } else {
+                    break; // For other hard errors (e.g. auth, api down), break immediately
+                }
             }
+        }
 
-            const executionPrice = side === 'BUY' ? price * (1 + finalSlippage) : price * (1 - finalSlippage);
-            const orderAmount = side === 'BUY' ? amount : amount / price;
+        // If after all retries it still failed (or didn't succeed), rollback
+        if (!orderResult || !orderResult.success) {
+            const errMessage = executionError ? getErrorMessage(executionError) : (orderResult?.errorMsg || "Order failed (FOK) after retries");
 
-            console.log(`[CopyExec] Placing MARKET FOK order. Size: ${orderAmount.toFixed(4)}, Price: ${executionPrice}`);
-
-            // 下单关键点：
-            // 1. 使用 Market Order 确保立即执行
-            // 2. 传入 price 作为保护 (Slippage Cap)
-            // 3. 强制 FOK (Fill-Or-Kill)：要么全部成交，要么完全失败。不留残单 (Partial Fill Risk)。
-            orderResult = await execService.createMarketOrder({
-                tokenId,
-                side,
-                amount: orderAmount,
-                price: executionPrice,
-                orderType: 'FOK',
-            });
-
-        } catch (err: unknown) {
-            const errMessage = getErrorMessage(err);
             // 下单异常后立即回滚，把此前资金准备阶段搬出的资产退回 Proxy。
             if (useProxyFunds) {
-                console.log(`[CopyExec] ⚠️ Order Failed. refunding...`);
+                console.log(`[CopyExec] ⚠️ Order Failed. refunding... (${errMessage})`);
                 await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
                     if (side === 'BUY') {
                         await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer, params.overrides);
@@ -709,7 +758,7 @@ export class CopyTradingExecutionService {
                     }
                 });
             }
-            return { success: false, error: errMessage || 'Execution error', useProxyFunds, usedBotFloat };
+            return { success: false, error: errMessage, useProxyFunds: useProxyFunds || usedBotFloat, usedBotFloat };
         }
 
         if (!orderResult.success) {
@@ -741,29 +790,31 @@ export class CopyTradingExecutionService {
             await this.runWithProxyMutex(proxyAddress, 'settlement', async () => {
                 if (usedBotFloat && side === 'BUY') {
                     // 浮资 BUY：先把买到的 token 归位到 proxy。
-                    const sharesBought = amount / price;
+                    // 注意：这里需要使用 attemptAmount (可能已降级)，而不是原始 amount
+                    const sharesBought = attemptAmount / price;
                     const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
                     if (pushResult.success) tokenPushTxHash = pushResult.txHash;
 
                     if (deferReimbursement) {
                         console.log('[CopyExec] ⏱️ Deferring reimbursement (ledger batching enabled).');
+                        // Refund the unused float if we scaled down
+                        if (scaledDown) {
+                            // nothing to refund to proxy, the unused float stays in bot
+                        }
                         return;
                     }
 
-                    // 报销策略：仅当 bot 余额跌破 buffer 才回补，减少链上交易频率。
-                    // 策略优化：如果 Bot 余额还很充裕 (Buffer > 50 USDC)，暂不发起链上报销。
-                    // 这能节省 50% 的 On-Chain TX，极大提升连续下单速度。
-                    // 只有当 Bot "钱包瘪了" 时才触发报销补货。
+                    // 报销策略：回补确切花费的资金 attemptAmount
                     const MIN_BOT_BUFFER = 50;
-                    const projectedBalance = (Number(botBalance) || 0) - amount;
+                    const projectedBalance = (Number(botBalance) || 0) - attemptAmount;
 
                     if (projectedBalance > MIN_BOT_BUFFER) {
                         console.log(`[CopyExec] ⚡️ SmartBuffer: Deferring reimbursement. Bot has $${projectedBalance.toFixed(2)} (>$${MIN_BOT_BUFFER}). Saving 1 TX.`);
                         return;
                     }
 
-                    console.log(`[CopyExec] 📉 Low Buffer ($${projectedBalance.toFixed(2)}). Triggering Reimbursement...`);
-                    const reimbursement = await this.transferFromProxy(proxyAddress, amount, signer);
+                    console.log(`[CopyExec] 📉 Low Buffer ($${projectedBalance.toFixed(2)}). Triggering Reimbursement for $${attemptAmount.toFixed(2)}...`);
+                    const reimbursement = await this.transferFromProxy(proxyAddress, attemptAmount, signer);
                     if (reimbursement.success) {
                         returnTransferTxHash = reimbursement.txHash;
                     } else {
@@ -773,7 +824,7 @@ export class CopyTradingExecutionService {
                             this.debtLogger.logDebt({
                                 proxyAddress,
                                 botAddress: botAddr,
-                                amount,
+                                amount: attemptAmount, // Log exactly what was spent
                                 currency: 'USDC',
                                 error: reimbursement.error || 'Transfer Failed'
                             });
@@ -783,16 +834,35 @@ export class CopyTradingExecutionService {
                 }
 
                 if (useProxyFunds) {
+                    // 如果存在降级 (scaledDown === true) 且我们已经从 Proxy 拉出了全额资金，
+                    // 这里需要将未使用的部分进行退款 (Refund unused portion)。
+                    const unusedAmount = amount - attemptAmount;
+
                     if (side === 'BUY') {
                         // 标准 BUY：把新买到的份额推回 proxy，闭合资产归属。
-                        const sharesBought = amount / price;
+                        const sharesBought = attemptAmount / price;
                         const pushResult = await this.transferTokensToProxy(proxyAddress, tokenId, sharesBought, signer);
                         if (pushResult.success) tokenPushTxHash = pushResult.txHash;
+
+                        if (scaledDown && unusedAmount > 0) {
+                            console.log(`[CopyExec] ♻️ Refunding unused proxy funds (scaled down): $${unusedAmount.toFixed(2)}`);
+                            await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), unusedAmount, USDC_DECIMALS, signer);
+                        }
+
                     } else {
-                        // SELL：把 bot 收到的 USDC 归还 proxy，维持账务一致。
+                        // SELL：把 bot 实际卖出收到的 USDC (attemptAmount) 归还 proxy。
+                        // 这里我们粗略使用 attemptAmount，实际上应该用以最终成交价执行得到的 USDC：
+                        // `actualUsdcReceived = (attemptAmount / price) * finalExecutionPrice` (粗略估计，实际上聚合API返回更好)
                         const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, amount, USDC_DECIMALS, signer);
+                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, attemptAmount, USDC_DECIMALS, signer);
                         if (returnResult.success) returnTransferTxHash = returnResult.txHash;
+
+                        if (scaledDown && unusedAmount > 0) {
+                            // 未卖出的 shares 也要退回 Proxy
+                            const unusedShares = unusedAmount / price;
+                            console.log(`[CopyExec] ♻️ Refunding unsold shares to proxy (scaled down): ${unusedShares.toFixed(2)} shares`);
+                            await this.transferTokensToProxy(proxyAddress, tokenId, unusedShares, signer);
+                        }
                     }
                 }
             });
@@ -809,7 +879,9 @@ export class CopyTradingExecutionService {
             useProxyFunds: useProxyFunds || usedBotFloat,
             usedBotFloat,
             proxyAddress,
-            settlementDeferred: deferSettlement
+            settlementDeferred: deferSettlement,
+            executedAmount: attemptAmount,
+            scaledDown
         };
     }
     /**

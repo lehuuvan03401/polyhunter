@@ -588,7 +588,7 @@ export class TradeOrchestrator {
         console.log(`[Orchestrator] 🚀 Dispatching Execution -> Tx: ${copyTrade.id}`);
 
         // 9. Execute On-Chain
-        let result: { success: boolean; orderId?: string; error?: string; usedBotFloat?: boolean; transactionHashes?: string[] } = { success: false };
+        let result: { success: boolean; orderId?: string; error?: string; usedBotFloat?: boolean; transactionHashes?: string[]; executedAmount?: number; scaledDown?: boolean; } = { success: false };
         let execPrice = marketPrice;
         let simSlippageBps = 0;
         let simLatencyMs = 0;
@@ -597,26 +597,54 @@ export class TradeOrchestrator {
         if (this.isSimulation) {
             console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
 
-            // --- Step 1: Initial price check (CLOB VWAP) ---
-            const simPrice = await this.getSimulationPrice({
+            // --- Step 2: FOK Scale-Down Simulation ---
+            // Real Polymarket uses Fill-Or-Kill. We simulate the same scale-down logic
+            // as real execution: try 100%, then 75%, then 50% for SELLs (or if allowed).
+            let simulateScale = 1.0;
+            const simScaleFactors = (copySide === 'SELL' || config.allowPartialFill) ? [1.0, 0.75, 0.5] : [1.0];
+            let simPrice = await this.getSimulationPrice({
                 tokenId,
                 side: copySide as 'BUY' | 'SELL',
                 copySizeUsdc,
                 leaderPrice,
             });
 
-            // --- Step 2: FOK Rejection Simulation ---
-            // Real Polymarket uses Fill-Or-Kill: if the orderbook can't fill the full order,
-            // the entire order is rejected. Simulate this when fill ratio < 95%.
-            if (simPrice.fromClob && simPrice.fillRatio < 0.95) {
-                console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED: depth $${simPrice.depthUsdc.toFixed(2)} < order $${copySizeUsdc.toFixed(2)} (fill: ${(simPrice.fillRatio * 100).toFixed(0)}%)`);
+            let simSuccess = false;
+            for (const scale of simScaleFactors) {
+                simulateScale = scale;
+                const attemptUsdc = copySizeUsdc * scale;
 
+                simPrice = await this.getSimulationPrice({
+                    tokenId,
+                    side: copySide as 'BUY' | 'SELL',
+                    copySizeUsdc: attemptUsdc, // use scaled amount for depth check
+                    leaderPrice,
+                });
+
+                if (!simPrice.fromClob || simPrice.fillRatio >= 0.95) {
+                    simSuccess = true;
+                    if (scale < 1.0) {
+                        console.log(`[Orchestrator] ⚠️ SIM_FOK_SCALED_DOWN: executed ${copySide} at ${(scale * 100).toFixed(0)}% scale -> $${attemptUsdc.toFixed(2)}`);
+                    }
+                    break;
+                } else {
+                    console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED at ${(scale * 100).toFixed(0)}% scale: depth $${simPrice.depthUsdc.toFixed(2)} < order $${attemptUsdc.toFixed(2)} (fill: ${(simPrice.fillRatio * 100).toFixed(0)}%)`);
+                }
+            }
+
+            if (!simSuccess) {
                 // Update DB record to FAILED
                 await this.prisma.copyTrade.update({
                     where: { id: copyTrade.id },
-                    data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED (fill ${(simPrice.fillRatio * 100).toFixed(0)}%)` }
+                    data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED_ALL_SCALES (final fill ${(simPrice.fillRatio * 100).toFixed(0)}%)` }
                 });
                 return { executed: false, reason: 'SIM_FOK_REJECTED' };
+            }
+
+            // Adjust the actual copy size if we scaled down
+            if (simulateScale < 1.0) {
+                copySizeUsdc = copySizeUsdc * simulateScale;
+                result.scaledDown = true;
             }
 
             execPrice = simPrice.execPrice;
@@ -653,6 +681,7 @@ export class TradeOrchestrator {
                 }
 
                 // Post-delay depth check: depth may have decreased during delay
+                // Even if we scaled down initially, check if the scaled amount can still be filled
                 if (postDelayPrice.fillRatio < 0.95) {
                     console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (post-delay depth): fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%`);
                     await this.prisma.copyTrade.update({
@@ -723,9 +752,18 @@ export class TradeOrchestrator {
                 slippageMode: 'AUTO',
                 overrides: overrides,
                 deferReimbursement: false,
-                deferSettlement: this.deferSettlement
+                deferSettlement: this.deferSettlement,
+                allowPartialFill: true // Enable robust FOK scaling
             });
             result = proxyResult as any;
+
+            // Update real amount if scaled down
+            if (result.success && result.executedAmount) {
+                // If the execution returned a scaled-down amount, use that as the copySize Usdc
+                if (result.scaledDown) {
+                    copySizeUsdc = result.executedAmount;
+                }
+            }
         }
 
         // 10. Process Update
@@ -744,7 +782,8 @@ export class TradeOrchestrator {
                 executedAt: new Date(),
                 txHash: result.transactionHashes?.[0] || undefined,
                 errorMessage: errorMessage,
-                usedBotFloat: result.usedBotFloat
+                usedBotFloat: result.usedBotFloat,
+                copySize: copySizeUsdc // Ensure DB accurately reflects the possibly scaled-down size
             }
         });
 
