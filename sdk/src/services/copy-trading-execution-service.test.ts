@@ -9,7 +9,15 @@ const mockTradingService = {
     getOrderBook: vi.fn(),
     getBalanceAllowance: vi.fn(),
     verifyAndApproveAllowance: vi.fn(),
+    initialize: vi.fn().mockResolvedValue(true),
+    config: {},
+    rateLimiter: {},
+    cache: {}
 } as unknown as TradingService;
+
+vi.mock('./trading-service.js', () => ({
+    TradingService: vi.fn(() => mockTradingService)
+}));
 
 // Use valid addresses
 const VALID_BOT_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
@@ -75,7 +83,8 @@ describe('CopyTradingExecutionService', () => {
             side: 'BUY',
             amount: 100, // $100
             price: 0.5,
-            proxyAddress: VALID_PROXY_ADDRESS
+            proxyAddress: VALID_PROXY_ADDRESS,
+            allowBotFloat: false
         };
 
         const result = await service.executeOrderWithProxy(params);
@@ -100,7 +109,7 @@ describe('CopyTradingExecutionService', () => {
         expect(mockTradingService.createMarketOrder).toHaveBeenCalledWith(expect.objectContaining({
             side: 'BUY',
             orderType: 'FOK',
-            amount: 200, // 100 / 0.5 = 200 shares
+            amount: 100, // BUY amount is passed as USDC value for market orders
         }));
 
         // 4. Push Tokens To Proxy
@@ -108,7 +117,7 @@ describe('CopyTradingExecutionService', () => {
         expect(mockContract.safeTransferFrom).toHaveBeenCalled();
     });
 
-    it('should execute SELL order: Pull Tokens -> Execute FOK -> Push USDC', async () => {
+    it('should execute SELL order with L2 Signatures (0-latency)', async () => {
         const params: ExecutionParams = {
             tradeId: 't2',
             walletAddress: VALID_USER_ADDRESS,
@@ -124,19 +133,19 @@ describe('CopyTradingExecutionService', () => {
         if (!result.success) console.error(result.error);
         expect(result.success).toBe(true);
 
-        // 1. Pull Tokens
-        // For SELL, we call `transferTokensFromProxy` which calls `proxy.execute(CTF, safeTransferFromData)`
-        expect(mockContract.executeOnProxy).toHaveBeenCalled();
+        // 1. Pull Tokens is SKIPPED due to Proxy Signatures
+        expect(mockContract.executeOnProxy).not.toHaveBeenCalled();
 
         // 2. Execute Order (FOK)
+        // For SELL, amount is passed as shares (50 / 0.5 = 100 shares)
         expect(mockTradingService.createMarketOrder).toHaveBeenCalledWith(expect.objectContaining({
             side: 'SELL',
             orderType: 'FOK',
-            amount: 100, // 50 / 0.5 = 100 shares
+            amount: 100,
         }));
 
-        // 3. Return USDC (transfer)
-        expect(mockContract.transfer).toHaveBeenCalled();
+        // 3. Return USDC is SKIPPED because Polymarket sends proceeds directly to proxy
+        expect(mockContract.transfer).not.toHaveBeenCalled();
     });
 
     it('should use OPTIMIZED BUY (Float) if Bot has funds', async () => {
@@ -408,7 +417,7 @@ describe('CopyTradingExecutionService', () => {
         it('should use default slippage on error', async () => {
             mockTradingService.getOrderBook = vi.fn().mockRejectedValue(new Error('API Error'));
             const result = await service.calculateDynamicSlippage('t1', 'BUY', 100, 0.6);
-            expect(result).toBe(0.02);
+            expect(result).toBe(0.05);
         });
     });
 });

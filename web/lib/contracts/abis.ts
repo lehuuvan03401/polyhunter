@@ -8,7 +8,8 @@
 export const CONTRACT_ADDRESSES = {
     // Polygon Mainnet
     polygon: {
-        proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || '',
+        legacyProxyFactory: '0xc5B86EcB7Cf82213B392D668614429A0d0763745', // Original V1 factory
+        proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || '', // V2
         treasury: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '',
         usdc: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged)
         executor: process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6',
@@ -18,7 +19,8 @@ export const CONTRACT_ADDRESSES = {
         ctfContract: '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',
     },
     amoy: {
-        proxyFactory: process.env.NEXT_PUBLIC_AMOY_PROXY_FACTORY_ADDRESS || '',
+        legacyProxyFactory: '0x092b3FCA2f30A5F90B2E15D7cE76B5A1A40DCD6A', // Original V1 factory on Amoy
+        proxyFactory: process.env.NEXT_PUBLIC_AMOY_PROXY_FACTORY_ADDRESS || '', // V2
         treasury: process.env.NEXT_PUBLIC_AMOY_TREASURY_ADDRESS || '',
         usdc: process.env.NEXT_PUBLIC_AMOY_USDC_ADDRESS || '',
         executor: process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS || '0x4f07450Ef721147D38f29739eEe8079bC147f1f6',
@@ -29,6 +31,7 @@ export const CONTRACT_ADDRESSES = {
     // Localhost Hardhat Fork
     localhost: {
         // Prioritize env vars, fallback to hardcoded (previous deployment)
+        legacyProxyFactory: '0xc5B86EcB7Cf82213B392D668614429A0d0763745',
         proxyFactory: process.env.NEXT_PUBLIC_PROXY_FACTORY_ADDRESS || '0xc5B86EcB7Cf82213B392D668614429A0d0763745',
         treasury: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '0xedEe4820327176Bd433d13421DD558A7191193Aa',
         usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
@@ -84,6 +87,8 @@ export const POLY_HUNTER_PROXY_ABI = [
     'function approveTrading(address spender, uint256 amount) external',
     // Execute arbitrary calls for trading
     'function execute(address target, bytes calldata data) external returns (bytes memory)',
+    // EIP-1271 Signature Validation
+    'function isValidSignature(bytes32 hash, bytes memory signature) external view returns (bytes4)',
     // Events
     'event Deposited(address indexed user, uint256 amount)',
     'event Withdrawn(address indexed user, uint256 amount, uint256 fee)',

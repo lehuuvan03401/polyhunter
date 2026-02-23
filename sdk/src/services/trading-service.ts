@@ -60,6 +60,10 @@ export interface TradingServiceConfig {
   chainId?: number;
   /** Pre-generated API credentials (optional) */
   credentials?: ApiCredentials;
+  /** Custom funding address for proxy execution */
+  funderAddress?: string;
+  /** Signature type (e.g. 1 for POLY_PROXY) */
+  signatureType?: number;
 }
 
 // Order types
@@ -167,14 +171,26 @@ export class TradingService {
   private negRiskCache: Map<string, boolean> = new Map();
 
   constructor(
-    private rateLimiter: RateLimiter,
-    private cache: UnifiedCache,
-    private config: TradingServiceConfig
+    private _rateLimiter: RateLimiter,
+    private _cache: UnifiedCache,
+    private _config: TradingServiceConfig
   ) {
     // TradingService 始终以单钱包身份运行；上层若要多钱包并发应创建多实例。
-    this.wallet = new Wallet(config.privateKey);
-    this.chainId = (config.chainId || POLYGON_MAINNET) as Chain;
-    this.credentials = config.credentials || null;
+    this.wallet = new Wallet(_config.privateKey);
+    this.chainId = (_config.chainId || POLYGON_MAINNET) as Chain;
+    this.credentials = _config.credentials || null;
+  }
+
+  get config(): TradingServiceConfig {
+    return this._config;
+  }
+
+  get rateLimiter(): RateLimiter {
+    return this._rateLimiter;
+  }
+
+  get cache(): UnifiedCache {
+    return this._cache;
   }
 
   /**
@@ -225,15 +241,24 @@ export class TradingService {
 
     // 第三步：使用 L2 凭据重建 client，后续交易请求走 API 鉴权路径。
     // 这样可以避免每次交易都依赖钱包签名，降低延迟和复杂度。
+    const clientOptions: any = {
+      key: this.credentials.key,
+      secret: this.credentials.secret,
+      passphrase: this.credentials.passphrase,
+    };
+
+    if (this.config.funderAddress) {
+      clientOptions.funderAddress = this.config.funderAddress;
+    }
+    if (this.config.signatureType !== undefined) {
+      clientOptions.signatureType = this.config.signatureType;
+    }
+
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
       this.wallet,
-      {
-        key: this.credentials.key,
-        secret: this.credentials.secret,
-        passphrase: this.credentials.passphrase,
-      }
+      clientOptions
     );
 
     this.initialized = true;

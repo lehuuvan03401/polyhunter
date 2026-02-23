@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useProxy } from '@/lib/contracts/useProxy';
-import { Loader2, Plus, Wallet, ArrowDownLeft, ArrowUpRight, ShieldCheck } from 'lucide-react';
+import { Loader2, Plus, Wallet, ArrowDownLeft, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { ProxyMigrationWizard } from './proxy-migration-wizard';
 
 export function ProxyWalletCard() {
     const t = useTranslations('ProxyWallet');
@@ -21,11 +22,14 @@ export function ProxyWalletCard() {
         executorAddress,
         txPending,
         txStatus,
-        error
+        error,
+        isLegacyProxy,
+        legacyStats
     } = useProxy();
 
     const [amount, setAmount] = useState('');
     const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'settings'>('deposit');
+    const [isMigrationOpen, setIsMigrationOpen] = useState(false);
 
     const getStatusText = (status: typeof txStatus) => {
         if (!status) return t('status.processing');
@@ -162,6 +166,21 @@ export function ProxyWalletCard() {
                         </div>
                     </div>
                 </div>
+
+                {isLegacyProxy && (
+                    <div className="mt-4 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 flexItems-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-amber-500">
+                            <AlertTriangle className="h-4 w-4" />
+                            <span>V1 Proxy Deprecated. 0-Latency Upgrade Available.</span>
+                        </div>
+                        <button
+                            onClick={() => setIsMigrationOpen(true)}
+                            className="inline-flex h-8 items-center justify-center rounded-md bg-amber-500 px-3 text-xs font-medium text-white shadow hover:bg-amber-600 transition-colors"
+                        >
+                            Start Migration
+                        </button>
+                    </div>
+                )}
             </div>
             <div className="p-6 pt-0">
                 {/* Tabs */}
@@ -313,6 +332,7 @@ export function ProxyWalletCard() {
                     )}
                 </div>
             </div>
+            <ProxyMigrationWizard isOpen={isMigrationOpen} onClose={() => setIsMigrationOpen(false)} />
         </div>
     );
 }

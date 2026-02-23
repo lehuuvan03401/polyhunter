@@ -26,7 +26,8 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
         isExecutorAuthorized: isAuthFromChain,
         executorAddress,
         settleFees,
-        refreshStats
+        refreshStats,
+        isLegacyProxy
     } = useProxy();
 
     // Copy Trading & Locked Funds Logic
@@ -135,6 +136,18 @@ export function ProxyActionCenter({ onSuccess }: ProxyActionCenterProps) {
             }
         );
     };
+
+    if (isLegacyProxy) {
+        return (
+            <div className="w-full rounded-xl border border-amber-500/50 bg-amber-500/10 p-12 text-center flex flex-col items-center justify-center">
+                <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
+                <h3 className="text-xl font-bold text-amber-500 mb-2">Action Center Locked</h3>
+                <p className="text-sm text-amber-500/80 max-w-sm mx-auto">
+                    Your V1 Proxy has been deprecated. Please use the Migration Wizard in your wallet card above to withdraw your funds and deploy a V2 Proxy.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">

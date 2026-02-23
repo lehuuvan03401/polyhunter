@@ -502,7 +502,7 @@ export class CopyTradingExecutionService {
      */
     async executeOrderWithProxy(params: ExecutionParams): Promise<ExecutionResult> {
         const { tradeId, walletAddress, tokenId, side, amount, price, slippage = 0.02, signer, tradingService } = params;
-        const execService = tradingService || this.tradingService;
+        let execService = tradingService || this.tradingService;
         const allowBotFloat = params.allowBotFloat !== false;
 
         // 总体模型：
@@ -618,53 +618,71 @@ export class CopyTradingExecutionService {
         let tokenPullTxHash: string | undefined;
         let usedBotFloat = false;
 
+        // Proxy Signature feature flag (hardcoded to true for now since contracts support EIP-1271)
+        const useProxySignaturesForSells = true;
+        let proxySignedSell = false;
+
         try {
-            await this.runWithProxyMutex(proxyAddress, 'funds', async () => {
-                if (side === 'BUY') {
-                    // FLOAT 模式：优先消耗 bot 浮动资金，减少一次链上 pull。
-                    if (allowBotFloat && botBalance >= amount) {
-                        // Anti-Piercing Guardrail: Prevent float usage if the proxy is heavily indebted
-                        let pendingDebt = 0;
-                        if (this.debtLogger && this.debtLogger.getProxyDebt) {
-                            pendingDebt = await this.debtLogger.getProxyDebt(proxyAddress);
+            // Reconfigure execService for Proxy EIP-1271 signatures if applicable
+            if (side === 'SELL' && useProxySignaturesForSells) {
+                console.log(`[CopyExec] ⚡️ Optimized SELL: Using L2 Proxy Signatures (EIP-1271) for ${proxyAddress}`);
+                proxySignedSell = true;
+
+                // Spawn a contextual TradingService bound to the proxy
+                // We use type 1 for POLY_PROXY
+                const customConfig = { ...this.tradingService.config, funderAddress: proxyAddress, signatureType: 1 };
+                execService = new TradingService(this.tradingService.rateLimiter, this.tradingService.cache, customConfig);
+                await execService.initialize();
+            }
+
+            if (!proxySignedSell) {
+                await this.runWithProxyMutex(proxyAddress, 'funds', async () => {
+                    if (side === 'BUY') {
+                        // FLOAT 模式：优先消耗 bot 浮动资金，减少一次链上 pull。
+                        if (allowBotFloat && botBalance >= amount) {
+                            // Anti-Piercing Guardrail: Prevent float usage if the proxy is heavily indebted
+                            let pendingDebt = 0;
+                            if (this.debtLogger && this.debtLogger.getProxyDebt) {
+                                pendingDebt = await this.debtLogger.getProxyDebt(proxyAddress);
+                            }
+
+                            const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
+                            const effectiveProxyBalance = proxyBalance - pendingDebt;
+
+                            if (effectiveProxyBalance < amount) {
+                                console.warn(`[CopyExec] 🛡️ Anti-Piercing: Proxy ${proxyAddress} has low effective balance (${proxyBalance} - ${pendingDebt} debt < ${amount}). Bypassing Float.`);
+                            } else {
+                                console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
+                                usedBotFloat = true;
+                                return;
+                            }
                         }
 
+                        // 余额不足则走标准路径：从 proxy 拉取对应 USDC。
+                        console.log(`[CopyExec] 🐢 Standard BUY: Pulling from Proxy...`);
                         const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
-                        const effectiveProxyBalance = proxyBalance - pendingDebt;
-
-                        if (effectiveProxyBalance < amount) {
-                            console.warn(`[CopyExec] 🛡️ Anti-Piercing: Proxy ${proxyAddress} has low effective balance (${proxyBalance} - ${pendingDebt} debt < ${amount}). Bypassing Float.`);
-                        } else {
-                            console.log(`[CopyExec] ⚡️ Optimized BUY: Using Bot Float ($${botBalance} >= $${amount})`);
-                            usedBotFloat = true;
-                            return;
+                        if (proxyBalance < amount) {
+                            throw new Error('Insufficient Proxy funds');
                         }
+
+                        const transferResult = await this.transferFromProxy(proxyAddress, amount, signer, effectiveOverrides);
+                        if (!transferResult.success) {
+                            throw new Error(transferResult.error || 'Proxy pull failed');
+                        }
+                        useProxyFunds = true;
+                        fundTransferTxHash = transferResult.txHash;
+                        return;
                     }
 
-                    // 余额不足则走标准路径：从 proxy 拉取对应 USDC。
-                    console.log(`[CopyExec] 🐢 Standard BUY: Pulling from Proxy...`);
-                    const proxyBalance = await this.getProxyUsdcBalance(proxyAddress, signer);
-                    if (proxyBalance < amount) {
-                        throw new Error('Insufficient Proxy funds');
-                    }
-
-                    const transferResult = await this.transferFromProxy(proxyAddress, amount, signer, effectiveOverrides);
-                    if (!transferResult.success) {
-                        throw new Error(transferResult.error || 'Proxy pull failed');
+                    // Standard SELL: 拉 token 份额
+                    const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, amount / price, signer, effectiveOverrides);
+                    if (!pullResult.success) {
+                        throw new Error(`Proxy token pull failed: ${pullResult.error}`);
                     }
                     useProxyFunds = true;
-                    fundTransferTxHash = transferResult.txHash;
-                    return;
-                }
-
-                // SELL 的资金准备是“拉 token 份额”，不是拉 USDC。
-                const pullResult = await this.transferTokensFromProxy(proxyAddress, tokenId, amount / price, signer, effectiveOverrides);
-                if (!pullResult.success) {
-                    throw new Error(`Proxy token pull failed: ${pullResult.error}`);
-                }
-                useProxyFunds = true;
-                tokenPullTxHash = pullResult.txHash;
-            });
+                    tokenPullTxHash = pullResult.txHash;
+                });
+            }
 
         } catch (e: unknown) {
             return { success: false, error: `Proxy prep failed: ${getErrorMessage(e)}`, usedBotFloat, proxyAddress };
@@ -747,7 +765,7 @@ export class CopyTradingExecutionService {
             const errMessage = executionError ? getErrorMessage(executionError) : (orderResult?.errorMsg || "Order failed (FOK) after retries");
 
             // 下单异常后立即回滚，把此前资金准备阶段搬出的资产退回 Proxy。
-            if (useProxyFunds) {
+            if (useProxyFunds && !proxySignedSell) {
                 console.log(`[CopyExec] ⚠️ Order Failed. refunding... (${errMessage})`);
                 await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
                     if (side === 'BUY') {
@@ -763,7 +781,7 @@ export class CopyTradingExecutionService {
 
         if (!orderResult.success) {
             // 业务失败（非异常）同样执行资金回滚，保持账务一致性。
-            if (useProxyFunds) {
+            if (useProxyFunds && !proxySignedSell) {
                 await this.runWithProxyMutex(proxyAddress, 'refund', async () => {
                     if (side === 'BUY') {
                         await this.transferToProxy(proxyAddress, (this.chainId === 137 ? CONTRACT_ADDRESSES.polygon.usdc : CONTRACT_ADDRESSES.amoy.usdc), amount, USDC_DECIMALS, signer);

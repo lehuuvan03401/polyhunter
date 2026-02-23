@@ -215,6 +215,47 @@ describe("Horus Proxy System", function () {
                 proxy.connect(user1).execute(await usdc.getAddress(), data)
             ).to.be.revertedWith("Execution paused");
         });
+
+        describe("EIP-1271 Signature Validation", function () {
+            const MAGIC_VALUE = "0x1626ba7e";
+            const INVALID_VALUE = "0xffffffff";
+
+            it("should validate signatures from the proxy owner", async function () {
+                const message = "Allow Polymarket Limit Order";
+                const hash = ethers.hashMessage(message);
+                const signature = await user1.signMessage(message);
+
+                const result = await proxy.isValidSignature(hash, signature);
+                expect(result).to.equal(MAGIC_VALUE);
+            });
+
+            it("should validate signatures from the approved executor (Bot)", async function () {
+                const message = "Allow Bot Execution";
+                const hash = ethers.hashMessage(message);
+
+                // The executor is 'owner' because in the test setup:
+                // executor = await Executor.deploy(); (defaults deployer as owner of executor? no, executor contract is at an address)
+                // Wait, the executor is a smart contract address. However, for testing EIP-1271 we just need ANY valid signer that matches `proxy.executor()`.
+                // In our current setup, `executor` is a contract address, which cannot easily sign an ECDSA message.
+                // Let's set the proxy executor to a known EOA (e.g., owner) just for this test to prove the logic works.
+                const proxyAddress = await proxyFactory.getUserProxy(user1.address);
+                await proxyFactory.updateProxyExecutor(proxyAddress, owner.address); // Admin sets executor to 'owner' EOA
+
+                const signature = await owner.signMessage(message);
+                const result = await proxy.isValidSignature(hash, signature);
+
+                expect(result).to.equal(MAGIC_VALUE);
+            });
+
+            it("should reject signatures from unauthorized users", async function () {
+                const message = "Malicious Order Placement";
+                const hash = ethers.hashMessage(message);
+                const signature = await user2.signMessage(message); // user2 is neither owner nor executor
+
+                const result = await proxy.isValidSignature(hash, signature);
+                expect(result).to.equal(INVALID_VALUE);
+            });
+        });
     });
 
     describe("PolyHunterExecutor", function () {

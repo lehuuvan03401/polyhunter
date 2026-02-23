@@ -116,11 +116,17 @@ export interface UseProxyReturn {
     isLoading: boolean;
     error: string | null;
 
+    // Legacy State for V1 -> V2 Migration
+    isLegacyProxy: boolean;
+    legacyProxyAddress: string | null;
+    legacyStats: ProxyStats | null;
+
     // Actions
     createProxy: (tier?: TierName) => Promise<string | null>;
     deposit: (amount: number) => Promise<boolean>;
     withdraw: (amount: number) => Promise<boolean>;
     withdrawAll: () => Promise<boolean>;
+    withdrawAllFromLegacy: () => Promise<boolean>;
     refreshStats: () => Promise<void>;
     settleFees: () => Promise<boolean>;
     approveUSDC: (amount: number) => Promise<boolean>;
@@ -142,6 +148,9 @@ export function useProxy(): UseProxyReturn {
     const [proxyAddress, setProxyAddress] = useState<string | null>(null);
     const [hasProxy, setHasProxy] = useState(false);
     const [stats, setStats] = useState<ProxyStats | null>(null);
+    const [isLegacyProxy, setIsLegacyProxy] = useState(false);
+    const [legacyProxyAddress, setLegacyProxyAddress] = useState<string | null>(null);
+    const [legacyStats, setLegacyStats] = useState<ProxyStats | null>(null);
     const [usdcBalance, setUsdcBalance] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -254,6 +263,8 @@ export function useProxy(): UseProxyReturn {
         if (!walletAddress || !ADDRESSES.proxyFactory) {
             setHasProxy(false);
             setProxyAddress(null);
+            setIsLegacyProxy(false);
+            setLegacyProxyAddress(null);
             return null;
         }
 
@@ -273,14 +284,30 @@ export function useProxy(): UseProxyReturn {
             }
 
             const factory = new ethers.Contract(ADDRESSES.proxyFactory, PROXY_FACTORY_ABI, provider);
-
             const address = await factory.getUserProxy(walletAddress);
             const exists = address !== ethers.constants.AddressZero;
 
-            setHasProxy(exists);
+            // Check for legacy proxy
+            let legacyExists = false;
+            let legacyAddr = null;
+            const legacyFactoryAddr = (ADDRESSES as any).legacyProxyFactory; // Cast to bypass TS if missing on some types, but we added it
+            if (legacyFactoryAddr && legacyFactoryAddr !== ADDRESSES.proxyFactory) {
+                try {
+                    const legacyFactory = new ethers.Contract(legacyFactoryAddr, PROXY_FACTORY_ABI, provider);
+                    legacyAddr = await legacyFactory.getUserProxy(walletAddress);
+                    legacyExists = legacyAddr !== ethers.constants.AddressZero;
+                } catch (e) {
+                    console.error('Error fetching legacy proxy address:', e);
+                }
+            }
+
+            setHasProxy(exists || legacyExists);
             setProxyAddress(exists ? address : null);
+            setIsLegacyProxy(!exists && legacyExists);
+            setLegacyProxyAddress(legacyExists ? legacyAddr : null);
             setError(null);
-            return exists ? address : null;
+
+            return { exists, address: exists ? address : null, legacyExists, legacyAddr: legacyExists ? legacyAddr : null };
         } catch (err: any) {
             const message = typeof err?.message === 'string' ? err.message : '';
 
@@ -299,40 +326,59 @@ export function useProxy(): UseProxyReturn {
      * Fetch proxy stats from contract
      */
     const refreshStats = useCallback(async () => {
-        if (!proxyAddress) return;
+        if (!proxyAddress && !legacyProxyAddress) return;
 
         try {
             const { provider } = await getSignerAndProvider();
-            const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, provider);
 
-            const promises: Promise<any>[] = [
-                proxy.getStats(),
-                provider.getBalance(proxyAddress), // ETH balance (for gas if needed)
-                proxy.executor().catch(() => ethers.constants.AddressZero),
-            ];
+            if (proxyAddress) {
+                const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, provider);
 
-            const results = await Promise.all(promises);
-            const statsResult = results[0];
-            const boundExecutor = results[2] as string;
-            const isAuthorized = ADDRESSES.executor
-                ? boundExecutor?.toLowerCase() === ADDRESSES.executor.toLowerCase()
-                : false;
+                const promises: Promise<any>[] = [
+                    proxy.getStats(),
+                    provider.getBalance(proxyAddress), // ETH balance (for gas if needed)
+                    proxy.executor().catch(() => ethers.constants.AddressZero),
+                ];
 
-            setStats({
-                balance: formatUSDC(statsResult.balance),
-                deposited: formatUSDC(statsResult.deposited),
-                withdrawn: formatUSDC(statsResult.withdrawn),
-                feesPaid: formatUSDC(statsResult.feesPaid),
-                profit: Number(statsResult.profit) / 10 ** USDC_DECIMALS,
-                feePercent: Number(statsResult.currentFeePercent) / 100,
-                pendingFee: formatUSDC(statsResult.pendingFee),
-            });
-            setIsExecutorAuthorized(isAuthorized);
-            setExecutorAddress(boundExecutor || null);
+                const results = await Promise.all(promises);
+                const statsResult = results[0];
+                const boundExecutor = results[2] as string;
+                const isAuthorized = ADDRESSES.executor
+                    ? boundExecutor?.toLowerCase() === ADDRESSES.executor.toLowerCase()
+                    : false;
+
+                setStats({
+                    balance: formatUSDC(statsResult.balance),
+                    deposited: formatUSDC(statsResult.deposited),
+                    withdrawn: formatUSDC(statsResult.withdrawn),
+                    feesPaid: formatUSDC(statsResult.feesPaid),
+                    profit: Number(statsResult.profit) / 10 ** USDC_DECIMALS,
+                    feePercent: Number(statsResult.currentFeePercent) / 100,
+                    pendingFee: formatUSDC(statsResult.pendingFee),
+                });
+                setIsExecutorAuthorized(isAuthorized);
+                setExecutorAddress(boundExecutor || null);
+            }
+
+            if (legacyProxyAddress) {
+                const legacyProxy = new ethers.Contract(legacyProxyAddress, POLY_HUNTER_PROXY_ABI, provider);
+                const legacyStatsResult = await legacyProxy.getStats().catch(() => null);
+                if (legacyStatsResult) {
+                    setLegacyStats({
+                        balance: formatUSDC(legacyStatsResult.balance),
+                        deposited: formatUSDC(legacyStatsResult.deposited),
+                        withdrawn: formatUSDC(legacyStatsResult.withdrawn),
+                        feesPaid: formatUSDC(legacyStatsResult.feesPaid),
+                        profit: Number(legacyStatsResult.profit) / 10 ** USDC_DECIMALS,
+                        feePercent: Number(legacyStatsResult.currentFeePercent) / 100,
+                        pendingFee: formatUSDC(legacyStatsResult.pendingFee),
+                    });
+                }
+            }
         } catch (err) {
             console.error('Error fetching stats:', err);
         }
-    }, [proxyAddress, getSignerAndProvider]);
+    }, [proxyAddress, legacyProxyAddress, getSignerAndProvider]);
 
     /**
      * Fetch user's USDC balance
@@ -389,6 +435,7 @@ export function useProxy(): UseProxyReturn {
             if (newProxyAddress) {
                 setProxyAddress(newProxyAddress);
                 setHasProxy(true);
+                setIsLegacyProxy(false);
 
                 // Register in database (non-blocking for UI)
                 fetch('/api/proxy/create', {
@@ -622,6 +669,42 @@ export function useProxy(): UseProxyReturn {
         }
     }, [proxyAddress, getSignerAndProvider, refreshStats, fetchUsdcBalance]);
 
+    /**
+     * Withdraw all USDC from legacy proxy
+     */
+    const withdrawAllFromLegacy = useCallback(async (): Promise<boolean> => {
+        if (!legacyProxyAddress) {
+            setError('No legacy proxy address');
+            return false;
+        }
+
+        setError(null);
+        setTxPending(true);
+        setTxStatus('WITHDRAWING');
+        setTxHash(null);
+
+        try {
+            const { signer } = await getSignerAndProvider();
+            const proxy = new ethers.Contract(legacyProxyAddress, POLY_HUNTER_PROXY_ABI, signer);
+
+            const tx = await proxy.withdrawAll();
+            setTxHash(tx.hash);
+            setTxStatus('CONFIRMING');
+
+            await tx.wait();
+            await refreshStats();
+            await fetchUsdcBalance();
+
+            return true;
+        } catch (err: unknown) {
+            setError(parseTransactionError(err));
+            return false;
+        } finally {
+            setTxPending(false);
+            setTxStatus('IDLE');
+        }
+    }, [legacyProxyAddress, getSignerAndProvider, refreshStats, fetchUsdcBalance]);
+
     // Initialize on mount
     useEffect(() => {
         if (!authenticated || !walletAddress) {
@@ -725,10 +808,14 @@ export function useProxy(): UseProxyReturn {
         usdcBalance,
         isLoading,
         error,
+        isLegacyProxy,
+        legacyProxyAddress,
+        legacyStats,
         createProxy,
         deposit,
         withdraw,
         withdrawAll,
+        withdrawAllFromLegacy,
         refreshStats,
         settleFees,
         approveUSDC,
