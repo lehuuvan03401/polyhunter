@@ -52,3 +52,11 @@
   - `src/services/market-service.ts`（历史/实时 spread 语义边界与信号阈值注释增强）
   - `src/services/copy-trading-execution-service.ts`（Executor 代理执行、锁分层、AUTO 滑点与结算 fallback 注释增强）
 - 已执行 `pnpm run build`，TypeScript 编译通过。
+
+## 2026-02-24
+- 新增 Supervisor 分片模式 Redis 强依赖：当 `SUPERVISOR_SHARD_COUNT>1` 时，缺少 `REDIS_URL` 将启动失败（fail fast）。
+- 新增 Supervisor 分片模式 Redis 连通性强校验：Redis 初始化/PING 失败将启动失败（fail fast），不再回退内存队列/去重/计数。
+- 保持单实例模式（`SUPERVISOR_SHARD_COUNT<=1`）兼容：Redis 不可用时仍允许内存回退。
+- 新增 OpenSpec 变更：`enforce-redis-sharded-supervisor`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate enforce-redis-sharded-supervisor --strict --no-interactive`，通过。

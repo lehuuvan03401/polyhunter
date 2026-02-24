@@ -1378,7 +1378,11 @@ let dedupStore: DedupStore = new MemoryDedupStore();
 const dedupStats = { hits: 0, misses: 0 };
 
 async function initSharedStores(): Promise<void> {
+    const redisRequired = SHARD_COUNT > 1;
     if (!REDIS_URL) {
+        if (redisRequired) {
+            throw new Error('[Supervisor] SHARD_COUNT>1 requires REDIS_URL for shared queue/dedup/counter stores.');
+        }
         console.warn('[Supervisor] ⚠️ REDIS_URL not set. Using in-memory queue/dedup/counters.');
         return;
     }
@@ -1393,6 +1397,10 @@ async function initSharedStores(): Promise<void> {
         counterStore = new RedisCounterStore(redisClient, `${prefix}counter:`);
         console.log('[Supervisor] ✅ Redis connected. Shared stores enabled.');
     } catch (error) {
+        if (redisRequired) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(`[Supervisor] SHARD_COUNT>1 requires Redis connectivity. Failed to initialize shared stores: ${reason}`);
+        }
         console.warn('[Supervisor] ⚠️ Redis unavailable, falling back to in-memory stores.', error);
     }
 }
@@ -2844,4 +2852,7 @@ async function main() {
 }
 
 // Execute Main
-main().catch(console.error);
+main().catch((error) => {
+    console.error('[Supervisor] Fatal startup error:', error);
+    process.exit(1);
+});
