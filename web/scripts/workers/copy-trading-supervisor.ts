@@ -1231,6 +1231,19 @@ function hasPosition(walletAddress: string, tokenId: string): boolean {
     return balance > 0;
 }
 
+function setPositionCacheBalance(walletAddress: string, tokenId: string, balance: number): void {
+    const wallet = walletAddress.toLowerCase();
+    if (!userPositionsCache.has(wallet)) {
+        userPositionsCache.set(wallet, new Map());
+    }
+    const positions = userPositionsCache.get(wallet)!;
+    if (balance <= 0) {
+        positions.delete(tokenId);
+        return;
+    }
+    positions.set(tokenId, balance);
+}
+
 /**
  * Update position cache after trade execution
  * Call this after successful buy/sell to keep cache in sync
@@ -1244,11 +1257,48 @@ function updatePositionCache(walletAddress: string, tokenId: string, balanceChan
     const positions = userPositionsCache.get(wallet)!;
     const currentBalance = positions.get(tokenId) || 0;
     const newBalance = currentBalance + balanceChange;
+    setPositionCacheBalance(walletAddress, tokenId, newBalance);
+}
 
-    if (newBalance <= 0) {
-        positions.delete(tokenId); // Remove zero/negative balances
-    } else {
-        positions.set(tokenId, newBalance);
+type SellPositionDecision = {
+    allow: boolean;
+    source: 'cache' | 'db' | 'none' | 'fail-open';
+    balance?: number;
+};
+
+async function resolveSellPositionDecision(walletAddress: string, tokenId: string): Promise<SellPositionDecision> {
+    if (hasPosition(walletAddress, tokenId)) {
+        return { allow: true, source: 'cache' };
+    }
+
+    const normalizedWallet = walletAddress.toLowerCase();
+    const key = buildPreflightKey(['sell-position', normalizedWallet, tokenId]);
+
+    try {
+        const dbBalance = await getPreflightCached<number>(
+            key,
+            async () => {
+                const position = await prisma.userPosition.findFirst({
+                    where: {
+                        walletAddress: normalizedWallet,
+                        tokenId,
+                        balance: { gt: 0 },
+                    },
+                    select: { balance: true },
+                });
+                return Number(position?.balance || 0);
+            }
+        );
+
+        if (dbBalance > 0) {
+            setPositionCacheBalance(walletAddress, tokenId, dbBalance);
+            return { allow: true, source: 'db', balance: dbBalance };
+        }
+        return { allow: false, source: 'none' };
+    } catch (error) {
+        // DB 确认失败时按 fail-open 继续，让后续执行层（余额/授权检查）兜底。
+        console.warn(`[Supervisor] SELL DB confirmation failed, fail-open for ${walletAddress} ${tokenId}:`, error);
+        return { allow: true, source: 'fail-open' };
     }
 }
 
@@ -2138,11 +2188,17 @@ async function processJob(
         approxPrice,
     });
 
-    // 0. Fast SELL-skip check (no database query needed)
+    // 0. SELL weak-skip:
+    // - cache miss 不直接跳过
+    // - DB 二次确认无仓位才跳过
     if (side === 'SELL') {
-        if (!hasPosition(config.walletAddress, tokenId)) {
+        const sellDecision = await resolveSellPositionDecision(config.walletAddress, tokenId);
+        if (!sellDecision.allow) {
             console.log(`[Supervisor] ⏭️  SKIPPED SELL (no position): ${config.walletAddress.substring(0, 10)}... token ${tokenId.substring(0, 20)}...`);
             return;
+        }
+        if (sellDecision.source === 'db') {
+            console.log(`[Supervisor] ♻️ SELL cache miss recovered from DB: ${config.walletAddress.substring(0, 10)}... balance=${(sellDecision.balance || 0).toFixed(4)}`);
         }
     }
 
@@ -2304,6 +2360,13 @@ async function executeJobInternal(
             config.executionMode === 'EOA' ? worker.tradingService : undefined
         );
         if (executionResult.executed) {
+            const resultTokenId = executionResult.tokenId || tokenId;
+            const resultSide = String(executionResult.side || side).toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
+            const resultShares = Number(executionResult.copyShares || 0);
+            if (resultTokenId && resultShares > 0) {
+                const balanceDelta = resultSide === 'BUY' ? resultShares : -resultShares;
+                updatePositionCache(config.walletAddress, resultTokenId, balanceDelta);
+            }
             await incrementGuardrailCounters({
                 walletAddress: config.walletAddress,
                 amount: executionResult.copySizeUsdc ?? copyAmount,
