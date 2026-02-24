@@ -136,6 +136,20 @@ const SELL_RECONCILIATION_INTERVAL_MS = Math.max(60 * 60 * 1000, parseInt(proces
 const SELL_RECONCILIATION_LOOKBACK_MS = Math.max(60 * 60 * 1000, parseInt(process.env.SUPERVISOR_SELL_RECONCILIATION_LOOKBACK_MS || String(26 * 60 * 60 * 1000), 10));
 const SELL_RECONCILIATION_MAX_TRADES = Math.max(10, parseInt(process.env.SUPERVISOR_SELL_RECONCILIATION_MAX_TRADES || '200', 10));
 const SELL_RECONCILIATION_DIFF_THRESHOLD_USDC = Math.max(0.0001, Number(process.env.SUPERVISOR_SELL_RECONCILIATION_DIFF_THRESHOLD_USDC || '0.01'));
+const SETTLEMENT_RECOVERY_ENABLED = process.env.SUPERVISOR_SETTLEMENT_RECOVERY_ENABLED !== 'false';
+const SETTLEMENT_RECOVERY_INTERVAL_MS = Math.max(10_000, parseInt(process.env.SUPERVISOR_SETTLEMENT_RECOVERY_INTERVAL_MS || '60000', 10));
+const SETTLEMENT_RECOVERY_BATCH = Math.max(1, parseInt(process.env.SUPERVISOR_SETTLEMENT_RECOVERY_BATCH || '20', 10));
+const SETTLEMENT_MAX_RETRY_ATTEMPTS = Math.max(1, parseInt(process.env.COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS || '5', 10));
+const SETTLEMENT_RETRY_BACKOFF_MS = Math.max(
+    1000,
+    parseInt(
+        process.env.COPY_TRADING_SETTLEMENT_RETRY_BACKOFF_MS
+        || process.env.COPY_TRADING_RETRY_BACKOFF_MS
+        || '60000',
+        10
+    )
+);
+const COPY_TRADE_LOCK_TTL_MS = Math.max(60_000, parseInt(process.env.COPY_TRADING_LOCK_TTL_MS || '300000', 10));
 
 // =========================
 // 配置刷新策略
@@ -643,6 +657,10 @@ const cumulativeMetrics = {
     reconcileRuns: 0,
     reconcileErrors: 0,
     reconcileTotalAbsDiff: 0,
+    settlementRecoveryRuns: 0,
+    settlementRecoveryRecovered: 0,
+    settlementRecoveryFailed: 0,
+    settlementRecoveryExhausted: 0,
     alertsTotal: 0,
 };
 const queueStats = {
@@ -655,6 +673,7 @@ const queueStats = {
 };
 let isDrainingQueue = false;
 let isSellReconciliationRunning = false;
+let isSettlementRecoveryRunning = false;
 const queueLagSamplesMs: number[] = [];
 const rejectStats = {
     total: 0,
@@ -675,6 +694,15 @@ const reconciliationMetrics = {
     skipped: 0,
     totalAbsDiff: 0,
     maxAbsDiff: 0,
+    lastRunAt: 0,
+    lastElapsedMs: 0,
+};
+const settlementRecoveryMetrics = {
+    runs: 0,
+    claimed: 0,
+    recovered: 0,
+    failed: 0,
+    exhausted: 0,
     lastRunAt: 0,
     lastElapsedMs: 0,
 };
@@ -1071,6 +1099,14 @@ async function buildPrometheusMetricsSnapshot(): Promise<string> {
     lines.push(formatPromMetric('copy_supervisor_reconcile_errors_total', cumulativeMetrics.reconcileErrors));
     lines.push(formatPromMetric('copy_supervisor_reconcile_window_abs_diff_usd', reconciliationMetrics.totalAbsDiff));
     lines.push(formatPromMetric('copy_supervisor_reconcile_window_max_abs_diff_usd', reconciliationMetrics.maxAbsDiff));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_runs_total', cumulativeMetrics.settlementRecoveryRuns));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_total', cumulativeMetrics.settlementRecoveryRecovered, { outcome: 'recovered' }));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_total', cumulativeMetrics.settlementRecoveryFailed, { outcome: 'failed' }));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_total', cumulativeMetrics.settlementRecoveryExhausted, { outcome: 'exhausted' }));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.claimed, { outcome: 'claimed' }));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.recovered, { outcome: 'recovered' }));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.failed, { outcome: 'failed' }));
+    lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.exhausted, { outcome: 'exhausted' }));
 
     lines.push(formatPromMetric('copy_supervisor_alerts_total', cumulativeMetrics.alertsTotal));
     lines.push(formatPromMetric('copy_supervisor_reject_total', cumulativeMetrics.rejectsTotal));
@@ -1187,6 +1223,11 @@ async function logMetricsSummary(): Promise<void> {
                 `[Metrics] 🧮 Reconcile: runs=${reconciliationMetrics.runs} errors=${reconciliationMetrics.errors} scanned=${reconciliationMetrics.scanned} reconciled=${reconciliationMetrics.reconciled} skipped=${reconciliationMetrics.skipped} totalAbsDiff=$${reconciliationMetrics.totalAbsDiff.toFixed(4)} maxAbsDiff=$${reconciliationMetrics.maxAbsDiff.toFixed(4)} lastElapsed=${reconciliationMetrics.lastElapsedMs}ms lastAt=${reconciliationMetrics.lastRunAt ? new Date(reconciliationMetrics.lastRunAt).toISOString() : 'n/a'}`
             );
         }
+        if (settlementRecoveryMetrics.runs > 0 || settlementRecoveryMetrics.lastRunAt > 0) {
+            console.log(
+                `[Metrics] 🚑 Settlement recovery: runs=${settlementRecoveryMetrics.runs} claimed=${settlementRecoveryMetrics.claimed} recovered=${settlementRecoveryMetrics.recovered} failed=${settlementRecoveryMetrics.failed} exhausted=${settlementRecoveryMetrics.exhausted} lastElapsed=${settlementRecoveryMetrics.lastElapsedMs}ms lastAt=${settlementRecoveryMetrics.lastRunAt ? new Date(settlementRecoveryMetrics.lastRunAt).toISOString() : 'n/a'}`
+            );
+        }
         console.log(`[Metrics] 🧾 Dedup: hits=${dedupStats.hits} misses=${dedupStats.misses}`);
         console.log(`[Metrics] 📡 Signal: mode=${SIGNAL_MODE} poll_lag_ms=${signalHealth.pollLagMs} ws_last_event_age_ms=${signalHealth.wsLastEventAgeMs} source_mismatch_rate=${signalHealth.sourceMismatchRate.toFixed(4)} ws_degraded=${signalHealth.wsDegraded}`);
         console.log(`[Metrics] 📡 Source counts: ws=${sourceStats.wsEvents} polling=${sourceStats.pollingEvents} both=${sourceStats.closedBoth} ws_only=${sourceStats.closedWsOnly} polling_only=${sourceStats.closedPollingOnly}`);
@@ -1218,6 +1259,11 @@ async function logMetricsSummary(): Promise<void> {
         reconciliationMetrics.skipped = 0;
         reconciliationMetrics.totalAbsDiff = 0;
         reconciliationMetrics.maxAbsDiff = 0;
+        settlementRecoveryMetrics.runs = 0;
+        settlementRecoveryMetrics.claimed = 0;
+        settlementRecoveryMetrics.recovered = 0;
+        settlementRecoveryMetrics.failed = 0;
+        settlementRecoveryMetrics.exhausted = 0;
         dedupStats.hits = 0;
         dedupStats.misses = 0;
         sourceStats.wsEvents = 0;
@@ -2228,6 +2274,235 @@ async function checkQueue() {
         console.error('[Supervisor] Queue drain failed:', error);
     } finally {
         isDrainingQueue = false;
+    }
+}
+
+function computeRetryBackoffMs(nextRetryCount: number): number {
+    return SETTLEMENT_RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1));
+}
+
+// Claim rows for recovery/retry scans to avoid multi-instance double-processing.
+async function claimCopyTrades(options: {
+    where: Record<string, any>;
+    orderBy?: Record<string, any>;
+    take: number;
+    include?: Record<string, any>;
+}): Promise<any[]> {
+    const now = new Date();
+    const lockOwner = `supervisor-${SHARD_INDEX_EFFECTIVE}-${process.pid}-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+    const staleBefore = new Date(now.getTime() - COPY_TRADE_LOCK_TTL_MS);
+    const lockClause = { OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }] };
+
+    const candidates = await prisma.copyTrade.findMany({
+        where: { AND: [options.where, lockClause] },
+        orderBy: options.orderBy,
+        take: options.take,
+        select: { id: true },
+    });
+
+    if (candidates.length === 0) return [];
+
+    const ids = candidates.map((c: { id: string }) => c.id);
+    await prisma.copyTrade.updateMany({
+        where: { AND: [{ id: { in: ids } }, options.where, lockClause] },
+        data: { lockedAt: now, lockedBy: lockOwner },
+    });
+
+    // Re-read only rows we truly claimed to avoid lock races.
+    return prisma.copyTrade.findMany({
+        where: { id: { in: ids }, lockedBy: lockOwner },
+        include: options.include,
+    });
+}
+
+async function recoverPendingSettlements(): Promise<void> {
+    if (isShuttingDown || isSettlementRecoveryRunning) return;
+    isSettlementRecoveryRunning = true;
+    const startedAt = Date.now();
+    settlementRecoveryMetrics.runs += 1;
+    settlementRecoveryMetrics.lastRunAt = startedAt;
+    cumulativeMetrics.settlementRecoveryRuns += 1;
+
+    try {
+        const now = new Date();
+        const pendingTrades = await claimCopyTrades({
+            where: {
+                status: 'SETTLEMENT_PENDING',
+                retryCount: { lt: SETTLEMENT_MAX_RETRY_ATTEMPTS },
+                OR: [
+                    { nextRetryAt: null },
+                    { nextRetryAt: { lte: now } },
+                ],
+            },
+            include: {
+                config: {
+                    select: {
+                        walletAddress: true,
+                        executionMode: true,
+                    },
+                },
+            },
+            orderBy: { executedAt: 'asc' },
+            take: SETTLEMENT_RECOVERY_BATCH,
+        });
+
+        if (pendingTrades.length === 0) return;
+
+        settlementRecoveryMetrics.claimed += pendingTrades.length;
+        console.log(`[Supervisor] 🚑 Settlement recovery claimed ${pendingTrades.length} trade(s).`);
+
+        for (const trade of pendingTrades) {
+            try {
+                const executionMode = String(trade?.config?.executionMode || '').toUpperCase();
+                if (executionMode === 'EOA') {
+                    // EOA path should not produce SETTLEMENT_PENDING; mark failed to stop endless retries.
+                    settlementRecoveryMetrics.failed += 1;
+                    cumulativeMetrics.settlementRecoveryFailed += 1;
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'FAILED',
+                            errorMessage: 'SETTLEMENT_RECOVERY_UNSUPPORTED_EOA',
+                            retryCount: trade.retryCount + 1,
+                            nextRetryAt: null,
+                            lockedAt: null,
+                            lockedBy: null,
+                        },
+                    });
+                    continue;
+                }
+
+                const walletAddress = String(trade?.config?.walletAddress || '').toLowerCase();
+                const tokenId = String(trade?.tokenId || '');
+                const side = String(trade?.originalSide || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
+                const amount = Number(trade?.copySize || 0);
+                const recoveryPrice = Number(trade?.copyPrice || trade?.originalPrice || 0);
+
+                if (!walletAddress || !tokenId || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(recoveryPrice) || recoveryPrice <= 0) {
+                    const nextRetryCount = (trade.retryCount || 0) + 1;
+                    const exhausted = nextRetryCount >= SETTLEMENT_MAX_RETRY_ATTEMPTS;
+                    if (exhausted) {
+                        settlementRecoveryMetrics.exhausted += 1;
+                        cumulativeMetrics.settlementRecoveryExhausted += 1;
+                    } else {
+                        settlementRecoveryMetrics.failed += 1;
+                        cumulativeMetrics.settlementRecoveryFailed += 1;
+                    }
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: exhausted ? 'FAILED' : 'SETTLEMENT_PENDING',
+                            errorMessage: 'SETTLEMENT_RECOVERY_MISSING_DATA',
+                            retryCount: nextRetryCount,
+                            nextRetryAt: exhausted ? null : new Date(Date.now() + computeRetryBackoffMs(nextRetryCount)),
+                            lockedAt: null,
+                            lockedBy: null,
+                        },
+                    });
+                    continue;
+                }
+
+                const proxyAddress = await executionService.resolveProxyAddress(walletAddress);
+                if (!proxyAddress) {
+                    const nextRetryCount = (trade.retryCount || 0) + 1;
+                    const exhausted = nextRetryCount >= SETTLEMENT_MAX_RETRY_ATTEMPTS;
+                    if (exhausted) {
+                        settlementRecoveryMetrics.exhausted += 1;
+                        cumulativeMetrics.settlementRecoveryExhausted += 1;
+                    } else {
+                        settlementRecoveryMetrics.failed += 1;
+                        cumulativeMetrics.settlementRecoveryFailed += 1;
+                    }
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: exhausted ? 'FAILED' : 'SETTLEMENT_PENDING',
+                            errorMessage: 'SETTLEMENT_RECOVERY_PROXY_NOT_FOUND',
+                            retryCount: nextRetryCount,
+                            nextRetryAt: exhausted ? null : new Date(Date.now() + computeRetryBackoffMs(nextRetryCount)),
+                            lockedAt: null,
+                            lockedBy: null,
+                        },
+                    });
+                    continue;
+                }
+
+                const recovery = await executionService.recoverSettlement(
+                    proxyAddress,
+                    side as 'BUY' | 'SELL',
+                    tokenId,
+                    amount,
+                    recoveryPrice,
+                    trade.usedBotFloat === true,
+                    false
+                );
+
+                if (recovery.success) {
+                    settlementRecoveryMetrics.recovered += 1;
+                    cumulativeMetrics.settlementRecoveryRecovered += 1;
+                    await prisma.copyTrade.update({
+                        where: { id: trade.id },
+                        data: {
+                            status: 'EXECUTED',
+                            executedAt: trade.executedAt || new Date(),
+                            txHash: recovery.txHash || trade.txHash || null,
+                            errorMessage: null,
+                            nextRetryAt: null,
+                            lockedAt: null,
+                            lockedBy: null,
+                        },
+                    });
+                    continue;
+                }
+
+                const nextRetryCount = (trade.retryCount || 0) + 1;
+                const exhausted = nextRetryCount >= SETTLEMENT_MAX_RETRY_ATTEMPTS;
+                if (exhausted) {
+                    settlementRecoveryMetrics.exhausted += 1;
+                    cumulativeMetrics.settlementRecoveryExhausted += 1;
+                } else {
+                    settlementRecoveryMetrics.failed += 1;
+                    cumulativeMetrics.settlementRecoveryFailed += 1;
+                }
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        status: exhausted ? 'FAILED' : 'SETTLEMENT_PENDING',
+                        errorMessage: recovery.error || 'SETTLEMENT_RECOVERY_FAILED',
+                        retryCount: nextRetryCount,
+                        nextRetryAt: exhausted ? null : new Date(Date.now() + computeRetryBackoffMs(nextRetryCount)),
+                        lockedAt: null,
+                        lockedBy: null,
+                    },
+                });
+            } catch (tradeError: any) {
+                const nextRetryCount = (trade.retryCount || 0) + 1;
+                const exhausted = nextRetryCount >= SETTLEMENT_MAX_RETRY_ATTEMPTS;
+                if (exhausted) {
+                    settlementRecoveryMetrics.exhausted += 1;
+                    cumulativeMetrics.settlementRecoveryExhausted += 1;
+                } else {
+                    settlementRecoveryMetrics.failed += 1;
+                    cumulativeMetrics.settlementRecoveryFailed += 1;
+                }
+                await prisma.copyTrade.update({
+                    where: { id: trade.id },
+                    data: {
+                        status: exhausted ? 'FAILED' : 'SETTLEMENT_PENDING',
+                        errorMessage: tradeError?.message || 'SETTLEMENT_RECOVERY_EXCEPTION',
+                        retryCount: nextRetryCount,
+                        nextRetryAt: exhausted ? null : new Date(Date.now() + computeRetryBackoffMs(nextRetryCount)),
+                        lockedAt: null,
+                        lockedBy: null,
+                    },
+                });
+            }
+        }
+    } catch (error) {
+        console.warn('[Supervisor] Settlement recovery loop failed:', error);
+    } finally {
+        settlementRecoveryMetrics.lastElapsedMs = Date.now() - startedAt;
+        isSettlementRecoveryRunning = false;
     }
 }
 
@@ -3438,6 +3713,16 @@ async function main() {
         setInterval(() => {
             void runSellAccountingReconciliation();
         }, SELL_RECONCILIATION_INTERVAL_MS);
+    }
+
+    if (SETTLEMENT_RECOVERY_ENABLED) {
+        console.log(
+            `[Supervisor] 🚑 Settlement recovery enabled: interval=${SETTLEMENT_RECOVERY_INTERVAL_MS}ms batch=${SETTLEMENT_RECOVERY_BATCH} maxRetry=${SETTLEMENT_MAX_RETRY_ATTEMPTS} lockTtl=${COPY_TRADE_LOCK_TTL_MS}ms`
+        );
+        void recoverPendingSettlements();
+        setInterval(() => {
+            void recoverPendingSettlements();
+        }, SETTLEMENT_RECOVERY_INTERVAL_MS);
     }
 
     // Queue Drain Loop

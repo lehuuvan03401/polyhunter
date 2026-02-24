@@ -91,3 +91,9 @@
 - 已执行 `jq empty deploy/stage1/monitoring/grafana/dashboards/copy-trading-supervisor.json`，通过。
 - 已执行 `openspec validate add-supervisor-monitoring-templates --strict --no-interactive`，通过。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 新增 `SETTLEMENT_PENDING` 自动恢复闭环：Supervisor 增加抢锁扫描 + `recoverSettlement` 执行 + 指数退避重试 + 超限失败落库（避免无限 pending）。
+- 新增 Settlement Recovery 指标：Prometheus 暴露 `copy_supervisor_settlement_recovery_*`（runs/recovered/failed/exhausted/window）。
+- 新增恢复循环配置：`SUPERVISOR_SETTLEMENT_RECOVERY_*`、`COPY_TRADING_SETTLEMENT_*`、`COPY_TRADING_LOCK_TTL_MS`。
+- 新增 OpenSpec 变更：`add-supervisor-settlement-recovery-loop`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-settlement-recovery-loop --strict --no-interactive`，通过。
