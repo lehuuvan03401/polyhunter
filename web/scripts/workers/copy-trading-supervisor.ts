@@ -94,6 +94,8 @@ const WALLET_METRICS_MIN_ATTEMPTS = Math.max(1, parseInt(process.env.SUPERVISOR_
 const FANOUT_CONCURRENCY = parseInt(process.env.SUPERVISOR_FANOUT_CONCURRENCY || '25', 10);
 const QUEUE_MAX_SIZE = parseInt(process.env.SUPERVISOR_QUEUE_MAX_SIZE || '5000', 10);
 const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS || '500', 10);
+const QUEUE_PROCESSING_LEASE_MS = Math.max(5_000, parseInt(process.env.SUPERVISOR_QUEUE_PROCESSING_LEASE_MS || '120000', 10));
+const QUEUE_RECLAIM_INTERVAL_MS = Math.max(1_000, parseInt(process.env.SUPERVISOR_QUEUE_RECLAIM_INTERVAL_MS || '30000', 10));
 const WORKER_POOL_SIZE = Math.max(1, parseInt(process.env.SUPERVISOR_WORKER_POOL_SIZE || '20', 10));
 const AUTO_LOAD_SHEDDING_ENABLED = process.env.SUPERVISOR_AUTO_LOAD_SHEDDING !== 'false';
 const LOAD_SHEDDING_QUEUE_DEPTH_WARN = Math.max(10, parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_QUEUE_DEPTH_WARN || '500', 10));
@@ -561,6 +563,8 @@ function calculateCopySize(
 
 // --- QUEUE ---
 interface JobQueueItem {
+    queueId?: string;
+    queueAttempt?: number;
     config: ActiveConfig;
     side: 'BUY' | 'SELL';
     tokenId: string;
@@ -580,52 +584,246 @@ type SignalIdentity = {
 
 interface QueueStore<T> {
     enqueue(item: T): Promise<boolean>;
-    dequeue(): Promise<T | null>;
+    claim(): Promise<QueueClaim<T> | null>;
+    ack(claim: QueueClaim<T>): Promise<void>;
+    nack(claim: QueueClaim<T>, options?: { requeue?: boolean }): Promise<void>;
+    reclaimExpired(nowMs?: number): Promise<number>;
     size(): Promise<number>;
+}
+
+interface QueueClaim<T> {
+    token: string;
+    item: T;
+    claimedAt: number;
+    raw?: string;
 }
 
 class MemoryQueueStore<T> implements QueueStore<T> {
     private queue: TaskQueue<T>;
-    constructor(maxSize: number) {
+    private inFlight = new Map<string, { item: T; claimedAt: number }>();
+    constructor(
+        maxSize: number,
+        private leaseMs: number
+    ) {
         this.queue = new TaskQueue<T>(maxSize);
     }
+
+    private getToken(item: T): string {
+        const current = item as any;
+        if (typeof current?.queueId === 'string' && current.queueId.trim()) {
+            return current.queueId;
+        }
+        const generated = randomUUID();
+        if (typeof current === 'object' && current !== null) {
+            current.queueId = generated;
+            current.queueAttempt = Number.isFinite(current.queueAttempt) ? current.queueAttempt : 0;
+            current.enqueuedAt = Number.isFinite(current.enqueuedAt) ? current.enqueuedAt : Date.now();
+        }
+        return generated;
+    }
+
     async enqueue(item: T): Promise<boolean> {
+        const current = item as any;
+        if (typeof current === 'object' && current !== null) {
+            current.queueId = typeof current.queueId === 'string' && current.queueId.trim() ? current.queueId : randomUUID();
+            current.queueAttempt = Number.isFinite(current.queueAttempt) ? current.queueAttempt : 0;
+            current.enqueuedAt = Number.isFinite(current.enqueuedAt) ? current.enqueuedAt : Date.now();
+        }
         return this.queue.enqueue(item);
     }
-    async dequeue(): Promise<T | null> {
-        return this.queue.dequeue() ?? null;
+    async claim(): Promise<QueueClaim<T> | null> {
+        const item = this.queue.dequeue();
+        if (!item) return null;
+        const claimedAt = Date.now();
+        const token = this.getToken(item);
+        this.inFlight.set(token, { item, claimedAt });
+        return { token, item, claimedAt };
+    }
+    async ack(claim: QueueClaim<T>): Promise<void> {
+        this.inFlight.delete(claim.token);
+    }
+    async nack(claim: QueueClaim<T>, options?: { requeue?: boolean }): Promise<void> {
+        const entry = this.inFlight.get(claim.token);
+        this.inFlight.delete(claim.token);
+        if (options?.requeue === false || !entry) return;
+        const item = entry.item as any;
+        if (typeof item === 'object' && item !== null) {
+            item.queueAttempt = (Number(item.queueAttempt) || 0) + 1;
+        }
+        const requeued = this.queue.enqueue(entry.item);
+        if (!requeued) {
+            console.error('[Supervisor] Memory queue requeue failed (queue full).');
+        }
+    }
+    async reclaimExpired(nowMs = Date.now()): Promise<number> {
+        let reclaimed = 0;
+        for (const [token, entry] of this.inFlight.entries()) {
+            if (nowMs - entry.claimedAt <= this.leaseMs) continue;
+            this.inFlight.delete(token);
+            const item = entry.item as any;
+            if (typeof item === 'object' && item !== null) {
+                item.queueAttempt = (Number(item.queueAttempt) || 0) + 1;
+            }
+            const requeued = this.queue.enqueue(entry.item);
+            if (requeued) reclaimed += 1;
+        }
+        return reclaimed;
     }
     async size(): Promise<number> {
-        return this.queue.length;
+        return this.queue.length + this.inFlight.size;
     }
 }
 
 class RedisQueueStore<T> implements QueueStore<T> {
+    private processingKey: string;
+    private inFlightKey: string;
     constructor(
         private client: any,
         private key: string,
-        private maxSize: number
-    ) { }
+        private maxSize: number,
+        private leaseMs: number
+    ) {
+        this.processingKey = `${this.key}:processing`;
+        this.inFlightKey = `${this.key}:inflight`;
+    }
+
+    private normalizeForEnqueue(item: T): T {
+        const current = item as any;
+        if (typeof current === 'object' && current !== null) {
+            current.queueId = typeof current.queueId === 'string' && current.queueId.trim() ? current.queueId : randomUUID();
+            current.queueAttempt = Number.isFinite(current.queueAttempt) ? current.queueAttempt : 0;
+            current.enqueuedAt = Number.isFinite(current.enqueuedAt) ? current.enqueuedAt : Date.now();
+        }
+        return item;
+    }
+
+    private buildFallbackToken(raw: string): string {
+        const digest = createHash('sha1').update(raw).digest('hex');
+        return `${digest}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    }
 
     async enqueue(item: T): Promise<boolean> {
-        const size = await this.client.llen(this.key);
+        const [pendingSize, inFlightSize] = await Promise.all([
+            this.client.llen(this.key),
+            this.client.hlen(this.inFlightKey),
+        ]);
+        const size = Number(pendingSize || 0) + Number(inFlightSize || 0);
         if (size >= this.maxSize) return false;
-        await this.client.rpush(this.key, JSON.stringify(item));
+        await this.client.rpush(this.key, JSON.stringify(this.normalizeForEnqueue(item)));
         return true;
     }
 
-    async dequeue(): Promise<T | null> {
-        const raw = await this.client.lpop(this.key);
+    async claim(): Promise<QueueClaim<T> | null> {
+        const raw = await this.client.rpoplpush(this.key, this.processingKey);
         if (!raw) return null;
-        return JSON.parse(raw) as T;
+        const item = JSON.parse(raw) as any;
+        const token = (typeof item?.queueId === 'string' && item.queueId.trim())
+            ? item.queueId
+            : this.buildFallbackToken(raw);
+        const claimedAt = Date.now();
+        await this.client.hset(
+            this.inFlightKey,
+            token,
+            JSON.stringify({ raw, claimedAt })
+        );
+        return { token, item: item as T, claimedAt, raw };
+    }
+
+    async ack(claim: QueueClaim<T>): Promise<void> {
+        let raw = claim.raw;
+        const payload = await this.client.hget(this.inFlightKey, claim.token);
+        if (payload) {
+            try {
+                raw = JSON.parse(payload).raw || raw;
+            } catch {
+                // Ignore parse failure and fallback to claim.raw.
+            }
+        }
+        if (!raw) return;
+        await this.client.multi()
+            .lrem(this.processingKey, 1, raw)
+            .hdel(this.inFlightKey, claim.token)
+            .exec();
+    }
+
+    async nack(claim: QueueClaim<T>, options?: { requeue?: boolean }): Promise<void> {
+        let raw = claim.raw;
+        const payload = await this.client.hget(this.inFlightKey, claim.token);
+        if (payload) {
+            try {
+                raw = JSON.parse(payload).raw || raw;
+            } catch {
+                // Ignore parse failure and fallback to claim.raw.
+            }
+        }
+        if (!raw) return;
+        const shouldRequeue = options?.requeue !== false;
+        const pipeline = this.client.multi()
+            .lrem(this.processingKey, 1, raw)
+            .hdel(this.inFlightKey, claim.token);
+        if (shouldRequeue) {
+            try {
+                const parsed = JSON.parse(raw) as any;
+                if (typeof parsed === 'object' && parsed !== null) {
+                    parsed.queueAttempt = (Number(parsed.queueAttempt) || 0) + 1;
+                    raw = JSON.stringify(parsed);
+                }
+            } catch {
+                // Keep raw as-is.
+            }
+            pipeline.lpush(this.key, raw);
+        }
+        await pipeline.exec();
+    }
+
+    async reclaimExpired(nowMs = Date.now()): Promise<number> {
+        const entries = await this.client.hgetall(this.inFlightKey);
+        if (!entries || Object.keys(entries).length === 0) return 0;
+
+        let reclaimed = 0;
+        for (const [token, payload] of Object.entries(entries)) {
+            try {
+                const parsed = JSON.parse(String(payload)) as { raw?: string; claimedAt?: number };
+                const raw = parsed?.raw;
+                const claimedAt = Number(parsed?.claimedAt || 0);
+                if (!raw || !Number.isFinite(claimedAt)) continue;
+                if (nowMs - claimedAt <= this.leaseMs) continue;
+
+                let nextRaw = raw;
+                try {
+                    const item = JSON.parse(raw) as any;
+                    if (typeof item === 'object' && item !== null) {
+                        item.queueAttempt = (Number(item.queueAttempt) || 0) + 1;
+                        nextRaw = JSON.stringify(item);
+                    }
+                } catch {
+                    // Keep raw as-is.
+                }
+
+                await this.client.multi()
+                    .lrem(this.processingKey, 1, raw)
+                    .lpush(this.key, nextRaw)
+                    .hdel(this.inFlightKey, token)
+                    .exec();
+                reclaimed += 1;
+            } catch {
+                // Skip malformed in-flight entries.
+            }
+        }
+
+        return reclaimed;
     }
 
     async size(): Promise<number> {
-        return this.client.llen(this.key);
+        const [pending, inFlight] = await Promise.all([
+            this.client.llen(this.key),
+            this.client.hlen(this.inFlightKey),
+        ]);
+        return Number(pending || 0) + Number(inFlight || 0);
     }
 }
 
-let queueStore: QueueStore<JobQueueItem> = new MemoryQueueStore<JobQueueItem>(QUEUE_MAX_SIZE);
+let queueStore: QueueStore<JobQueueItem> = new MemoryQueueStore<JobQueueItem>(QUEUE_MAX_SIZE, QUEUE_PROCESSING_LEASE_MS);
 let redisClient: any | null = null;
 
 // --- HEALTH METRICS ---
@@ -653,6 +851,7 @@ const cumulativeMetrics = {
     queueEnqueued: 0,
     queueDequeued: 0,
     queueDropped: 0,
+    queueReclaimed: 0,
     rejectsTotal: 0,
     reconcileRuns: 0,
     reconcileErrors: 0,
@@ -667,6 +866,7 @@ const queueStats = {
     enqueued: 0,
     dequeued: 0,
     dropped: 0,
+    reclaimed: 0,
     totalLagMs: 0,
     maxLagMs: 0,
     maxDepth: 0,
@@ -1086,6 +1286,7 @@ async function buildPrometheusMetricsSnapshot(): Promise<string> {
     lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueEnqueued, { action: 'enqueued' }));
     lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDequeued, { action: 'dequeued' }));
     lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDropped, { action: 'dropped' }));
+    lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueReclaimed, { action: 'reclaimed' }));
 
     const modeLabels: LoadSheddingMode[] = ['NORMAL', 'DEGRADED', 'CRITICAL'];
     for (const mode of modeLabels) {
@@ -1214,7 +1415,7 @@ async function logMetricsSummary(): Promise<void> {
         const walletSummary = summarizeTopWalletStats();
 
         console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: total=${metrics.totalExecutions} success=${metrics.successfulExecutions} failed=${metrics.failedExecutions} skipped=${metrics.skippedExecutions} successRate=${successRate}% avgLatency=${avgLatency}s`);
-        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s p95Lag=${(p95QueueLagMs / 1000).toFixed(2)}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
+        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} reclaimed=${queueStats.reclaimed} avgLag=${avgQueueLag}s p95Lag=${(p95QueueLagMs / 1000).toFixed(2)}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
         console.log(`[Metrics] 🚦 Load shedding: mode=${loadSheddingState.mode} fanout=${getDispatchFanoutLimit()} mempoolPaused=${isMempoolDispatchPaused()} healthyWindows=${loadSheddingState.healthyWindows}`);
         console.log(`[Metrics] 🛡️ Reject reasons: total=${rejectStats.total} top=[${rejectSummary}]`);
         console.log(`[Metrics] 👛 Wallet success: top=[${walletSummary}]`);
@@ -1245,6 +1446,7 @@ async function logMetricsSummary(): Promise<void> {
         queueStats.enqueued = 0;
         queueStats.dequeued = 0;
         queueStats.dropped = 0;
+        queueStats.reclaimed = 0;
         queueStats.totalLagMs = 0;
         queueStats.maxLagMs = 0;
         queueStats.maxDepth = queueDepth;
@@ -2005,7 +2207,12 @@ async function initSharedStores(): Promise<void> {
         redisClient = new Redis(REDIS_URL, { enableReadyCheck: true, maxRetriesPerRequest: 2 });
         await redisClient.ping();
         const prefix = 'copytrading:supervisor:';
-        queueStore = new RedisQueueStore<JobQueueItem>(redisClient, `${prefix}queue`, QUEUE_MAX_SIZE);
+        queueStore = new RedisQueueStore<JobQueueItem>(
+            redisClient,
+            `${prefix}queue`,
+            QUEUE_MAX_SIZE,
+            QUEUE_PROCESSING_LEASE_MS
+        );
         dedupStore = new RedisDedupStore(redisClient, `${prefix}dedup:`);
         counterStore = new RedisCounterStore(redisClient, `${prefix}counter:`);
         console.log('[Supervisor] ✅ Redis connected. Shared stores enabled.');
@@ -2236,11 +2443,12 @@ async function checkQueue() {
             const worker = walletManager.checkoutWorker();
             if (!worker) return;
 
-            const job = await queueStore.dequeue();
-            if (!job) {
+            const claim = await queueStore.claim();
+            if (!claim) {
                 walletManager.checkinWorker(worker.address);
                 return;
             }
+            const job = claim.item;
 
             const lagMs = job.enqueuedAt ? (Date.now() - job.enqueuedAt) : 0;
             queueStats.dequeued += 1;
@@ -2257,23 +2465,45 @@ async function checkQueue() {
                 originalSize: job.originalSize,
                 approxPrice: job.approxPrice,
             });
-            void executeJobInternal(
-                worker,
-                job.config,
-                job.side,
-                job.tokenId,
-                job.approxPrice,
-                job.originalTrader,
-                job.originalSize,
-                originalSignalId,
-                job.isPreflight,
-                job.overrides
-            );
+            try {
+                await executeJobInternal(
+                    worker,
+                    job.config,
+                    job.side,
+                    job.tokenId,
+                    job.approxPrice,
+                    job.originalTrader,
+                    job.originalSize,
+                    originalSignalId,
+                    job.isPreflight,
+                    job.overrides
+                );
+                await queueStore.ack(claim);
+            } catch (executionError) {
+                console.error('[Supervisor] Queue job execution failed before ack. Requeueing claim.', executionError);
+                try {
+                    await queueStore.nack(claim, { requeue: true });
+                } catch (nackError) {
+                    console.error('[Supervisor] Queue nack failed:', nackError);
+                }
+            }
         }
     } catch (error) {
         console.error('[Supervisor] Queue drain failed:', error);
     } finally {
         isDrainingQueue = false;
+    }
+}
+
+async function reclaimQueueLeases(): Promise<void> {
+    try {
+        const reclaimed = await queueStore.reclaimExpired();
+        if (reclaimed <= 0) return;
+        queueStats.reclaimed += reclaimed;
+        cumulativeMetrics.queueReclaimed += reclaimed;
+        console.warn(`[Supervisor] ♻️ Reclaimed ${reclaimed} stale queue lease(s).`);
+    } catch (error) {
+        console.warn('[Supervisor] Queue lease reclaim failed:', error);
     }
 }
 
@@ -3311,6 +3541,8 @@ async function processJob(
         const queueOverrides = overrides;
         try {
             const queued = await queueStore.enqueue({
+                queueId: randomUUID(),
+                queueAttempt: 0,
                 config,
                 side,
                 tokenId,
@@ -3729,6 +3961,10 @@ async function main() {
     setInterval(() => {
         void checkQueue();
     }, QUEUE_DRAIN_INTERVAL_MS);
+    setInterval(() => {
+        void reclaimQueueLeases();
+    }, QUEUE_RECLAIM_INTERVAL_MS);
+    void reclaimQueueLeases();
 
     // Start Listeners
     if (isPollingSignalEnabled()) {

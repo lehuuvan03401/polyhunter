@@ -97,3 +97,9 @@
 - 新增 OpenSpec 变更：`add-supervisor-settlement-recovery-loop`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-settlement-recovery-loop --strict --no-interactive`，通过。
+- 新增 Supervisor 队列 ack/reclaim 语义：`claim/ack/nack` + processing lease + stale reclaim，避免“出队后进程崩溃”导致任务丢失。
+- Redis 队列新增 processing/inflight 结构；内存队列补齐 in-flight 回收语义，行为对齐。
+- 新增队列恢复指标：`copy_supervisor_queue_total{action="reclaimed"}` 与摘要日志 `reclaimed` 统计。
+- 新增 OpenSpec 变更：`add-supervisor-queue-ack-reclaim`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-queue-ack-reclaim --strict --no-interactive`，通过。
