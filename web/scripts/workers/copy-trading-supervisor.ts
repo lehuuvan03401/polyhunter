@@ -78,6 +78,8 @@ const GUARDRAIL_CACHE_TTL_MS = parseInt(process.env.SUPERVISOR_GUARDRAIL_CACHE_T
 const MARKET_META_TTL_MS = parseInt(process.env.SUPERVISOR_MARKET_META_TTL_MS || '300000', 10);
 // DEDUP_TTL_MS 控制“同一事件哈希”去重窗口，避免多信号源重复下单。
 const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10);
+const FILTER_MARKET_STATS_TTL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_FILTER_MARKET_STATS_TTL_MS || '15000', 10));
+const FILTER_ORDERBOOK_DEPTH_LEVELS = Math.max(1, parseInt(process.env.SUPERVISOR_FILTER_ORDERBOOK_DEPTH_LEVELS || '20', 10));
 
 // =========================
 // 并发与队列
@@ -1464,6 +1466,97 @@ interface FilterResult {
     reason?: string;
 }
 
+interface FilterMarketMetrics {
+    depthUsd: number;
+    liquidity: number;
+    volume24h: number;
+}
+
+const filterMetricsCache = new Map<string, { metrics: FilterMarketMetrics; fetchedAt: number }>();
+const filterMetricsInFlight = new Map<string, Promise<FilterMarketMetrics | null>>();
+
+function buildFilterMetricsKey(tokenId: string, side: 'BUY' | 'SELL'): string {
+    return `${tokenId}:${side}`;
+}
+
+function toFinitePositive(value: unknown): number {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return 0;
+    return num;
+}
+
+function estimateOrderbookDepthUsd(orderbook: any, side: 'BUY' | 'SELL', maxLevels: number): number {
+    const levels = side === 'BUY' ? (orderbook?.asks || []) : (orderbook?.bids || []);
+    let depthUsd = 0;
+    for (let i = 0; i < Math.min(levels.length, maxLevels); i += 1) {
+        const level = levels[i];
+        const price = toFinitePositive(level?.price);
+        const size = toFinitePositive(level?.size);
+        if (price <= 0 || size <= 0) continue;
+        depthUsd += price * size;
+    }
+    return depthUsd;
+}
+
+async function getFilterMarketMetrics(tokenId: string, side: 'BUY' | 'SELL'): Promise<FilterMarketMetrics | null> {
+    const key = buildFilterMetricsKey(tokenId, side);
+    const now = Date.now();
+    const cached = filterMetricsCache.get(key);
+    if (cached && now - cached.fetchedAt <= FILTER_MARKET_STATS_TTL_MS) {
+        return cached.metrics;
+    }
+
+    const inFlight = filterMetricsInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    const request = (async () => {
+        try {
+            const [metadata, orderbook] = await Promise.all([
+                getMarketMetadata(tokenId).catch(() => null),
+                masterTradingService.getOrderBook(tokenId).catch(() => null),
+            ]);
+
+            const depthUsd = estimateOrderbookDepthUsd(orderbook, side, FILTER_ORDERBOOK_DEPTH_LEVELS);
+
+            let volume24h = toFinitePositive((metadata as any)?.volume);
+            let liquidity = 0;
+
+            const conditionId = metadata?.conditionId;
+            const marketSlug = metadata?.marketSlug;
+            let gammaMarket: any = null;
+            if (conditionId && conditionId !== '0x0') {
+                gammaMarket = await gammaApi.getMarketByConditionId(conditionId).catch(() => null);
+            }
+            if (!gammaMarket && marketSlug && !marketSlug.includes('unknown')) {
+                gammaMarket = await gammaApi.getMarketBySlug(marketSlug).catch(() => null);
+            }
+
+            if (gammaMarket) {
+                volume24h = toFinitePositive(gammaMarket.volume24hr ?? gammaMarket.volume ?? volume24h);
+                liquidity = toFinitePositive(gammaMarket.liquidity);
+            }
+
+            const metrics: FilterMarketMetrics = {
+                depthUsd,
+                liquidity,
+                volume24h,
+            };
+
+            if (metrics.depthUsd <= 0 && metrics.liquidity <= 0 && metrics.volume24h <= 0) {
+                return null;
+            }
+
+            filterMetricsCache.set(key, { metrics, fetchedAt: Date.now() });
+            return metrics;
+        } finally {
+            filterMetricsInFlight.delete(key);
+        }
+    })();
+
+    filterMetricsInFlight.set(key, request);
+    return request;
+}
+
 async function passesFilters(
     config: ActiveConfig,
     tokenId: string,
@@ -1480,9 +1573,35 @@ async function passesFilters(
         }
     }
 
-    // minLiquidity and minVolume would require market API calls
-    // For MVP, we only enforce maxOdds which uses price already fetched
-    // TODO: Add market liquidity/volume checks when market API is integrated
+    if ((config.minLiquidity && config.minLiquidity > 0) || (config.minVolume && config.minVolume > 0)) {
+        const metrics = await getFilterMarketMetrics(tokenId, side);
+        if (!metrics) {
+            return {
+                passes: false,
+                reason: 'market metrics unavailable for liquidity/volume filters',
+            };
+        }
+
+        if (config.minLiquidity && config.minLiquidity > 0) {
+            // minLiquidity 优先用 side 盘口深度，缺失时回退到 Gamma liquidity。
+            const effectiveLiquidity = metrics.depthUsd > 0 ? metrics.depthUsd : metrics.liquidity;
+            if (effectiveLiquidity < config.minLiquidity) {
+                return {
+                    passes: false,
+                    reason: `minLiquidity filter failed: ${effectiveLiquidity.toFixed(2)} < ${config.minLiquidity.toFixed(2)}`,
+                };
+            }
+        }
+
+        if (config.minVolume && config.minVolume > 0) {
+            if (metrics.volume24h < config.minVolume) {
+                return {
+                    passes: false,
+                    reason: `minVolume filter failed: ${metrics.volume24h.toFixed(2)} < ${config.minVolume.toFixed(2)}`,
+                };
+            }
+        }
+    }
 
     return { passes: true };
 }
