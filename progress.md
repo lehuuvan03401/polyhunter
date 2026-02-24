@@ -71,3 +71,10 @@
 - 新增 OpenSpec 变更：`add-supervisor-operational-slo-metrics`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-operational-slo-metrics --strict --no-interactive`，通过。
+- 新增 Supervisor 自动降载（load shedding）状态机：`NORMAL/DEGRADED/CRITICAL`，基于队列深度与队列 p95 lag 阈值自动切换。
+- 新增动态 fanout 并发上限：高负载自动降低订阅分发并发，恢复后自动回升（带恢复窗口 hysteresis）。
+- 新增 mempool 自动暂停闸门：降载模式下暂停 mempool dispatch，避免拥塞扩大。
+- 修复/接通 mempool 回调：`MempoolDetector` 回调已接入 `handleSniffedTx` 执行链路。
+- 新增 OpenSpec 变更：`add-supervisor-auto-load-shedding`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-auto-load-shedding --strict --no-interactive`，通过。

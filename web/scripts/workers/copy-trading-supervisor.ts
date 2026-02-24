@@ -94,6 +94,38 @@ const FANOUT_CONCURRENCY = parseInt(process.env.SUPERVISOR_FANOUT_CONCURRENCY ||
 const QUEUE_MAX_SIZE = parseInt(process.env.SUPERVISOR_QUEUE_MAX_SIZE || '5000', 10);
 const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS || '500', 10);
 const WORKER_POOL_SIZE = Math.max(1, parseInt(process.env.SUPERVISOR_WORKER_POOL_SIZE || '20', 10));
+const AUTO_LOAD_SHEDDING_ENABLED = process.env.SUPERVISOR_AUTO_LOAD_SHEDDING !== 'false';
+const LOAD_SHEDDING_QUEUE_DEPTH_WARN = Math.max(10, parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_QUEUE_DEPTH_WARN || '500', 10));
+const LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL = Math.max(
+    LOAD_SHEDDING_QUEUE_DEPTH_WARN,
+    parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL || '1500', 10)
+);
+const LOAD_SHEDDING_QUEUE_P95_WARN_MS = Math.max(100, parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_QUEUE_P95_WARN_MS || '3000', 10));
+const LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS = Math.max(
+    LOAD_SHEDDING_QUEUE_P95_WARN_MS,
+    parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS || '8000', 10)
+);
+const LOAD_SHEDDING_DEGRADED_FANOUT_LIMIT = Math.max(
+    1,
+    Math.min(
+        FANOUT_CONCURRENCY,
+        parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_DEGRADED_FANOUT || String(Math.max(1, Math.floor(FANOUT_CONCURRENCY * 0.5))), 10)
+    )
+);
+const LOAD_SHEDDING_CRITICAL_FANOUT_LIMIT = Math.max(
+    1,
+    Math.min(
+        LOAD_SHEDDING_DEGRADED_FANOUT_LIMIT,
+        parseInt(
+            process.env.SUPERVISOR_LOAD_SHEDDING_CRITICAL_FANOUT
+            || String(Math.max(1, Math.floor(FANOUT_CONCURRENCY * 0.2))),
+            10
+        )
+    )
+);
+const LOAD_SHEDDING_RECOVERY_WINDOWS = Math.max(1, parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_RECOVERY_WINDOWS || '2', 10));
+const LOAD_SHEDDING_EVAL_INTERVAL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_EVAL_INTERVAL_MS || '15000', 10));
+const LOAD_SHEDDING_PAUSE_MEMPOOL_ON_DEGRADED = process.env.SUPERVISOR_LOAD_SHEDDING_PAUSE_MEMPOOL_ON_DEGRADED !== 'false';
 
 // =========================
 // 对账任务（SELL 账务复核）
@@ -601,6 +633,22 @@ const reconciliationMetrics = {
     lastElapsedMs: 0,
 };
 
+type LoadSheddingMode = 'NORMAL' | 'DEGRADED' | 'CRITICAL';
+
+const loadSheddingState: {
+    mode: LoadSheddingMode;
+    healthyWindows: number;
+    lastModeChangeAt: number;
+    lastQueueDepth: number;
+    lastQueueP95LagMs: number;
+} = {
+    mode: 'NORMAL',
+    healthyWindows: 0,
+    lastModeChangeAt: Date.now(),
+    lastQueueDepth: 0,
+    lastQueueP95LagMs: 0,
+};
+
 interface SourceWindowEntry {
     firstSeenAt: number;
     ws: boolean;
@@ -777,6 +825,99 @@ function classifyFilterRejectReason(reason: string): string {
     return 'FILTER_BLOCKED';
 }
 
+function loadSheddingSeverity(mode: LoadSheddingMode): number {
+    if (mode === 'CRITICAL') return 2;
+    if (mode === 'DEGRADED') return 1;
+    return 0;
+}
+
+function computeLoadSheddingTargetMode(queueDepth: number, queueP95LagMs: number): LoadSheddingMode {
+    if (
+        queueDepth >= LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL
+        || queueP95LagMs >= LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS
+    ) {
+        return 'CRITICAL';
+    }
+    if (
+        queueDepth >= LOAD_SHEDDING_QUEUE_DEPTH_WARN
+        || queueP95LagMs >= LOAD_SHEDDING_QUEUE_P95_WARN_MS
+    ) {
+        return 'DEGRADED';
+    }
+    return 'NORMAL';
+}
+
+function getDispatchFanoutLimit(): number {
+    if (!AUTO_LOAD_SHEDDING_ENABLED) return FANOUT_CONCURRENCY;
+    if (loadSheddingState.mode === 'CRITICAL') {
+        return Math.max(1, Math.min(FANOUT_CONCURRENCY, LOAD_SHEDDING_CRITICAL_FANOUT_LIMIT));
+    }
+    if (loadSheddingState.mode === 'DEGRADED') {
+        return Math.max(1, Math.min(FANOUT_CONCURRENCY, LOAD_SHEDDING_DEGRADED_FANOUT_LIMIT));
+    }
+    return FANOUT_CONCURRENCY;
+}
+
+function isMempoolDispatchPaused(): boolean {
+    if (!AUTO_LOAD_SHEDDING_ENABLED) return false;
+    if (loadSheddingState.mode === 'CRITICAL') return true;
+    return loadSheddingState.mode === 'DEGRADED' && LOAD_SHEDDING_PAUSE_MEMPOOL_ON_DEGRADED;
+}
+
+function transitionLoadSheddingMode(nextMode: LoadSheddingMode, reason: string): void {
+    const prevMode = loadSheddingState.mode;
+    if (nextMode === prevMode) return;
+    loadSheddingState.mode = nextMode;
+    loadSheddingState.lastModeChangeAt = Date.now();
+    const message = `[Supervisor] 🚦 Load shedding ${prevMode} -> ${nextMode}. ${reason}. fanout=${getDispatchFanoutLimit()} mempoolPaused=${isMempoolDispatchPaused()}`;
+    if (loadSheddingSeverity(nextMode) > loadSheddingSeverity(prevMode)) {
+        console.warn(message);
+    } else {
+        console.log(message);
+    }
+}
+
+function evaluateLoadSheddingState(params: { queueDepth: number; queueP95LagMs: number; source: 'interval' | 'summary' }): void {
+    loadSheddingState.lastQueueDepth = params.queueDepth;
+    loadSheddingState.lastQueueP95LagMs = params.queueP95LagMs;
+    if (!AUTO_LOAD_SHEDDING_ENABLED) return;
+
+    const targetMode = computeLoadSheddingTargetMode(params.queueDepth, params.queueP95LagMs);
+    const currentMode = loadSheddingState.mode;
+    if (targetMode === currentMode) {
+        if (currentMode === 'NORMAL') {
+            loadSheddingState.healthyWindows = 0;
+        }
+        return;
+    }
+
+    if (targetMode === 'NORMAL' && currentMode !== 'NORMAL') {
+        loadSheddingState.healthyWindows += 1;
+        if (loadSheddingState.healthyWindows < LOAD_SHEDDING_RECOVERY_WINDOWS) {
+            return;
+        }
+    } else {
+        loadSheddingState.healthyWindows = 0;
+    }
+
+    const reason = `source=${params.source} depth=${params.queueDepth} p95LagMs=${params.queueP95LagMs}`;
+    transitionLoadSheddingMode(targetMode, reason);
+    if (targetMode === 'NORMAL') {
+        loadSheddingState.healthyWindows = 0;
+    }
+}
+
+async function evaluateLoadSheddingSnapshot(source: 'interval' | 'summary' = 'interval'): Promise<void> {
+    if (!AUTO_LOAD_SHEDDING_ENABLED) return;
+    try {
+        const queueDepth = await queueStore.size();
+        const queueP95LagMs = calculatePercentile(queueLagSamplesMs, 95);
+        evaluateLoadSheddingState({ queueDepth, queueP95LagMs, source });
+    } catch (error) {
+        console.warn('[Supervisor] Load shedding snapshot failed:', error);
+    }
+}
+
 async function logMetricsSummary(): Promise<void> {
     try {
         flushSignalSourceWindow();
@@ -799,11 +940,13 @@ async function logMetricsSummary(): Promise<void> {
             ? (queueStats.totalLagMs / queueStats.dequeued / 1000).toFixed(2)
             : '0';
         const p95QueueLagMs = calculatePercentile(queueLagSamplesMs, 95);
+        evaluateLoadSheddingState({ queueDepth, queueP95LagMs: p95QueueLagMs, source: 'summary' });
         const rejectSummary = summarizeTopRejectReasons();
         const walletSummary = summarizeTopWalletStats();
 
         console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: total=${metrics.totalExecutions} success=${metrics.successfulExecutions} failed=${metrics.failedExecutions} skipped=${metrics.skippedExecutions} successRate=${successRate}% avgLatency=${avgLatency}s`);
         console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s p95Lag=${(p95QueueLagMs / 1000).toFixed(2)}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
+        console.log(`[Metrics] 🚦 Load shedding: mode=${loadSheddingState.mode} fanout=${getDispatchFanoutLimit()} mempoolPaused=${isMempoolDispatchPaused()} healthyWindows=${loadSheddingState.healthyWindows}`);
         console.log(`[Metrics] 🛡️ Reject reasons: total=${rejectStats.total} top=[${rejectSummary}]`);
         console.log(`[Metrics] 👛 Wallet success: top=[${walletSummary}]`);
         if (reconciliationMetrics.runs > 0 || reconciliationMetrics.lastRunAt > 0) {
@@ -2022,7 +2165,7 @@ async function handlePolledActivityTrade(traderAddress: string, trade: DataActiv
 
     console.log(`[Supervisor] 🛰️ POLL DETECTED: ${traderAddress} ${side} ${tokenId} ($${price})`);
 
-    await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
+    await runWithConcurrency(subscribers, getDispatchFanoutLimit(), async (sub) => {
         await processJob(sub, side, tokenId, price, traderAddress, size, false, undefined, {
             txHash: trade.transactionHash,
         });
@@ -2123,7 +2266,7 @@ async function pollOwnedTradersOnce(): Promise<{ fetched: number; processed: num
     let totalFetched = 0;
     let totalProcessed = 0;
     let newestTimestamp = 0;
-    const pollConcurrency = Math.max(1, Math.min(FANOUT_CONCURRENCY, 12));
+    const pollConcurrency = Math.max(1, Math.min(getDispatchFanoutLimit(), 12));
 
     await runWithConcurrency(traders, pollConcurrency, async (traderAddress) => {
         try {
@@ -2434,7 +2577,7 @@ async function handleTransfer(
         // 3. Fetch real market price (cached)
         const price = await getCachedPrice(tokenId, side);
 
-        await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
+        await runWithConcurrency(subscribers, getDispatchFanoutLimit(), async (sub) => {
             const { tradeShares } = normalizeTradeSizingFromShares(sub, rawShares, price);
             await processJob(sub, side!, tokenId, price, trader!, tradeShares, false, undefined, {
                 txHash,
@@ -2457,6 +2600,11 @@ const handleSniffedTx = async (
     value: ethers.BigNumber,
     gasInfo?: { maxFeePerGas?: ethers.BigNumber, maxPriorityFeePerGas?: ethers.BigNumber }
 ) => {
+    if (isMempoolDispatchPaused()) {
+        recordRejectReason('MEMPOOL_PAUSED_BY_LOAD_SHEDDING');
+        return;
+    }
+
     // 0. Calculate Gas Boost (Front-Running)
     let overrides: ethers.Overrides = {};
     if (gasInfo && gasInfo.maxFeePerGas && gasInfo.maxPriorityFeePerGas) {
@@ -2516,7 +2664,7 @@ const handleSniffedTx = async (
             return;
         }
 
-        await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (config) => {
+        await runWithConcurrency(subscribers, getDispatchFanoutLimit(), async (config) => {
             const { tradeShares } = normalizeTradeSizingFromShares(config, rawShares, mempoolPrice);
             await processJob(config, side, tokenId, mempoolPrice, trader, tradeShares, true, overrides, {
                 txHash,
@@ -2819,7 +2967,7 @@ async function handleActivityTrade(trade: ActivityTrade) {
         if (subscribers.length === 0) return;
 
         // 3. Execution
-        await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (sub) => {
+        await runWithConcurrency(subscribers, getDispatchFanoutLimit(), async (sub) => {
             try {
                 await processJob(sub, side!, tokenId, price, traderAddress!, size, false, undefined, {
                     txHash: trade.transactionHash,
@@ -3026,6 +3174,16 @@ async function main() {
         void logMetricsSummary();
     }, 300000); // 5 mins
 
+    if (AUTO_LOAD_SHEDDING_ENABLED) {
+        console.log(
+            `[Supervisor] 🚦 Auto load shedding enabled: depth_warn=${LOAD_SHEDDING_QUEUE_DEPTH_WARN} depth_critical=${LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL} p95_warn=${LOAD_SHEDDING_QUEUE_P95_WARN_MS}ms p95_critical=${LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS}ms fanout=${FANOUT_CONCURRENCY}/${LOAD_SHEDDING_DEGRADED_FANOUT_LIMIT}/${LOAD_SHEDDING_CRITICAL_FANOUT_LIMIT}`
+        );
+        void evaluateLoadSheddingSnapshot('interval');
+        setInterval(() => {
+            void evaluateLoadSheddingSnapshot('interval');
+        }, LOAD_SHEDDING_EVAL_INTERVAL_MS);
+    }
+
     // SELL reconciliation loop（默认每日运行一次）
     if (SELL_RECONCILIATION_ENABLED) {
         void runSellAccountingReconciliation();
@@ -3060,8 +3218,16 @@ async function main() {
             mempoolDetector = new MempoolDetector(
                 provider,
                 monitoredTraders,
-                (tx: any) => {
-                    console.log(`[Mempool] Signal: ${tx.hash}`);
+                (
+                    txHash: string,
+                    operator: string,
+                    from: string,
+                    to: string,
+                    id: ethers.BigNumber,
+                    value: ethers.BigNumber,
+                    gasInfo?: { maxFeePerGas?: ethers.BigNumber; maxPriorityFeePerGas?: ethers.BigNumber }
+                ) => {
+                    void handleSniffedTx(txHash, operator, from, to, id, value, gasInfo);
                 }
             );
             mempoolDetector.start();
