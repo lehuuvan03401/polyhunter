@@ -51,6 +51,9 @@ export interface ExecutionResult {
     settlementDeferred?: boolean;
     executedAmount?: number; // The actual amount that was successfully executed (may be less than requested if scaled down)
     scaledDown?: boolean; // Flag indicating if the order was scaled down due to FOK failure
+    filledShares?: number; // Filled shares returned by order execution (for SELL accounting)
+    actualSellProceedsUsdc?: number; // Real SELL proceeds in USDC from fill records
+    sellProceedsSource?: 'trade_ids' | 'order_snapshot' | 'fallback' | 'none';
 }
 
 export interface AllowanceCheckResult {
@@ -731,6 +734,7 @@ export class CopyTradingExecutionService {
                     amount: orderShares,
                     price: finalExecutionPrice,
                     orderType: 'FOK',
+                    includeFillInfo: side === 'SELL',
                 });
 
                 // If we get here without throwing, the order succeeded (or failed gracefully but didn't throw)
@@ -793,6 +797,23 @@ export class CopyTradingExecutionService {
             }
             return { success: false, error: orderResult.errorMsg || "Order failed (FOK)", useProxyFunds: useProxyFunds || usedBotFloat, usedBotFloat };
         }
+
+        const reportedFilledShares = Number(orderResult.filledShares || 0);
+        const safePrice = price > 0 ? price : 1;
+        const fallbackFilledShares = side === 'SELL' ? (attemptAmount / safePrice) : 0;
+        const filledShares = side === 'SELL'
+            ? (reportedFilledShares > 0 ? reportedFilledShares : fallbackFilledShares)
+            : undefined;
+
+        const reportedSellNotional = Number(orderResult.executedNotional || 0);
+        const actualSellProceedsUsdc = side === 'SELL'
+            ? (reportedSellNotional > 0 ? reportedSellNotional : attemptAmount)
+            : undefined;
+        const sellProceedsSource: ExecutionResult['sellProceedsSource'] = side === 'SELL'
+            ? (reportedSellNotional > 0
+                ? ((orderResult.fillSource as 'trade_ids' | 'order_snapshot' | 'none') || 'order_snapshot')
+                : 'fallback')
+            : undefined;
 
         const deferSettlement = this.shouldDeferSettlement(params);
         const deferReimbursement = this.shouldDeferReimbursementFlag(params.deferReimbursement);
@@ -869,17 +890,18 @@ export class CopyTradingExecutionService {
 
                     } else {
                         // SELL：把 bot 实际卖出收到的 USDC (attemptAmount) 归还 proxy。
-                        // 这里我们粗略使用 attemptAmount，实际上应该用以最终成交价执行得到的 USDC：
-                        // `actualUsdcReceived = (attemptAmount / price) * finalExecutionPrice` (粗略估计，实际上聚合API返回更好)
+                        // 按成交回执中的真实卖出回款归还 Proxy，避免长期账务漂移。
                         const addresses = this.chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
-                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, attemptAmount, USDC_DECIMALS, signer);
+                        const settlementUsdc = actualSellProceedsUsdc || attemptAmount;
+                        const returnResult = await this.transferToProxy(proxyAddress, addresses.usdc, settlementUsdc, USDC_DECIMALS, signer);
                         if (returnResult.success) returnTransferTxHash = returnResult.txHash;
 
-                        if (scaledDown && unusedAmount > 0) {
-                            // 未卖出的 shares 也要退回 Proxy
-                            const unusedShares = unusedAmount / price;
-                            console.log(`[CopyExec] ♻️ Refunding unsold shares to proxy (scaled down): ${unusedShares.toFixed(2)} shares`);
-                            await this.transferTokensToProxy(proxyAddress, tokenId, unusedShares, signer);
+                        const totalPulledShares = amount / safePrice;
+                        const unsoldShares = Math.max(0, totalPulledShares - (filledShares || 0));
+                        if (unsoldShares > 0.000001) {
+                            // 未卖出的 shares 退回 Proxy（兼容降级与异常部分成交兜底）。
+                            console.log(`[CopyExec] ♻️ Refunding unsold shares to proxy: ${unsoldShares.toFixed(2)} shares`);
+                            await this.transferTokensToProxy(proxyAddress, tokenId, unsoldShares, signer);
                         }
                     }
                 }
@@ -899,7 +921,10 @@ export class CopyTradingExecutionService {
             proxyAddress,
             settlementDeferred: deferSettlement,
             executedAmount: attemptAmount,
-            scaledDown
+            scaledDown,
+            filledShares,
+            actualSellProceedsUsdc,
+            sellProceedsSource
         };
     }
     /**

@@ -599,6 +599,9 @@ export class TradeOrchestrator {
             tokenPushTxHash?: string;
             returnTransferTxHash?: string;
             settlementDeferred?: boolean;
+            filledShares?: number;
+            actualSellProceedsUsdc?: number;
+            sellProceedsSource?: 'trade_ids' | 'order_snapshot' | 'fallback' | 'none';
         } = { success: false };
         let execPrice = marketPrice;
         let simSlippageBps = 0;
@@ -782,6 +785,14 @@ export class TradeOrchestrator {
                     copySizeUsdc = result.executedAmount;
                 }
             }
+
+            // SELL accounting should use actual fill notional when available.
+            if (result.success && copySide === 'SELL' && result.actualSellProceedsUsdc && result.actualSellProceedsUsdc > 0) {
+                copySizeUsdc = result.actualSellProceedsUsdc;
+                if (result.filledShares && result.filledShares > 0) {
+                    execPrice = result.actualSellProceedsUsdc / result.filledShares;
+                }
+            }
         }
 
         // 10. Process Update
@@ -821,8 +832,12 @@ export class TradeOrchestrator {
         if (result.success && result.transactionHashes && result.transactionHashes.length > 0) {
             console.log(`[Orchestrator] ✅ Trade Executed: ${result.transactionHashes[0]}`);
 
-            // DB Record position — use execPrice (real or simulated VWAP) for shares & avgEntry
-            const shares = copySide === 'BUY' ? copySizeUsdc / execPrice : -(copySizeUsdc / execPrice);
+            // DB Record position — BUY 按 USDC/价格折算 shares；SELL 优先使用成交回执里的 filledShares。
+            const resolvedBuyShares = execPrice > 0 ? (copySizeUsdc / execPrice) : 0;
+            const resolvedSellShares = (copySide === 'SELL' && result.filledShares && result.filledShares > 0)
+                ? result.filledShares
+                : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
+            const shares = copySide === 'BUY' ? resolvedBuyShares : -resolvedSellShares;
             const totalCostInsert = copySide === 'BUY' ? copySizeUsdc : 0;
             await this.prisma.$executeRaw`
                 INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "totalCost", "avgEntryPrice", "updatedAt")

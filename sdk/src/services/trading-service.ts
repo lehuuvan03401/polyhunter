@@ -82,6 +82,7 @@ export interface MarketOrderParams {
   amount: number;
   price?: number;
   orderType?: 'FOK' | 'FAK';
+  includeFillInfo?: boolean;
 }
 
 export interface Order {
@@ -103,6 +104,10 @@ export interface OrderResult {
   orderIds?: string[];
   errorMsg?: string;
   transactionHashes?: string[];
+  filledShares?: number;
+  executedNotional?: number;
+  avgFillPrice?: number;
+  fillSource?: 'trade_ids' | 'order_snapshot' | 'none';
 }
 
 export interface TradeInfo {
@@ -427,12 +432,18 @@ export class TradingService {
             ((result.orderID !== undefined && result.orderID !== '') ||
               (result.transactionsHashes !== undefined && result.transactionsHashes.length > 0)));
 
+        let fillInfo: Partial<OrderResult> = {};
+        if (success && params.includeFillInfo && result.orderID) {
+          fillInfo = await this.resolveOrderFillInfo(client, result.orderID);
+        }
+
         return {
           success,
           orderId: result.orderID,
           orderIds: result.orderIDs,
           errorMsg: result.errorMsg,
           transactionHashes: result.transactionsHashes,
+          ...fillInfo,
         };
       } catch (error) {
         return {
@@ -441,6 +452,69 @@ export class TradingService {
         };
       }
     });
+  }
+
+  private async resolveOrderFillInfo(client: ClobClient, orderId: string): Promise<Partial<OrderResult>> {
+    try {
+      const order = await client.getOrder(orderId);
+      const matchedShares = Number(order.size_matched) || 0;
+      const orderPrice = Number(order.price) || 0;
+      const tradeIds = Array.isArray(order.associate_trades)
+        ? order.associate_trades.filter((id) => typeof id === 'string' && id.length > 0)
+        : [];
+
+      let filledShares = 0;
+      let executedNotional = 0;
+      let fillSource: OrderResult['fillSource'] = 'none';
+
+      if (tradeIds.length > 0) {
+        const tradeRecords = await Promise.all(
+          tradeIds.map(async (tradeId) => {
+            try {
+              const trades = await client.getTrades({ id: tradeId }, true);
+              return trades[0] || null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        for (const trade of tradeRecords) {
+          if (!trade) continue;
+          const size = Number(trade.size) || 0;
+          const price = Number(trade.price) || 0;
+          if (size <= 0 || price <= 0) continue;
+          filledShares += size;
+          executedNotional += size * price;
+        }
+
+        if (filledShares > 0 && executedNotional > 0) {
+          fillSource = 'trade_ids';
+        }
+      }
+
+      if (filledShares <= 0 && matchedShares > 0) {
+        filledShares = matchedShares;
+      }
+
+      if (executedNotional <= 0 && filledShares > 0 && orderPrice > 0) {
+        executedNotional = filledShares * orderPrice;
+        fillSource = 'order_snapshot';
+      }
+
+      const avgFillPrice = filledShares > 0 && executedNotional > 0
+        ? executedNotional / filledShares
+        : undefined;
+
+      return {
+        filledShares: filledShares > 0 ? filledShares : undefined,
+        executedNotional: executedNotional > 0 ? executedNotional : undefined,
+        avgFillPrice,
+        fillSource,
+      };
+    } catch (error) {
+      return { fillSource: 'none' };
+    }
   }
 
   // ============================================================================
