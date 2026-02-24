@@ -799,6 +799,10 @@ async function runSellAccountingReconciliation(): Promise<void> {
 // --- PRICE CACHE (5 second TTL) ---
 const priceCache = new Map<string, { price: number; timestamp: number }>();
 const PRICE_CACHE_TTL = 5000;
+const MEMPOOL_PRICE_FALLBACK_MAX_AGE_MS = Math.max(
+    PRICE_CACHE_TTL,
+    parseInt(process.env.SUPERVISOR_MEMPOOL_PRICE_FALLBACK_MAX_AGE_MS || '15000', 10)
+);
 const PREFLIGHT_CACHE_TTL_MS = 2000;
 const marketMetaCache = new Map<string, { data: { marketSlug: string; conditionId: string; outcome: string }; fetchedAt: number }>();
 
@@ -816,23 +820,58 @@ if (MARKET_CAPS_RAW) {
         });
 }
 
+function buildPriceCacheKey(tokenId: string, side: 'BUY' | 'SELL'): string {
+    return `${tokenId}:${side}`;
+}
+
+function extractSidePrice(orderbook: any, side: 'BUY' | 'SELL'): number | null {
+    const raw = side === 'BUY' ? orderbook?.asks?.[0]?.price : orderbook?.bids?.[0]?.price;
+    const price = Number(raw);
+    if (!Number.isFinite(price) || price <= 0) return null;
+    return price;
+}
+
 async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number> {
-    const cached = priceCache.get(tokenId);
+    const cacheKey = buildPriceCacheKey(tokenId, side);
+    const cached = priceCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < PRICE_CACHE_TTL) {
         return cached.price;
     }
     try {
         const ob = await masterTradingService.getOrderBook(tokenId);
-        const price = side === 'BUY'
-            ? Number(ob.asks[0]?.price || 0.5)
-            : Number(ob.bids[0]?.price || 0.5);
-        priceCache.set(tokenId, { price, timestamp: Date.now() });
-        console.log(`[Supervisor] 💰 Price fetched for ${tokenId}: $${price.toFixed(4)}`);
+        const price = extractSidePrice(ob, side);
+        if (!price) throw new Error('NO_SIDE_PRICE');
+        priceCache.set(cacheKey, { price, timestamp: Date.now() });
+        console.log(`[Supervisor] 💰 Price fetched for ${tokenId} (${side}): $${price.toFixed(4)}`);
         return price;
     } catch (e: any) {
-        // 价格拉取失败时回退上次缓存（再兜底 0.5），确保执行链路不断流。
-        console.warn(`[Supervisor] Price fetch failed for ${tokenId}: ${e.message}`);
+        // 标准路径允许回退兜底值，避免系统断流。
+        console.warn(`[Supervisor] Price fetch failed for ${tokenId} (${side}): ${e.message}`);
         return cached?.price || 0.5;
+    }
+}
+
+async function getStrictMempoolPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number | null> {
+    const cacheKey = buildPriceCacheKey(tokenId, side);
+    const now = Date.now();
+    const cached = priceCache.get(cacheKey);
+    if (cached && now - cached.timestamp < PRICE_CACHE_TTL) {
+        return cached.price;
+    }
+
+    try {
+        const ob = await masterTradingService.getOrderBook(tokenId);
+        const price = extractSidePrice(ob, side);
+        if (!price) throw new Error('NO_SIDE_PRICE');
+        priceCache.set(cacheKey, { price, timestamp: now });
+        return price;
+    } catch (e: any) {
+        if (cached && now - cached.timestamp <= MEMPOOL_PRICE_FALLBACK_MAX_AGE_MS) {
+            console.warn(`[Supervisor] Mempool price fetch failed for ${tokenId} (${side}), using cached fallback age=${now - cached.timestamp}ms`);
+            return cached.price;
+        }
+        console.warn(`[Supervisor] Mempool price unavailable for ${tokenId} (${side}): ${e.message}`);
+        return null;
     }
 }
 
@@ -2148,12 +2187,22 @@ const handleSniffedTx = async (
 
         if (subscribers.length === 0) return;
 
-        // Price might be slightly different as it's pending, but we use strict/market anyway.
-        const PRICE_PLACEHOLDER = 0.5;
+        const mempoolPrice = await getStrictMempoolPrice(tokenId, side);
+        if (!mempoolPrice || mempoolPrice <= 0) {
+            await recordGuardrailEvent({
+                reason: 'MEMPOOL_PRICE_UNAVAILABLE',
+                source: 'supervisor-mempool',
+                amount: rawShares,
+                tradeId: txHash,
+                tokenId,
+            });
+            console.warn(`[Supervisor] 🛡️ MEMPOOL SKIP (no valid price): token=${tokenId} side=${side} tx=${txHash}`);
+            return;
+        }
 
         await runWithConcurrency(subscribers, FANOUT_CONCURRENCY, async (config) => {
-            const { tradeShares } = normalizeTradeSizingFromShares(config, rawShares, PRICE_PLACEHOLDER);
-            await processJob(config, side, tokenId, PRICE_PLACEHOLDER, trader, tradeShares, true, overrides, {
+            const { tradeShares } = normalizeTradeSizingFromShares(config, rawShares, mempoolPrice);
+            await processJob(config, side, tokenId, mempoolPrice, trader, tradeShares, true, overrides, {
                 txHash,
             });
         });
