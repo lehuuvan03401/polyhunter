@@ -110,6 +110,13 @@ export interface OrderResult {
   fillSource?: 'trade_ids' | 'order_snapshot' | 'none';
 }
 
+export interface OrderFillInfo {
+  filledShares?: number;
+  executedNotional?: number;
+  avgFillPrice?: number;
+  fillSource?: 'trade_ids' | 'order_snapshot' | 'none';
+}
+
 export interface TradeInfo {
   id: string;
   tokenId: string;
@@ -434,7 +441,7 @@ export class TradingService {
 
         let fillInfo: Partial<OrderResult> = {};
         if (success && params.includeFillInfo && result.orderID) {
-          fillInfo = await this.resolveOrderFillInfo(client, result.orderID);
+          fillInfo = await this.lookupOrderFillInfo(result.orderID);
         }
 
         return {
@@ -454,7 +461,18 @@ export class TradingService {
     });
   }
 
-  private async resolveOrderFillInfo(client: ClobClient, orderId: string): Promise<Partial<OrderResult>> {
+  async lookupOrderFillInfo(orderId: string): Promise<OrderFillInfo> {
+    const client = await this.ensureInitialized();
+    if (this.isLocalChain()) {
+      return { fillSource: 'none' };
+    }
+
+    return this.rateLimiter.execute(ApiType.CLOB_API, async () => {
+      return this.resolveOrderFillInfo(client, orderId);
+    });
+  }
+
+  private async resolveOrderFillInfo(client: ClobClient, orderId: string): Promise<OrderFillInfo> {
     try {
       const order = await client.getOrder(orderId);
       const matchedShares = Number(order.size_matched) || 0;

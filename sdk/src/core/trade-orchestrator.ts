@@ -821,7 +821,7 @@ export class TradeOrchestrator {
             data: {
                 status: finalStatus as any,
                 executedAt: new Date(),
-                txHash: result.transactionHashes?.[0] || undefined,
+                txHash: result.transactionHashes?.[0] || result.orderId || undefined,
                 errorMessage: errorMessage,
                 usedBotFloat: result.usedBotFloat,
                 copySize: copySizeUsdc, // Ensure DB accurately reflects the possibly scaled-down size
@@ -861,7 +861,7 @@ export class TradeOrchestrator {
                 feePaid: simFeePaid,
                 side: copySide,
                 tokenId: tokenId,
-                txHash: result.transactionHashes[0]
+                txHash: result.transactionHashes[0] || result.orderId
             };
         }
 

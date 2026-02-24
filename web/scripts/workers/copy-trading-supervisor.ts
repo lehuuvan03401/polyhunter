@@ -88,6 +88,15 @@ const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTE
 const WORKER_POOL_SIZE = Math.max(1, parseInt(process.env.SUPERVISOR_WORKER_POOL_SIZE || '20', 10));
 
 // =========================
+// 对账任务（SELL 账务复核）
+// =========================
+const SELL_RECONCILIATION_ENABLED = process.env.SUPERVISOR_SELL_RECONCILIATION_ENABLED !== 'false';
+const SELL_RECONCILIATION_INTERVAL_MS = Math.max(60 * 60 * 1000, parseInt(process.env.SUPERVISOR_SELL_RECONCILIATION_INTERVAL_MS || String(24 * 60 * 60 * 1000), 10));
+const SELL_RECONCILIATION_LOOKBACK_MS = Math.max(60 * 60 * 1000, parseInt(process.env.SUPERVISOR_SELL_RECONCILIATION_LOOKBACK_MS || String(26 * 60 * 60 * 1000), 10));
+const SELL_RECONCILIATION_MAX_TRADES = Math.max(10, parseInt(process.env.SUPERVISOR_SELL_RECONCILIATION_MAX_TRADES || '200', 10));
+const SELL_RECONCILIATION_DIFF_THRESHOLD_USDC = Math.max(0.0001, Number(process.env.SUPERVISOR_SELL_RECONCILIATION_DIFF_THRESHOLD_USDC || '0.01'));
+
+// =========================
 // 配置刷新策略
 // =========================
 // refresh 与 full refresh 分层：高频增量 + 低频全量校准。
@@ -517,6 +526,7 @@ const queueStats = {
     maxDepth: 0,
 };
 let isDrainingQueue = false;
+let isSellReconciliationRunning = false;
 
 interface SourceWindowEntry {
     firstSeenAt: number;
@@ -666,6 +676,123 @@ async function logMetricsSummary(): Promise<void> {
         sourceStats.closedPollingOnly = 0;
     } catch (error) {
         console.warn('[Supervisor] Metrics summary failed:', error);
+    }
+}
+
+function buildSellReconciliationMessage(params: {
+    existing: string | null;
+    previousCopySize: number;
+    reconciledCopySize: number;
+    fillSource?: string;
+}): string {
+    const delta = params.reconciledCopySize - params.previousCopySize;
+    const marker = `SELL_RECONCILED ${params.previousCopySize.toFixed(6)} -> ${params.reconciledCopySize.toFixed(6)} (delta ${delta.toFixed(6)}, source ${params.fillSource || 'unknown'})`;
+    if (!params.existing) return marker;
+    if (params.existing.includes('SELL_RECONCILED')) return params.existing;
+    return `${params.existing} | ${marker}`;
+}
+
+async function runSellAccountingReconciliation(): Promise<void> {
+    if (!SELL_RECONCILIATION_ENABLED || isSellReconciliationRunning) return;
+    isSellReconciliationRunning = true;
+
+    const startedAt = Date.now();
+    let scanned = 0;
+    let reconciled = 0;
+    let skipped = 0;
+    let totalAbsDiff = 0;
+
+    try {
+        const since = new Date(Date.now() - SELL_RECONCILIATION_LOOKBACK_MS);
+        const candidates = await prisma.copyTrade.findMany({
+            where: {
+                originalSide: 'SELL',
+                status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
+                executedAt: { gte: since },
+                txHash: { not: null },
+                copySize: { gt: 0 },
+            },
+            select: {
+                id: true,
+                txHash: true,
+                copySize: true,
+                copyPrice: true,
+                errorMessage: true,
+                tokenId: true,
+                config: {
+                    select: {
+                        walletAddress: true,
+                    },
+                },
+            },
+            orderBy: { executedAt: 'desc' },
+            take: SELL_RECONCILIATION_MAX_TRADES,
+        });
+
+        for (const trade of candidates) {
+            const orderId = (trade.txHash || '').trim();
+            if (!orderId || orderId.startsWith('sim-')) {
+                skipped += 1;
+                continue;
+            }
+
+            scanned += 1;
+            let fillInfo: { executedNotional?: number; avgFillPrice?: number; fillSource?: string } | null = null;
+            try {
+                fillInfo = await masterTradingService.lookupOrderFillInfo(orderId);
+            } catch (error) {
+                skipped += 1;
+                continue;
+            }
+
+            const reconciledCopySize = Number(fillInfo?.executedNotional || 0);
+            if (!Number.isFinite(reconciledCopySize) || reconciledCopySize <= 0) {
+                skipped += 1;
+                continue;
+            }
+
+            const diff = reconciledCopySize - trade.copySize;
+            if (Math.abs(diff) < SELL_RECONCILIATION_DIFF_THRESHOLD_USDC) {
+                continue;
+            }
+
+            const reconciledCopyPrice = Number(fillInfo?.avgFillPrice || 0) > 0
+                ? Number(fillInfo?.avgFillPrice)
+                : trade.copyPrice;
+
+            await prisma.copyTrade.update({
+                where: { id: trade.id },
+                data: {
+                    copySize: reconciledCopySize,
+                    copyPrice: reconciledCopyPrice,
+                    errorMessage: buildSellReconciliationMessage({
+                        existing: trade.errorMessage,
+                        previousCopySize: trade.copySize,
+                        reconciledCopySize,
+                        fillSource: fillInfo?.fillSource,
+                    }),
+                },
+            });
+
+            await recordGuardrailEvent({
+                reason: 'SELL_RECONCILED',
+                source: 'supervisor-reconcile',
+                walletAddress: trade.config.walletAddress,
+                amount: Math.abs(diff),
+                tradeId: trade.id,
+                tokenId: trade.tokenId || undefined,
+            });
+
+            reconciled += 1;
+            totalAbsDiff += Math.abs(diff);
+        }
+
+        const elapsed = Date.now() - startedAt;
+        console.log(`[Supervisor] 🔎 SELL reconciliation done: scanned=${scanned} reconciled=${reconciled} skipped=${skipped} totalAbsDiff=$${totalAbsDiff.toFixed(4)} elapsed=${elapsed}ms`);
+    } catch (error) {
+        console.warn('[Supervisor] SELL reconciliation failed:', error);
+    } finally {
+        isSellReconciliationRunning = false;
     }
 }
 
@@ -2433,6 +2560,15 @@ async function main() {
     setInterval(() => {
         void logMetricsSummary();
     }, 300000); // 5 mins
+
+    // SELL reconciliation loop（默认每日运行一次）
+    if (SELL_RECONCILIATION_ENABLED) {
+        void runSellAccountingReconciliation();
+        setInterval(() => {
+            void runSellAccountingReconciliation();
+        }, SELL_RECONCILIATION_INTERVAL_MS);
+    }
+
     // Queue Drain Loop
     setInterval(() => {
         void checkQueue();
