@@ -80,6 +80,8 @@ const MARKET_META_TTL_MS = parseInt(process.env.SUPERVISOR_MARKET_META_TTL_MS ||
 const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10);
 const FILTER_MARKET_STATS_TTL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_FILTER_MARKET_STATS_TTL_MS || '15000', 10));
 const FILTER_ORDERBOOK_DEPTH_LEVELS = Math.max(1, parseInt(process.env.SUPERVISOR_FILTER_ORDERBOOK_DEPTH_LEVELS || '20', 10));
+const EOA_SERVICE_TTL_MS = Math.max(60_000, parseInt(process.env.SUPERVISOR_EOA_SERVICE_TTL_MS || '300000', 10));
+const EOA_SERVICE_SWEEP_INTERVAL_MS = Math.max(15_000, parseInt(process.env.SUPERVISOR_EOA_SERVICE_SWEEP_INTERVAL_MS || '60000', 10));
 
 // =========================
 // 并发与队列
@@ -291,6 +293,8 @@ async function shutdown(signal: string) {
         }
     }
 
+    userExecManager.dispose();
+
     console.log("[Supervisor] 👋 Goodbye.");
     process.exit(0);
 }
@@ -349,7 +353,31 @@ interface SignalCursorState {
 const signalCursorCache = new Map<string, SignalCursorState>();
 
 class UserExecutionManager {
-    private services = new Map<string, { fingerprint: string; service: TradingService }>();
+    private services = new Map<string, { fingerprint: string; service: TradingService; lastAccessAt: number }>();
+    private readonly cleanupTimer: NodeJS.Timeout;
+
+    constructor(
+        private readonly ttlMs: number,
+        sweepIntervalMs: number
+    ) {
+        this.cleanupTimer = setInterval(() => {
+            const evicted = this.evictExpiredServices();
+            if (evicted > 0) {
+                console.log(`[Supervisor] 🧹 EOA service cache sweep evicted ${evicted} stale entr${evicted === 1 ? 'y' : 'ies'}.`);
+            }
+        }, sweepIntervalMs);
+        this.cleanupTimer.unref?.();
+    }
+
+    private evictExpiredServices(now = Date.now()): number {
+        let evicted = 0;
+        for (const [configId, entry] of this.services.entries()) {
+            if (now - entry.lastAccessAt <= this.ttlMs) continue;
+            this.services.delete(configId);
+            evicted += 1;
+        }
+        return evicted;
+    }
 
     private buildFingerprint(config: ActiveConfig): string {
         return createHash('sha256')
@@ -385,10 +413,16 @@ class UserExecutionManager {
             return null;
         }
 
+        this.evictExpiredServices();
         const fingerprint = this.buildFingerprint(config);
         const cached = this.services.get(config.id);
-        if (cached && cached.fingerprint === fingerprint) {
-            return cached.service;
+        if (cached) {
+            if (cached.fingerprint !== fingerprint) {
+                this.services.delete(config.id);
+            } else {
+                cached.lastAccessAt = Date.now();
+                return cached.service;
+            }
         }
 
         try {
@@ -402,16 +436,25 @@ class UserExecutionManager {
             }
 
             const svc = await this.createService(config, credentials);
-            this.services.set(config.id, { fingerprint, service: svc });
+            this.services.set(config.id, { fingerprint, service: svc, lastAccessAt: Date.now() });
             return svc;
         } catch (error) {
             console.error(`[Supervisor] Failed to initialize EOA service for ${config.id}:`, error);
             return null;
         }
     }
+
+    dispose(): void {
+        clearInterval(this.cleanupTimer);
+        const staleCount = this.services.size;
+        this.services.clear();
+        if (staleCount > 0) {
+            console.log(`[Supervisor] 🧹 Cleared ${staleCount} cached EOA service entr${staleCount === 1 ? 'y' : 'ies'} on shutdown.`);
+        }
+    }
 }
 
-const userExecManager = new UserExecutionManager();
+const userExecManager = new UserExecutionManager(EOA_SERVICE_TTL_MS, EOA_SERVICE_SWEEP_INTERVAL_MS);
 
 function calculateCopySize(
     config: {
@@ -2846,8 +2889,10 @@ async function main() {
 
     // Keep alive
     process.on('SIGINT', () => {
-        console.log("Stopping...");
-        process.exit();
+        void shutdown('SIGINT');
+    });
+    process.on('SIGTERM', () => {
+        void shutdown('SIGTERM');
     });
 }
 

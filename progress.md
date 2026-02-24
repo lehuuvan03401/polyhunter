@@ -60,3 +60,9 @@
 - 新增 OpenSpec 变更：`enforce-redis-sharded-supervisor`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate enforce-redis-sharded-supervisor --strict --no-interactive`，通过。
+- 新增 EOA 执行服务缓存生命周期加固：`UserExecutionManager` 支持 `SUPERVISOR_EOA_SERVICE_TTL_MS` 与周期 sweep（`SUPERVISOR_EOA_SERVICE_SWEEP_INTERVAL_MS`），超时自动驱逐。
+- 新增 EOA 缓存命中续期机制：每次复用服务都会刷新 `lastAccessAt`。
+- 新增优雅退出清理：`SIGINT/SIGTERM` 走 `shutdown()`，退出前清空 EOA 缓存。
+- 新增 OpenSpec 变更：`harden-eoa-service-cache-lifecycle`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate harden-eoa-service-cache-lifecycle --strict --no-interactive`，通过。
