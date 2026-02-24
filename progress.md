@@ -66,3 +66,8 @@
 - 新增 OpenSpec 变更：`harden-eoa-service-cache-lifecycle`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate harden-eoa-service-cache-lifecycle --strict --no-interactive`，通过。
+- 新增 Supervisor 运维级 SLO 观测：队列 `p95` lag、reject reason 分布、per-wallet success/fail/skip、reconcile 差额汇总。
+- 新增执行结果统一记账：`success/failed/skipped` 在执行主路径统一打点，避免仅统计失败导致的成功率失真。
+- 新增 OpenSpec 变更：`add-supervisor-operational-slo-metrics`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-operational-slo-metrics --strict --no-interactive`，通过。

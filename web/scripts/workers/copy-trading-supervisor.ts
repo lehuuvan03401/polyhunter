@@ -82,6 +82,10 @@ const FILTER_MARKET_STATS_TTL_MS = Math.max(1000, parseInt(process.env.SUPERVISO
 const FILTER_ORDERBOOK_DEPTH_LEVELS = Math.max(1, parseInt(process.env.SUPERVISOR_FILTER_ORDERBOOK_DEPTH_LEVELS || '20', 10));
 const EOA_SERVICE_TTL_MS = Math.max(60_000, parseInt(process.env.SUPERVISOR_EOA_SERVICE_TTL_MS || '300000', 10));
 const EOA_SERVICE_SWEEP_INTERVAL_MS = Math.max(15_000, parseInt(process.env.SUPERVISOR_EOA_SERVICE_SWEEP_INTERVAL_MS || '60000', 10));
+const QUEUE_LAG_SAMPLE_LIMIT = Math.max(100, parseInt(process.env.SUPERVISOR_QUEUE_LAG_SAMPLE_LIMIT || '2000', 10));
+const METRICS_TOP_K = Math.max(1, parseInt(process.env.SUPERVISOR_METRICS_TOP_K || '5', 10));
+const WALLET_METRICS_MAX_KEYS = Math.max(100, parseInt(process.env.SUPERVISOR_WALLET_METRICS_MAX_KEYS || '5000', 10));
+const WALLET_METRICS_MIN_ATTEMPTS = Math.max(1, parseInt(process.env.SUPERVISOR_WALLET_METRICS_MIN_ATTEMPTS || '3', 10));
 
 // =========================
 // 并发与队列
@@ -552,6 +556,7 @@ interface Metrics {
     totalExecutions: number;
     successfulExecutions: number;
     failedExecutions: number;
+    skippedExecutions: number;
     totalLatencyMs: number;
     lastResetAt: number;
 }
@@ -559,6 +564,7 @@ const metrics: Metrics = {
     totalExecutions: 0,
     successfulExecutions: 0,
     failedExecutions: 0,
+    skippedExecutions: 0,
     totalLatencyMs: 0,
     lastResetAt: Date.now(),
 };
@@ -572,6 +578,28 @@ const queueStats = {
 };
 let isDrainingQueue = false;
 let isSellReconciliationRunning = false;
+const queueLagSamplesMs: number[] = [];
+const rejectStats = {
+    total: 0,
+    byReason: new Map<string, number>(),
+};
+const walletExecutionStats = new Map<string, {
+    success: number;
+    failed: number;
+    skipped: number;
+    totalLatencyMs: number;
+}>();
+const reconciliationMetrics = {
+    runs: 0,
+    errors: 0,
+    scanned: 0,
+    reconciled: 0,
+    skipped: 0,
+    totalAbsDiff: 0,
+    maxAbsDiff: 0,
+    lastRunAt: 0,
+    lastElapsedMs: 0,
+};
 
 interface SourceWindowEntry {
     firstSeenAt: number;
@@ -663,11 +691,90 @@ function evaluateWsHealth() {
     }
 }
 
-function recordExecution(success: boolean, latencyMs: number): void {
+function recordExecution(outcome: 'success' | 'failed' | 'skipped', latencyMs: number): void {
     metrics.totalExecutions++;
-    if (success) metrics.successfulExecutions++;
-    else metrics.failedExecutions++;
-    metrics.totalLatencyMs += latencyMs;
+    if (outcome === 'success') metrics.successfulExecutions++;
+    else if (outcome === 'failed') metrics.failedExecutions++;
+    else metrics.skippedExecutions++;
+    if (outcome !== 'skipped') {
+        metrics.totalLatencyMs += latencyMs;
+    }
+}
+
+function appendQueueLagSample(lagMs: number): void {
+    if (!Number.isFinite(lagMs) || lagMs < 0) return;
+    queueLagSamplesMs.push(lagMs);
+    if (queueLagSamplesMs.length > QUEUE_LAG_SAMPLE_LIMIT) {
+        queueLagSamplesMs.splice(0, queueLagSamplesMs.length - QUEUE_LAG_SAMPLE_LIMIT);
+    }
+}
+
+function calculatePercentile(samples: number[], percentile: number): number {
+    if (samples.length === 0) return 0;
+    const sorted = [...samples].sort((a, b) => a - b);
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((percentile / 100) * sorted.length) - 1));
+    return sorted[index];
+}
+
+function recordRejectReason(reason: string): void {
+    const normalized = reason.trim().toUpperCase();
+    if (!normalized) return;
+    rejectStats.total += 1;
+    rejectStats.byReason.set(normalized, (rejectStats.byReason.get(normalized) || 0) + 1);
+}
+
+function recordWalletExecution(walletAddress: string, outcome: 'success' | 'failed' | 'skipped', latencyMs = 0): void {
+    const normalized = walletAddress.trim().toLowerCase();
+    if (!normalized) return;
+    let stats = walletExecutionStats.get(normalized);
+    if (!stats) {
+        if (walletExecutionStats.size >= WALLET_METRICS_MAX_KEYS) {
+            return;
+        }
+        stats = { success: 0, failed: 0, skipped: 0, totalLatencyMs: 0 };
+        walletExecutionStats.set(normalized, stats);
+    }
+    if (outcome === 'success') stats.success += 1;
+    else if (outcome === 'failed') stats.failed += 1;
+    else stats.skipped += 1;
+    if (outcome !== 'skipped') stats.totalLatencyMs += Math.max(0, latencyMs);
+}
+
+function summarizeTopRejectReasons(limit = METRICS_TOP_K): string {
+    const entries = Array.from(rejectStats.byReason.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit);
+    if (entries.length === 0) return 'none';
+    return entries.map(([reason, count]) => `${reason}:${count}`).join(', ');
+}
+
+function summarizeTopWalletStats(limit = METRICS_TOP_K): string {
+    const entries = Array.from(walletExecutionStats.entries())
+        .map(([wallet, stats]) => {
+            const attempts = stats.success + stats.failed + stats.skipped;
+            const decided = stats.success + stats.failed;
+            const successRate = decided > 0 ? (stats.success / decided) * 100 : 100;
+            const avgLatencyMs = decided > 0 ? stats.totalLatencyMs / decided : 0;
+            return { wallet, ...stats, attempts, decided, successRate, avgLatencyMs };
+        })
+        .filter((entry) => entry.attempts >= WALLET_METRICS_MIN_ATTEMPTS)
+        .sort((a, b) => b.attempts - a.attempts)
+        .slice(0, limit);
+
+    if (entries.length === 0) return 'none';
+    return entries.map((entry) => {
+        const shortWallet = `${entry.wallet.slice(0, 8)}...${entry.wallet.slice(-4)}`;
+        return `${shortWallet}(ok=${entry.success},fail=${entry.failed},skip=${entry.skipped},sr=${entry.successRate.toFixed(1)}%,avg=${entry.avgLatencyMs.toFixed(0)}ms)`;
+    }).join(', ');
+}
+
+function classifyFilterRejectReason(reason: string): string {
+    const normalized = reason.toLowerCase();
+    if (normalized.includes('maxodds filter failed')) return 'MAX_ODDS_FILTER_FAILED';
+    if (normalized.includes('minliquidity filter failed')) return 'MIN_LIQUIDITY_FILTER_FAILED';
+    if (normalized.includes('minvolume filter failed')) return 'MIN_VOLUME_FILTER_FAILED';
+    if (normalized.includes('market metrics unavailable')) return 'FILTER_METRICS_UNAVAILABLE';
+    return 'FILTER_BLOCKED';
 }
 
 async function logMetricsSummary(): Promise<void> {
@@ -679,20 +786,31 @@ async function logMetricsSummary(): Promise<void> {
             ? (sourceStats.closedWsOnly + sourceStats.closedPollingOnly) / closedTotal
             : 0;
         const duration = (Date.now() - metrics.lastResetAt) / 1000 / 60; // minutes
-        const avgLatency = metrics.totalExecutions > 0
-            ? (metrics.totalLatencyMs / metrics.totalExecutions / 1000).toFixed(2)
+        const decidedExecutions = metrics.successfulExecutions + metrics.failedExecutions;
+        const avgLatency = decidedExecutions > 0
+            ? (metrics.totalLatencyMs / decidedExecutions / 1000).toFixed(2)
             : '0';
-        const successRate = metrics.totalExecutions > 0
-            ? ((metrics.successfulExecutions / metrics.totalExecutions) * 100).toFixed(1)
+        const successRate = decidedExecutions > 0
+            ? ((metrics.successfulExecutions / decidedExecutions) * 100).toFixed(1)
             : '100';
         const queueDepth = await queueStore.size();
         queueStats.maxDepth = Math.max(queueStats.maxDepth, queueDepth);
         const avgQueueLag = queueStats.dequeued > 0
             ? (queueStats.totalLagMs / queueStats.dequeued / 1000).toFixed(2)
             : '0';
+        const p95QueueLagMs = calculatePercentile(queueLagSamplesMs, 95);
+        const rejectSummary = summarizeTopRejectReasons();
+        const walletSummary = summarizeTopWalletStats();
 
-        console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: ${metrics.totalExecutions} executions, ${successRate}% success, ${avgLatency}s avg latency`);
-        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
+        console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: total=${metrics.totalExecutions} success=${metrics.successfulExecutions} failed=${metrics.failedExecutions} skipped=${metrics.skippedExecutions} successRate=${successRate}% avgLatency=${avgLatency}s`);
+        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} avgLag=${avgQueueLag}s p95Lag=${(p95QueueLagMs / 1000).toFixed(2)}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
+        console.log(`[Metrics] 🛡️ Reject reasons: total=${rejectStats.total} top=[${rejectSummary}]`);
+        console.log(`[Metrics] 👛 Wallet success: top=[${walletSummary}]`);
+        if (reconciliationMetrics.runs > 0 || reconciliationMetrics.lastRunAt > 0) {
+            console.log(
+                `[Metrics] 🧮 Reconcile: runs=${reconciliationMetrics.runs} errors=${reconciliationMetrics.errors} scanned=${reconciliationMetrics.scanned} reconciled=${reconciliationMetrics.reconciled} skipped=${reconciliationMetrics.skipped} totalAbsDiff=$${reconciliationMetrics.totalAbsDiff.toFixed(4)} maxAbsDiff=$${reconciliationMetrics.maxAbsDiff.toFixed(4)} lastElapsed=${reconciliationMetrics.lastElapsedMs}ms lastAt=${reconciliationMetrics.lastRunAt ? new Date(reconciliationMetrics.lastRunAt).toISOString() : 'n/a'}`
+            );
+        }
         console.log(`[Metrics] 🧾 Dedup: hits=${dedupStats.hits} misses=${dedupStats.misses}`);
         console.log(`[Metrics] 📡 Signal: mode=${SIGNAL_MODE} poll_lag_ms=${signalHealth.pollLagMs} ws_last_event_age_ms=${signalHealth.wsLastEventAgeMs} source_mismatch_rate=${signalHealth.sourceMismatchRate.toFixed(4)} ws_degraded=${signalHealth.wsDegraded}`);
         console.log(`[Metrics] 📡 Source counts: ws=${sourceStats.wsEvents} polling=${sourceStats.pollingEvents} both=${sourceStats.closedBoth} ws_only=${sourceStats.closedWsOnly} polling_only=${sourceStats.closedPollingOnly}`);
@@ -704,6 +822,7 @@ async function logMetricsSummary(): Promise<void> {
         metrics.totalExecutions = 0;
         metrics.successfulExecutions = 0;
         metrics.failedExecutions = 0;
+        metrics.skippedExecutions = 0;
         metrics.totalLatencyMs = 0;
         metrics.lastResetAt = Date.now();
         queueStats.enqueued = 0;
@@ -712,6 +831,17 @@ async function logMetricsSummary(): Promise<void> {
         queueStats.totalLagMs = 0;
         queueStats.maxLagMs = 0;
         queueStats.maxDepth = queueDepth;
+        queueLagSamplesMs.length = 0;
+        rejectStats.total = 0;
+        rejectStats.byReason.clear();
+        walletExecutionStats.clear();
+        reconciliationMetrics.runs = 0;
+        reconciliationMetrics.errors = 0;
+        reconciliationMetrics.scanned = 0;
+        reconciliationMetrics.reconciled = 0;
+        reconciliationMetrics.skipped = 0;
+        reconciliationMetrics.totalAbsDiff = 0;
+        reconciliationMetrics.maxAbsDiff = 0;
         dedupStats.hits = 0;
         dedupStats.misses = 0;
         sourceStats.wsEvents = 0;
@@ -742,10 +872,13 @@ async function runSellAccountingReconciliation(): Promise<void> {
     isSellReconciliationRunning = true;
 
     const startedAt = Date.now();
+    reconciliationMetrics.runs += 1;
+    reconciliationMetrics.lastRunAt = startedAt;
     let scanned = 0;
     let reconciled = 0;
     let skipped = 0;
     let totalAbsDiff = 0;
+    let maxAbsDiff = 0;
 
     try {
         const since = new Date(Date.now() - SELL_RECONCILIATION_LOOKBACK_MS);
@@ -830,11 +963,20 @@ async function runSellAccountingReconciliation(): Promise<void> {
 
             reconciled += 1;
             totalAbsDiff += Math.abs(diff);
+            maxAbsDiff = Math.max(maxAbsDiff, Math.abs(diff));
         }
 
         const elapsed = Date.now() - startedAt;
+        reconciliationMetrics.scanned += scanned;
+        reconciliationMetrics.reconciled += reconciled;
+        reconciliationMetrics.skipped += skipped;
+        reconciliationMetrics.totalAbsDiff += totalAbsDiff;
+        reconciliationMetrics.maxAbsDiff = Math.max(reconciliationMetrics.maxAbsDiff, maxAbsDiff);
+        reconciliationMetrics.lastElapsedMs = elapsed;
         console.log(`[Supervisor] 🔎 SELL reconciliation done: scanned=${scanned} reconciled=${reconciled} skipped=${skipped} totalAbsDiff=$${totalAbsDiff.toFixed(4)} elapsed=${elapsed}ms`);
     } catch (error) {
+        reconciliationMetrics.errors += 1;
+        reconciliationMetrics.lastElapsedMs = Date.now() - startedAt;
         console.warn('[Supervisor] SELL reconciliation failed:', error);
     } finally {
         isSellReconciliationRunning = false;
@@ -1051,6 +1193,9 @@ async function recordGuardrailEvent(params: {
     tradeId?: string;
     tokenId?: string;
 }) {
+    if (params.reason !== 'SELL_RECONCILED') {
+        recordRejectReason(params.reason);
+    }
     try {
         await prisma.guardrailEvent.create({
             data: {
@@ -1676,6 +1821,7 @@ async function checkQueue() {
             queueStats.dequeued += 1;
             queueStats.totalLagMs += lagMs;
             queueStats.maxLagMs = Math.max(queueStats.maxLagMs, lagMs);
+            appendQueueLagSample(lagMs);
 
             console.log(`[Supervisor] 📥 Dequeued job for User ${job.config.walletAddress}.`);
             const originalSignalId = job.originalSignalId || buildOriginalSignalId({
@@ -2395,6 +2541,8 @@ async function processJob(
 ) {
     if (isShuttingDown) {
         console.log(`[Supervisor] 🛑 Order Skipped (Shutting Down): ${config.walletAddress} ${side} ${tokenId}`);
+        recordRejectReason('SUPERVISOR_SHUTTING_DOWN');
+        recordWalletExecution(config.walletAddress, 'skipped');
         return;
     }
 
@@ -2414,6 +2562,8 @@ async function processJob(
         const sellDecision = await resolveSellPositionDecision(config.walletAddress, tokenId);
         if (!sellDecision.allow) {
             console.log(`[Supervisor] ⏭️  SKIPPED SELL (no position): ${config.walletAddress.substring(0, 10)}... token ${tokenId.substring(0, 20)}...`);
+            recordRejectReason('SELL_NO_POSITION');
+            recordWalletExecution(config.walletAddress, 'skipped');
             return;
         }
         if (sellDecision.source === 'db') {
@@ -2425,12 +2575,16 @@ async function processJob(
     const filterResult = await passesFilters(config, tokenId, side, approxPrice);
     if (!filterResult.passes) {
         console.log(`[Supervisor] 🔕 Trade skipped for ${config.walletAddress}: ${filterResult.reason}`);
+        recordRejectReason(classifyFilterRejectReason(filterResult.reason || ''));
+        recordWalletExecution(config.walletAddress, 'skipped');
         return;
     }
 
     const copyAmount = calculateCopySize(config, originalSize, approxPrice);
     if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
         console.warn(`[Supervisor] ⚠️ Invalid copy size for ${config.walletAddress}. Skipping.`);
+        recordRejectReason('INVALID_COPY_SIZE');
+        recordWalletExecution(config.walletAddress, 'skipped');
         return;
     }
     const marketSlug = await getMarketSlugForGuardrail(tokenId);
@@ -2442,6 +2596,7 @@ async function processJob(
     });
     if (!preflightGuardrail.allowed) {
         console.log(`[Supervisor] 🛡️ Guardrail blocked job for ${config.walletAddress}: ${preflightGuardrail.reason}`);
+        recordWalletExecution(config.walletAddress, 'skipped');
         return;
     }
 
@@ -2455,6 +2610,8 @@ async function processJob(
         const userService = await userExecManager.getEOAService(config);
         if (!userService) {
             console.warn(`[Supervisor] ❌ EOA service unavailable for ${config.walletAddress}.`);
+            recordRejectReason('EOA_SERVICE_UNAVAILABLE');
+            recordWalletExecution(config.walletAddress, 'failed');
             return;
         }
 
@@ -2486,6 +2643,9 @@ async function processJob(
     if (!worker) {
         if (config.executionMode === 'EOA') {
             console.error(`[Supervisor] ❌ EOA execution skipped (no worker/service) for ${config.walletAddress}.`);
+            recordRejectReason('EOA_WORKER_UNAVAILABLE');
+            recordWalletExecution(config.walletAddress, 'failed');
+            recordExecution('failed', 0);
             return;
         }
         const queueOverrides = overrides;
@@ -2510,10 +2670,16 @@ async function processJob(
             } else {
                 queueStats.dropped += 1;
                 console.error(`[Supervisor] ❌ Job DROPPED (Queue Full) for User ${config.walletAddress}`);
+                recordRejectReason('QUEUE_FULL_DROP');
+                recordWalletExecution(config.walletAddress, 'failed');
+                recordExecution('failed', 0);
             }
         } catch (error) {
             queueStats.dropped += 1;
             console.error(`[Supervisor] ❌ Queue enqueue failed for ${config.walletAddress}:`, error);
+            recordRejectReason('QUEUE_ENQUEUE_FAILED');
+            recordWalletExecution(config.walletAddress, 'failed');
+            recordExecution('failed', 0);
         }
         return;
     }
@@ -2546,6 +2712,10 @@ async function executeJobInternal(
         const copyAmount = calculateCopySize(config, originalSize, approxPrice);
         if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
             console.warn(`[Supervisor] ⚠️ Invalid copy size for ${config.walletAddress}. Skipping.`);
+            const latencyMs = Date.now() - startTime;
+            recordRejectReason('INVALID_COPY_SIZE');
+            recordExecution('skipped', latencyMs);
+            recordWalletExecution(config.walletAddress, 'skipped', latencyMs);
             return;
         }
         const marketSlug = await getMarketSlugForGuardrail(tokenId);
@@ -2557,6 +2727,9 @@ async function executeJobInternal(
         });
         if (!executionGuardrail.allowed) {
             console.log(`[Supervisor] 🛡️ Guardrail blocked execution for ${config.walletAddress}: ${executionGuardrail.reason}`);
+            const latencyMs = Date.now() - startTime;
+            recordExecution('skipped', latencyMs);
+            recordWalletExecution(config.walletAddress, 'skipped', latencyMs);
             return;
         }
 
@@ -2591,12 +2764,22 @@ async function executeJobInternal(
                 amount: executionResult.copySizeUsdc ?? copyAmount,
                 marketSlug,
             });
+            const latencyMs = Date.now() - startTime;
+            recordExecution('success', latencyMs);
+            recordWalletExecution(config.walletAddress, 'success', latencyMs);
+        } else {
+            const latencyMs = Date.now() - startTime;
+            recordExecution('skipped', latencyMs);
+            recordWalletExecution(config.walletAddress, 'skipped', latencyMs);
+            recordRejectReason(executionResult.reason || 'ORCHESTRATOR_SKIPPED');
         }
 
     } catch (e: any) {
         // Record failed execution
         const latencyMs = Date.now() - startTime;
-        recordExecution(false, latencyMs);
+        recordExecution('failed', latencyMs);
+        recordWalletExecution(config.walletAddress, 'failed', latencyMs);
+        recordRejectReason('EXECUTION_EXCEPTION');
         console.error(`[Supervisor] 💥 Job Crashed for User ${config.walletAddress}:`, e.message);
     } finally {
         // 5. Checkin Worker AND Trigger Queue
