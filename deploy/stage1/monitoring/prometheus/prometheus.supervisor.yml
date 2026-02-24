@@ -1,0 +1,58 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: polyhunter
+    role: copy-trading-supervisor
+
+scrape_configs:
+  # Template A: static target list (VM/PM2, simple Docker hosts)
+  - job_name: copy_trading_supervisor_static
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      # Add one target per supervisor instance.
+      # If running multiple shards on one host, ports can be 9464 + shard index.
+      - targets:
+          - 127.0.0.1:9464
+        labels:
+          env: stage1
+          service: copy-trading-supervisor
+          shard: "0"
+
+  # Template B: Kubernetes pod discovery (optional)
+  - job_name: copy_trading_supervisor_k8s
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - polyhunter-stage1
+    relabel_configs:
+      # Keep only supervisor/copy-worker pods that expose metrics.
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: copy-worker|copy-trading-supervisor
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_phase]
+        regex: Running
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: ${1}:9464
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: k8s_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: k8s_pod
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app
+
+# Notes:
+# 1) For Prometheus to scrape supervisor metrics, set supervisor env:
+#    SUPERVISOR_METRICS_SERVER_ENABLED=true
+#    SUPERVISOR_METRICS_HOST=0.0.0.0
+#    SUPERVISOR_METRICS_PORT=9464 (or 9464 + shard index)
+# 2) Keep scrape interval aligned with your alerting sensitivity and RPC budget.

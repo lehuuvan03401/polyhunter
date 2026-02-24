@@ -11,6 +11,8 @@ Operational entrypoint for deployment, verification, and runbook workflows.
 3. Supervisor scaling deployment:
    - `docs/operations/deploy-supervisor-capacity-controls.md`
    - `docs/operations/sop-supervisor-capacity-controls.md`
+4. Supervisor monitoring deployment:
+   - `docs/operations/deploy-supervisor-monitoring.md`
 
 ## Copy-Trading Verification
 

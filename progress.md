@@ -85,3 +85,9 @@
 - 新增 OpenSpec 变更：`add-supervisor-metrics-endpoint-alerts`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-metrics-endpoint-alerts --strict --no-interactive`，通过。
+- 新增 Stage1 监控落地模板：`deploy/stage1/monitoring/prometheus/prometheus.supervisor.yml`（Prometheus scrape）与 `deploy/stage1/monitoring/grafana/dashboards/copy-trading-supervisor.json`（Grafana dashboard）。
+- 新增监控落地文档：`deploy/stage1/monitoring/README.md` 与 `docs/operations/deploy-supervisor-monitoring.md`，并更新 `deploy/stage1/README.md`、`docs/operations/README.md` 索引入口。
+- 新增 OpenSpec 变更：`add-supervisor-monitoring-templates`（proposal/tasks/spec delta）。
+- 已执行 `jq empty deploy/stage1/monitoring/grafana/dashboards/copy-trading-supervisor.json`，通过。
+- 已执行 `openspec validate add-supervisor-monitoring-templates --strict --no-interactive`，通过。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

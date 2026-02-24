@@ -1,0 +1,310 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    }
+  ],
+  "uid": "copy-trading-supervisor-v1",
+  "title": "Copy Trading Supervisor",
+  "tags": [
+    "copy-trading",
+    "supervisor",
+    "operations"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Execution Throughput (5m rate)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(copy_supervisor_execution_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Window Success / Reject Rate (%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "avg(copy_supervisor_execution_window_success_rate) * 100",
+          "legendFormat": "success_rate",
+          "refId": "A"
+        },
+        {
+          "expr": "avg(copy_supervisor_reject_window_rate) * 100",
+          "legendFormat": "reject_rate",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Queue Depth & Lag",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "max(copy_supervisor_queue_depth)",
+          "legendFormat": "depth",
+          "refId": "A"
+        },
+        {
+          "expr": "max(copy_supervisor_queue_lag_p95_ms)",
+          "legendFormat": "p95_lag_ms",
+          "refId": "B"
+        },
+        {
+          "expr": "max(copy_supervisor_queue_lag_avg_ms)",
+          "legendFormat": "avg_lag_ms",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Queue Action Rate (5m)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (action) (rate(copy_supervisor_queue_total[5m]))",
+          "legendFormat": "{{action}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Load Shedding Mode (0/1)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "max(copy_supervisor_load_shedding_mode{mode=\"normal\"})",
+          "legendFormat": "normal",
+          "refId": "A"
+        },
+        {
+          "expr": "max(copy_supervisor_load_shedding_mode{mode=\"degraded\"})",
+          "legendFormat": "degraded",
+          "refId": "B"
+        },
+        {
+          "expr": "max(copy_supervisor_load_shedding_mode{mode=\"critical\"})",
+          "legendFormat": "critical",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Fanout Limit",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "max(copy_supervisor_load_shedding_fanout_limit)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Mempool Paused",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+      "targets": [
+        {
+          "expr": "max(copy_supervisor_load_shedding_mempool_paused)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Reject Reasons (Window Top 10)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (reason) (copy_supervisor_reject_window_total{reason!=\\\"\\\"}))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Reconciliation Drift (Window USD)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "max(copy_supervisor_reconcile_window_abs_diff_usd)",
+          "legendFormat": "total_abs_diff",
+          "refId": "A"
+        },
+        {
+          "expr": "max(copy_supervisor_reconcile_window_max_abs_diff_usd)",
+          "legendFormat": "max_abs_diff",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Alerts & Reconcile Counters (5m rate)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "rate(copy_supervisor_alerts_total[5m])",
+          "legendFormat": "alerts",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(copy_supervisor_reconcile_errors_total[5m])",
+          "legendFormat": "reconcile_errors",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(copy_supervisor_reconcile_runs_total[5m])",
+          "legendFormat": "reconcile_runs",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Wallet Success Rate (Window Top 10)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "targets": [
+        {
+          "expr": "topk(10, copy_supervisor_wallet_window_success_rate)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Cumulative Reject Reasons (Top 10)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (reason) (copy_supervisor_reject_total{reason!=\\\"\\\"}))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

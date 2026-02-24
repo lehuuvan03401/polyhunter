@@ -66,3 +66,4 @@ kubectl -n polyhunter-stage1 get hpa
 - `COPY_TRADING_DRY_RUN=true` by default in configmap.
 - Worker is deployed as a `StatefulSet` so each replica can derive stable `COPY_TRADING_WORKER_INDEX` from pod ordinal.
 - For production, move PostgreSQL/Redis/Kafka to managed services and keep only app/worker deployments in cluster.
+- Monitoring templates are available at `deploy/stage1/monitoring/` (Prometheus scrape + Grafana dashboard).
