@@ -588,7 +588,18 @@ export class TradeOrchestrator {
         console.log(`[Orchestrator] 🚀 Dispatching Execution -> Tx: ${copyTrade.id}`);
 
         // 9. Execute On-Chain
-        let result: { success: boolean; orderId?: string; error?: string; usedBotFloat?: boolean; transactionHashes?: string[]; executedAmount?: number; scaledDown?: boolean; } = { success: false };
+        let result: {
+            success: boolean;
+            orderId?: string;
+            error?: string;
+            usedBotFloat?: boolean;
+            transactionHashes?: string[];
+            executedAmount?: number;
+            scaledDown?: boolean;
+            tokenPushTxHash?: string;
+            returnTransferTxHash?: string;
+            settlementDeferred?: boolean;
+        } = { success: false };
         let execPrice = marketPrice;
         let simSlippageBps = 0;
         let simLatencyMs = 0;
@@ -745,6 +756,7 @@ export class TradeOrchestrator {
                 success: orderResult.success,
                 orderId: orderResult.orderId,
                 error: orderResult.errorMsg,
+                settlementDeferred: false,
             };
         } else {
             const proxyResult = await this.executionService.executeOrderWithProxy({
@@ -779,6 +791,18 @@ export class TradeOrchestrator {
         if (!result.success) {
             finalStatus = 'FAILED';
             errorMessage = result.error || 'Execution failed';
+        } else {
+            const isProxyMode = !this.isSimulation && config.executionMode !== 'EOA';
+            if (isProxyMode) {
+                const settlementDeferred = Boolean(result.settlementDeferred);
+                const settlementConfirmed = copySide === 'BUY'
+                    ? Boolean(result.tokenPushTxHash)
+                    : Boolean(result.returnTransferTxHash);
+                if (settlementDeferred || !settlementConfirmed) {
+                    finalStatus = 'SETTLEMENT_PENDING';
+                    errorMessage = 'Settlement Pending';
+                }
+            }
         }
 
         await this.prisma.copyTrade.update({
