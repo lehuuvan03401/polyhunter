@@ -1789,6 +1789,41 @@ async function getMarketMetadata(tokenId: string) {
     };
 }
 
+function shouldEvaluateMarketGuardrail(): boolean {
+    return MARKET_DAILY_CAP_USD > 0 || MARKET_CAPS.size > 0;
+}
+
+async function getMarketSlugForGuardrail(tokenId: string): Promise<string | undefined> {
+    if (!shouldEvaluateMarketGuardrail()) return undefined;
+
+    const now = Date.now();
+    const cached = marketMetaCache.get(tokenId);
+    if (cached && now - cached.fetchedAt <= MARKET_META_TTL_MS) {
+        const cachedSlug = cached.data.marketSlug;
+        if (cachedSlug && !cachedSlug.includes('unknown')) {
+            return cachedSlug.toLowerCase();
+        }
+        return undefined;
+    }
+
+    try {
+        const meta = await getMarketMetadata(tokenId);
+        const normalized = {
+            marketSlug: meta.marketSlug || 'unknown-simulated',
+            conditionId: meta.conditionId || '0x0',
+            outcome: meta.outcome || 'Yes',
+        };
+        marketMetaCache.set(tokenId, { data: normalized, fetchedAt: now });
+        if (normalized.marketSlug && !normalized.marketSlug.includes('unknown')) {
+            return normalized.marketSlug.toLowerCase();
+        }
+    } catch (error) {
+        console.warn(`[Supervisor] Failed to resolve market slug for guardrail (${tokenId}):`, error);
+    }
+
+    return undefined;
+}
+
 async function runWithConcurrency<T>(
     items: T[],
     limit: number,
@@ -1991,6 +2026,23 @@ async function processJob(
         return;
     }
 
+    const copyAmount = calculateCopySize(config, originalSize, approxPrice);
+    if (!Number.isFinite(copyAmount) || copyAmount <= 0) {
+        console.warn(`[Supervisor] ⚠️ Invalid copy size for ${config.walletAddress}. Skipping.`);
+        return;
+    }
+    const marketSlug = await getMarketSlugForGuardrail(tokenId);
+    const preflightGuardrail = await checkExecutionGuardrails(config.walletAddress, copyAmount, {
+        source: isPreflight ? 'supervisor-preflight' : 'supervisor-dispatch',
+        marketSlug,
+        tradeId: originalSignalId,
+        tokenId,
+    });
+    if (!preflightGuardrail.allowed) {
+        console.log(`[Supervisor] 🛡️ Guardrail blocked job for ${config.walletAddress}: ${preflightGuardrail.reason}`);
+        return;
+    }
+
     // 2) 根据 executionMode 选择执行上下文：
     // - EOA: 用户私钥解密后独立执行
     // - PROXY: 从 worker 池借用可用执行钱包
@@ -2094,6 +2146,17 @@ async function executeJobInternal(
             console.warn(`[Supervisor] ⚠️ Invalid copy size for ${config.walletAddress}. Skipping.`);
             return;
         }
+        const marketSlug = await getMarketSlugForGuardrail(tokenId);
+        const executionGuardrail = await checkExecutionGuardrails(config.walletAddress, copyAmount, {
+            source: isPreflight ? 'supervisor-execute-preflight' : 'supervisor-execute',
+            marketSlug,
+            tradeId: originalSignalId,
+            tokenId,
+        });
+        if (!executionGuardrail.allowed) {
+            console.log(`[Supervisor] 🛡️ Guardrail blocked execution for ${config.walletAddress}: ${executionGuardrail.reason}`);
+            return;
+        }
 
         // Map real-time trade signature to the generalized Activity schema expected by Orchestrator
         const mappedTrade = {
@@ -2108,11 +2171,18 @@ async function executeJobInternal(
         } as any; // Cast as any because Activity schema expects exact matching
 
         // Delegate entire complex execution pipeline to Orchestrator
-        await tradeOrchestrator.evaluateAndExecuteTrade(
+        const executionResult = await tradeOrchestrator.evaluateAndExecuteTrade(
             mappedTrade,
             config,
             config.executionMode === 'EOA' ? worker.tradingService : undefined
         );
+        if (executionResult.executed) {
+            await incrementGuardrailCounters({
+                walletAddress: config.walletAddress,
+                amount: executionResult.copySizeUsdc ?? copyAmount,
+                marketSlug,
+            });
+        }
 
     } catch (e: any) {
         // Record failed execution
