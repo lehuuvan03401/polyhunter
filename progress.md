@@ -78,3 +78,10 @@
 - 新增 OpenSpec 变更：`add-supervisor-auto-load-shedding`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-auto-load-shedding --strict --no-interactive`，通过。
+- 新增 Supervisor 内置指标服务：支持 `/metrics`（Prometheus 文本格式）与 `/health`/`/healthz`。
+- 新增累计型观测计数器：执行结果、队列动作、拒单原因、reconcile 差额、告警次数等，避免仅窗口统计导致趋势不可见。
+- 新增运行时阈值告警：队列深度、队列 p95 lag、reject rate、`CRITICAL` 降载模式触发告警，并有冷却时间防止刷屏。
+- 指标服务已接入启动与优雅退出生命周期（start/shutdown）。
+- 新增 OpenSpec 变更：`add-supervisor-metrics-endpoint-alerts`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-metrics-endpoint-alerts --strict --no-interactive`，通过。

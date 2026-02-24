@@ -16,6 +16,7 @@ import 'dotenv/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+import * as http from 'http';
 import * as path from 'path';
 import { ethers } from 'ethers';
 import { createHash, randomUUID } from 'crypto';
@@ -162,6 +163,24 @@ const POLLING_LOOKBACK_SECONDS = Math.max(10, parseInt(process.env.SUPERVISOR_PO
 const WS_UNHEALTHY_THRESHOLD_MS = Math.max(5000, parseInt(process.env.SUPERVISOR_WS_UNHEALTHY_THRESHOLD_MS || '30000', 10));
 const SIGNAL_SOURCE_WINDOW_MS = Math.max(30000, parseInt(process.env.SUPERVISOR_SIGNAL_SOURCE_WINDOW_MS || '120000', 10));
 const SIGNAL_CURSOR_SOURCE = 'data_api_activity';
+const SUPERVISOR_METRICS_SERVER_ENABLED = process.env.SUPERVISOR_METRICS_SERVER_ENABLED !== 'false';
+const SUPERVISOR_METRICS_HOST = process.env.SUPERVISOR_METRICS_HOST || '127.0.0.1';
+const SUPERVISOR_METRICS_PORT = Math.max(
+    1,
+    parseInt(process.env.SUPERVISOR_METRICS_PORT || String(9464 + SHARD_INDEX_EFFECTIVE), 10)
+);
+const SUPERVISOR_ALERTS_ENABLED = process.env.SUPERVISOR_ALERTS_ENABLED !== 'false';
+const SUPERVISOR_ALERT_COOLDOWN_MS = Math.max(10_000, parseInt(process.env.SUPERVISOR_ALERT_COOLDOWN_MS || '120000', 10));
+const SUPERVISOR_ALERT_QUEUE_DEPTH = Math.max(
+    1,
+    parseInt(process.env.SUPERVISOR_ALERT_QUEUE_DEPTH || String(LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL), 10)
+);
+const SUPERVISOR_ALERT_QUEUE_P95_MS = Math.max(
+    100,
+    parseInt(process.env.SUPERVISOR_ALERT_QUEUE_P95_MS || String(LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS), 10)
+);
+const SUPERVISOR_ALERT_REJECT_RATE = Math.max(0, Math.min(1, Number(process.env.SUPERVISOR_ALERT_REJECT_RATE || '0.35')));
+const SUPERVISOR_ALERT_MIN_ATTEMPTS = Math.max(1, parseInt(process.env.SUPERVISOR_ALERT_MIN_ATTEMPTS || '20', 10));
 
 // =========================
 // 自检模式（联调/验收）
@@ -310,6 +329,18 @@ async function shutdown(signal: string) {
         // realtimeService.disconnect(); 
     } catch (e) {
         console.error("WS invalid disconnect", e);
+    }
+
+    if (supervisorMetricsServer) {
+        console.log("[Supervisor] 📈 Disconnecting Metrics Server...");
+        try {
+            await new Promise<void>((resolve) => {
+                supervisorMetricsServer?.close(() => resolve());
+            });
+        } catch (e) {
+            console.error("Metrics server disconnect error", e);
+        }
+        supervisorMetricsServer = null;
     }
 
     // 3. Close Database Pool
@@ -600,6 +631,20 @@ const metrics: Metrics = {
     totalLatencyMs: 0,
     lastResetAt: Date.now(),
 };
+const cumulativeMetrics = {
+    executionsTotal: 0,
+    executionsSuccess: 0,
+    executionsFailed: 0,
+    executionsSkipped: 0,
+    queueEnqueued: 0,
+    queueDequeued: 0,
+    queueDropped: 0,
+    rejectsTotal: 0,
+    reconcileRuns: 0,
+    reconcileErrors: 0,
+    reconcileTotalAbsDiff: 0,
+    alertsTotal: 0,
+};
 const queueStats = {
     enqueued: 0,
     dequeued: 0,
@@ -615,6 +660,7 @@ const rejectStats = {
     total: 0,
     byReason: new Map<string, number>(),
 };
+const cumulativeRejectStats = new Map<string, number>();
 const walletExecutionStats = new Map<string, {
     success: number;
     failed: number;
@@ -631,6 +677,9 @@ const reconciliationMetrics = {
     maxAbsDiff: 0,
     lastRunAt: 0,
     lastElapsedMs: 0,
+};
+const alertState = {
+    lastAlertAt: 0,
 };
 
 type LoadSheddingMode = 'NORMAL' | 'DEGRADED' | 'CRITICAL';
@@ -741,9 +790,13 @@ function evaluateWsHealth() {
 
 function recordExecution(outcome: 'success' | 'failed' | 'skipped', latencyMs: number): void {
     metrics.totalExecutions++;
+    cumulativeMetrics.executionsTotal += 1;
     if (outcome === 'success') metrics.successfulExecutions++;
     else if (outcome === 'failed') metrics.failedExecutions++;
     else metrics.skippedExecutions++;
+    if (outcome === 'success') cumulativeMetrics.executionsSuccess += 1;
+    else if (outcome === 'failed') cumulativeMetrics.executionsFailed += 1;
+    else cumulativeMetrics.executionsSkipped += 1;
     if (outcome !== 'skipped') {
         metrics.totalLatencyMs += latencyMs;
     }
@@ -768,7 +821,9 @@ function recordRejectReason(reason: string): void {
     const normalized = reason.trim().toUpperCase();
     if (!normalized) return;
     rejectStats.total += 1;
+    cumulativeMetrics.rejectsTotal += 1;
     rejectStats.byReason.set(normalized, (rejectStats.byReason.get(normalized) || 0) + 1);
+    cumulativeRejectStats.set(normalized, (cumulativeRejectStats.get(normalized) || 0) + 1);
 }
 
 function recordWalletExecution(walletAddress: string, outcome: 'success' | 'failed' | 'skipped', latencyMs = 0): void {
@@ -908,14 +963,191 @@ function evaluateLoadSheddingState(params: { queueDepth: number; queueP95LagMs: 
 }
 
 async function evaluateLoadSheddingSnapshot(source: 'interval' | 'summary' = 'interval'): Promise<void> {
-    if (!AUTO_LOAD_SHEDDING_ENABLED) return;
     try {
         const queueDepth = await queueStore.size();
         const queueP95LagMs = calculatePercentile(queueLagSamplesMs, 95);
-        evaluateLoadSheddingState({ queueDepth, queueP95LagMs, source });
+        if (AUTO_LOAD_SHEDDING_ENABLED) {
+            evaluateLoadSheddingState({ queueDepth, queueP95LagMs, source });
+        }
+        maybeEmitOperationalAlerts({ queueDepth, queueP95LagMs });
     } catch (error) {
         console.warn('[Supervisor] Load shedding snapshot failed:', error);
     }
+}
+
+function maybeEmitOperationalAlerts(params: { queueDepth: number; queueP95LagMs: number }): void {
+    if (!SUPERVISOR_ALERTS_ENABLED) return;
+
+    const issues: string[] = [];
+    if (params.queueDepth >= SUPERVISOR_ALERT_QUEUE_DEPTH) {
+        issues.push(`queueDepth=${params.queueDepth}>=${SUPERVISOR_ALERT_QUEUE_DEPTH}`);
+    }
+    if (params.queueP95LagMs >= SUPERVISOR_ALERT_QUEUE_P95_MS) {
+        issues.push(`queueP95LagMs=${params.queueP95LagMs}>=${SUPERVISOR_ALERT_QUEUE_P95_MS}`);
+    }
+
+    const rejectRate = metrics.totalExecutions > 0
+        ? (rejectStats.total / metrics.totalExecutions)
+        : 0;
+    if (metrics.totalExecutions >= SUPERVISOR_ALERT_MIN_ATTEMPTS && rejectRate >= SUPERVISOR_ALERT_REJECT_RATE) {
+        issues.push(`rejectRate=${(rejectRate * 100).toFixed(1)}%>=${(SUPERVISOR_ALERT_REJECT_RATE * 100).toFixed(1)}%`);
+    }
+
+    if (loadSheddingState.mode === 'CRITICAL') {
+        issues.push('loadShedding=CRITICAL');
+    }
+
+    if (issues.length === 0) return;
+
+    const now = Date.now();
+    if (now - alertState.lastAlertAt < SUPERVISOR_ALERT_COOLDOWN_MS) return;
+    alertState.lastAlertAt = now;
+    cumulativeMetrics.alertsTotal += 1;
+    console.warn(`[Supervisor] 🚨 Operational alert: ${issues.join(' | ')}`);
+}
+
+function escapePromLabel(value: string): string {
+    return value
+        .replace(/\\/g, '\\\\')
+        .replace(/\n/g, '\\n')
+        .replace(/"/g, '\\"');
+}
+
+function formatPromMetric(name: string, value: number, labels?: Record<string, string>): string {
+    const normalized = Number.isFinite(value) ? value : 0;
+    if (!labels || Object.keys(labels).length === 0) {
+        return `${name} ${normalized}`;
+    }
+    const serialized = Object.entries(labels)
+        .map(([key, labelValue]) => `${key}="${escapePromLabel(String(labelValue))}"`)
+        .join(',');
+    return `${name}{${serialized}} ${normalized}`;
+}
+
+function topEntries(map: Map<string, number>, limit: number): Array<[string, number]> {
+    return Array.from(map.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit);
+}
+
+async function buildPrometheusMetricsSnapshot(): Promise<string> {
+    const queueDepth = await queueStore.size().catch(() => loadSheddingState.lastQueueDepth);
+    const queueP95LagMs = calculatePercentile(queueLagSamplesMs, 95);
+    const queueAvgLagMs = queueStats.dequeued > 0 ? (queueStats.totalLagMs / queueStats.dequeued) : 0;
+    const decidedExecutions = metrics.successfulExecutions + metrics.failedExecutions;
+    const windowSuccessRate = decidedExecutions > 0 ? (metrics.successfulExecutions / decidedExecutions) : 1;
+    const windowRejectRate = metrics.totalExecutions > 0 ? (rejectStats.total / metrics.totalExecutions) : 0;
+
+    const lines: string[] = [];
+    lines.push(formatPromMetric('copy_supervisor_execution_window_total', metrics.totalExecutions));
+    lines.push(formatPromMetric('copy_supervisor_execution_window_total', metrics.successfulExecutions, { outcome: 'success' }));
+    lines.push(formatPromMetric('copy_supervisor_execution_window_total', metrics.failedExecutions, { outcome: 'failed' }));
+    lines.push(formatPromMetric('copy_supervisor_execution_window_total', metrics.skippedExecutions, { outcome: 'skipped' }));
+    lines.push(formatPromMetric('copy_supervisor_execution_window_success_rate', windowSuccessRate));
+    lines.push(formatPromMetric('copy_supervisor_reject_window_rate', windowRejectRate));
+
+    lines.push(formatPromMetric('copy_supervisor_execution_total', cumulativeMetrics.executionsTotal));
+    lines.push(formatPromMetric('copy_supervisor_execution_total', cumulativeMetrics.executionsSuccess, { outcome: 'success' }));
+    lines.push(formatPromMetric('copy_supervisor_execution_total', cumulativeMetrics.executionsFailed, { outcome: 'failed' }));
+    lines.push(formatPromMetric('copy_supervisor_execution_total', cumulativeMetrics.executionsSkipped, { outcome: 'skipped' }));
+
+    lines.push(formatPromMetric('copy_supervisor_queue_depth', queueDepth));
+    lines.push(formatPromMetric('copy_supervisor_queue_lag_p95_ms', queueP95LagMs));
+    lines.push(formatPromMetric('copy_supervisor_queue_lag_avg_ms', queueAvgLagMs));
+    lines.push(formatPromMetric('copy_supervisor_queue_lag_max_ms', queueStats.maxLagMs));
+    lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueEnqueued, { action: 'enqueued' }));
+    lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDequeued, { action: 'dequeued' }));
+    lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDropped, { action: 'dropped' }));
+
+    const modeLabels: LoadSheddingMode[] = ['NORMAL', 'DEGRADED', 'CRITICAL'];
+    for (const mode of modeLabels) {
+        lines.push(formatPromMetric('copy_supervisor_load_shedding_mode', loadSheddingState.mode === mode ? 1 : 0, { mode: mode.toLowerCase() }));
+    }
+    lines.push(formatPromMetric('copy_supervisor_load_shedding_fanout_limit', getDispatchFanoutLimit()));
+    lines.push(formatPromMetric('copy_supervisor_load_shedding_mempool_paused', isMempoolDispatchPaused() ? 1 : 0));
+
+    lines.push(formatPromMetric('copy_supervisor_reconcile_total_abs_diff_usd', cumulativeMetrics.reconcileTotalAbsDiff));
+    lines.push(formatPromMetric('copy_supervisor_reconcile_runs_total', cumulativeMetrics.reconcileRuns));
+    lines.push(formatPromMetric('copy_supervisor_reconcile_errors_total', cumulativeMetrics.reconcileErrors));
+    lines.push(formatPromMetric('copy_supervisor_reconcile_window_abs_diff_usd', reconciliationMetrics.totalAbsDiff));
+    lines.push(formatPromMetric('copy_supervisor_reconcile_window_max_abs_diff_usd', reconciliationMetrics.maxAbsDiff));
+
+    lines.push(formatPromMetric('copy_supervisor_alerts_total', cumulativeMetrics.alertsTotal));
+    lines.push(formatPromMetric('copy_supervisor_reject_total', cumulativeMetrics.rejectsTotal));
+    lines.push(formatPromMetric('copy_supervisor_reject_window_total', rejectStats.total));
+
+    for (const [reason, count] of topEntries(rejectStats.byReason, METRICS_TOP_K)) {
+        lines.push(formatPromMetric('copy_supervisor_reject_window_total', count, { reason }));
+    }
+    for (const [reason, count] of topEntries(cumulativeRejectStats, METRICS_TOP_K)) {
+        lines.push(formatPromMetric('copy_supervisor_reject_total', count, { reason }));
+    }
+
+    const walletEntries = Array.from(walletExecutionStats.entries())
+        .map(([wallet, stats]) => {
+            const decided = stats.success + stats.failed;
+            const successRate = decided > 0 ? (stats.success / decided) : 1;
+            return { wallet, ...stats, attempts: stats.success + stats.failed + stats.skipped, successRate };
+        })
+        .sort((a, b) => b.attempts - a.attempts)
+        .slice(0, METRICS_TOP_K);
+    lines.push(formatPromMetric('copy_supervisor_wallet_window_tracked', walletExecutionStats.size));
+    for (const wallet of walletEntries) {
+        lines.push(formatPromMetric('copy_supervisor_wallet_window_attempts', wallet.attempts, { wallet: wallet.wallet }));
+        lines.push(formatPromMetric('copy_supervisor_wallet_window_success_rate', wallet.successRate, { wallet: wallet.wallet }));
+    }
+
+    return `${lines.join('\n')}\n`;
+}
+
+let supervisorMetricsServer: http.Server | null = null;
+
+function startSupervisorMetricsServer(): void {
+    if (!SUPERVISOR_METRICS_SERVER_ENABLED) return;
+    if (supervisorMetricsServer) return;
+
+    supervisorMetricsServer = http.createServer((req, res) => {
+        void (async () => {
+            try {
+                const url = new URL(req.url || '/', `http://${SUPERVISOR_METRICS_HOST}`);
+                if (url.pathname === '/health' || url.pathname === '/healthz') {
+                    const payload = JSON.stringify({
+                        status: 'ok',
+                        loadSheddingMode: loadSheddingState.mode,
+                        mempoolPaused: isMempoolDispatchPaused(),
+                        fanout: getDispatchFanoutLimit(),
+                    });
+                    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+                    res.end(payload);
+                    return;
+                }
+
+                if (url.pathname !== '/metrics') {
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('not found');
+                    return;
+                }
+
+                const body = await buildPrometheusMetricsSnapshot();
+                res.writeHead(200, {
+                    'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+                    'Cache-Control': 'no-store',
+                });
+                res.end(body);
+            } catch (error) {
+                res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end('metrics error');
+            }
+        })();
+    });
+
+    supervisorMetricsServer.on('error', (error) => {
+        console.warn('[Supervisor] Metrics server failed:', error);
+    });
+
+    supervisorMetricsServer.listen(SUPERVISOR_METRICS_PORT, SUPERVISOR_METRICS_HOST, () => {
+        console.log(`[Supervisor] 📈 Metrics server listening on http://${SUPERVISOR_METRICS_HOST}:${SUPERVISOR_METRICS_PORT}/metrics`);
+    });
 }
 
 async function logMetricsSummary(): Promise<void> {
@@ -941,6 +1173,7 @@ async function logMetricsSummary(): Promise<void> {
             : '0';
         const p95QueueLagMs = calculatePercentile(queueLagSamplesMs, 95);
         evaluateLoadSheddingState({ queueDepth, queueP95LagMs: p95QueueLagMs, source: 'summary' });
+        maybeEmitOperationalAlerts({ queueDepth, queueP95LagMs: p95QueueLagMs });
         const rejectSummary = summarizeTopRejectReasons();
         const walletSummary = summarizeTopWalletStats();
 
@@ -1016,6 +1249,7 @@ async function runSellAccountingReconciliation(): Promise<void> {
 
     const startedAt = Date.now();
     reconciliationMetrics.runs += 1;
+    cumulativeMetrics.reconcileRuns += 1;
     reconciliationMetrics.lastRunAt = startedAt;
     let scanned = 0;
     let reconciled = 0;
@@ -1114,11 +1348,13 @@ async function runSellAccountingReconciliation(): Promise<void> {
         reconciliationMetrics.reconciled += reconciled;
         reconciliationMetrics.skipped += skipped;
         reconciliationMetrics.totalAbsDiff += totalAbsDiff;
+        cumulativeMetrics.reconcileTotalAbsDiff += totalAbsDiff;
         reconciliationMetrics.maxAbsDiff = Math.max(reconciliationMetrics.maxAbsDiff, maxAbsDiff);
         reconciliationMetrics.lastElapsedMs = elapsed;
         console.log(`[Supervisor] 🔎 SELL reconciliation done: scanned=${scanned} reconciled=${reconciled} skipped=${skipped} totalAbsDiff=$${totalAbsDiff.toFixed(4)} elapsed=${elapsed}ms`);
     } catch (error) {
         reconciliationMetrics.errors += 1;
+        cumulativeMetrics.reconcileErrors += 1;
         reconciliationMetrics.lastElapsedMs = Date.now() - startedAt;
         console.warn('[Supervisor] SELL reconciliation failed:', error);
     } finally {
@@ -1962,6 +2198,7 @@ async function checkQueue() {
 
             const lagMs = job.enqueuedAt ? (Date.now() - job.enqueuedAt) : 0;
             queueStats.dequeued += 1;
+            cumulativeMetrics.queueDequeued += 1;
             queueStats.totalLagMs += lagMs;
             queueStats.maxLagMs = Math.max(queueStats.maxLagMs, lagMs);
             appendQueueLagSample(lagMs);
@@ -2812,11 +3049,13 @@ async function processJob(
             });
             if (queued) {
                 queueStats.enqueued += 1;
+                cumulativeMetrics.queueEnqueued += 1;
                 const depth = await queueStore.size();
                 queueStats.maxDepth = Math.max(queueStats.maxDepth, depth);
                 console.warn(`[Supervisor] ⏳ All workers busy. Job QUEUED for User ${config.walletAddress}. Queue size: ${depth}`);
             } else {
                 queueStats.dropped += 1;
+                cumulativeMetrics.queueDropped += 1;
                 console.error(`[Supervisor] ❌ Job DROPPED (Queue Full) for User ${config.walletAddress}`);
                 recordRejectReason('QUEUE_FULL_DROP');
                 recordWalletExecution(config.walletAddress, 'failed');
@@ -2824,6 +3063,7 @@ async function processJob(
             }
         } catch (error) {
             queueStats.dropped += 1;
+            cumulativeMetrics.queueDropped += 1;
             console.error(`[Supervisor] ❌ Queue enqueue failed for ${config.walletAddress}:`, error);
             recordRejectReason('QUEUE_ENQUEUE_FAILED');
             recordWalletExecution(config.walletAddress, 'failed');
@@ -3001,6 +3241,7 @@ async function main() {
 
     // --- INITIALIZATION ---
     await initSharedStores();
+    startSupervisorMetricsServer();
 
     if (MASTER_MNEMONIC) {
         walletManager = new WalletManager(
@@ -3174,10 +3415,17 @@ async function main() {
         void logMetricsSummary();
     }, 300000); // 5 mins
 
-    if (AUTO_LOAD_SHEDDING_ENABLED) {
-        console.log(
-            `[Supervisor] 🚦 Auto load shedding enabled: depth_warn=${LOAD_SHEDDING_QUEUE_DEPTH_WARN} depth_critical=${LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL} p95_warn=${LOAD_SHEDDING_QUEUE_P95_WARN_MS}ms p95_critical=${LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS}ms fanout=${FANOUT_CONCURRENCY}/${LOAD_SHEDDING_DEGRADED_FANOUT_LIMIT}/${LOAD_SHEDDING_CRITICAL_FANOUT_LIMIT}`
-        );
+    if (AUTO_LOAD_SHEDDING_ENABLED || SUPERVISOR_ALERTS_ENABLED) {
+        if (AUTO_LOAD_SHEDDING_ENABLED) {
+            console.log(
+                `[Supervisor] 🚦 Auto load shedding enabled: depth_warn=${LOAD_SHEDDING_QUEUE_DEPTH_WARN} depth_critical=${LOAD_SHEDDING_QUEUE_DEPTH_CRITICAL} p95_warn=${LOAD_SHEDDING_QUEUE_P95_WARN_MS}ms p95_critical=${LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS}ms fanout=${FANOUT_CONCURRENCY}/${LOAD_SHEDDING_DEGRADED_FANOUT_LIMIT}/${LOAD_SHEDDING_CRITICAL_FANOUT_LIMIT}`
+            );
+        }
+        if (SUPERVISOR_ALERTS_ENABLED) {
+            console.log(
+                `[Supervisor] 🚨 Alerts enabled: queueDepth>=${SUPERVISOR_ALERT_QUEUE_DEPTH}, queueP95>=${SUPERVISOR_ALERT_QUEUE_P95_MS}ms, rejectRate>=${(SUPERVISOR_ALERT_REJECT_RATE * 100).toFixed(1)}%, cooldown=${SUPERVISOR_ALERT_COOLDOWN_MS}ms`
+            );
+        }
         void evaluateLoadSheddingSnapshot('interval');
         setInterval(() => {
             void evaluateLoadSheddingSnapshot('interval');
