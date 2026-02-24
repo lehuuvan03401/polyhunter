@@ -596,6 +596,9 @@ export class TradeOrchestrator {
 
         if (this.isSimulation) {
             console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
+            // Default simulation accounting to the leader's observed execution price.
+            // Set SIM_USE_CLOB_VWAP=true only when you explicitly want CLOB VWAP-based fills.
+            const useClobVwapForSimulation = process.env.SIM_USE_CLOB_VWAP === 'true';
 
             // --- Step 2: FOK Scale-Down Simulation ---
             // Real Polymarket uses Fill-Or-Kill. We simulate the same scale-down logic
@@ -647,8 +650,9 @@ export class TradeOrchestrator {
                 result.scaledDown = true;
             }
 
-            execPrice = simPrice.execPrice;
-            simSlippageBps = simPrice.slippageBps;
+            const safeLeaderPrice = leaderPrice > 0 ? leaderPrice : simPrice.execPrice;
+            execPrice = useClobVwapForSimulation ? simPrice.execPrice : safeLeaderPrice;
+            simSlippageBps = useClobVwapForSimulation ? simPrice.slippageBps : 0;
 
             // --- Step 3: Execution Delay Simulation ---
             // Real chain submission takes 1-4 seconds. During this time, the price may drift.
@@ -667,19 +671,6 @@ export class TradeOrchestrator {
             });
 
             if (postDelayPrice.fromClob) {
-                // Check if price drifted beyond slippage tolerance
-                const slippageTolerance = (config.maxSlippage ?? 2.0) / 100; // e.g. 2% → 0.02
-                const priceDrift = Math.abs(postDelayPrice.execPrice - execPrice) / execPrice;
-
-                if (priceDrift > slippageTolerance) {
-                    console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (price drift ${(priceDrift * 100).toFixed(1)}% > ${(slippageTolerance * 100).toFixed(1)}% tolerance): $${execPrice.toFixed(4)} → $${postDelayPrice.execPrice.toFixed(4)}`);
-                    await this.prisma.copyTrade.update({
-                        where: { id: copyTrade.id },
-                        data: { status: 'FAILED' as any, errorMessage: `SIM_PRICE_DRIFT_${(priceDrift * 100).toFixed(0)}PCT` }
-                    });
-                    return { executed: false, reason: 'SIM_FOK_REJECTED' };
-                }
-
                 // Post-delay depth check: depth may have decreased during delay
                 // Even if we scaled down initially, check if the scaled amount can still be filled
                 if (postDelayPrice.fillRatio < 0.95) {
@@ -691,12 +682,27 @@ export class TradeOrchestrator {
                     return { executed: false, reason: 'SIM_FOK_REJECTED' };
                 }
 
-                // Within tolerance: apply a small realistic price impact (half of drift)
-                // since some movement is expected but you wouldn't get the full adverse move
-                if (copySide === 'BUY' && postDelayPrice.execPrice > execPrice) {
-                    execPrice += (postDelayPrice.execPrice - execPrice) * 0.3; // 30% of adverse move
-                } else if (copySide === 'SELL' && postDelayPrice.execPrice < execPrice) {
-                    execPrice -= (execPrice - postDelayPrice.execPrice) * 0.3;
+                if (useClobVwapForSimulation) {
+                    // Check if price drifted beyond slippage tolerance
+                    const slippageTolerance = (config.maxSlippage ?? 2.0) / 100; // e.g. 2% → 0.02
+                    const priceDrift = Math.abs(postDelayPrice.execPrice - execPrice) / execPrice;
+
+                    if (priceDrift > slippageTolerance) {
+                        console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (price drift ${(priceDrift * 100).toFixed(1)}% > ${(slippageTolerance * 100).toFixed(1)}% tolerance): $${execPrice.toFixed(4)} → $${postDelayPrice.execPrice.toFixed(4)}`);
+                        await this.prisma.copyTrade.update({
+                            where: { id: copyTrade.id },
+                            data: { status: 'FAILED' as any, errorMessage: `SIM_PRICE_DRIFT_${(priceDrift * 100).toFixed(0)}PCT` }
+                        });
+                        return { executed: false, reason: 'SIM_FOK_REJECTED' };
+                    }
+
+                    // Within tolerance: apply a small realistic price impact (half of drift)
+                    // since some movement is expected but you wouldn't get the full adverse move
+                    if (copySide === 'BUY' && postDelayPrice.execPrice > execPrice) {
+                        execPrice += (postDelayPrice.execPrice - execPrice) * 0.3; // 30% of adverse move
+                    } else if (copySide === 'SELL' && postDelayPrice.execPrice < execPrice) {
+                        execPrice -= (execPrice - postDelayPrice.execPrice) * 0.3;
+                    }
                 }
             }
 
@@ -783,7 +789,8 @@ export class TradeOrchestrator {
                 txHash: result.transactionHashes?.[0] || undefined,
                 errorMessage: errorMessage,
                 usedBotFloat: result.usedBotFloat,
-                copySize: copySizeUsdc // Ensure DB accurately reflects the possibly scaled-down size
+                copySize: copySizeUsdc, // Ensure DB accurately reflects the possibly scaled-down size
+                copyPrice: execPrice
             }
         });
 
