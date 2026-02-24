@@ -12,6 +12,15 @@
  * Usage:
  * export $(grep -v '^#' .env | xargs)
  * MODE=1 npx tsx scripts/workers/live-copy-trading.ts
+ * 
+ * cd /Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/web
+COPY_MODE=1 \
+CHAIN_ID=137 \
+LIVE_EXECUTION_MODE=EOA \
+LIVE_SELL_MODE=SAME_PERCENT \
+RESET_ON_START=false \
+npx tsx scripts/workers/live-copy-trading.ts
+如果你要走代理钱包模式，把 LIVE_EXECUTION_MODE=PROXY，并确保该用户已创建 Proxy 且执行权限已配置。
  */
 
 import { fileURLToPath } from 'url';
@@ -21,6 +30,7 @@ import dotenv from 'dotenv';
 import { PrismaClient, CopyTradeStatus } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ethers } from 'ethers';
 import { RealtimeServiceV2 } from '../../../sdk/src/services/realtime-service-v2.js';
 import type { ActivityTrade, MarketEvent } from '../../../sdk/src/services/realtime-service-v2.js';
 import { GammaApiClient } from '../../../sdk/src/index';
@@ -35,6 +45,8 @@ import { PositionTracker } from '../../../sdk/src/core/tracking/position-tracker
 import { CtfEventListener } from '../../../sdk/src/services/ctf-event-listener.js';
 import { TradeOrchestrator } from '../../../sdk/src/core/trade-orchestrator.js';
 import { TradingService } from '../../../sdk/src/services/trading-service.js';
+import { CopyTradingExecutionService } from '../../../sdk/src/services/copy-trading-execution-service.js';
+import { CONTRACT_ADDRESSES, CTF_ABI } from '../../../sdk/src/core/contracts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,8 +72,14 @@ const COPY_MODE = (process.env.SIM_COPY_MODE || 'BUDGET_CONSTRAINED').toUpperCas
 // Default to TRADER_ONLY for live copy trading
 const SIM_ACTIVITY_FILTER = (process.env.SIM_ACTIVITY_FILTER || 'TRADER_ONLY').toUpperCase();
 const SIM_WS_SERVER_FILTER = (process.env.SIM_WS_SERVER_FILTER || 'false').toLowerCase() === 'true';
-// MODE=1 (default for live-copy-trading) -> Live, MODE=0 -> Simulation
-const IS_LIVE_MODE = (process.env.COPY_MODE || '1') === '1';
+// COPY_MODE/MODE = 1 -> live execution path, 0 -> simulation path.
+const MODE_FLAG = process.env.COPY_MODE ?? process.env.MODE ?? '1';
+const IS_LIVE_MODE = MODE_FLAG === '1';
+const RESET_ON_START = (process.env.RESET_ON_START || (IS_LIVE_MODE ? 'false' : 'true')).toLowerCase() === 'true';
+const LIVE_SELL_MODE = (process.env.LIVE_SELL_MODE || process.env.SELL_MODE || (IS_LIVE_MODE ? 'SAME_PERCENT' : 'NO_SELL')).toUpperCase();
+const LIVE_EXECUTION_MODE = (process.env.LIVE_EXECUTION_MODE || (IS_LIVE_MODE ? 'EOA' : 'PROXY')).toUpperCase() === 'PROXY'
+    ? 'PROXY'
+    : 'EOA';
 const TX_PREFIX = IS_LIVE_MODE ? 'LIVE-' : 'SIM-';
 
 // --- BUDGET CONSTRAINTS ---
@@ -76,6 +94,13 @@ const MAX_TRADE_SIZE = parseFloat(process.env.MAX_TRADE_SIZE || '100'); // $100 
 
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
 const CLOB_API_URL = 'https://clob.polymarket.com';
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || process.env.POLYGON_RPC_URL || 'http://127.0.0.1:8545';
+const CLOB_API_KEY = process.env.POLY_API_KEY || process.env.CLOB_API_KEY;
+const CLOB_API_SECRET = process.env.POLY_API_SECRET || process.env.CLOB_API_SECRET;
+const CLOB_API_PASSPHRASE = process.env.POLY_API_PASSPHRASE || process.env.CLOB_API_PASSPHRASE;
+const clobCredentials = CLOB_API_KEY && CLOB_API_SECRET && CLOB_API_PASSPHRASE
+    ? { key: CLOB_API_KEY, secret: CLOB_API_SECRET, passphrase: CLOB_API_PASSPHRASE }
+    : undefined;
 
 // --- MARKET-AWARE LATENCY THRESHOLDS ---
 // Max tolerable detection delay before skipping a trade (simulates FOK rejection when price has moved)
@@ -123,6 +148,9 @@ console.log(`📊 Max Trade Size: $${MAX_TRADE_SIZE} per trade`);
 console.log(`Strategy Profile: ${SIMULATED_PROFILE} (Slippage: ${strategy.maxSlippage * 100}%)`);
 console.log(`Copy Mode: ${COPY_MODE}`);
 console.log(`Order Mode: ${IS_LIVE_MODE ? '🟢 Live' : '🟡 Simulation'}`);
+console.log(`Execution Mode: ${LIVE_EXECUTION_MODE}`);
+console.log(`Sell Mode: ${LIVE_SELL_MODE}`);
+console.log(`Reset On Start: ${RESET_ON_START}`);
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 // --- PRISMA ---
@@ -141,12 +169,18 @@ const chainId = parseInt(process.env.CHAIN_ID || "31337");
 const marketService = new MarketService(gammaClient, dataApi, rateLimiter, cache, { chainId });
 const tokenMetadataService = new TokenMetadataService(marketService, cache);
 
-// Dummy trading service for orderbook lookups (simulation mode doesn't sign transactions)
+// Shared TradingService for both simulation and live EOA execution.
 const fallbackTradingService = new TradingService(rateLimiter, cache, {
-    // Use the trading key from env (simulation mode won't submit real txs, but ethers validates key format)
     privateKey: process.env.TRADING_PRIVATE_KEY!,
-    chainId: chainId
+    chainId: chainId,
+    credentials: clobCredentials
 });
+const executionSigner = process.env.TRADING_PRIVATE_KEY
+    ? new ethers.Wallet(process.env.TRADING_PRIVATE_KEY, new ethers.providers.JsonRpcProvider(RPC_URL))
+    : null;
+const executionService = executionSigner
+    ? new CopyTradingExecutionService(fallbackTradingService, executionSigner, chainId)
+    : null;
 
 // Relaxed speed profile for copy trading: skip spread + depth checks.
 // - Spread: leader already did price discovery for us
@@ -161,13 +195,13 @@ const COPY_TRADING_SPEED_PROFILE = {
 };
 
 const tradeOrchestrator = new TradeOrchestrator(
-    null as any, // No ExecutionService needed for simulation
+    executionService as any,
     tokenMetadataService,
     fallbackTradingService,
     prisma,
     COPY_TRADING_SPEED_PROFILE,
     false,
-    true // isSimulation = true
+    !IS_LIVE_MODE
 );
 
 // --- TRACKING STATE ---
@@ -271,53 +305,70 @@ async function seedConfig() {
     const targetLower = TARGET_TRADER.toLowerCase();
     const followerLower = FOLLOWER_WALLET.toLowerCase();
 
-    // Delete existing config for clean slate
-    await prisma.copyTradingConfig.deleteMany({
-        where: {
-            walletAddress: followerLower,
-            traderAddress: targetLower,
-        }
-    });
-
-    // Delete previous copy trades
-    await prisma.copyTrade.deleteMany({
-        where: {
-            config: {
+    if (RESET_ON_START) {
+        // Delete existing config for clean slate
+        await prisma.copyTradingConfig.deleteMany({
+            where: {
                 walletAddress: followerLower,
                 traderAddress: targetLower,
             }
-        }
-    });
+        });
 
-    // Delete previous positions
-    await prisma.userPosition.deleteMany({
-        where: {
-            walletAddress: followerLower,
-        }
-    });
+        // Delete previous copy trades
+        await prisma.copyTrade.deleteMany({
+            where: {
+                config: {
+                    walletAddress: followerLower,
+                    traderAddress: targetLower,
+                }
+            }
+        });
 
-    // Create fresh config with budget-constrained settings
-    const config = await prisma.copyTradingConfig.create({
-        data: {
-            walletAddress: followerLower,
-            traderAddress: targetLower,
-            traderName: IS_LIVE_MODE ? '0x8dxd (Live)' : '0x8dxd (Simulation)',
-            maxSlippage: 2.0,
-            slippageType: 'AUTO',
-            autoExecute: false, // Don't let worker pick this up
-            channel: 'EVENT_LISTENER',
-            mode: 'PERCENTAGE', // Use percentage mode for scaling
-            sizeScale: SCALE_FACTOR, // 100% of leader trades
-            fixedAmount: FIXED_COPY_AMOUNT, // Fallback
-            maxSizePerTrade: MAX_TRADE_SIZE, // Cap per trade
-            // NO_SELL: we don't mirror the leader's exits. For btc-updown-5m/15m markets,
-            // hold to expiry is optimal — winners auto-settle at $1/share via redemption.
-            // SELL signals would fail anyway (NO_CURRENT_POSITION) for leader's pre-existing
-            // positions that we never mirrored before the script started.
-            sellMode: 'NO_SELL',
-            isActive: true,
+        // Delete previous positions
+        await prisma.userPosition.deleteMany({
+            where: {
+                walletAddress: followerLower,
+            }
+        });
+    }
+
+    const baseConfigData = {
+        traderName: IS_LIVE_MODE ? '0x8dxd (Live)' : '0x8dxd (Simulation)',
+        maxSlippage: 2.0,
+        slippageType: 'AUTO',
+        autoExecute: false, // Script drives execution directly.
+        channel: 'EVENT_LISTENER',
+        mode: 'PERCENTAGE',
+        sizeScale: SCALE_FACTOR,
+        fixedAmount: FIXED_COPY_AMOUNT,
+        maxSizePerTrade: MAX_TRADE_SIZE,
+        sellMode: LIVE_SELL_MODE,
+        executionMode: LIVE_EXECUTION_MODE,
+        isActive: true,
+    } as const;
+
+    let config = null;
+    if (!RESET_ON_START) {
+        const existing = await prisma.copyTradingConfig.findFirst({
+            where: { walletAddress: followerLower, traderAddress: targetLower },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (existing) {
+            config = await prisma.copyTradingConfig.update({
+                where: { id: existing.id },
+                data: baseConfigData,
+            });
         }
-    });
+    }
+    if (!config) {
+        config = await prisma.copyTradingConfig.create({
+            data: {
+                walletAddress: followerLower,
+                traderAddress: targetLower,
+                ...baseConfigData
+            }
+        });
+    }
 
     configId = config.id;
     activeConfig = config;
@@ -438,11 +489,8 @@ async function handleTrade(trade: ActivityTrade, source: 'CTF' | 'WS' = 'WS') {
         return;
     }
 
-    // --- SKIP SELL SIGNALS (NO_SELL mode) ---
-    // We hold all positions to expiry (binary market settlement at $1/$0).
-    // Silently skip SELL signals here — avoids NO_CURRENT_POSITION spam from the orchestrator
-    // for positions the leader opened before this session started.
-    if (trade.side === 'SELL') {
+    // Optional NO_SELL mode: hold to expiry and ignore leader exits.
+    if (trade.side === 'SELL' && (activeConfig.sellMode || LIVE_SELL_MODE) === 'NO_SELL') {
         signalStats.duplicate++; // Count as deduped/ignored, not failed
         return;
     }
@@ -594,6 +642,7 @@ function finishSettlement(tokenId: string, success: boolean): void {
 
 function handleMarketResolution(event: MarketEvent): void {
     if (event.type !== 'resolved') return;
+    if (IS_LIVE_MODE) return;
 
     const conditionId = event.conditionId;
     if (SETTLEMENT_CACHE.has(conditionId)) return;
@@ -604,6 +653,7 @@ function handleMarketResolution(event: MarketEvent): void {
 }
 
 async function processSettlementQueue() {
+    if (IS_LIVE_MODE) return;
     if (isProcessingSettlement || SETTLEMENT_QUEUE.length === 0) return;
     isProcessingSettlement = true;
 
@@ -751,6 +801,38 @@ async function resolveSimulatedPositions(conditionId: string): Promise<void> {
     }
 }
 
+async function redeemWinningPositionOnChain(conditionId: string, outcomeIndex: number): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    const mode = activeConfig?.executionMode || LIVE_EXECUTION_MODE;
+    if (mode === 'EOA') {
+        if (!executionSigner) {
+            return { success: false, error: 'EOA signer unavailable' };
+        }
+        try {
+            const addresses = chainId === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+            const ctf = new ethers.Contract(CONTRACT_ADDRESSES.ctf, CTF_ABI, executionSigner);
+            const tx = await ctf.redeemPositions(
+                addresses.usdc,
+                ethers.constants.HashZero,
+                conditionId,
+                [1 << outcomeIndex]
+            );
+            const receipt = await tx.wait();
+            return { success: true, txHash: receipt.transactionHash };
+        } catch (error: any) {
+            return { success: false, error: error?.message || 'EOA redeem failed' };
+        }
+    }
+
+    if (!executionService) {
+        return { success: false, error: 'Proxy execution service unavailable' };
+    }
+    const proxyAddress = await executionService.resolveProxyAddress(FOLLOWER_WALLET.toLowerCase());
+    if (!proxyAddress) {
+        return { success: false, error: 'Proxy not found' };
+    }
+    return executionService.redeemPositions(proxyAddress, conditionId, [1 << outcomeIndex]);
+}
+
 // --- REDEMPTION LOGIC ---
 async function processRedemptions() {
     console.log('\n🔄 Processing Settlements (Wins & Losses)...');
@@ -794,18 +876,28 @@ async function processRedemptions() {
                         let price = undefined;
 
                         // Re-use matching logic (Token ID or Outcome match)
+                        let outcomeIndex = -1;
                         const token = (m.tokens || []).find((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
                         if (token && token.price) {
                             price = Number(token.price);
                         }
-                        else if (m.outcomes && m.outcomePrices && pos.outcome) {
+                        if (m.outcomes && m.outcomePrices && pos.outcome) {
                             const outcomes: string[] = typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes;
                             const prices: number[] = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices).map(Number) : m.outcomePrices.map(Number);
                             const myOutcome = parseOutcome(pos.outcome);
                             const idx = outcomes.findIndex((o: string) => parseOutcome(o) === myOutcome);
 
                             if (idx !== -1 && prices[idx] !== undefined) {
-                                price = prices[idx];
+                                outcomeIndex = idx;
+                                if (price === undefined) {
+                                    price = prices[idx];
+                                }
+                            }
+                            if (outcomeIndex < 0 && token) {
+                                const tokenIdx = (m.tokens || []).findIndex((t: any) => t.tokenId === tokenId || t.token_id === tokenId);
+                                if (tokenIdx >= 0) {
+                                    outcomeIndex = tokenIdx;
+                                }
                             }
                         }
 
@@ -814,8 +906,6 @@ async function processRedemptions() {
                         if (token && token.winner !== undefined) {
                             isWinner = token.winner;
                         }
-
-                        // console.log(`   [Debug] Token: ${tokenId} Price: ${price} Winner: ${isWinner} Closed: ${m.closed}`);
 
                         // STRICT SETTLEMENT LOGIC: Only settle if market is CLOSED
                         if (!m.closed) continue;
@@ -834,6 +924,26 @@ async function processRedemptions() {
 
                             // 2. Record Trade
                             const execPrice = 1.0;
+                            let settlementStatus = CopyTradeStatus.EXECUTED;
+                            let settlementTxHash = `${TX_PREFIX}redeem-${Date.now()}`;
+                            let settlementError = `Redeemed Profit: $${profit.toFixed(4)}`;
+                            if (IS_LIVE_MODE) {
+                                if (!pos.conditionId) {
+                                    settlementStatus = CopyTradeStatus.FAILED;
+                                    settlementError = 'Live redemption skipped: missing conditionId';
+                                } else if (outcomeIndex < 0) {
+                                    settlementStatus = CopyTradeStatus.FAILED;
+                                    settlementError = 'Live redemption skipped: unresolved outcome index';
+                                } else {
+                                    const redeemResult = await redeemWinningPositionOnChain(pos.conditionId, outcomeIndex);
+                                    if (redeemResult.success && redeemResult.txHash) {
+                                        settlementTxHash = redeemResult.txHash;
+                                    } else {
+                                        settlementStatus = CopyTradeStatus.FAILED;
+                                        settlementError = redeemResult.error || 'Live redemption failed';
+                                    }
+                                }
+                            }
                             await prisma.copyTrade.create({
                                 data: {
                                     configId: configId,
@@ -846,14 +956,20 @@ async function processRedemptions() {
                                     originalTrader: 'PROTOCOL',
                                     originalSize: 0,
                                     originalPrice: 1.0,
-                                    status: CopyTradeStatus.EXECUTED,
+                                    status: settlementStatus,
                                     executedAt: new Date(),
-                                    txHash: `${TX_PREFIX}redeem-${Date.now()}`,
-                                    errorMessage: `Redeemed Profit: $${profit.toFixed(4)}`,
-                                    realizedPnL: profit,
+                                    txHash: settlementTxHash,
+                                    errorMessage: settlementError,
+                                    realizedPnL: settlementStatus === CopyTradeStatus.EXECUTED ? profit : undefined,
                                     conditionId: pos.conditionId // Important: persist conditionId
                                 }
                             });
+
+                            if (settlementStatus !== CopyTradeStatus.EXECUTED) {
+                                console.warn(`      ⚠️ Redemption failed for ${tokenId}: ${settlementError}`);
+                                finishSettlement(tokenId, false);
+                                continue;
+                            }
 
                             // 3. Remove Position
                             await prisma.userPosition.deleteMany({
@@ -1126,6 +1242,17 @@ function printLiveStats() {
 // --- MAIN ---
 async function main() {
     // 1. Setup
+    if (!process.env.TRADING_PRIVATE_KEY) {
+        throw new Error('TRADING_PRIVATE_KEY is required');
+    }
+    if (IS_LIVE_MODE && !clobCredentials) {
+        console.warn('⚠️ Running live mode without explicit CLOB API credentials. Ensure TradingService can initialize credentials.');
+    }
+    if (IS_LIVE_MODE) {
+        await fallbackTradingService.initialize();
+        console.log('✅ TradingService initialized for live EOA execution.');
+    }
+
     await seedConfig();
 
     console.log('🔌 Pre-warming initial metadata cache... This might take ~5 seconds.');
