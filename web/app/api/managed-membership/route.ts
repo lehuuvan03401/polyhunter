@@ -157,6 +157,8 @@ export async function POST(request: NextRequest) {
         );
 
         const membership = await prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`managed_membership_${walletContext.wallet}`}))`;
+
             await tx.$executeRaw`
                 UPDATE "ManagedMembership"
                 SET "status" = 'EXPIRED', "updatedAt" = ${now}

@@ -9,9 +9,9 @@ import {
 } from '@/lib/managed-wealth/settlement-math';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import { applyOneTimeReferralSubscriptionBonus } from '@/lib/participation-program/referral-subscription-bonus';
+import { resolveManagedSubscriptionTrial } from '@/lib/managed-wealth/subscription-trial';
 
 export const dynamic = 'force-dynamic';
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const WITHDRAW_GUARDRAILS = {
     cooldownHours: resolveNumberEnv('MANAGED_WITHDRAW_COOLDOWN_HOURS', 6, 0, 168),
     earlyWithdrawalFeeRate: resolveNumberEnv('MANAGED_EARLY_WITHDRAW_FEE_RATE', 0.01, 0, 0.5),
@@ -458,8 +458,11 @@ export async function POST(request: NextRequest) {
             const existingCount = await tx.managedSubscription.count({
                 where: { walletAddress: requestWallet },
             });
-            const trialApplied = existingCount === 0 && term.durationDays <= 1;
-            const trialEndsAt = trialApplied ? new Date(now.getTime() + ONE_DAY_MS) : null;
+            const { trialApplied, trialEndsAt } = resolveManagedSubscriptionTrial({
+                existingSubscriptionCount: existingCount,
+                termDurationDays: term.durationDays,
+                now,
+            });
 
             if (product.isGuaranteed) {
                 const lockKey = `managed_wealth_guaranteed_${product.id}`;

@@ -19,7 +19,7 @@
 - [x] 4.1 Replace variable profit fee tiers with fixed 20% realized-profit fee for both `FREE` and `MANAGED`.
 - [x] 4.2 Keep no-profit no-fee invariant end-to-end (execution, settlement, affiliate commission trigger).
 - [x] 4.3 Ensure membership pricing remains `88/month`, `228/quarter`, and MCN payment applies 50% discount.
-- [ ] 4.4 Enforce one active membership per wallet and preserve 1-day newcomer basic-service trial.
+- [x] 4.4 Enforce one active membership per wallet and preserve 1-day newcomer basic-service trial.
 
 ## 5. Referral & Performance Growth System
 - [x] 5.1 Keep one-time direct referral reward: first qualified participation extends referrer by exactly 1 day.

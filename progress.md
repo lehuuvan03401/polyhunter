@@ -187,3 +187,9 @@
 - Vitest 配置补齐别名解析：`web/vitest.config.ts` 新增 `@` -> `web/` alias，避免服务层测试导入失败。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run lib/participation-program/levels-aggregation.test.ts lib/participation-program/referral-subscription-bonus.test.ts lib/managed-wealth/membership-plans.test.ts lib/services/affiliate-engine.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（35/35）。
+- M1/M2 补强第二批：
+  - 新增会员单活跃并发保护：`POST /api/managed-membership` 使用 `managed_membership_<wallet>` 事务锁，防止并发重复创建活跃会员。
+  - 新增新人试用策略 helper：`web/lib/managed-wealth/subscription-trial.ts`，并在 `POST /api/managed-subscriptions` 复用。
+  - 新增试用策略单测：`web/lib/managed-wealth/subscription-trial.test.ts`。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run lib/managed-wealth/subscription-trial.test.ts lib/managed-wealth/membership-plans.test.ts lib/participation-program/referral-subscription-bonus.test.ts lib/services/affiliate-engine.test.ts lib/participation-program/levels-aggregation.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（38/38）。
