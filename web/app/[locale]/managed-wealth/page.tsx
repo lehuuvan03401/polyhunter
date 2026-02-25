@@ -10,6 +10,7 @@ import { ManagedProductCard } from '@/components/managed-wealth/managed-product-
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
 import { PARTICIPATION_STRATEGIES } from '@/lib/participation-program/rules';
+import { ManagedExternalRulesSection } from '@/components/participation/managed-external-rules-section';
 
 const STRATEGY_FILTERS = ['ALL', ...PARTICIPATION_STRATEGIES] as const;
 type StrategyFilter = (typeof STRATEGY_FILTERS)[number];
@@ -229,6 +230,8 @@ export default function ManagedWealthPage() {
                     </button>
                 </motion.div>
             )}
+
+            <ManagedExternalRulesSection className="mt-12" />
 
             <SubscriptionModal
                 open={modalOpen}

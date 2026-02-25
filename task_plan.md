@@ -130,3 +130,8 @@
 ## 管理后台进展（7.4）
 - [complete] 新增合伙人治理后台页（席位配置、月度淘汰 dry-run/执行、退款处理）
 - [complete] 现有 admin dashboard 增加 Partners Ops 入口跳转
+
+## 前端规则展示进展（7.3）
+- [complete] 新增 managed 正式外宣规则展示组件（通道/门槛/周期/费率/安全边界/收益矩阵）
+- [complete] 新增 affiliate 正式外宣规则展示组件（直推奖励/净入金/V1-V9/平级奖/全球席位）
+- [complete] managed-wealth 与 affiliate/rules 页面完成规则组件接入

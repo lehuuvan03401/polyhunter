@@ -19,6 +19,7 @@ import {
     Gem
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AffiliateExternalRulesSection } from '@/components/participation/affiliate-external-rules-section';
 
 // Tier data matching affiliate-engine.ts
 const TIERS = [
@@ -144,6 +145,7 @@ export default function AffiliateRulesPage() {
             </div>
 
             <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
+                <AffiliateExternalRulesSection />
 
                 {/* Section 1: Tier System Overview */}
                 <section className="bg-[#1a1b1e] border border-white/10 rounded-2xl p-6">

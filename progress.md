@@ -209,3 +209,12 @@
   - 更新 `web/app/[locale]/dashboard/admin/page.tsx`，新增 `Partners Ops` 入口。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run lib/participation-program/rules.test.ts lib/managed-wealth/strategy-theme.test.ts`，通过（5/5）。
+- 7.3 正式外宣规则展示交付：
+  - 新增 `web/components/participation/managed-external-rules-section.tsx`，集中展示参与通道、门槛、周期、费率、安全边界与托管收益矩阵（A/B/C）。
+  - 新增 `web/components/participation/affiliate-external-rules-section.tsx`，集中展示直推奖励、净入金口径、V1-V9 分红表、平级奖与全球合伙人席位规则。
+  - `web/app/[locale]/managed-wealth/page.tsx` 接入正式规则区块，面向托管理财用户展示完整外宣口径。
+  - `web/app/[locale]/affiliate/rules/page.tsx` 接入正式规则区块，面向推广侧展示统一政策口径。
+- OpenSpec 任务更新：`7.3` 标记完成。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/managed-wealth/strategy-theme.test.ts`，通过（5/5）。
+- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
