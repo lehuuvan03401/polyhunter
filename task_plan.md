@@ -98,3 +98,12 @@
 - [pending] 全球合伙人席位体系
 - [complete] 双区晋升指标与进度 API（实时查询 + 管理员快照）
 - [pending] 全球合伙人席位体系
+
+## M3 实施进展（全球合伙人席位）
+- [complete] 全球合伙人数据模型与迁移（席位、月榜、淘汰、退款、配置）
+- [complete] 席位上限控制与补位价格配置（`/api/partners/config` + `/api/partners/seats`）
+- [complete] 月度排名与末位淘汰（`/api/partners/cycle/eliminate`，含 dry-run）
+- [complete] 同月重复淘汰保护（防止误操作导致超额淘汰）
+- [complete] 退款进度与状态流转（`/api/partners/refunds`，含状态保护）
+- [complete] 权益映射与后台权限开关（`/api/partners/privileges`）
+- [complete] 月榜查询接口（`/api/partners/rankings`）

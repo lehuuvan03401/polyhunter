@@ -306,6 +306,19 @@ enum ManagedCustodyAuthorizationStatus {
   REVOKED
 }
 
+enum PartnerSeatStatus {
+  ACTIVE
+  ELIMINATED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum PartnerRefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
 // Reserve fund ledger entry type
 enum ReserveFundEntryType {
   DEPOSIT
@@ -752,6 +765,88 @@ model DoubleZoneSnapshot {
   @@unique([walletAddress, snapshotDate])
   @@index([accountId, snapshotDate])
   @@index([snapshotDate, promotionLevel])
+}
+
+model PartnerProgramConfig {
+  id             String   @id @default("GLOBAL")
+  maxSeats       Int      @default(100)
+  refillPriceUsd Float    @default(0)
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
+
+model PartnerSeat {
+  id             String            @id @default(cuid())
+  walletAddress  String            @unique
+  status         PartnerSeatStatus @default(ACTIVE)
+  seatFeeUsd     Float
+  privilegeLevel String            @default("V5")
+  backendAccess  Boolean           @default(true)
+  joinedAt       DateTime          @default(now())
+  eliminatedAt   DateTime?
+  refundedAt     DateTime?
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  monthlyRanks PartnerMonthlyRank[]
+  eliminations PartnerElimination[]
+  refunds      PartnerRefund[]
+
+  @@index([status, joinedAt])
+  @@index([status, updatedAt])
+}
+
+model PartnerMonthlyRank {
+  id                String      @id @default(cuid())
+  seatId            String
+  seat              PartnerSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  monthKey          String
+  rank              Int
+  scoreNetDepositUsd Float
+  snapshotAt        DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+
+  @@unique([seatId, monthKey])
+  @@index([monthKey, rank])
+}
+
+model PartnerElimination {
+  id                String      @id @default(cuid())
+  seatId            String
+  seat              PartnerSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  monthKey          String
+  rankAtElimination Int
+  scoreNetDepositUsd Float
+  reason            String?
+  eliminatedAt      DateTime    @default(now())
+  refundDeadlineAt  DateTime
+  createdAt         DateTime    @default(now())
+
+  refund PartnerRefund?
+
+  @@unique([seatId, monthKey])
+  @@index([monthKey, rankAtElimination])
+  @@index([refundDeadlineAt])
+}
+
+model PartnerRefund {
+  id           String            @id @default(cuid())
+  seatId       String
+  seat         PartnerSeat       @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  eliminationId String           @unique
+  elimination  PartnerElimination @relation(fields: [eliminationId], references: [id], onDelete: Cascade)
+  status       PartnerRefundStatus @default(PENDING)
+  amountUsd    Float
+  requestedAt  DateTime          @default(now())
+  completedAt  DateTime?
+  txHash       String?
+  errorMessage String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([status, requestedAt])
+  @@index([seatId, status])
 }
 
 model ManagedReturnMatrix {

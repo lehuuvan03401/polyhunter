@@ -2,7 +2,7 @@
 - [x] 1.1 Add enums/config tables for participation mode (`FREE`/`MANAGED`), funding channels, strategy profiles, and service periods.
 - [x] 1.2 Add managed return matrix storage keyed by principal band (A/B/C), term (7/30/90/180/360), and strategy.
 - [x] 1.3 Add net-deposit ledger/aggregation model to support daily V1-V9 evaluation.
-- [ ] 1.4 Add global partner seat models (seat status, ranking snapshot, elimination record, refund record, refill pricing).
+- [x] 1.4 Add global partner seat models (seat status, ranking snapshot, elimination record, refund record, refill pricing).
 
 ## 2. Funding & Activation Flow
 - [x] 2.1 Implement exchange funding ingestion and TP wallet funding ingestion with unified MCN-equivalent amount normalization.
@@ -29,15 +29,15 @@
 - [x] 5.5 Implement double-zone promotion metric and progress APIs.
 
 ## 6. Global Partner Program
-- [ ] 6.1 Enforce 100-seat hard cap with no over-allocation.
-- [ ] 6.2 Implement monthly ranking snapshot and automatic elimination for bottom 10 seats.
-- [ ] 6.3 Implement refund SLA pipeline (refund within 7 days after elimination).
-- [ ] 6.4 Implement seat refill workflow with market-configurable price.
-- [ ] 6.5 Grant/revoke partner privileges (V5-equivalent rights + dedicated backend permissions).
+- [x] 6.1 Enforce 100-seat hard cap with no over-allocation.
+- [x] 6.2 Implement monthly ranking snapshot and automatic elimination for bottom 10 seats.
+- [x] 6.3 Implement refund SLA pipeline (refund within 7 days after elimination).
+- [x] 6.4 Implement seat refill workflow with market-configurable price.
+- [x] 6.5 Grant/revoke partner privileges (V5-equivalent rights + dedicated backend permissions).
 
 ## 7. API & Frontend Delivery
 - [x] 7.1 Add participation rules APIs (funding channels, thresholds, terms, yield matrix, fee summary).
-- [ ] 7.2 Add partner program APIs (seat list, ranking, elimination, refund progress, refill queue).
+- [x] 7.2 Add partner program APIs (seat list, ranking, elimination, refund progress, refill queue).
 - [ ] 7.3 Update managed-wealth and affiliate UI with formal external-rule presentation.
 - [ ] 7.4 Add admin operations pages for partner seat governance and refund handling.
 

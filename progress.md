@@ -159,3 +159,19 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts`，通过（21/21）。
+- M3 第一批：新增全球合伙人模型与迁移 `20260225191000_add_global_partner_program`（配置、席位、月榜、淘汰、退款）。
+- 新增合伙人 API：
+  - `GET/POST /api/partners/config`
+  - `GET/POST /api/partners/seats`
+  - `GET/POST /api/partners/cycle/eliminate`
+  - `GET/POST /api/partners/refunds`
+  - `GET/POST /api/partners/privileges`
+  - `GET /api/partners/rankings`
+- 新增合伙人工具能力：
+  - `web/lib/participation-program/partner-program.ts`（月度键、退款截止、席位评分、排名、权限映射）
+  - `web/lib/participation-program/partner-program.test.ts`
+- 风险修复：增加“同月淘汰重复执行”拦截，避免重复运行导致超额淘汰。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（22/22）。
+- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
