@@ -13,6 +13,8 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/sop-supervisor-capacity-controls.md`
 4. Supervisor monitoring deployment:
    - `docs/operations/deploy-supervisor-monitoring.md`
+5. Supervisor DLQ operations:
+   - `docs/operations/sop-supervisor-dlq.md`
 
 ## Copy-Trading Verification
 

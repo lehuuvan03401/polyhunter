@@ -108,3 +108,8 @@
 - 新增 OpenSpec 变更：`add-supervisor-queue-dlq-attempt-limits`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-queue-dlq-attempt-limits --strict --no-interactive`，通过。
+- 新增 DLQ 运维工具脚本：`web/scripts/verify/supervisor-dlq-ops.ts`，支持 `stats/peek/replay/purge`、过滤参数与 `--dry-run`。
+- 新增 DLQ 运维 SOP：`docs/operations/sop-supervisor-dlq.md`，并在 `docs/operations/README.md` 增加入口。
+- 新增 OpenSpec 变更：`add-supervisor-dlq-ops-tool`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-dlq-ops-tool --strict --no-interactive`，通过。
