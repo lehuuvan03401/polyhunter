@@ -152,3 +152,10 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts`，通过（18/18）。
+- M2 第三批：新增双区晋升快照模型 `DoubleZoneSnapshot` 与迁移 `20260225182000_add_double_zone_snapshot`。
+- 新增双区晋升规则计算与进度构建：`web/lib/participation-program/promotion.ts`。
+- 新增双区晋升 API：`GET /api/participation/promotion`、`POST /api/participation/promotion`（admin + dry-run）。
+- 新增双区晋升单测：`web/lib/participation-program/promotion.test.ts`。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts`，通过（21/21）。

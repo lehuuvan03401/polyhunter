@@ -665,6 +665,7 @@ model ParticipationAccount {
   netDepositEntries NetDepositLedger[]
   levelSnapshots   DailyLevelSnapshot[]
   custodyAuthorizations ManagedCustodyAuthorization[]
+  doubleZoneSnapshots DoubleZoneSnapshot[]
 
   @@index([status])
   @@index([preferredMode, status])
@@ -729,6 +730,28 @@ model DailyLevelSnapshot {
   @@unique([walletAddress, snapshotDate])
   @@index([accountId, snapshotDate])
   @@index([snapshotDate, level])
+}
+
+model DoubleZoneSnapshot {
+  id                   String               @id @default(cuid())
+  accountId            String
+  account              ParticipationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  walletAddress        String
+  snapshotDate         DateTime
+  leftLegWallet        String?
+  rightLegWallet       String?
+  leftNetDepositUsd    Float                @default(0)
+  rightNetDepositUsd   Float                @default(0)
+  weakZoneNetDepositUsd Float               @default(0)
+  strongZoneNetDepositUsd Float             @default(0)
+  promotionLevel       String               @default("NONE")
+  nextLevel            String?
+  nextLevelGapUsd      Float                @default(0)
+  createdAt            DateTime             @default(now())
+
+  @@unique([walletAddress, snapshotDate])
+  @@index([accountId, snapshotDate])
+  @@index([snapshotDate, promotionLevel])
 }
 
 model ManagedReturnMatrix {

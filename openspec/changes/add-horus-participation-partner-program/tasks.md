@@ -26,7 +26,7 @@
 - [x] 5.2 Add daily V1-V9 level engine based on team net deposits and configured thresholds.
 - [x] 5.3 Implement team profit dividend rates per V-level (V1=30% ... V9=70%).
 - [x] 5.4 Implement same-level bonus settlement: first generation 4%, second generation 1%.
-- [ ] 5.5 Implement double-zone promotion metric and progress APIs.
+- [x] 5.5 Implement double-zone promotion metric and progress APIs.
 
 ## 6. Global Partner Program
 - [ ] 6.1 Enforce 100-seat hard cap with no over-allocation.
