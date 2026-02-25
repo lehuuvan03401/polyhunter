@@ -103,3 +103,8 @@
 - 新增 OpenSpec 变更：`add-supervisor-queue-ack-reclaim`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-queue-ack-reclaim --strict --no-interactive`，通过。
+- 新增 Supervisor 队列投递上限与 DLQ：`SUPERVISOR_QUEUE_MAX_ATTEMPTS`、`SUPERVISOR_QUEUE_DLQ_MAX_SIZE`，超限任务进入 dead-letter，不再无限回队。
+- 新增 Queue DLQ 观测：`copy_supervisor_queue_total{action="dead_lettered"}`、`copy_supervisor_queue_dlq_size`，并接入 `SUPERVISOR_ALERT_QUEUE_DLQ_SIZE` 告警阈值。
+- 新增 OpenSpec 变更：`add-supervisor-queue-dlq-attempt-limits`（proposal/tasks/spec delta）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `openspec validate add-supervisor-queue-dlq-attempt-limits --strict --no-interactive`，通过。

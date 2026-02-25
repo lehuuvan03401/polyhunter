@@ -96,6 +96,8 @@ const QUEUE_MAX_SIZE = parseInt(process.env.SUPERVISOR_QUEUE_MAX_SIZE || '5000',
 const QUEUE_DRAIN_INTERVAL_MS = parseInt(process.env.SUPERVISOR_QUEUE_DRAIN_INTERVAL_MS || '500', 10);
 const QUEUE_PROCESSING_LEASE_MS = Math.max(5_000, parseInt(process.env.SUPERVISOR_QUEUE_PROCESSING_LEASE_MS || '120000', 10));
 const QUEUE_RECLAIM_INTERVAL_MS = Math.max(1_000, parseInt(process.env.SUPERVISOR_QUEUE_RECLAIM_INTERVAL_MS || '30000', 10));
+const QUEUE_MAX_ATTEMPTS = Math.max(1, parseInt(process.env.SUPERVISOR_QUEUE_MAX_ATTEMPTS || '5', 10));
+const QUEUE_DLQ_MAX_SIZE = Math.max(100, parseInt(process.env.SUPERVISOR_QUEUE_DLQ_MAX_SIZE || '5000', 10));
 const WORKER_POOL_SIZE = Math.max(1, parseInt(process.env.SUPERVISOR_WORKER_POOL_SIZE || '20', 10));
 const AUTO_LOAD_SHEDDING_ENABLED = process.env.SUPERVISOR_AUTO_LOAD_SHEDDING !== 'false';
 const LOAD_SHEDDING_QUEUE_DEPTH_WARN = Math.max(10, parseInt(process.env.SUPERVISOR_LOAD_SHEDDING_QUEUE_DEPTH_WARN || '500', 10));
@@ -194,6 +196,10 @@ const SUPERVISOR_ALERT_QUEUE_DEPTH = Math.max(
 const SUPERVISOR_ALERT_QUEUE_P95_MS = Math.max(
     100,
     parseInt(process.env.SUPERVISOR_ALERT_QUEUE_P95_MS || String(LOAD_SHEDDING_QUEUE_P95_CRITICAL_MS), 10)
+);
+const SUPERVISOR_ALERT_QUEUE_DLQ_SIZE = Math.max(
+    0,
+    parseInt(process.env.SUPERVISOR_ALERT_QUEUE_DLQ_SIZE || '1', 10)
 );
 const SUPERVISOR_ALERT_REJECT_RATE = Math.max(0, Math.min(1, Number(process.env.SUPERVISOR_ALERT_REJECT_RATE || '0.35')));
 const SUPERVISOR_ALERT_MIN_ATTEMPTS = Math.max(1, parseInt(process.env.SUPERVISOR_ALERT_MIN_ATTEMPTS || '20', 10));
@@ -586,8 +592,9 @@ interface QueueStore<T> {
     enqueue(item: T): Promise<boolean>;
     claim(): Promise<QueueClaim<T> | null>;
     ack(claim: QueueClaim<T>): Promise<void>;
-    nack(claim: QueueClaim<T>, options?: { requeue?: boolean }): Promise<void>;
-    reclaimExpired(nowMs?: number): Promise<number>;
+    nack(claim: QueueClaim<T>, options?: { requeue?: boolean; reason?: string }): Promise<QueueNackResult>;
+    reclaimExpired(nowMs?: number): Promise<QueueReclaimResult>;
+    dlqSize(): Promise<number>;
     size(): Promise<number>;
 }
 
@@ -598,12 +605,36 @@ interface QueueClaim<T> {
     raw?: string;
 }
 
+type QueueNackOutcome = 'requeued' | 'dropped' | 'dead_lettered';
+
+interface QueueNackResult {
+    outcome: QueueNackOutcome;
+    attempt: number;
+}
+
+interface QueueReclaimResult {
+    reclaimed: number;
+    deadLettered: number;
+}
+
+interface DeadLetterEntry<T> {
+    token: string;
+    item: T;
+    reason: string;
+    attempt: number;
+    failedAt: number;
+    source: 'nack' | 'reclaim';
+}
+
 class MemoryQueueStore<T> implements QueueStore<T> {
     private queue: TaskQueue<T>;
     private inFlight = new Map<string, { item: T; claimedAt: number }>();
+    private dlq: Array<DeadLetterEntry<T>> = [];
     constructor(
         maxSize: number,
-        private leaseMs: number
+        private leaseMs: number,
+        private maxAttempts: number,
+        private dlqMaxSize: number
     ) {
         this.queue = new TaskQueue<T>(maxSize);
     }
@@ -642,32 +673,104 @@ class MemoryQueueStore<T> implements QueueStore<T> {
     async ack(claim: QueueClaim<T>): Promise<void> {
         this.inFlight.delete(claim.token);
     }
-    async nack(claim: QueueClaim<T>, options?: { requeue?: boolean }): Promise<void> {
+    private moveToDlq(params: {
+        token: string;
+        item: T;
+        reason: string;
+        source: 'nack' | 'reclaim';
+        attempt: number;
+    }): void {
+        this.dlq.push({
+            token: params.token,
+            item: params.item,
+            reason: params.reason,
+            source: params.source,
+            attempt: params.attempt,
+            failedAt: Date.now(),
+        });
+        if (this.dlq.length > this.dlqMaxSize) {
+            this.dlq.splice(0, this.dlq.length - this.dlqMaxSize);
+        }
+    }
+
+    async nack(claim: QueueClaim<T>, options?: { requeue?: boolean; reason?: string }): Promise<QueueNackResult> {
         const entry = this.inFlight.get(claim.token);
         this.inFlight.delete(claim.token);
-        if (options?.requeue === false || !entry) return;
+        if (!entry) return { outcome: 'dropped', attempt: 0 };
+        if (options?.requeue === false) {
+            const item = entry.item as any;
+            return { outcome: 'dropped', attempt: Number(item?.queueAttempt || 0) };
+        }
         const item = entry.item as any;
         if (typeof item === 'object' && item !== null) {
             item.queueAttempt = (Number(item.queueAttempt) || 0) + 1;
+            const attempt = Number(item.queueAttempt || 0);
+            if (attempt >= this.maxAttempts) {
+                this.moveToDlq({
+                    token: claim.token,
+                    item: entry.item,
+                    reason: options?.reason || 'MAX_ATTEMPTS_REACHED',
+                    source: 'nack',
+                    attempt,
+                });
+                return { outcome: 'dead_lettered', attempt };
+            }
         }
+        const attempt = Number(item?.queueAttempt || 0);
         const requeued = this.queue.enqueue(entry.item);
         if (!requeued) {
-            console.error('[Supervisor] Memory queue requeue failed (queue full).');
+            this.moveToDlq({
+                token: claim.token,
+                item: entry.item,
+                reason: 'REQUEUE_FAILED_QUEUE_FULL',
+                source: 'nack',
+                attempt,
+            });
+            return { outcome: 'dead_lettered', attempt };
         }
+        return { outcome: 'requeued', attempt };
     }
-    async reclaimExpired(nowMs = Date.now()): Promise<number> {
+    async reclaimExpired(nowMs = Date.now()): Promise<QueueReclaimResult> {
         let reclaimed = 0;
+        let deadLettered = 0;
         for (const [token, entry] of this.inFlight.entries()) {
             if (nowMs - entry.claimedAt <= this.leaseMs) continue;
             this.inFlight.delete(token);
             const item = entry.item as any;
+            let attempt = 0;
             if (typeof item === 'object' && item !== null) {
                 item.queueAttempt = (Number(item.queueAttempt) || 0) + 1;
+                attempt = Number(item.queueAttempt || 0);
+            }
+            if (attempt >= this.maxAttempts) {
+                this.moveToDlq({
+                    token,
+                    item: entry.item,
+                    reason: 'LEASE_EXPIRED_MAX_ATTEMPTS',
+                    source: 'reclaim',
+                    attempt,
+                });
+                deadLettered += 1;
+                continue;
             }
             const requeued = this.queue.enqueue(entry.item);
-            if (requeued) reclaimed += 1;
+            if (requeued) {
+                reclaimed += 1;
+            } else {
+                this.moveToDlq({
+                    token,
+                    item: entry.item,
+                    reason: 'LEASE_EXPIRED_REQUEUE_FAILED_QUEUE_FULL',
+                    source: 'reclaim',
+                    attempt,
+                });
+                deadLettered += 1;
+            }
         }
-        return reclaimed;
+        return { reclaimed, deadLettered };
+    }
+    async dlqSize(): Promise<number> {
+        return this.dlq.length;
     }
     async size(): Promise<number> {
         return this.queue.length + this.inFlight.size;
@@ -677,14 +780,18 @@ class MemoryQueueStore<T> implements QueueStore<T> {
 class RedisQueueStore<T> implements QueueStore<T> {
     private processingKey: string;
     private inFlightKey: string;
+    private dlqKey: string;
     constructor(
         private client: any,
         private key: string,
         private maxSize: number,
-        private leaseMs: number
+        private leaseMs: number,
+        private maxAttempts: number,
+        private dlqMaxSize: number
     ) {
         this.processingKey = `${this.key}:processing`;
         this.inFlightKey = `${this.key}:inflight`;
+        this.dlqKey = `${this.key}:dlq`;
     }
 
     private normalizeForEnqueue(item: T): T {
@@ -700,6 +807,26 @@ class RedisQueueStore<T> implements QueueStore<T> {
     private buildFallbackToken(raw: string): string {
         const digest = createHash('sha1').update(raw).digest('hex');
         return `${digest}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    private async pushDlq(raw: string, meta: {
+        token: string;
+        reason: string;
+        source: 'nack' | 'reclaim';
+        attempt: number;
+    }): Promise<void> {
+        const entry = JSON.stringify({
+            token: meta.token,
+            reason: meta.reason,
+            source: meta.source,
+            attempt: meta.attempt,
+            failedAt: Date.now(),
+            payload: raw,
+        });
+        await this.client.multi()
+            .rpush(this.dlqKey, entry)
+            .ltrim(this.dlqKey, -this.dlqMaxSize, -1)
+            .exec();
     }
 
     async enqueue(item: T): Promise<boolean> {
@@ -746,7 +873,7 @@ class RedisQueueStore<T> implements QueueStore<T> {
             .exec();
     }
 
-    async nack(claim: QueueClaim<T>, options?: { requeue?: boolean }): Promise<void> {
+    async nack(claim: QueueClaim<T>, options?: { requeue?: boolean; reason?: string }): Promise<QueueNackResult> {
         let raw = claim.raw;
         const payload = await this.client.hget(this.inFlightKey, claim.token);
         if (payload) {
@@ -756,31 +883,57 @@ class RedisQueueStore<T> implements QueueStore<T> {
                 // Ignore parse failure and fallback to claim.raw.
             }
         }
-        if (!raw) return;
+        if (!raw) return { outcome: 'dropped', attempt: 0 };
         const shouldRequeue = options?.requeue !== false;
+        if (!shouldRequeue) {
+            await this.client.multi()
+                .lrem(this.processingKey, 1, raw)
+                .hdel(this.inFlightKey, claim.token)
+                .exec();
+            return { outcome: 'dropped', attempt: 0 };
+        }
+
+        let nextRaw = raw;
+        let attempt = 0;
+        try {
+            const parsed = JSON.parse(raw) as any;
+            if (typeof parsed === 'object' && parsed !== null) {
+                parsed.queueAttempt = (Number(parsed.queueAttempt) || 0) + 1;
+                attempt = Number(parsed.queueAttempt || 0);
+                nextRaw = JSON.stringify(parsed);
+            }
+        } catch {
+            // Keep raw as-is.
+        }
+
+        if (attempt >= this.maxAttempts) {
+            await this.client.multi()
+                .lrem(this.processingKey, 1, raw)
+                .hdel(this.inFlightKey, claim.token)
+                .exec();
+            await this.pushDlq(nextRaw, {
+                token: claim.token,
+                reason: options?.reason || 'MAX_ATTEMPTS_REACHED',
+                source: 'nack',
+                attempt,
+            });
+            return { outcome: 'dead_lettered', attempt };
+        }
+
         const pipeline = this.client.multi()
             .lrem(this.processingKey, 1, raw)
             .hdel(this.inFlightKey, claim.token);
-        if (shouldRequeue) {
-            try {
-                const parsed = JSON.parse(raw) as any;
-                if (typeof parsed === 'object' && parsed !== null) {
-                    parsed.queueAttempt = (Number(parsed.queueAttempt) || 0) + 1;
-                    raw = JSON.stringify(parsed);
-                }
-            } catch {
-                // Keep raw as-is.
-            }
-            pipeline.lpush(this.key, raw);
-        }
+        pipeline.lpush(this.key, nextRaw);
         await pipeline.exec();
+        return { outcome: 'requeued', attempt };
     }
 
-    async reclaimExpired(nowMs = Date.now()): Promise<number> {
+    async reclaimExpired(nowMs = Date.now()): Promise<QueueReclaimResult> {
         const entries = await this.client.hgetall(this.inFlightKey);
-        if (!entries || Object.keys(entries).length === 0) return 0;
+        if (!entries || Object.keys(entries).length === 0) return { reclaimed: 0, deadLettered: 0 };
 
         let reclaimed = 0;
+        let deadLettered = 0;
         for (const [token, payload] of Object.entries(entries)) {
             try {
                 const parsed = JSON.parse(String(payload)) as { raw?: string; claimedAt?: number };
@@ -790,28 +943,51 @@ class RedisQueueStore<T> implements QueueStore<T> {
                 if (nowMs - claimedAt <= this.leaseMs) continue;
 
                 let nextRaw = raw;
+                let attempt = 0;
                 try {
                     const item = JSON.parse(raw) as any;
                     if (typeof item === 'object' && item !== null) {
                         item.queueAttempt = (Number(item.queueAttempt) || 0) + 1;
+                        attempt = Number(item.queueAttempt || 0);
                         nextRaw = JSON.stringify(item);
                     }
                 } catch {
                     // Keep raw as-is.
                 }
 
-                await this.client.multi()
+                if (attempt >= this.maxAttempts) {
+                    await this.client.multi()
+                        .lrem(this.processingKey, 1, raw)
+                        .hdel(this.inFlightKey, token)
+                        .exec();
+                    await this.pushDlq(nextRaw, {
+                        token,
+                        reason: 'LEASE_EXPIRED_MAX_ATTEMPTS',
+                        source: 'reclaim',
+                        attempt,
+                    });
+                    deadLettered += 1;
+                    continue;
+                }
+
+                const result = await this.client.multi()
                     .lrem(this.processingKey, 1, raw)
                     .lpush(this.key, nextRaw)
                     .hdel(this.inFlightKey, token)
                     .exec();
-                reclaimed += 1;
+                if (Array.isArray(result)) {
+                    reclaimed += 1;
+                }
             } catch {
                 // Skip malformed in-flight entries.
             }
         }
 
-        return reclaimed;
+        return { reclaimed, deadLettered };
+    }
+
+    async dlqSize(): Promise<number> {
+        return Number(await this.client.llen(this.dlqKey));
     }
 
     async size(): Promise<number> {
@@ -823,7 +999,12 @@ class RedisQueueStore<T> implements QueueStore<T> {
     }
 }
 
-let queueStore: QueueStore<JobQueueItem> = new MemoryQueueStore<JobQueueItem>(QUEUE_MAX_SIZE, QUEUE_PROCESSING_LEASE_MS);
+let queueStore: QueueStore<JobQueueItem> = new MemoryQueueStore<JobQueueItem>(
+    QUEUE_MAX_SIZE,
+    QUEUE_PROCESSING_LEASE_MS,
+    QUEUE_MAX_ATTEMPTS,
+    QUEUE_DLQ_MAX_SIZE
+);
 let redisClient: any | null = null;
 
 // --- HEALTH METRICS ---
@@ -852,6 +1033,7 @@ const cumulativeMetrics = {
     queueDequeued: 0,
     queueDropped: 0,
     queueReclaimed: 0,
+    queueDeadLettered: 0,
     rejectsTotal: 0,
     reconcileRuns: 0,
     reconcileErrors: 0,
@@ -867,6 +1049,7 @@ const queueStats = {
     dequeued: 0,
     dropped: 0,
     reclaimed: 0,
+    deadLettered: 0,
     totalLagMs: 0,
     maxLagMs: 0,
     maxDepth: 0,
@@ -1193,17 +1376,18 @@ function evaluateLoadSheddingState(params: { queueDepth: number; queueP95LagMs: 
 async function evaluateLoadSheddingSnapshot(source: 'interval' | 'summary' = 'interval'): Promise<void> {
     try {
         const queueDepth = await queueStore.size();
+        const queueDlqSize = await queueStore.dlqSize();
         const queueP95LagMs = calculatePercentile(queueLagSamplesMs, 95);
         if (AUTO_LOAD_SHEDDING_ENABLED) {
             evaluateLoadSheddingState({ queueDepth, queueP95LagMs, source });
         }
-        maybeEmitOperationalAlerts({ queueDepth, queueP95LagMs });
+        maybeEmitOperationalAlerts({ queueDepth, queueP95LagMs, queueDlqSize });
     } catch (error) {
         console.warn('[Supervisor] Load shedding snapshot failed:', error);
     }
 }
 
-function maybeEmitOperationalAlerts(params: { queueDepth: number; queueP95LagMs: number }): void {
+function maybeEmitOperationalAlerts(params: { queueDepth: number; queueP95LagMs: number; queueDlqSize?: number }): void {
     if (!SUPERVISOR_ALERTS_ENABLED) return;
 
     const issues: string[] = [];
@@ -1212,6 +1396,10 @@ function maybeEmitOperationalAlerts(params: { queueDepth: number; queueP95LagMs:
     }
     if (params.queueP95LagMs >= SUPERVISOR_ALERT_QUEUE_P95_MS) {
         issues.push(`queueP95LagMs=${params.queueP95LagMs}>=${SUPERVISOR_ALERT_QUEUE_P95_MS}`);
+    }
+    const queueDlqSize = Number(params.queueDlqSize || 0);
+    if (SUPERVISOR_ALERT_QUEUE_DLQ_SIZE > 0 && queueDlqSize >= SUPERVISOR_ALERT_QUEUE_DLQ_SIZE) {
+        issues.push(`queueDlqSize=${queueDlqSize}>=${SUPERVISOR_ALERT_QUEUE_DLQ_SIZE}`);
     }
 
     const rejectRate = metrics.totalExecutions > 0
@@ -1260,6 +1448,7 @@ function topEntries(map: Map<string, number>, limit: number): Array<[string, num
 
 async function buildPrometheusMetricsSnapshot(): Promise<string> {
     const queueDepth = await queueStore.size().catch(() => loadSheddingState.lastQueueDepth);
+    const queueDlqSize = await queueStore.dlqSize().catch(() => 0);
     const queueP95LagMs = calculatePercentile(queueLagSamplesMs, 95);
     const queueAvgLagMs = queueStats.dequeued > 0 ? (queueStats.totalLagMs / queueStats.dequeued) : 0;
     const decidedExecutions = metrics.successfulExecutions + metrics.failedExecutions;
@@ -1287,6 +1476,8 @@ async function buildPrometheusMetricsSnapshot(): Promise<string> {
     lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDequeued, { action: 'dequeued' }));
     lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDropped, { action: 'dropped' }));
     lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueReclaimed, { action: 'reclaimed' }));
+    lines.push(formatPromMetric('copy_supervisor_queue_total', cumulativeMetrics.queueDeadLettered, { action: 'dead_lettered' }));
+    lines.push(formatPromMetric('copy_supervisor_queue_dlq_size', queueDlqSize));
 
     const modeLabels: LoadSheddingMode[] = ['NORMAL', 'DEGRADED', 'CRITICAL'];
     for (const mode of modeLabels) {
@@ -1404,18 +1595,19 @@ async function logMetricsSummary(): Promise<void> {
             ? ((metrics.successfulExecutions / decidedExecutions) * 100).toFixed(1)
             : '100';
         const queueDepth = await queueStore.size();
+        const queueDlqSize = await queueStore.dlqSize();
         queueStats.maxDepth = Math.max(queueStats.maxDepth, queueDepth);
         const avgQueueLag = queueStats.dequeued > 0
             ? (queueStats.totalLagMs / queueStats.dequeued / 1000).toFixed(2)
             : '0';
         const p95QueueLagMs = calculatePercentile(queueLagSamplesMs, 95);
         evaluateLoadSheddingState({ queueDepth, queueP95LagMs: p95QueueLagMs, source: 'summary' });
-        maybeEmitOperationalAlerts({ queueDepth, queueP95LagMs: p95QueueLagMs });
+        maybeEmitOperationalAlerts({ queueDepth, queueP95LagMs: p95QueueLagMs, queueDlqSize });
         const rejectSummary = summarizeTopRejectReasons();
         const walletSummary = summarizeTopWalletStats();
 
         console.log(`[Metrics] 📊 Last ${duration.toFixed(1)}min: total=${metrics.totalExecutions} success=${metrics.successfulExecutions} failed=${metrics.failedExecutions} skipped=${metrics.skippedExecutions} successRate=${successRate}% avgLatency=${avgLatency}s`);
-        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} reclaimed=${queueStats.reclaimed} avgLag=${avgQueueLag}s p95Lag=${(p95QueueLagMs / 1000).toFixed(2)}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
+        console.log(`[Metrics] 📦 Queue: depth=${queueDepth} dlq=${queueDlqSize} maxDepth=${queueStats.maxDepth} dropped=${queueStats.dropped} reclaimed=${queueStats.reclaimed} deadLettered=${queueStats.deadLettered} avgLag=${avgQueueLag}s p95Lag=${(p95QueueLagMs / 1000).toFixed(2)}s maxLag=${(queueStats.maxLagMs / 1000).toFixed(2)}s`);
         console.log(`[Metrics] 🚦 Load shedding: mode=${loadSheddingState.mode} fanout=${getDispatchFanoutLimit()} mempoolPaused=${isMempoolDispatchPaused()} healthyWindows=${loadSheddingState.healthyWindows}`);
         console.log(`[Metrics] 🛡️ Reject reasons: total=${rejectStats.total} top=[${rejectSummary}]`);
         console.log(`[Metrics] 👛 Wallet success: top=[${walletSummary}]`);
@@ -1447,6 +1639,7 @@ async function logMetricsSummary(): Promise<void> {
         queueStats.dequeued = 0;
         queueStats.dropped = 0;
         queueStats.reclaimed = 0;
+        queueStats.deadLettered = 0;
         queueStats.totalLagMs = 0;
         queueStats.maxLagMs = 0;
         queueStats.maxDepth = queueDepth;
@@ -2211,7 +2404,9 @@ async function initSharedStores(): Promise<void> {
             redisClient,
             `${prefix}queue`,
             QUEUE_MAX_SIZE,
-            QUEUE_PROCESSING_LEASE_MS
+            QUEUE_PROCESSING_LEASE_MS,
+            QUEUE_MAX_ATTEMPTS,
+            QUEUE_DLQ_MAX_SIZE
         );
         dedupStore = new RedisDedupStore(redisClient, `${prefix}dedup:`);
         counterStore = new RedisCounterStore(redisClient, `${prefix}counter:`);
@@ -2482,7 +2677,16 @@ async function checkQueue() {
             } catch (executionError) {
                 console.error('[Supervisor] Queue job execution failed before ack. Requeueing claim.', executionError);
                 try {
-                    await queueStore.nack(claim, { requeue: true });
+                    const nack = await queueStore.nack(claim, { requeue: true, reason: 'EXECUTION_ERROR' });
+                    if (nack.outcome === 'dead_lettered') {
+                        queueStats.deadLettered += 1;
+                        cumulativeMetrics.queueDeadLettered += 1;
+                        recordRejectReason('QUEUE_DLQ_MAX_ATTEMPTS');
+                    } else if (nack.outcome === 'dropped') {
+                        queueStats.dropped += 1;
+                        cumulativeMetrics.queueDropped += 1;
+                        recordRejectReason('QUEUE_JOB_DROPPED');
+                    }
                 } catch (nackError) {
                     console.error('[Supervisor] Queue nack failed:', nackError);
                 }
@@ -2497,11 +2701,18 @@ async function checkQueue() {
 
 async function reclaimQueueLeases(): Promise<void> {
     try {
-        const reclaimed = await queueStore.reclaimExpired();
-        if (reclaimed <= 0) return;
-        queueStats.reclaimed += reclaimed;
-        cumulativeMetrics.queueReclaimed += reclaimed;
-        console.warn(`[Supervisor] ♻️ Reclaimed ${reclaimed} stale queue lease(s).`);
+        const reclaim = await queueStore.reclaimExpired();
+        if (reclaim.reclaimed > 0) {
+            queueStats.reclaimed += reclaim.reclaimed;
+            cumulativeMetrics.queueReclaimed += reclaim.reclaimed;
+        }
+        if (reclaim.deadLettered > 0) {
+            queueStats.deadLettered += reclaim.deadLettered;
+            cumulativeMetrics.queueDeadLettered += reclaim.deadLettered;
+            recordRejectReason('QUEUE_DLQ_LEASE_EXPIRED');
+        }
+        if (reclaim.reclaimed <= 0 && reclaim.deadLettered <= 0) return;
+        console.warn(`[Supervisor] ♻️ Queue lease reclaim: requeued=${reclaim.reclaimed} deadLettered=${reclaim.deadLettered}.`);
     } catch (error) {
         console.warn('[Supervisor] Queue lease reclaim failed:', error);
     }
@@ -3930,7 +4141,7 @@ async function main() {
         }
         if (SUPERVISOR_ALERTS_ENABLED) {
             console.log(
-                `[Supervisor] 🚨 Alerts enabled: queueDepth>=${SUPERVISOR_ALERT_QUEUE_DEPTH}, queueP95>=${SUPERVISOR_ALERT_QUEUE_P95_MS}ms, rejectRate>=${(SUPERVISOR_ALERT_REJECT_RATE * 100).toFixed(1)}%, cooldown=${SUPERVISOR_ALERT_COOLDOWN_MS}ms`
+                `[Supervisor] 🚨 Alerts enabled: queueDepth>=${SUPERVISOR_ALERT_QUEUE_DEPTH}, queueP95>=${SUPERVISOR_ALERT_QUEUE_P95_MS}ms, queueDlq>=${SUPERVISOR_ALERT_QUEUE_DLQ_SIZE}, rejectRate>=${(SUPERVISOR_ALERT_REJECT_RATE * 100).toFixed(1)}%, cooldown=${SUPERVISOR_ALERT_COOLDOWN_MS}ms`
             );
         }
         void evaluateLoadSheddingSnapshot('interval');
@@ -3958,6 +4169,9 @@ async function main() {
     }
 
     // Queue Drain Loop
+    console.log(
+        `[Supervisor] 📬 Queue reliability: maxAttempts=${QUEUE_MAX_ATTEMPTS} leaseMs=${QUEUE_PROCESSING_LEASE_MS} reclaimMs=${QUEUE_RECLAIM_INTERVAL_MS} dlqMax=${QUEUE_DLQ_MAX_SIZE}`
+    );
     setInterval(() => {
         void checkQueue();
     }, QUEUE_DRAIN_INTERVAL_MS);
