@@ -11,9 +11,9 @@
 
 ## 3. Managed/FREE Service Logic
 - [ ] 3.1 Align strategy options to Conservative/Moderate/Aggressive across API, worker, and UI.
-- [ ] 3.2 Restrict selectable managed terms to 7/30/90/180/360 and preserve 1-day trial behavior.
+- [x] 3.2 Restrict selectable managed terms to 7/30/90/180/360 and preserve 1-day trial behavior.
 - [x] 3.3 Serve managed yield matrix by principal band and strategy for UI/marketing rendering.
-- [ ] 3.4 Add explicit custody authorization contract/API flow for `MANAGED` mode.
+- [x] 3.4 Add explicit custody authorization contract/API flow for `MANAGED` mode.
 
 ## 4. Fee & Subscription Rules
 - [x] 4.1 Replace variable profit fee tiers with fixed 20% realized-profit fee for both `FREE` and `MANAGED`.

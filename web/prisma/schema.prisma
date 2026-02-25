@@ -284,6 +284,11 @@ enum ManagedReturnPrincipalBand {
   C
 }
 
+enum ManagedCustodyAuthorizationStatus {
+  ACTIVE
+  REVOKED
+}
+
 // Reserve fund ledger entry type
 enum ReserveFundEntryType {
   DEPOSIT
@@ -642,6 +647,7 @@ model ParticipationAccount {
   fundingRecords   ParticipationFundingRecord[]
   netDepositEntries NetDepositLedger[]
   levelSnapshots   DailyLevelSnapshot[]
+  custodyAuthorizations ManagedCustodyAuthorization[]
 
   @@index([status])
   @@index([preferredMode, status])
@@ -725,6 +731,27 @@ model ManagedReturnMatrix {
   @@unique([principalBand, termDays, strategyProfile])
   @@index([isActive, principalBand, termDays])
   @@index([strategyProfile, termDays])
+}
+
+model ManagedCustodyAuthorization {
+  id               String                           @id @default(cuid())
+  accountId        String?
+  account          ParticipationAccount?            @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  walletAddress    String
+  mode             ParticipationMode                @default(MANAGED)
+  status           ManagedCustodyAuthorizationStatus @default(ACTIVE)
+  consentStatement String
+  requestPath      String
+  requestMethod    String
+  signature        String
+  scope            Json?
+  grantedAt        DateTime                         @default(now())
+  revokedAt        DateTime?
+  createdAt        DateTime                         @default(now())
+  updatedAt        DateTime                         @updatedAt
+
+  @@index([walletAddress, status, grantedAt])
+  @@index([accountId, status])
 }
 
 // Individual copy trade record

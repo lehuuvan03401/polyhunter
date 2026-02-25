@@ -23,6 +23,7 @@ const MANAGED_MIN_PRINCIPAL_USD = resolveNumberEnv(
     1_000_000_000
 );
 const REQUIRE_MANAGED_ACTIVATION = process.env.PARTICIPATION_REQUIRE_MANAGED_ACTIVATION === 'true';
+const REQUIRE_CUSTODY_AUTH = process.env.PARTICIPATION_REQUIRE_CUSTODY_AUTH === 'true';
 
 type ReserveCoverageResult = {
     balance: number;
@@ -351,6 +352,31 @@ export async function POST(request: NextRequest) {
                         code: 'QUALIFIED_FUNDING_REQUIRED',
                         netMcnEquivalent,
                         minimumRequired: MANAGED_MIN_PRINCIPAL_USD,
+                    },
+                    { status: 409 }
+                );
+            }
+        }
+
+        if (REQUIRE_CUSTODY_AUTH) {
+            const activeAuthorization = await prisma.managedCustodyAuthorization.findFirst({
+                where: {
+                    walletAddress: requestWallet,
+                    status: 'ACTIVE',
+                    mode: 'MANAGED',
+                },
+                orderBy: { grantedAt: 'desc' },
+                select: {
+                    id: true,
+                    grantedAt: true,
+                },
+            });
+
+            if (!activeAuthorization) {
+                return NextResponse.json(
+                    {
+                        error: 'Managed custody authorization is required',
+                        code: 'CUSTODY_AUTH_REQUIRED',
                     },
                     { status: 409 }
                 );

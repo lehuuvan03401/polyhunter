@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { PARTICIPATION_SERVICE_PERIODS_DAYS } from '@/lib/participation-program/rules';
 
 export const dynamic = 'force-dynamic';
 type StrategyProfile = 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
@@ -59,7 +60,10 @@ export async function GET(request: NextRequest) {
             },
             include: {
                 terms: {
-                    where: { isActive: true },
+                    where: {
+                        isActive: true,
+                        durationDays: { in: [...PARTICIPATION_SERVICE_PERIODS_DAYS] },
+                    },
                     orderBy: { durationDays: 'asc' },
                 },
                 agents: {

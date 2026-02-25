@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, StrategyProfile } from '@prisma/client';
 import * as dotenv from 'dotenv';
+import { PARTICIPATION_SERVICE_PERIODS_DAYS } from '../lib/participation-program/rules';
 
 dotenv.config({ path: '.env.local.secrets' });
 
@@ -85,6 +86,8 @@ const productDefs = [
     },
 ];
 
+const ALLOWED_TERM_DURATIONS = new Set<number>(PARTICIPATION_SERVICE_PERIODS_DAYS);
+
 async function seedProductAndTerms() {
     console.log('Seeding managed wealth products and terms...');
 
@@ -114,7 +117,9 @@ async function seedProductAndTerms() {
             },
         });
 
-        const terms = termsByStrategy[def.strategyProfile];
+        const terms = termsByStrategy[def.strategyProfile].filter((term) =>
+            ALLOWED_TERM_DURATIONS.has(term.durationDays)
+        );
         for (const term of terms) {
             await prisma.managedTerm.upsert({
                 where: {

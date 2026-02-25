@@ -88,3 +88,5 @@
 - [complete] 托管最小本金 500U 入口约束 + 可选激活闸门
 - [pending] V1-V9 日考核引擎与平级奖结算
 - [pending] 全球合伙人席位体系
+- [complete] 托管授权留痕能力（模型 + API + 入口可选校验）
+- [complete] 托管可选周期收敛（managed-products list/detail + seed 对齐）

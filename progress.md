@@ -132,3 +132,11 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
+- M1 第二批：新增托管授权留痕模型与迁移 `20260225170000_add_managed_custody_authorization`。
+- 新增托管授权 API：`/api/participation/custody-auth`（查询/授权/撤销）。
+- 托管订阅入口新增可选托管授权校验开关：`PARTICIPATION_REQUIRE_CUSTODY_AUTH`。
+- 管理产品可选期限已收敛到 `1/7/30/90/180/360`（列表与详情 API 统一过滤）。
+- `seed-managed-wealth` 与参与周期常量对齐，仅生成正式周期。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
