@@ -126,3 +126,7 @@
 - [complete] managed-wealth 卡片/订阅弹窗策略视觉语义统一（共享主题常量）
 - [complete] managed-wealth 页面过滤项改为复用策略常量，移除硬编码
 - [complete] proxy 策略选择与 copy-trader 模板映射复用统一策略标签
+
+## 管理后台进展（7.4）
+- [complete] 新增合伙人治理后台页（席位配置、月度淘汰 dry-run/执行、退款处理）
+- [complete] 现有 admin dashboard 增加 Partners Ops 入口跳转

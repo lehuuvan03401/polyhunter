@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
+import Link from 'next/link';
 import { CONTRACT_ADDRESSES, ERC20_ABI, formatUSDC } from '@/lib/contracts/abis';
 import { AlertTriangle, CheckCircle, Fuel, Gauge, RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -257,6 +258,12 @@ export default function AdminDashboardPage() {
                     </div>
 
                     <div className="flex gap-2">
+                        <Link
+                            href="/dashboard/admin/partners"
+                            className="px-4 py-2 rounded-lg text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
+                        >
+                            Partners Ops
+                        </Link>
                         <button
                             onClick={() => setActiveTab('INFRA')}
                             className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'INFRA' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}

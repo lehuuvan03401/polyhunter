@@ -204,3 +204,8 @@
   - 新增单测：`web/lib/participation-program/rules.test.ts`、`web/lib/managed-wealth/strategy-theme.test.ts`。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run ...`（本批相关 43/43），通过。
+- 7.4 后台页交付：
+  - 新增 `web/app/[locale]/dashboard/admin/partners/page.tsx`，支持合伙人配置、淘汰 dry-run/执行、退款队列处理、席位快照查看。
+  - 更新 `web/app/[locale]/dashboard/admin/page.tsx`，新增 `Partners Ops` 入口。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run lib/participation-program/rules.test.ts lib/managed-wealth/strategy-theme.test.ts`，通过（5/5）。

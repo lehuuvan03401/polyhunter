@@ -39,7 +39,7 @@
 - [x] 7.1 Add participation rules APIs (funding channels, thresholds, terms, yield matrix, fee summary).
 - [x] 7.2 Add partner program APIs (seat list, ranking, elimination, refund progress, refill queue).
 - [ ] 7.3 Update managed-wealth and affiliate UI with formal external-rule presentation.
-- [ ] 7.4 Add admin operations pages for partner seat governance and refund handling.
+- [x] 7.4 Add admin operations pages for partner seat governance and refund handling.
 
 ## 8. Verification & Rollout
 - [x] 8.1 Add unit tests for fee calculation, net-deposit aggregation, V-level mapping, same-level bonuses.
