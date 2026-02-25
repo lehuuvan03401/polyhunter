@@ -193,3 +193,6 @@
   - 新增试用策略单测：`web/lib/managed-wealth/subscription-trial.test.ts`。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run lib/managed-wealth/subscription-trial.test.ts lib/managed-wealth/membership-plans.test.ts lib/participation-program/referral-subscription-bonus.test.ts lib/services/affiliate-engine.test.ts lib/participation-program/levels-aggregation.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（38/38）。
+- 运维交付：新增全球合伙人 runbook `docs/operations/runbook-partner-program.md`（月度淘汰节奏、退款 SLA、补位流程、常见事故处理）。
+- 更新 `docs/operations/README.md` 索引入口，增加 Global Partner monthly operations。
+- OpenSpec 任务更新：`8.5` 标记完成。

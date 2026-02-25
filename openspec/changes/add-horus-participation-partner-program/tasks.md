@@ -46,4 +46,4 @@
 - [ ] 8.2 Add integration tests for activation, referral bonus one-time guard, and partner elimination/refund workflow.
 - [ ] 8.3 Add E2E flows for FREE vs MANAGED onboarding and partner-seat operations.
 - [x] 8.4 Run `openspec validate add-horus-participation-partner-program --strict --no-interactive`.
-- [ ] 8.5 Publish operations runbook updates (monthly elimination cadence, refund SLA, incident handling).
+- [x] 8.5 Publish operations runbook updates (monthly elimination cadence, refund SLA, incident handling).

@@ -15,6 +15,8 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/deploy-supervisor-monitoring.md`
 5. Supervisor DLQ operations:
    - `docs/operations/sop-supervisor-dlq.md`
+6. Global partner monthly operations:
+   - `docs/operations/runbook-partner-program.md`
 
 ## Copy-Trading Verification
 

@@ -116,3 +116,7 @@
 - [complete] 净入金聚合单测补齐（充值-提现、团队聚合、负净入金场景）
 - [complete] 会员单活跃约束加固（钱包级事务锁，防并发双开）
 - [complete] 1天新人试用逻辑抽离与单测化（可复用、可回归）
+
+## 运维交付进展
+- [complete] 全球合伙人月度淘汰与退款 SLA runbook
+- [complete] operations 索引接入 runbook 入口
