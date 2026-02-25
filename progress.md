@@ -113,3 +113,22 @@
 - 新增 OpenSpec 变更：`add-supervisor-dlq-ops-tool`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-dlq-ops-tool --strict --no-interactive`，通过。
+
+## 2026-02-25
+- 完成市场部门“参与机制与全球合伙人计划”需求结构化整理。
+- 完成现有实现盘点（`managed-membership`、`managed-subscriptions`、`affiliate-engine`、Prisma 模型、验证脚本）。
+- 识别复用项：88/228 订阅费、MCN 5折、1天试用、直推一次 +1 天奖励。
+- 识别缺口：双入金通道、FREE/MANAGED 门槛、V1-V9 净入金等级、平级奖、全球合伙人席位机制。
+- 新增 OpenSpec 变更：`add-horus-participation-partner-program`（proposal/tasks/design/spec deltas）。
+- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
+- 基于用户“继续”指令，新增排期化路线图：`openspec/changes/add-horus-participation-partner-program/roadmap.md`。
+- 完成 M1/M2/M3 映射：范围、交付、预估人天、关键依赖、发布闸门（Gate A/B/C）。
+- 增加可执行假设（exchange webhook、trial计费边界、partner月结时区）以便研发先行。
+- 进入 M1 开发实施：新增 Participation Program 数据模型（参与账户/入金记录/净入金账本/日等级快照/收益矩阵）并新增迁移 `20260225162000_add_participation_program_m1`。
+- 新增参与机制 API：`/api/participation/rules`、`/api/participation/account`、`/api/participation/funding`。
+- 托管订阅入口新增最小本金限制：默认最小 500（`PARTICIPATION_MANAGED_MIN_PRINCIPAL_USD`）；新增可选激活闸门开关 `PARTICIPATION_REQUIRE_MANAGED_ACTIVATION`。
+- 将 `AffiliateEngine` 盈利收费率切换为固定 20%（统一 FREE/MANAGED 口径）。
+- 新增收益矩阵种子脚本：`web/prisma/seed-participation-program.ts`（npm script: `seed:participation-program`）。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。

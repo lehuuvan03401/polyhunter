@@ -113,7 +113,7 @@ export function SubscriptionModal({
     const tProducts = useTranslations('ManagedWealth.Products');
     const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [termId, setTermId] = useState('');
-    const [principal, setPrincipal] = useState('100');
+    const [principal, setPrincipal] = useState('500');
     const [riskConfirmed, setRiskConfirmed] = useState(false);
     const [termsConfirmed, setTermsConfirmed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,7 +121,7 @@ export function SubscriptionModal({
     useEffect(() => {
         if (!open || !product) return;
         setTermId(presetTermId || product.terms[0]?.id || '');
-        setPrincipal('100');
+        setPrincipal('500');
         setRiskConfirmed(false);
         setTermsConfirmed(false);
     }, [open, product, presetTermId]);

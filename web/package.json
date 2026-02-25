@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed:managed-wealth": "tsx prisma/seed-managed-wealth.ts",
+    "seed:participation-program": "tsx prisma/seed-participation-program.ts",
     "managed-wealth:worker": "tsx scripts/workers/managed-wealth-worker.ts",
     "test:managed-wealth:unit": "npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts",
     "test:managed-wealth:e2e": "npx playwright test --config=playwright.config.mjs e2e/managed-wealth.spec.mjs",

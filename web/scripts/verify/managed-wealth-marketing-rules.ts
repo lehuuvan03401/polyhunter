@@ -206,7 +206,7 @@ async function main(): Promise<void> {
         signer: refereeSigner,
         productId: product.id,
         termId: oneDayTerm.id,
-        principal: 300,
+        principal: 500,
     });
 
     assert.equal(
@@ -243,7 +243,7 @@ async function main(): Promise<void> {
         signer: refereeSigner,
         productId: product.id,
         termId: longTerm.id,
-        principal: 200,
+        principal: 600,
     });
 
     assert.equal(

@@ -257,6 +257,33 @@ enum ManagedMembershipStatus {
   CANCELLED
 }
 
+enum ParticipationMode {
+  FREE
+  MANAGED
+}
+
+enum ParticipationAccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum ParticipationFundingChannel {
+  EXCHANGE
+  TP_WALLET
+}
+
+enum ParticipationFundingDirection {
+  DEPOSIT
+  WITHDRAW
+}
+
+enum ManagedReturnPrincipalBand {
+  A
+  B
+  C
+}
+
 // Reserve fund ledger entry type
 enum ReserveFundEntryType {
   DEPOSIT
@@ -599,6 +626,105 @@ model ManagedMembership {
 
   @@index([walletAddress, status, endsAt])
   @@index([walletAddress, createdAt])
+}
+
+model ParticipationAccount {
+  id                     String                     @id @default(cuid())
+  walletAddress          String                     @unique
+  status                 ParticipationAccountStatus @default(PENDING)
+  preferredMode          ParticipationMode?
+  isRegistrationComplete Boolean                    @default(false)
+  registrationCompletedAt DateTime?
+  activatedAt            DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  fundingRecords   ParticipationFundingRecord[]
+  netDepositEntries NetDepositLedger[]
+  levelSnapshots   DailyLevelSnapshot[]
+
+  @@index([status])
+  @@index([preferredMode, status])
+}
+
+model ParticipationFundingRecord {
+  id                  String                        @id @default(cuid())
+  accountId           String
+  account             ParticipationAccount          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  walletAddress       String
+  channel             ParticipationFundingChannel
+  direction           ParticipationFundingDirection @default(DEPOSIT)
+  tokenSymbol         String                        @default("MCN")
+  rawAmount           Float
+  usdAmount           Float
+  mcnEquivalentAmount Float
+  txHash              String?
+  metadata            Json?
+  confirmedAt         DateTime                      @default(now())
+  createdAt           DateTime                      @default(now())
+
+  netDepositEntries NetDepositLedger[]
+
+  @@unique([txHash])
+  @@index([accountId, createdAt])
+  @@index([walletAddress, createdAt])
+  @@index([channel, createdAt])
+  @@index([direction, createdAt])
+}
+
+model NetDepositLedger {
+  id                  String                        @id @default(cuid())
+  accountId           String
+  account             ParticipationAccount          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fundingRecordId     String?
+  fundingRecord       ParticipationFundingRecord?   @relation(fields: [fundingRecordId], references: [id], onDelete: SetNull)
+  walletAddress       String
+  channel             ParticipationFundingChannel
+  direction           ParticipationFundingDirection
+  usdAmount           Float
+  mcnEquivalentAmount Float
+  createdAt           DateTime                      @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([walletAddress, createdAt])
+  @@index([direction, createdAt])
+  @@index([channel, createdAt])
+}
+
+model DailyLevelSnapshot {
+  id               String               @id @default(cuid())
+  accountId        String
+  account          ParticipationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  walletAddress    String
+  snapshotDate     DateTime
+  selfNetDepositUsd Float               @default(0)
+  teamNetDepositUsd Float               @default(0)
+  level            String               @default("NONE")
+  dividendRate     Float                @default(0)
+  createdAt        DateTime             @default(now())
+
+  @@unique([walletAddress, snapshotDate])
+  @@index([accountId, snapshotDate])
+  @@index([snapshotDate, level])
+}
+
+model ManagedReturnMatrix {
+  id              String                   @id @default(cuid())
+  principalBand   ManagedReturnPrincipalBand
+  minPrincipalUsd Float
+  maxPrincipalUsd Float
+  termDays        Int
+  strategyProfile StrategyProfile
+  returnMin       Float
+  returnMax       Float
+  returnUnit      String                   @default("PERCENT")
+  isActive        Boolean                  @default(true)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@unique([principalBand, termDays, strategyProfile])
+  @@index([isActive, principalBand, termDays])
+  @@index([strategyProfile, termDays])
 }
 
 // Individual copy trade record

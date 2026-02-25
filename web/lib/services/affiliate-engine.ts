@@ -1,6 +1,7 @@
 
 import { PrismaClient, AffiliateTier } from '@prisma/client';
 import { Referrer } from '@prisma/client'; // Import type
+import { REALIZED_PROFIT_FEE_RATE } from '@/lib/participation-program/rules';
 
 export interface TradeContext {
     tradeId: string;
@@ -304,17 +305,6 @@ export class AffiliateEngine {
     // ========================================
 
     /**
-     * Volume-based fee tiers for profit fees.
-     * Higher cumulative volume = lower fee rate.
-     */
-    private getFeeRateByVolume(cumulativeVolume: number): number {
-        // Hardcoded tiers (can be moved to DB VolumeTier table later)
-        if (cumulativeVolume >= 100000) return 0.10; // 10% (Whale)
-        if (cumulativeVolume >= 10000) return 0.15;  // 15% (Pro)
-        return 0.20;                                  // 20% (Standard)
-    }
-
-    /**
      * Distributes commissions based on REALIZED PROFIT (not volume).
      * Only called when profit > 0.
      * 
@@ -342,12 +332,13 @@ export class AffiliateEngine {
 
         const directSponsor = referralRecord.referrer;
 
-        // 3. Get follower's cumulative volume to determine fee rate
-        const followerVolume = referralRecord.lifetimeVolume || 0;
-        const feeRate = this.getFeeRateByVolume(followerVolume);
+        // 3. Profit fee is fixed to policy rate across FREE/MANAGED modes
+        const feeRate = REALIZED_PROFIT_FEE_RATE;
         const feeAmount = realizedProfit * feeRate;
 
-        console.log(`[AffiliateEngine] Profit Fee: $${realizedProfit.toFixed(4)} * ${(feeRate * 100).toFixed(0)}% = $${feeAmount.toFixed(4)} (Volume: $${followerVolume.toFixed(0)})`);
+        console.log(
+            `[AffiliateEngine] Profit Fee: $${realizedProfit.toFixed(4)} * ${(feeRate * 100).toFixed(0)}% = $${feeAmount.toFixed(4)}`
+        );
 
         // 4. Record the commission as a special "PROFIT_FEE" type
         await this.recordCommission(

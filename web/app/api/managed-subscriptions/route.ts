@@ -16,6 +16,13 @@ const WITHDRAW_GUARDRAILS = {
     earlyWithdrawalFeeRate: resolveNumberEnv('MANAGED_EARLY_WITHDRAW_FEE_RATE', 0.01, 0, 0.5),
     drawdownAlertThreshold: resolveNumberEnv('MANAGED_WITHDRAW_DRAWDOWN_ALERT_THRESHOLD', 0.35, 0, 1),
 };
+const MANAGED_MIN_PRINCIPAL_USD = resolveNumberEnv(
+    'PARTICIPATION_MANAGED_MIN_PRINCIPAL_USD',
+    500,
+    1,
+    1_000_000_000
+);
+const REQUIRE_MANAGED_ACTIVATION = process.env.PARTICIPATION_REQUIRE_MANAGED_ACTIVATION === 'true';
 
 type ReserveCoverageResult = {
     balance: number;
@@ -281,6 +288,73 @@ export async function POST(request: NextRequest) {
                 { error: 'Terms must be accepted before subscribing' },
                 { status: 400 }
             );
+        }
+
+        if (principal < MANAGED_MIN_PRINCIPAL_USD) {
+            return NextResponse.json(
+                {
+                    error: 'Principal below managed minimum threshold',
+                    minimumPrincipal: MANAGED_MIN_PRINCIPAL_USD,
+                },
+                { status: 400 }
+            );
+        }
+
+        if (REQUIRE_MANAGED_ACTIVATION) {
+            const account = await prisma.participationAccount.findUnique({
+                where: { walletAddress: requestWallet },
+                select: {
+                    status: true,
+                    preferredMode: true,
+                    isRegistrationComplete: true,
+                },
+            });
+
+            if (!account || !account.isRegistrationComplete) {
+                return NextResponse.json(
+                    {
+                        error: 'Participation registration is required before managed subscription',
+                        code: 'PARTICIPATION_REGISTRATION_REQUIRED',
+                    },
+                    { status: 409 }
+                );
+            }
+
+            if (account.status !== 'ACTIVE' || account.preferredMode !== 'MANAGED') {
+                return NextResponse.json(
+                    {
+                        error: 'Managed participation activation is required',
+                        code: 'MANAGED_ACTIVATION_REQUIRED',
+                    },
+                    { status: 409 }
+                );
+            }
+
+            const [depositAgg, withdrawAgg] = await Promise.all([
+                prisma.netDepositLedger.aggregate({
+                    where: { walletAddress: requestWallet, direction: 'DEPOSIT' },
+                    _sum: { mcnEquivalentAmount: true },
+                }),
+                prisma.netDepositLedger.aggregate({
+                    where: { walletAddress: requestWallet, direction: 'WITHDRAW' },
+                    _sum: { mcnEquivalentAmount: true },
+                }),
+            ]);
+            const netMcnEquivalent =
+                Number(depositAgg._sum.mcnEquivalentAmount ?? 0) -
+                Number(withdrawAgg._sum.mcnEquivalentAmount ?? 0);
+
+            if (netMcnEquivalent < MANAGED_MIN_PRINCIPAL_USD) {
+                return NextResponse.json(
+                    {
+                        error: 'Qualified funding below managed activation threshold',
+                        code: 'QUALIFIED_FUNDING_REQUIRED',
+                        netMcnEquivalent,
+                        minimumRequired: MANAGED_MIN_PRINCIPAL_USD,
+                    },
+                    { status: 409 }
+                );
+            }
         }
 
         const product = await prisma.managedProduct.findFirst({
