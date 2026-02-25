@@ -3,6 +3,7 @@ import { PrismaClient, AffiliateTier, Prisma } from '@prisma/client';
 import { Referrer } from '@prisma/client'; // Import type
 import { REALIZED_PROFIT_FEE_RATE } from '@/lib/participation-program/rules';
 import { calculateSameLevelBonus } from '@/lib/participation-program/bonuses';
+import { prisma } from '@/lib/prisma';
 
 export interface TradeContext {
     tradeId: string;
@@ -494,5 +495,4 @@ export class AffiliateEngine {
 }
 
 // Singleton instance for API routes
-import { prisma } from '../prisma.js';
 export const affiliateEngine = new AffiliateEngine(prisma);

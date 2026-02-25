@@ -139,3 +139,8 @@
 ## 集成验证进展（8.2）
 - [complete] 新增参与激活集成测试（注册-激活顺序、托管门槛、直推奖励一次性保护）
 - [complete] 新增合伙人淘汰/退款集成测试（月度淘汰、重复执行拦截、退款状态机护栏）
+
+## E2E 验证进展（8.3）
+- [complete] 新增参与机制 E2E（FREE/MANAGED 规则展示 + 托管门槛申购流）
+- [complete] 新增合伙人操作 E2E（淘汰 dry-run/execute + 退款完成流）
+- [complete] 处理 E2E 暴露的构建阻断（affiliate-engine prisma 导入路径）

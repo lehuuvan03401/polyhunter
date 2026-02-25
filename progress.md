@@ -225,3 +225,13 @@
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/participation/account.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（3/3）。
 - 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
+- 8.3 E2E 流程交付：
+  - 新增 `web/e2e/participation-partner.spec.mjs`。
+  - 覆盖场景 1：`FREE/MANAGED` 正式规则展示 + 托管申购门槛流（低于 500 失败，达标成功）。
+  - 覆盖场景 2：合伙人席位操作流（淘汰 dry-run/execute + 退款完成）。
+- 修复既有构建阻断问题：`web/lib/services/affiliate-engine.ts` 的 `../prisma.js` 无效导入已改为 `@/lib/prisma`，恢复 Next build 可用。
+- OpenSpec 任务更新：`8.3` 标记完成。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts app/api/participation/account.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（6/6）。
+- 已执行 `cd web && npx playwright test --config=playwright.config.mjs e2e/participation-partner.spec.mjs`，通过（2/2）。
+- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
