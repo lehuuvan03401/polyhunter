@@ -9,6 +9,10 @@ import { ManagedProduct, SubscriptionModal } from '@/components/managed-wealth/s
 import { ManagedProductCard } from '@/components/managed-wealth/managed-product-card';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
+import { PARTICIPATION_STRATEGIES } from '@/lib/participation-program/rules';
+
+const STRATEGY_FILTERS = ['ALL', ...PARTICIPATION_STRATEGIES] as const;
+type StrategyFilter = (typeof STRATEGY_FILTERS)[number];
 
 export default function ManagedWealthPage() {
     const t = useTranslations('ManagedWealth.Marketplace');
@@ -16,7 +20,7 @@ export default function ManagedWealthPage() {
 
     const [products, setProducts] = useState<ManagedProduct[]>([]);
     const [loading, setLoading] = useState(true);
-    const [strategyFilter, setStrategyFilter] = useState<'ALL' | 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE'>('ALL');
+    const [strategyFilter, setStrategyFilter] = useState<StrategyFilter>('ALL');
     const [guaranteedOnly, setGuaranteedOnly] = useState(false);
 
     const [modalProduct, setModalProduct] = useState<ManagedProduct | null>(null);
@@ -159,7 +163,7 @@ export default function ManagedWealthPage() {
 
             <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
-                    {(['ALL', 'CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'] as const).map((strategy) => (
+                    {STRATEGY_FILTERS.map((strategy) => (
                         <button
                             key={strategy}
                             type="button"

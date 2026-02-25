@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import { PARTICIPATION_SERVICE_PERIODS_DAYS } from '@/lib/participation-program/rules';
+import {
+    PARTICIPATION_SERVICE_PERIODS_DAYS,
+    PARTICIPATION_STRATEGIES,
+    parseParticipationStrategy,
+} from '@/lib/participation-program/rules';
 
 export const dynamic = 'force-dynamic';
-type StrategyProfile = 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
 
 function parseBooleanParam(value: string | null): boolean | undefined {
     if (value === null) return undefined;
@@ -13,20 +16,11 @@ function parseBooleanParam(value: string | null): boolean | undefined {
     return undefined;
 }
 
-function parseStrategy(value: string | null): StrategyProfile | undefined {
-    if (!value) return undefined;
-    const normalized = value.toUpperCase();
-    if (normalized === 'CONSERVATIVE' || normalized === 'MODERATE' || normalized === 'AGGRESSIVE') {
-        return normalized;
-    }
-    return undefined;
-}
-
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const rawStrategy = searchParams.get('strategy');
-        const strategy = parseStrategy(rawStrategy);
+        const strategy = parseParticipationStrategy(rawStrategy);
         const guaranteed = parseBooleanParam(searchParams.get('guaranteed'));
         const active = parseBooleanParam(searchParams.get('active'));
 
@@ -34,7 +28,7 @@ export async function GET(request: NextRequest) {
             return NextResponse.json(
                 {
                     error: 'Invalid strategy',
-                    allowed: ['CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'],
+                    allowed: [...PARTICIPATION_STRATEGIES],
                 },
                 { status: 400 }
             );

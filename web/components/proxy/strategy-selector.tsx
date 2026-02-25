@@ -1,47 +1,44 @@
 
 import { Shield, Sparkles, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils'; // Assuming utils exists, or simple className
+import {
+    PARTICIPATION_STRATEGIES,
+    PARTICIPATION_STRATEGY_LABEL_KEYS,
+    type ParticipationStrategyValue,
+} from '@/lib/participation-program/rules';
+import { MANAGED_STRATEGY_THEMES } from '@/lib/managed-wealth/strategy-theme';
 
 interface StrategySelectorProps {
-    value: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
-    onChange: (value: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE') => void;
+    value: ParticipationStrategyValue;
+    onChange: (value: ParticipationStrategyValue) => void;
     disabled?: boolean;
 }
 
 export function StrategySelector({ value, onChange, disabled }: StrategySelectorProps) {
+    const strategyIcons: Record<ParticipationStrategyValue, typeof Shield> = {
+        CONSERVATIVE: Shield,
+        MODERATE: Sparkles,
+        AGGRESSIVE: Zap,
+    };
+    const strategyDescriptions: Record<ParticipationStrategyValue, string> = {
+        CONSERVATIVE: 'Low slippage (0.5%) & strict safety.',
+        MODERATE: 'Balanced slippage (1%) & speed.',
+        AGGRESSIVE: 'High slippage (5%) & max speed.',
+    };
 
-    const options = [
-        {
-            id: 'CONSERVATIVE',
-            label: 'Conservative',
-            icon: Shield,
-            color: 'text-green-400',
-            bg: 'bg-green-500/10',
-            border: 'border-green-500/30',
-            hover: 'hover:border-green-500/60',
-            description: 'Low slippage (0.5%) & strict safety.'
-        },
-        {
-            id: 'MODERATE',
-            label: 'Moderate',
-            icon: Sparkles,
-            color: 'text-blue-400',
-            bg: 'bg-blue-500/10',
-            border: 'border-blue-500/30',
-            hover: 'hover:border-blue-500/60',
-            description: 'Balanced slippage (1%) & speed.'
-        },
-        {
-            id: 'AGGRESSIVE',
-            label: 'Aggressive',
-            icon: Zap,
-            color: 'text-purple-400',
-            bg: 'bg-purple-500/10',
-            border: 'border-purple-500/30',
-            hover: 'hover:border-purple-500/60',
-            description: 'High slippage (5%) & max speed.'
-        }
-    ] as const;
+    const options = PARTICIPATION_STRATEGIES.map((strategy) => {
+        const theme = MANAGED_STRATEGY_THEMES[strategy];
+        return {
+            id: strategy,
+            label: PARTICIPATION_STRATEGY_LABEL_KEYS[strategy],
+            icon: strategyIcons[strategy],
+            color: theme.color,
+            bg: theme.bg,
+            border: theme.border.replace('/20', '/30'),
+            hover: theme.border.replace('border-', 'hover:border-').replace('/20', '/60'),
+            description: strategyDescriptions[strategy],
+        };
+    });
 
     return (
         <div className="grid grid-cols-3 gap-3">

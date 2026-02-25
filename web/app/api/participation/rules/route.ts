@@ -10,6 +10,7 @@ import {
     PARTICIPATION_RULES_VERSION,
     PARTICIPATION_SERVICE_PERIODS_DAYS,
     PARTICIPATION_STRATEGIES,
+    PARTICIPATION_STRATEGY_LABEL_KEYS,
     REALIZED_PROFIT_FEE_RATE,
     type ManagedReturnMatrixRow,
 } from '@/lib/participation-program/rules';
@@ -102,6 +103,10 @@ export async function GET() {
         fundingChannels: PARTICIPATION_FUNDING_CHANNELS,
         modes: PARTICIPATION_MODES,
         strategies: PARTICIPATION_STRATEGIES,
+        strategyOptions: PARTICIPATION_STRATEGIES.map((id) => ({
+            id,
+            labelKey: PARTICIPATION_STRATEGY_LABEL_KEYS[id],
+        })),
         servicePeriodsDays: PARTICIPATION_SERVICE_PERIODS_DAYS,
         minimums: {
             FREE: PARTICIPATION_MINIMUMS.FREE,

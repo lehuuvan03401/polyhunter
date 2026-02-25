@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Loader2, X, ShieldCheck, ArrowRight } from
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
+import { MANAGED_STRATEGY_THEMES } from '@/lib/managed-wealth/strategy-theme';
 
 export interface ManagedTerm {
     id: string;
@@ -54,52 +55,6 @@ type SubscriptionCreateResponse = {
     };
 };
 
-// Define themes matching ManagedProductCard for consistency
-const THEMES = {
-    CONSERVATIVE: {
-        color: 'text-purple-400',
-        bg: 'bg-purple-500/10',
-        border: 'border-purple-500/20',
-        gradient: 'from-purple-500/5',
-        button: 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/20',
-        focusRing: 'focus:ring-purple-500/50',
-        focusBorder: 'focus:border-purple-500/50',
-        lightText: 'text-purple-200',
-        lightBg: 'bg-purple-500/5',
-        lightBorder: 'border-purple-500/20',
-        dot: 'bg-purple-400',
-        labelKey: 'Conservative',
-    },
-    MODERATE: {
-        color: 'text-green-400',
-        bg: 'bg-green-500/10',
-        border: 'border-green-500/20',
-        gradient: 'from-green-500/5',
-        button: 'bg-green-600 hover:bg-green-500 shadow-green-900/20',
-        focusRing: 'focus:ring-green-500/50',
-        focusBorder: 'focus:border-green-500/50',
-        lightText: 'text-green-200',
-        lightBg: 'bg-green-500/5',
-        lightBorder: 'border-green-500/20',
-        dot: 'bg-green-400',
-        labelKey: 'Moderate',
-    },
-    AGGRESSIVE: {
-        color: 'text-blue-400',
-        bg: 'bg-blue-500/10',
-        border: 'border-blue-500/20',
-        gradient: 'from-blue-500/5',
-        button: 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20',
-        focusRing: 'focus:ring-blue-500/50',
-        focusBorder: 'focus:border-blue-500/50',
-        lightText: 'text-blue-200',
-        lightBg: 'bg-blue-500/5',
-        lightBorder: 'border-blue-500/20',
-        dot: 'bg-blue-400',
-        labelKey: 'Aggressive',
-    },
-};
-
 export function SubscriptionModal({
     open,
     product,
@@ -133,8 +88,7 @@ export function SubscriptionModal({
 
     if (!open || !product) return null;
 
-    // @ts-ignore
-    const theme = THEMES[product.strategyProfile];
+    const theme = MANAGED_STRATEGY_THEMES[product.strategyProfile];
     const canSubmit = Boolean(walletAddress && selectedTerm && riskConfirmed && termsConfirmed && Number(principal) > 0 && !isSubmitting);
 
     const submit = async () => {
@@ -207,7 +161,6 @@ export function SubscriptionModal({
                     <div className="flex items-start justify-between relative z-10">
                         <div>
                             <div className={`mb-2 inline-flex items-center gap-1.5 rounded-full ${theme.bg} px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${theme.color}`}>
-                                {/* @ts-ignore */}
                                 {t('SubscriptionModal.strategyLabel', { strategy: t(`ProductCard.strategies.${theme.labelKey}`) })}
                             </div>
                             <h3 className="text-xl font-bold text-white tracking-tight">

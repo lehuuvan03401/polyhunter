@@ -120,3 +120,9 @@
 ## 运维交付进展
 - [complete] 全球合伙人月度淘汰与退款 SLA runbook
 - [complete] operations 索引接入 runbook 入口
+
+## 策略一致性进展（3.1）
+- [complete] 参与策略解析统一（API 改为复用 participation strategy parser）
+- [complete] managed-wealth 卡片/订阅弹窗策略视觉语义统一（共享主题常量）
+- [complete] managed-wealth 页面过滤项改为复用策略常量，移除硬编码
+- [complete] proxy 策略选择与 copy-trader 模板映射复用统一策略标签

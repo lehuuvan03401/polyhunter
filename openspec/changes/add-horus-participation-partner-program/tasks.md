@@ -10,7 +10,7 @@
 - [x] 2.3 Enforce minimum thresholds: `FREE >= 100U`, `MANAGED >= 500U`.
 
 ## 3. Managed/FREE Service Logic
-- [ ] 3.1 Align strategy options to Conservative/Moderate/Aggressive across API, worker, and UI.
+- [x] 3.1 Align strategy options to Conservative/Moderate/Aggressive across API, worker, and UI.
 - [x] 3.2 Restrict selectable managed terms to 7/30/90/180/360 and preserve 1-day trial behavior.
 - [x] 3.3 Serve managed yield matrix by principal band and strategy for UI/marketing rendering.
 - [x] 3.4 Add explicit custody authorization contract/API flow for `MANAGED` mode.

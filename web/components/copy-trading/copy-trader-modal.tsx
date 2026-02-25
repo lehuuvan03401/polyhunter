@@ -10,6 +10,7 @@ import { useCopyTradingStore } from '@/lib/copy-trading-store';
 import { usePrivy } from '@privy-io/react-auth';
 import { useProxy } from '@/lib/contracts/useProxy';
 import { useTranslations } from 'next-intl';
+import { PARTICIPATION_STRATEGY_LABEL_KEYS } from '@/lib/participation-program/rules';
 
 import { AgentTemplate } from '@/components/agents/agent-card';
 
@@ -65,11 +66,8 @@ export function CopyTraderModal({ isOpen, onClose, traderAddress, traderName, ag
     React.useEffect(() => {
         if (isOpen && agentTemplate) {
             // Map strategy profile
-            const profileMap: Record<string, 'Conservative' | 'Moderate' | 'Aggressive'> = {
-                'CONSERVATIVE': 'Conservative',
-                'MODERATE': 'Moderate',
-                'AGGRESSIVE': 'Aggressive'
-            };
+            const profileMap: Record<string, 'Conservative' | 'Moderate' | 'Aggressive'> =
+                PARTICIPATION_STRATEGY_LABEL_KEYS;
             if (agentTemplate.strategyProfile) {
                 setRiskProfile(profileMap[agentTemplate.strategyProfile] || 'Moderate');
             }

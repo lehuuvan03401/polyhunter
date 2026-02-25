@@ -196,3 +196,11 @@
 - 运维交付：新增全球合伙人 runbook `docs/operations/runbook-partner-program.md`（月度淘汰节奏、退款 SLA、补位流程、常见事故处理）。
 - 更新 `docs/operations/README.md` 索引入口，增加 Global Partner monthly operations。
 - OpenSpec 任务更新：`8.5` 标记完成。
+- 策略一致性（3.1）补齐：
+  - 新增策略解析/标签函数：`web/lib/participation-program/rules.ts`（`parseParticipationStrategy` + `PARTICIPATION_STRATEGY_LABEL_KEYS`）。
+  - 新增 managed-wealth 共享策略主题：`web/lib/managed-wealth/strategy-theme.ts`。
+  - API 收敛：`GET /api/managed-products` 复用统一策略解析；`GET /api/participation/rules` 新增 `strategyOptions`。
+  - UI 收敛：`managed-product-card`、`subscription-modal`、`managed-wealth/page`、`proxy/strategy-selector`、`copy-trader-modal` 复用统一策略常量。
+  - 新增单测：`web/lib/participation-program/rules.test.ts`、`web/lib/managed-wealth/strategy-theme.test.ts`。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run ...`（本批相关 43/43），通过。

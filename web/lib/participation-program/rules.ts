@@ -8,6 +8,22 @@ export type ParticipationModeValue = (typeof PARTICIPATION_MODES)[number];
 
 export const PARTICIPATION_STRATEGIES = ['CONSERVATIVE', 'MODERATE', 'AGGRESSIVE'] as const;
 export type ParticipationStrategyValue = (typeof PARTICIPATION_STRATEGIES)[number];
+export const PARTICIPATION_STRATEGY_LABEL_KEYS: Record<
+    ParticipationStrategyValue,
+    'Conservative' | 'Moderate' | 'Aggressive'
+> = {
+    CONSERVATIVE: 'Conservative',
+    MODERATE: 'Moderate',
+    AGGRESSIVE: 'Aggressive',
+};
+
+export function parseParticipationStrategy(
+    value: string | null | undefined
+): ParticipationStrategyValue | undefined {
+    if (!value) return undefined;
+    const normalized = value.toUpperCase();
+    return PARTICIPATION_STRATEGIES.find((strategy) => strategy === normalized);
+}
 
 export const PARTICIPATION_SERVICE_PERIODS_DAYS = [1, 7, 30, 90, 180, 360] as const;
 

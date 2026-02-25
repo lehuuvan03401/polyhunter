@@ -6,48 +6,25 @@ import { ShieldCheck, TrendingUp, Zap, Clock, Percent, ShieldAlert, ArrowRight }
 import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import { ManagedProduct } from '@/components/managed-wealth/subscription-modal';
 import { useTranslations } from 'next-intl';
+import { MANAGED_STRATEGY_THEMES } from '@/lib/managed-wealth/strategy-theme';
+import type { ParticipationStrategyValue } from '@/lib/participation-program/rules';
 
 interface ManagedProductCardProps {
     product: ManagedProduct;
     onSubscribe: (product: ManagedProduct) => void;
 }
 
-const THEMES = {
-    CONSERVATIVE: {
-        color: 'text-green-400',
-        bg: 'bg-green-500/10',
-        border: 'border-green-500/20',
-        gradient: 'from-green-500/5',
-        icon: ShieldCheck,
-        labelKey: 'Conservative',
-        button: 'bg-green-600 hover:bg-green-500 shadow-green-900/20',
-    },
-    MODERATE: {
-        color: 'text-blue-400',
-        bg: 'bg-blue-500/10',
-        border: 'border-blue-500/20',
-        gradient: 'from-blue-500/5',
-        icon: TrendingUp,
-        labelKey: 'Moderate',
-        button: 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20',
-    },
-    AGGRESSIVE: {
-        color: 'text-purple-400',
-        bg: 'bg-purple-500/10',
-        border: 'border-purple-500/20',
-        gradient: 'from-purple-500/5',
-        icon: Zap,
-        labelKey: 'Aggressive',
-        button: 'bg-purple-600 hover:bg-purple-500 shadow-purple-900/20',
-    },
+const STRATEGY_ICONS: Record<ParticipationStrategyValue, typeof ShieldCheck> = {
+    CONSERVATIVE: ShieldCheck,
+    MODERATE: TrendingUp,
+    AGGRESSIVE: Zap,
 };
 
 export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardProps) {
     const t = useTranslations('ManagedWealth.ProductCard');
     const tProducts = useTranslations('ManagedWealth.Products');
-    // @ts-ignore
-    const theme = THEMES[product.strategyProfile];
-    const Icon = theme.icon;
+    const theme = MANAGED_STRATEGY_THEMES[product.strategyProfile];
+    const Icon = STRATEGY_ICONS[product.strategyProfile];
 
     // Calculate return range
     const minReturn = Math.min(...product.terms.map(t => t.targetReturnMin));
@@ -78,7 +55,6 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                     <div>
                         <div className={`inline-flex items-center gap-1.5 rounded-full ${theme.bg} px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${theme.color} mb-3`}>
                             <Icon className="h-3 w-3" />
-                            {/* @ts-ignore */}
                             {t(`strategies.${theme.labelKey}`)}
                         </div>
                         <h3 className="text-xl font-bold text-white leading-tight group-hover:text-white/90 transition-colors">
