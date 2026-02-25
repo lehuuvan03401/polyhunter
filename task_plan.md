@@ -90,3 +90,6 @@
 - [pending] 全球合伙人席位体系
 - [complete] 托管授权留痕能力（模型 + API + 入口可选校验）
 - [complete] 托管可选周期收敛（managed-products list/detail + seed 对齐）
+- [complete] V1-V9 日考核快照引擎（规则映射 + API + 快照落库）
+- [pending] 平级奖结算链路（1代4% / 2代1%）
+- [pending] 双区晋升指标与进度 API

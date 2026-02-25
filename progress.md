@@ -140,3 +140,9 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
+- M2 第一批：新增 V1-V9 等级规则与分红映射（`web/lib/participation-program/levels.ts`）。
+- 新增等级进度 API：`GET /api/participation/levels`（用户签名查询当前等级与下一等级差额）。
+- 新增等级快照执行 API：`POST /api/participation/levels`（管理员触发，支持 dry-run，写入 `DailyLevelSnapshot`）。
+- 新增等级引擎单测：`web/lib/participation-program/levels.test.ts`。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts`，通过（13/13）。
