@@ -218,3 +218,10 @@
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/managed-wealth/strategy-theme.test.ts`，通过（5/5）。
 - 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
+- 8.2 集成测试交付：
+  - 新增 `web/app/api/participation/account.integration.test.ts`，覆盖激活闸门（先注册后激活）、托管门槛校验、以及“直推奖励仅触发一次”链路。
+  - 新增 `web/app/api/partners/partner-workflow.integration.test.ts`，覆盖月度淘汰、同月重复执行拦截、退款完成与完成后禁止失败回退。
+- OpenSpec 任务更新：`8.2` 标记完成。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/participation/account.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（3/3）。
+- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
