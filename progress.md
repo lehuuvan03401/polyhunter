@@ -175,3 +175,15 @@
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（22/22）。
 - 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
+- M1/M2 补强：新增推荐奖励共享引擎 `web/lib/participation-program/referral-subscription-bonus.ts`，将“首次合格参与 +1 天”逻辑统一到参与激活与托管订阅入口。
+- `POST /api/participation/account`（ACTIVATE）已接入推荐奖励链路，返回 `marketing.referralBonusApplied`。
+- `POST /api/managed-subscriptions` 改为复用推荐奖励共享引擎，去除重复逻辑并保持一次性幂等标记。
+- 托管提现结算 `POST /api/managed-subscriptions/[id]/withdraw` 已接入盈利费分发触发（仅 `grossPnl > 0`），分发失败仅记录日志不阻塞提现。
+- 新增单测：
+  - `web/lib/participation-program/referral-subscription-bonus.test.ts`
+  - `web/lib/managed-wealth/membership-plans.test.ts`
+  - `web/lib/services/affiliate-engine.test.ts`
+  - `web/lib/participation-program/levels-aggregation.test.ts`
+- Vitest 配置补齐别名解析：`web/vitest.config.ts` 新增 `@` -> `web/` alias，避免服务层测试导入失败。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run lib/participation-program/levels-aggregation.test.ts lib/participation-program/referral-subscription-bonus.test.ts lib/managed-wealth/membership-plans.test.ts lib/services/affiliate-engine.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（35/35）。

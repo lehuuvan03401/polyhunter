@@ -107,3 +107,10 @@
 - [complete] 退款进度与状态流转（`/api/partners/refunds`，含状态保护）
 - [complete] 权益映射与后台权限开关（`/api/partners/privileges`）
 - [complete] 月榜查询接口（`/api/partners/rankings`）
+
+## M1/M2 补强进展（计费与推荐奖励）
+- [complete] 推荐奖励共享引擎抽象（参与激活与托管订阅复用，单次幂等）
+- [complete] 参与激活流程接入一代直推 +1 天延展逻辑
+- [complete] 托管提现结算接入盈利费分发触发（仅盈利触发，不阻断提现主流程）
+- [complete] 会员价格与折扣单测补齐（88/228 + MCN 5 折）
+- [complete] 净入金聚合单测补齐（充值-提现、团队聚合、负净入金场景）

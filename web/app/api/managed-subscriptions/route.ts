@@ -8,6 +8,7 @@ import {
     calculateReserveBalance,
 } from '@/lib/managed-wealth/settlement-math';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
+import { applyOneTimeReferralSubscriptionBonus } from '@/lib/participation-program/referral-subscription-bonus';
 
 export const dynamic = 'force-dynamic';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -514,46 +515,11 @@ export async function POST(request: NextRequest) {
                 },
             });
 
-            let referralBonusApplied = false;
-            const referral = await tx.referral.findUnique({
-                where: { refereeAddress: requestWallet },
-                include: {
-                    referrer: {
-                        select: { walletAddress: true },
-                    },
-                },
+            const referralBonus = await applyOneTimeReferralSubscriptionBonus(tx, {
+                refereeWallet: requestWallet,
+                now,
             });
-
-            if (referral && !referral.subscriptionBonusGrantedAt) {
-                const referrerActiveSub = await tx.managedSubscription.findFirst({
-                    where: {
-                        walletAddress: referral.referrer.walletAddress,
-                        status: 'RUNNING',
-                        endAt: { gt: now },
-                    },
-                    orderBy: { endAt: 'asc' },
-                    select: {
-                        id: true,
-                        endAt: true,
-                    },
-                });
-
-                if (referrerActiveSub?.endAt) {
-                    await tx.managedSubscription.update({
-                        where: { id: referrerActiveSub.id },
-                        data: {
-                            endAt: new Date(referrerActiveSub.endAt.getTime() + ONE_DAY_MS),
-                        },
-                    });
-                    await tx.referral.update({
-                        where: { id: referral.id },
-                        data: {
-                            subscriptionBonusGrantedAt: now,
-                        },
-                    });
-                    referralBonusApplied = true;
-                }
-            }
+            const referralBonusApplied = referralBonus.applied;
 
             return {
                 createdSubscription,

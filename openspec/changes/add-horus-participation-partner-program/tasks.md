@@ -17,12 +17,12 @@
 
 ## 4. Fee & Subscription Rules
 - [x] 4.1 Replace variable profit fee tiers with fixed 20% realized-profit fee for both `FREE` and `MANAGED`.
-- [ ] 4.2 Keep no-profit no-fee invariant end-to-end (execution, settlement, affiliate commission trigger).
-- [ ] 4.3 Ensure membership pricing remains `88/month`, `228/quarter`, and MCN payment applies 50% discount.
+- [x] 4.2 Keep no-profit no-fee invariant end-to-end (execution, settlement, affiliate commission trigger).
+- [x] 4.3 Ensure membership pricing remains `88/month`, `228/quarter`, and MCN payment applies 50% discount.
 - [ ] 4.4 Enforce one active membership per wallet and preserve 1-day newcomer basic-service trial.
 
 ## 5. Referral & Performance Growth System
-- [ ] 5.1 Keep one-time direct referral reward: first qualified participation extends referrer by exactly 1 day.
+- [x] 5.1 Keep one-time direct referral reward: first qualified participation extends referrer by exactly 1 day.
 - [x] 5.2 Add daily V1-V9 level engine based on team net deposits and configured thresholds.
 - [x] 5.3 Implement team profit dividend rates per V-level (V1=30% ... V9=70%).
 - [x] 5.4 Implement same-level bonus settlement: first generation 4%, second generation 1%.
@@ -42,7 +42,7 @@
 - [ ] 7.4 Add admin operations pages for partner seat governance and refund handling.
 
 ## 8. Verification & Rollout
-- [ ] 8.1 Add unit tests for fee calculation, net-deposit aggregation, V-level mapping, same-level bonuses.
+- [x] 8.1 Add unit tests for fee calculation, net-deposit aggregation, V-level mapping, same-level bonuses.
 - [ ] 8.2 Add integration tests for activation, referral bonus one-time guard, and partner elimination/refund workflow.
 - [ ] 8.3 Add E2E flows for FREE vs MANAGED onboarding and partner-seat operations.
 - [x] 8.4 Run `openspec validate add-horus-participation-partner-program --strict --no-interactive`.

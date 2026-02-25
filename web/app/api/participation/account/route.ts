@@ -7,6 +7,7 @@ import {
     PARTICIPATION_MODES,
     type ParticipationModeValue,
 } from '@/lib/participation-program/rules';
+import { applyOneTimeReferralSubscriptionBonus } from '@/lib/participation-program/referral-subscription-bonus';
 
 export const dynamic = 'force-dynamic';
 
@@ -184,19 +185,34 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const account = await prisma.participationAccount.update({
-            where: { walletAddress },
-            data: {
-                status: 'ACTIVE',
-                preferredMode: parsed.data.mode,
-                activatedAt: now,
-            },
+        const activation = await prisma.$transaction(async (tx) => {
+            const account = await tx.participationAccount.update({
+                where: { walletAddress },
+                data: {
+                    status: 'ACTIVE',
+                    preferredMode: parsed.data.mode,
+                    activatedAt: now,
+                },
+            });
+
+            const referralBonus = await applyOneTimeReferralSubscriptionBonus(tx, {
+                refereeWallet: walletAddress,
+                now,
+            });
+
+            return {
+                account,
+                referralBonusApplied: referralBonus.applied,
+            };
         });
 
         return NextResponse.json({
-            account,
+            account: activation.account,
             netDeposits,
             eligibility: getEligibility(netDeposits.netMcnEquivalent),
+            marketing: {
+                referralBonusApplied: activation.referralBonusApplied,
+            },
             message: 'Participation activated',
         });
     } catch (error) {

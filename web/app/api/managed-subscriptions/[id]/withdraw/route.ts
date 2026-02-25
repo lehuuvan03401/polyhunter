@@ -3,6 +3,7 @@ import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { z } from 'zod';
 import { calculateManagedSettlement, calculateReserveBalance } from '@/lib/managed-wealth/settlement-math';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
+import { affiliateEngine } from '@/lib/services/affiliate-engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -170,7 +171,7 @@ export async function POST(
                 }
 
                 return {
-                    action: 'LIQUIDATE',
+                    action: 'LIQUIDATE' as const,
                     updatedSubscription,
                 };
             }
@@ -287,7 +288,7 @@ export async function POST(
             });
 
             return {
-                action: 'SETTLE',
+                action: 'SETTLE' as const,
                 updatedSubscription,
                 settlement,
                 guaranteeEligible,
@@ -311,12 +312,27 @@ export async function POST(
             }, { status: 202 });
         }
 
+        const settledResult = result;
+        // Do not fail user withdrawal if affiliate distribution path is temporarily unavailable.
+        const realizedProfit = Number(settledResult.settlement.grossPnl ?? 0);
+        if (realizedProfit > 0) {
+            try {
+                await affiliateEngine.distributeProfitFee(
+                    walletContext.wallet,
+                    realizedProfit,
+                    `managed-withdraw:${settledResult.updatedSubscription.id}:${settledResult.settlement.id}`
+                );
+            } catch (affiliateError) {
+                console.error('[ManagedWithdraw] Profit fee distribution failed:', affiliateError);
+            }
+        }
+
         return NextResponse.json({
             success: true,
-            subscription: result.updatedSubscription,
-            settlement: result.settlement,
-            earlyRedeemed: !result.guaranteeEligible,
-            guardrails: result.guardrails,
+            subscription: settledResult.updatedSubscription,
+            settlement: settledResult.settlement,
+            earlyRedeemed: !settledResult.guaranteeEligible,
+            guardrails: settledResult.guardrails,
             message: 'Withdrawal processed successfully',
         });
     } catch (error) {
