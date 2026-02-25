@@ -21,8 +21,9 @@ const config: HardhatUserConfig = {
             chainId: 1337,
             forking: process.env.ENABLE_FORK ? {
                 // Use a distinct env var for Fork Source to avoid picking up 'localhost' from frontend .env
-                url: process.env.MAINNET_FORK_RPC_URL || "https://rpc.ankr.com/polygon/8bcbd6bdb3c597de68e3ec1be4bf2e8433ee789181e3cdb1d9a3e74ceb005aeb",
-                blockNumber: 66500000, // Pin block for consistency
+                url: process.env.MAINNET_FORK_RPC_URL || "https://polygon-bor-rpc.publicnode.com",
+                // Note: blockNumber pin removed — public RPCs don't keep archival state.
+                // To pin a block, use an archival RPC (Alchemy, QuickNode, etc.)
             } : undefined,
             mining: {
                 auto: true,
@@ -37,7 +38,7 @@ const config: HardhatUserConfig = {
         },
         // Polygon Amoy Testnet
         amoy: {
-            url: process.env.AMOY_RPC_URL || "https://rpc.ankr.com/polygon_amoy/8bcbd6bdb3c597de68e3ec1be4bf2e8433ee789181e3cdb1d9a3e74ceb005aeb",
+            url: process.env.AMOY_RPC_URL || "https://polygon-amoy-bor-rpc.publicnode.com",
             accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
             chainId: 80002,
         },
