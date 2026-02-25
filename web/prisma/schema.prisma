@@ -54,6 +54,7 @@ model Referrer {
   teamVolume            Float                  @default(0) // Total volume of the subtree
   commissionLogs        CommissionLog[]
   commissionLogArchives CommissionLogArchive[]
+  sameLevelBonusSettlements SameLevelBonusSettlement[]
 }
 
 // Closure Table for efficient tree traversal
@@ -133,6 +134,22 @@ model CommissionLog {
   @@index([type])
   @@index([createdAt])
   @@index([referrerId, createdAt])
+}
+
+model SameLevelBonusSettlement {
+  id            String   @id @default(cuid())
+  sourceTradeId String
+  sourceUserId  String
+  referrer      Referrer @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+  referrerId    String
+  generation    Int
+  bonusRate     Float
+  bonusAmount   Float
+  createdAt     DateTime @default(now())
+
+  @@unique([sourceTradeId, referrerId, generation])
+  @@index([referrerId, createdAt])
+  @@index([sourceUserId, createdAt])
 }
 
 // ========================================

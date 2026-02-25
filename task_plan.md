@@ -93,3 +93,6 @@
 - [complete] V1-V9 日考核快照引擎（规则映射 + API + 快照落库）
 - [pending] 平级奖结算链路（1代4% / 2代1%）
 - [pending] 双区晋升指标与进度 API
+- [complete] 平级奖结算链路（1代4% / 2代1%，含幂等账本）
+- [pending] 双区晋升指标与进度 API
+- [pending] 全球合伙人席位体系

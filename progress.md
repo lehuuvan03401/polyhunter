@@ -146,3 +146,9 @@
 - 新增等级引擎单测：`web/lib/participation-program/levels.test.ts`。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts`，通过（13/13）。
+- M2 第二批：新增平级奖结算账本模型 `SameLevelBonusSettlement` 与迁移 `20260225174000_add_same_level_bonus_settlement`。
+- `AffiliateEngine.distributeProfitFee` 已接入可选平级奖链路（`PARTICIPATION_ENABLE_SAME_LEVEL_BONUS=true` 启用）：一代 4%，二代 1%，并通过唯一键实现幂等防重。
+- 新增平级奖规则单测：`web/lib/participation-program/bonuses.test.ts`。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts`，通过（18/18）。

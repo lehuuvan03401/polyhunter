@@ -1,7 +1,8 @@
 
-import { PrismaClient, AffiliateTier } from '@prisma/client';
+import { PrismaClient, AffiliateTier, Prisma } from '@prisma/client';
 import { Referrer } from '@prisma/client'; // Import type
 import { REALIZED_PROFIT_FEE_RATE } from '@/lib/participation-program/rules';
+import { calculateSameLevelBonus } from '@/lib/participation-program/bonuses';
 
 export interface TradeContext {
     tradeId: string;
@@ -25,6 +26,7 @@ const TIER_ORDER: AffiliateTier[] = [
     AffiliateTier.PARTNER,
     AffiliateTier.SUPER_PARTNER,
 ];
+const ENABLE_SAME_LEVEL_BONUS = process.env.PARTICIPATION_ENABLE_SAME_LEVEL_BONUS === 'true';
 
 export class AffiliateEngine {
     private prisma: PrismaClient;
@@ -350,11 +352,89 @@ export class AffiliateEngine {
             1 // Generation 1 (direct)
         );
 
-        // 5. Optionally: Distribute partial to upline (Sun Line style)?
-        // For MVP, we keep it simple and only pay the direct sponsor.
-        // Future: Get ancestry and apply differential rates.
+        // 5. Optional same-level bonus chain (Gen1: 4%, Gen2: 1%)
+        if (ENABLE_SAME_LEVEL_BONUS) {
+            await this.distributeSameLevelBonuses({
+                tradeId,
+                traderAddress: traderAddress.toLowerCase(),
+                realizedProfit,
+                directSponsorId: directSponsor.id,
+                directSponsorWallet: directSponsor.walletAddress.toLowerCase(),
+            });
+        }
 
         console.log(`[AffiliateEngine] ✅ Profit Fee Distributed: $${feeAmount.toFixed(4)} to ${directSponsor.walletAddress}`);
+    }
+
+    private async distributeSameLevelBonuses(params: {
+        tradeId: string;
+        traderAddress: string;
+        realizedProfit: number;
+        directSponsorId: string;
+        directSponsorWallet: string;
+    }): Promise<void> {
+        const recipients: Array<{ referrerId: string; generation: 1 | 2 }> = [
+            { referrerId: params.directSponsorId, generation: 1 },
+        ];
+
+        const secondGenerationReferral = await this.prisma.referral.findUnique({
+            where: { refereeAddress: params.directSponsorWallet },
+            include: { referrer: true },
+        });
+
+        if (secondGenerationReferral?.referrerId) {
+            recipients.push({
+                referrerId: secondGenerationReferral.referrerId,
+                generation: 2,
+            });
+        }
+
+        for (const recipient of recipients) {
+            const calculated = calculateSameLevelBonus(params.realizedProfit, recipient.generation);
+            if (calculated.amount <= 0) continue;
+
+            try {
+                await this.prisma.$transaction(async (tx) => {
+                    await tx.sameLevelBonusSettlement.create({
+                        data: {
+                            sourceTradeId: params.tradeId,
+                            sourceUserId: params.traderAddress,
+                            referrerId: recipient.referrerId,
+                            generation: recipient.generation,
+                            bonusRate: calculated.rate,
+                            bonusAmount: calculated.amount,
+                        },
+                    });
+
+                    await tx.referrer.update({
+                        where: { id: recipient.referrerId },
+                        data: {
+                            totalEarned: { increment: calculated.amount },
+                            pendingPayout: { increment: calculated.amount },
+                        },
+                    });
+
+                    await tx.commissionLog.create({
+                        data: {
+                            referrerId: recipient.referrerId,
+                            amount: calculated.amount,
+                            type: 'SAME_LEVEL_BONUS',
+                            sourceTradeId: params.tradeId,
+                            sourceUserId: params.traderAddress,
+                            generation: recipient.generation,
+                        },
+                    });
+                });
+            } catch (error) {
+                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+                    console.log(
+                        `[AffiliateEngine] Same-level bonus already settled for trade=${params.tradeId}, referrer=${recipient.referrerId}, gen=${recipient.generation}`
+                    );
+                    continue;
+                }
+                throw error;
+            }
+        }
     }
 
     private getZeroLineRate(gen: number): number {
@@ -405,7 +485,7 @@ export class AffiliateEngine {
                     type,
                     sourceTradeId: tradeId,
                     sourceUserId: traderAddress,
-                    generation: type === 'ZERO_LINE' ? generation : null
+                    generation: (type === 'ZERO_LINE' || type === 'SAME_LEVEL_BONUS') ? generation : null
                 }
             });
         });
