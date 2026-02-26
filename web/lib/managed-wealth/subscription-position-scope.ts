@@ -5,6 +5,10 @@ type PositionScopeDb = Pick<
     'managedSubscriptionPosition' | 'copyTrade' | 'userPosition'
 >;
 
+function isScopeFallbackEnabled(): boolean {
+    return process.env.MANAGED_POSITION_SCOPE_FALLBACK !== 'false';
+}
+
 export type ManagedOpenPosition = {
     id: string;
     walletAddress: string;
@@ -64,7 +68,7 @@ export async function listManagedOpenPositionsWithFallback(
         }));
     }
 
-    if (!input.copyConfigId) {
+    if (!isScopeFallbackEnabled() || !input.copyConfigId) {
         return [];
     }
 
@@ -114,7 +118,7 @@ export async function countManagedOpenPositionsWithFallback(
         return scopedCount;
     }
 
-    if (!input.copyConfigId) {
+    if (!isScopeFallbackEnabled() || !input.copyConfigId) {
         return 0;
     }
 

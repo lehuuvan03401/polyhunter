@@ -214,6 +214,7 @@
 - [complete] 交易执行链路新增 managed 持仓写入（`TradeOrchestrator` 侧按 `copyConfigId` 解析订阅作用域并写入 scoped position）
 - [complete] 新增历史持仓回填脚本（`backfill:managed-positions`）
 - [complete] 迁移期 fallback（scoped 为空时按 copyTrade token 集合回退 legacy position）接入 withdraw/run/worker
+- [complete] 新增订阅持仓对账脚本（`verify:managed-positions:scope`）用于读切换前校验
 - [pending] 生产读切换前回填验证与对账
 
 ## 错误记录

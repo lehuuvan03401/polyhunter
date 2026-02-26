@@ -10,6 +10,7 @@
     "seed:managed-wealth": "tsx prisma/seed-managed-wealth.ts",
     "seed:participation-program": "tsx prisma/seed-participation-program.ts",
     "backfill:managed-positions": "tsx scripts/db/backfill-managed-subscription-positions.ts",
+    "verify:managed-positions:scope": "tsx scripts/verify/managed-scoped-position-reconciliation.ts",
     "fix:managed-terms:360d": "tsx scripts/db/normalize-managed-terms-to-360d.ts",
     "managed-wealth:worker": "tsx scripts/workers/managed-wealth-worker.ts",
     "test:managed-wealth:unit": "npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts",

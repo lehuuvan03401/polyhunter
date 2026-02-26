@@ -198,3 +198,4 @@
 - `managed-wealth-worker` 清仓路径不再直接把钱包 token 持仓归零，而是按订阅持仓递减 legacy 表，降低跨订阅污染风险。
 - 新增回填脚本后，可在读切换前将历史 `CopyTrade` 回放为 scoped positions，减少迁移窗口内“旧仓位丢失”风险。
 - 迁移期 fallback 采用“copyTrade token universe + legacy userPosition”保守判定，可优先避免误结算；代价是当同钱包多订阅命中相同 token 时，可能出现短期过度阻塞，需靠回填完成后逐步关闭 fallback。
+- 增加 `verify:managed-positions:scope` 对账脚本后，可在正式关闭 fallback 前做量化校验（差异率、回填缺口），降低盲切风险。
