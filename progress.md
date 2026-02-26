@@ -297,5 +297,10 @@
   - `web/app/[locale]/managed-wealth/page.tsx` 新增“收益矩阵模拟器”（本金输入 + 周期选择），并将匹配结果按策略投射到三张策略卡片。
   - `web/components/managed-wealth/managed-product-card.tsx` 顶部收益指标改为优先显示矩阵命中区间，同时展示周期与档位（未命中回退产品默认区间）。
   - 对外规则页保留作为完整政策说明，主交互迁移到策略选择主路径，降低用户理解成本。
+- 2026-02-26：`safe-income-vault` 详情页同步矩阵口径：
+  - `web/app/[locale]/managed-wealth/[id]/page.tsx` 右侧订阅区新增本金输入，并将各期限收益区间改为按“本金 + 周期 + 当前策略”实时匹配托管收益矩阵。
+  - 顶部目标收益改为与当前选中期限的矩阵区间一致显示，并附带档位信息（A/B/C）。
+  - 未命中矩阵时自动回退到产品默认期限区间，避免空白展示。
+  - 文案补齐：`web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/participation-program/managed-return-matrix.test.ts app/api/participation/rules.integration.test.ts`，通过（10/10）。

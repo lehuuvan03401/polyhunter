@@ -11,6 +11,8 @@ import { ManagedProduct, ManagedTerm, SubscriptionModal } from '@/components/man
 import { ManagedNavChart } from '@/components/managed-wealth/managed-nav-chart';
 import { motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
+import { lookupManagedReturnMatrixRow } from '@/lib/participation-program/managed-return-matrix';
+import type { ManagedReturnMatrixRow } from '@/lib/participation-program/rules';
 
 type AgentSummary = {
     id: string;
@@ -50,6 +52,9 @@ export default function ManagedWealthDetailPage() {
     const [detail, setDetail] = useState<ProductDetailResponse | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [presetTermId, setPresetTermId] = useState<string | undefined>();
+    const [projectionPrincipal, setProjectionPrincipal] = useState('500');
+    const [matrixRows, setMatrixRows] = useState<ManagedReturnMatrixRow[]>([]);
+    const [matrixLoading, setMatrixLoading] = useState(true);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -72,20 +77,80 @@ export default function ManagedWealthDetailPage() {
         fetchDetail();
     }, [params?.id]);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        async function fetchMatrixRows() {
+            setMatrixLoading(true);
+            try {
+                const res = await fetch('/api/participation/rules', { cache: 'no-store' });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data?.error || t('errors.fetchFailed'));
+                }
+                if (cancelled) return;
+                setMatrixRows((data?.managedReturnMatrix ?? []) as ManagedReturnMatrixRow[]);
+            } catch (error) {
+                if (!cancelled) {
+                    setMatrixRows([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setMatrixLoading(false);
+                }
+            }
+        }
+
+        fetchMatrixRows();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const product = detail?.product;
 
-    const avgTarget = useMemo(() => {
+    const projectionPrincipalUsd = Number(projectionPrincipal);
+    const hasValidProjectionPrincipal = Number.isFinite(projectionPrincipalUsd) && projectionPrincipalUsd > 0;
+
+    const selectedTerm = useMemo(() => {
         if (!product?.terms?.length) return null;
-        const avgMin = product.terms.reduce((acc, term) => acc + term.targetReturnMin, 0) / product.terms.length;
-        const avgMax = product.terms.reduce((acc, term) => acc + term.targetReturnMax, 0) / product.terms.length;
-        return `${avgMin.toFixed(2)}% - ${avgMax.toFixed(2)}%`;
-    }, [product]);
+        return product.terms.find((term) => term.id === presetTermId) ?? product.terms[0] ?? null;
+    }, [product, presetTermId]);
+
+    const termProjectionMap = useMemo(() => {
+        const map = new Map<string, { displayRange: string | null; principalBand: 'A' | 'B' | 'C' | null; matched: boolean }>();
+        if (!product?.terms?.length || !hasValidProjectionPrincipal || matrixRows.length === 0) {
+            return map;
+        }
+
+        for (const term of product.terms) {
+            const matched = lookupManagedReturnMatrixRow(matrixRows, {
+                principalUsd: projectionPrincipalUsd,
+                cycleDays: term.durationDays,
+                strategyProfile: product.strategyProfile,
+            });
+            map.set(term.id, {
+                displayRange: matched.displayRange,
+                principalBand: matched.principalBand,
+                matched: Boolean(matched.row),
+            });
+        }
+
+        return map;
+    }, [hasValidProjectionPrincipal, matrixRows, product, projectionPrincipalUsd]);
+
+    const selectedTermProjection = selectedTerm ? termProjectionMap.get(selectedTerm.id) : undefined;
+    const selectedTermDisplayRange = selectedTermProjection?.displayRange
+        ?? (selectedTerm ? `${selectedTerm.targetReturnMin}% - ${selectedTerm.targetReturnMax}%` : null);
     useEffect(() => {
         if (product?.terms) {
             const defaultTerm = product.terms.find((t) => t.durationDays === 30);
             if (defaultTerm) {
                 setPresetTermId(defaultTerm.id);
+                return;
             }
+            setPresetTermId(product.terms[0]?.id);
         }
     }, [product]);
 
@@ -148,7 +213,15 @@ export default function ManagedWealthDetailPage() {
                                 </div>
                                 <div className="text-right hidden sm:block">
                                     <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">{t('targetApy')}</div>
-                                    <div className="text-2xl font-bold text-white">{avgTarget}</div>
+                                    <div className="text-2xl font-bold text-white">{selectedTermDisplayRange}</div>
+                                    <div className="mt-1 text-xs text-zinc-500">
+                                        {selectedTermProjection?.matched && selectedTermProjection.principalBand && selectedTerm
+                                            ? t('subscribe.targetMeta', {
+                                                days: selectedTerm.durationDays,
+                                                band: selectedTermProjection.principalBand,
+                                            })
+                                            : t('subscribe.rangeFallback')}
+                                    </div>
                                 </div>
                             </div>
 
@@ -211,6 +284,27 @@ export default function ManagedWealthDetailPage() {
                             <h2 className="text-lg font-semibold text-white mb-2">{t('subscribe.title')}</h2>
                             <p className="text-sm text-zinc-500 mb-6">{t('subscribe.desc')}</p>
 
+                            <label className="block mb-4">
+                                <span className="mb-2 block text-xs text-zinc-500">{t('subscribe.principalLabel')}</span>
+                                <div className="relative">
+                                    <input
+                                        value={projectionPrincipal}
+                                        onChange={(event) => setProjectionPrincipal(event.target.value)}
+                                        inputMode="decimal"
+                                        placeholder={t('subscribe.principalPlaceholder')}
+                                        className="w-full rounded-xl border border-white/10 bg-[#0e1014] px-3 py-2 text-sm text-white focus:border-blue-500/60 focus:outline-none"
+                                    />
+                                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500">USDT</span>
+                                </div>
+                                <div className="mt-2 text-xs text-zinc-500">
+                                    {!hasValidProjectionPrincipal
+                                        ? t('subscribe.enterPrincipal')
+                                        : selectedTermProjection?.principalBand
+                                            ? t('subscribe.bandMatched', { band: selectedTermProjection.principalBand })
+                                            : t('subscribe.outOfBand')}
+                                </div>
+                            </label>
+
                             <div className="space-y-2">
                                 {product.terms.map((term) => (
                                     <motion.div
@@ -225,22 +319,38 @@ export default function ManagedWealthDetailPage() {
                                             setPresetTermId(term.id);
                                         }}
                                     >
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="font-bold text-white">{term.label} ({term.durationDays}d)</span>
-                                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/10 text-zinc-300">
-                                                {term.targetReturnMin}-{term.targetReturnMax}% APY
-                                            </span>
-                                        </div>
+                                        {(() => {
+                                            const projection = termProjectionMap.get(term.id);
+                                            const range = projection?.displayRange ?? `${term.targetReturnMin}% - ${term.targetReturnMax}%`;
+                                            return (
+                                                <>
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="font-bold text-white">{term.label} ({term.durationDays}d)</span>
+                                                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/10 text-zinc-300">
+                                                            {range}
+                                                        </span>
+                                                    </div>
 
-                                        <div className="flex items-center gap-4 text-xs text-zinc-500">
-                                            <span>{t('subscribe.maxDrawdown', { value: term.maxDrawdown })}</span>
-                                            {product.isGuaranteed && (
-                                                <span className="flex items-center gap-1 text-emerald-400">
-                                                    <ShieldCheck className="h-3 w-3" />
-                                                    {t('subscribe.guaranteed')}
-                                                </span>
-                                            )}
-                                        </div>
+                                                    <div className="mb-2 text-[11px] text-zinc-500">
+                                                        {matrixLoading
+                                                            ? t('subscribe.matrixLoading')
+                                                            : projection?.matched
+                                                                ? t('subscribe.rangeMatched')
+                                                                : t('subscribe.rangeFallback')}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-4 text-xs text-zinc-500">
+                                                        <span>{t('subscribe.maxDrawdown', { value: term.maxDrawdown })}</span>
+                                                        {product.isGuaranteed && (
+                                                            <span className="flex items-center gap-1 text-emerald-400">
+                                                                <ShieldCheck className="h-3 w-3" />
+                                                                {t('subscribe.guaranteed')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
 
                                         <div className={`absolute inset-0 border-2 transition-all rounded-xl ${presetTermId === term.id ? 'border-blue-500' : 'border-blue-500/0 group-hover:border-blue-500/50'}`} />
                                     </motion.div>
