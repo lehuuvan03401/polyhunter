@@ -243,3 +243,10 @@
 - 已执行 `openspec validate --all --strict --no-interactive`，通过（35/35）。
 - 2026-02-26：新增缺口收口实施计划文档 `docs/plans/2026-02-26-horus-participation-partner-gap-closure-plan.md`，按 P0/P1/P2 分阶段推进剩余部分实现项。
 - 2026-02-26：新增 OpenSpec 变更 `harden-horus-participation-partner-policy`（proposal/tasks/design/spec deltas），用于推进席位硬上限、托管硬门槛、平级奖默认开启、计费口径隔离、月末淘汰自动化与退款 SLA 看门狗。
+- 2026-02-26：P0-1 已完成第一批实现：
+  - `ensurePartnerProgramConfig` 与席位分配路径改为强制归一 `maxSeats=100`。
+  - `POST /api/partners/config` 拒绝 `maxSeats != 100`（`IMMUTABLE_SEAT_CAP`）。
+  - 合伙人管理后台 `Max Seats` 改为只读展示，避免运营误改。
+  - 新增 `web/app/api/partners/config.integration.test.ts` 覆盖不可增发约束。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（12/12）。

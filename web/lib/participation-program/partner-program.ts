@@ -35,7 +35,10 @@ export function computeRefundDeadline(eliminatedAt: Date): Date {
 export async function ensurePartnerProgramConfig(prisma: PrismaClient) {
     return prisma.partnerProgramConfig.upsert({
         where: { id: 'GLOBAL' },
-        update: {},
+        update: {
+            // Policy invariant: global partner seats are permanently capped at 100.
+            maxSeats: DEFAULT_PARTNER_MAX_SEATS,
+        },
         create: {
             id: 'GLOBAL',
             maxSeats: DEFAULT_PARTNER_MAX_SEATS,

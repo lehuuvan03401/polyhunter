@@ -120,7 +120,6 @@ export default function AdminPartnerOpsPage() {
     const [seats, setSeats] = useState<PartnerSeat[]>([]);
     const [refunds, setRefunds] = useState<PartnerRefund[]>([]);
 
-    const [maxSeatsInput, setMaxSeatsInput] = useState('100');
     const [refillPriceInput, setRefillPriceInput] = useState('0');
 
     const [monthKey, setMonthKey] = useState(currentMonthKey());
@@ -167,7 +166,6 @@ export default function AdminPartnerOpsPage() {
             setConfig(configData);
             setSeats(seatsData.seats);
             setRefunds(refundsData.refunds);
-            setMaxSeatsInput(String(configData.config.maxSeats));
             setRefillPriceInput(String(configData.config.refillPriceUsd));
         } catch (error) {
             toast.error(error instanceof Error ? error.message : 'Failed to fetch partner ops data');
@@ -179,13 +177,8 @@ export default function AdminPartnerOpsPage() {
     const updateConfig = async () => {
         if (!adminWallet) return;
 
-        const maxSeats = Number(maxSeatsInput);
         const refillPriceUsd = Number(refillPriceInput);
 
-        if (!Number.isInteger(maxSeats) || maxSeats <= 0) {
-            toast.error('maxSeats must be a positive integer');
-            return;
-        }
         if (!Number.isFinite(refillPriceUsd) || refillPriceUsd < 0) {
             toast.error('refillPriceUsd must be non-negative');
             return;
@@ -200,7 +193,6 @@ export default function AdminPartnerOpsPage() {
                     ...adminHeaders,
                 },
                 body: JSON.stringify({
-                    maxSeats,
                     refillPriceUsd,
                 }),
             });
@@ -375,14 +367,12 @@ export default function AdminPartnerOpsPage() {
                 <section className="rounded-xl border border-gray-800 bg-gray-900 p-5 space-y-4">
                     <h2 className="text-lg font-semibold text-white">Seat Config</h2>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <label className="space-y-1">
-                            <span className="text-xs text-gray-400">Max Seats</span>
-                            <input
-                                value={maxSeatsInput}
-                                onChange={(e) => setMaxSeatsInput(e.target.value)}
-                                className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white"
-                            />
-                        </label>
+                        <div className="space-y-1">
+                            <span className="text-xs text-gray-400">Max Seats (Immutable)</span>
+                            <div className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-300">
+                                {config?.config.maxSeats ?? 100}
+                            </div>
+                        </div>
                         <label className="space-y-1">
                             <span className="text-xs text-gray-400">Refill Price (USD)</span>
                             <input

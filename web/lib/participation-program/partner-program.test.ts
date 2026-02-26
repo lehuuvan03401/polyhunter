@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+    DEFAULT_PARTNER_MAX_SEATS,
     computeRefundDeadline,
     derivePartnerPrivileges,
+    ensurePartnerProgramConfig,
     normalizeWalletAddress,
     parseMonthKey,
     toMonthKey,
@@ -63,5 +65,31 @@ describe('partner program helpers', () => {
             backendAccess: false,
             partnerConsoleAccess: false,
         });
+    });
+
+    it('normalizes partner config seat cap to immutable value', async () => {
+        const upsert = vi.fn().mockResolvedValue({
+            id: 'GLOBAL',
+            maxSeats: DEFAULT_PARTNER_MAX_SEATS,
+            refillPriceUsd: 0,
+        });
+        const prismaMock = {
+            partnerProgramConfig: {
+                upsert,
+            },
+        };
+
+        await ensurePartnerProgramConfig(prismaMock as any);
+
+        expect(upsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'GLOBAL' },
+                update: { maxSeats: DEFAULT_PARTNER_MAX_SEATS },
+                create: expect.objectContaining({
+                    id: 'GLOBAL',
+                    maxSeats: DEFAULT_PARTNER_MAX_SEATS,
+                }),
+            })
+        );
     });
 });

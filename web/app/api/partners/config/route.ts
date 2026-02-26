@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import {
+    DEFAULT_PARTNER_MAX_SEATS,
     ensurePartnerProgramConfig,
     getActiveSeatCount,
     isAdminRequest,
@@ -10,7 +11,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 const updateConfigSchema = z.object({
-    maxSeats: z.number().int().positive().max(1000).optional(),
+    maxSeats: z.number().int().positive().optional(),
     refillPriceUsd: z.number().nonnegative().max(1_000_000).optional(),
 });
 
@@ -66,12 +67,25 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
+        if (
+            parsed.data.maxSeats !== undefined &&
+            parsed.data.maxSeats !== DEFAULT_PARTNER_MAX_SEATS
+        ) {
+            return NextResponse.json(
+                {
+                    error: `Global partner seat cap is immutable at ${DEFAULT_PARTNER_MAX_SEATS}`,
+                    code: 'IMMUTABLE_SEAT_CAP',
+                    allowedMaxSeats: DEFAULT_PARTNER_MAX_SEATS,
+                },
+                { status: 409 }
+            );
+        }
 
         const existing = await ensurePartnerProgramConfig(prisma);
         const config = await prisma.partnerProgramConfig.update({
             where: { id: existing.id },
             data: {
-                ...(parsed.data.maxSeats !== undefined ? { maxSeats: parsed.data.maxSeats } : {}),
+                maxSeats: DEFAULT_PARTNER_MAX_SEATS,
                 ...(parsed.data.refillPriceUsd !== undefined ? { refillPriceUsd: parsed.data.refillPriceUsd } : {}),
             },
         });

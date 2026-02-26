@@ -84,7 +84,8 @@ curl -s "$BASE_URL/api/partners/config" \
   -H "x-admin-wallet: $ADMIN_WALLET"
 ```
 2. Verify `stats.refill.openSeats` and `stats.refill.refillPriceUsd`.
-3. Seat allocation uses `POST /api/partners/seats` and is blocked when cap is reached (`SEAT_CAP_REACHED`).
+3. `maxSeats` is immutable and fixed at 100 by policy; only refill price is operationally configurable.
+4. Seat allocation uses `POST /api/partners/seats` and is blocked when cap is reached (`SEAT_CAP_REACHED`).
 
 ## Incident Handling
 

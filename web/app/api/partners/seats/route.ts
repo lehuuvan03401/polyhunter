@@ -128,7 +128,9 @@ export async function POST(request: NextRequest) {
         const result = await prisma.$transaction(async (tx) => {
             const config = await tx.partnerProgramConfig.upsert({
                 where: { id: 'GLOBAL' },
-                update: {},
+                update: {
+                    maxSeats: DEFAULT_PARTNER_MAX_SEATS,
+                },
                 create: {
                     id: 'GLOBAL',
                     maxSeats: DEFAULT_PARTNER_MAX_SEATS,

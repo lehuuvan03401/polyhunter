@@ -158,11 +158,12 @@
 - 推进上一轮“部分实现”条款收口，形成对外规则与系统行为一致的可发布版本。
 
 ## 分阶段
-- [in_progress] 阶段 1：收口计划固化（OpenSpec change + 执行计划文档）
-- [pending] 阶段 2：P0 硬约束实现（席位上限、托管硬门槛、平级奖默认、费路隔离）
+- [complete] 阶段 1：收口计划固化（OpenSpec change + 执行计划文档）
+- [in_progress] 阶段 2：P0 硬约束实现（席位上限、托管硬门槛、平级奖默认、费路隔离）
 - [pending] 阶段 3：P1 自动化与边界校验（淘汰调度、退款 SLA 看门狗、FREE 边界）
 - [pending] 阶段 4：验证与发布闸门（单测/集成/E2E + runbook）
 
 ## 本轮交付
 - OpenSpec 变更：`harden-horus-participation-partner-policy`
 - 计划文档：`docs/plans/2026-02-26-horus-participation-partner-gap-closure-plan.md`
+- 阶段 2 进展（P0-1）：已实现全球席位上限 100 不可增发约束（后端归一化 + 配置接口拒绝 >100 + 管理台只读展示 + 集成测试）。
