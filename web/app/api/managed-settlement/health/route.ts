@@ -123,6 +123,18 @@ export async function GET(request: NextRequest) {
             .filter((entry) => entry.openPositionsCount > 0)
             .sort((left, right) => right.ageMinutes - left.ageMinutes);
         const readyToSettle = liquidationDetails.filter((entry) => entry.openPositionsCount === 0);
+        const liquidationTaskStatusRows = await prisma.$queryRaw<Array<{ status: string; count: bigint }>>`
+            SELECT "status", COUNT(*)::bigint AS count
+            FROM "ManagedLiquidationTask"
+            GROUP BY "status"
+        `;
+        const liquidationTaskStatusMap = new Map(
+            liquidationTaskStatusRows.map((row) => [row.status, Number(row.count)])
+        );
+        const pendingLiquidationTasks = liquidationTaskStatusMap.get('PENDING') ?? 0;
+        const retryingLiquidationTasks = liquidationTaskStatusMap.get('RETRYING') ?? 0;
+        const blockedLiquidationTasks = liquidationTaskStatusMap.get('BLOCKED') ?? 0;
+        const failedLiquidationTasks = liquidationTaskStatusMap.get('FAILED') ?? 0;
 
         const parityWindowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
         const profitableSettlements = await prisma.managedSettlement.findMany({
@@ -270,6 +282,12 @@ export async function GET(request: NextRequest) {
                 backlogCount: liquidationBacklog.length,
                 readyToSettleCount: readyToSettle.length,
                 backlogOldestAgeMinutes: liquidationBacklog[0]?.ageMinutes ?? 0,
+                taskStatus: {
+                    pending: pendingLiquidationTasks,
+                    retrying: retryingLiquidationTasks,
+                    blocked: blockedLiquidationTasks,
+                    failed: failedLiquidationTasks,
+                },
                 backlog: liquidationBacklog.slice(0, 20),
             },
             settlementCommissionParity: {

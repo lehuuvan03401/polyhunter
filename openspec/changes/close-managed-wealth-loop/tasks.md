@@ -11,7 +11,7 @@
 - [ ] 2.4 Update managed worker to consume allocation snapshots instead of static primary-agent mapping.
 
 ## 3. Liquidation and settlement parity
-- [ ] 3.1 Replace synthetic liquidation records with real executable liquidation path (or explicit pending retry state).
+- [x] 3.1 Replace synthetic liquidation records with real executable liquidation path (or explicit pending retry state).
 - [x] 3.2 Refactor settlement into shared domain service used by withdraw API, worker, and admin settlement API.
 - [x] 3.3 Enforce commission distribution trigger parity for profitable managed settlements in all entrypaths.
 - [x] 3.4 Add idempotency guard for settlement + profit-fee distribution event pair.

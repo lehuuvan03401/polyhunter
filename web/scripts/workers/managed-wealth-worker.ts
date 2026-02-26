@@ -3,8 +3,7 @@ import 'dotenv/config';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
-    PrismaClient,
-    CopyTradeStatus
+    PrismaClient
 } from '@prisma/client';
 import {
     calculateCoverageRatio,
@@ -20,6 +19,7 @@ import {
     countManagedOpenPositionsWithFallback,
     listManagedOpenPositionsWithFallback,
 } from '../../lib/managed-wealth/subscription-position-scope';
+import { resolveManagedLiquidationIntent } from '../../lib/managed-wealth/liquidation-intent';
 import { polyClient } from '../../lib/polymarket';
 import { affiliateEngine } from '../../lib/services/affiliate-engine';
 
@@ -34,6 +34,7 @@ const LOOP_INTERVAL_MS = Math.max(10_000, Number(process.env.MANAGED_WEALTH_LOOP
 const MAP_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_MAP_BATCH_SIZE || 100));
 const NAV_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_NAV_BATCH_SIZE || 500));
 const SETTLEMENT_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_SETTLEMENT_BATCH_SIZE || 300));
+const LIQUIDATION_RETRY_BASE_MS = Math.max(10_000, Number(process.env.MANAGED_LIQUIDATION_RETRY_BASE_MS || 120_000));
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -435,7 +436,7 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
         },
     });
 
-    let liquidatedCount = 0;
+    let taskUpdates = 0;
 
     for (const sub of liquidatingSubs) {
         const openPositions = await listManagedOpenPositionsWithFallback(prisma, {
@@ -444,8 +445,22 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
             copyConfigId: sub.copyConfigId,
         });
 
-        if (openPositions.length === 0) continue;
-        if (!sub.copyConfigId) continue;
+        if (openPositions.length === 0) {
+            await prisma.managedLiquidationTask.updateMany({
+                where: {
+                    subscriptionId: sub.id,
+                    status: { in: ['PENDING', 'RETRYING', 'BLOCKED'] },
+                },
+                data: {
+                    status: 'COMPLETED',
+                    errorCode: null,
+                    errorMessage: null,
+                    nextRetryAt: null,
+                    lastAttemptAt: now,
+                },
+            });
+            continue;
+        }
 
         const tokensToFetch = openPositions.map((p: { tokenId: string }) => p.tokenId);
         const currentPriceMap = new Map<string, number>();
@@ -468,55 +483,56 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
 
         for (const pos of openPositions) {
             const curPrice = currentPriceMap.get(pos.tokenId) ?? 0;
-            const proceeds = pos.balance * curPrice;
-            const costBasis = pos.balance * pos.avgEntryPrice;
-            const pnl = proceeds - costBasis;
-
-            await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => {
-                // Log mock settlement copytrade
-                await tx.copyTrade.create({
-                    data: {
-                        configId: sub.copyConfigId!,
-                        originalTrader: 'SYSTEM_LIQUIDATOR',
-                        originalSide: 'SELL',
-                        originalSize: pos.balance,
-                        originalPrice: curPrice,
-                        tokenId: pos.tokenId,
-                        copySize: proceeds,
-                        copyPrice: curPrice,
-                        status: CopyTradeStatus.EXECUTED,
-                        txHash: `sim-liquidation-${Date.now()}-${pos.tokenId.substring(0, 6)}`,
-                        realizedPnL: pnl,
-                        executedAt: now,
-                    }
-                });
-
-                if (pos.source === 'SCOPED') {
-                    await tx.managedSubscriptionPosition.update({
-                        where: { id: pos.id },
-                        data: {
-                            balance: 0,
-                            totalCost: 0,
-                            avgEntryPrice: 0,
-                        }
-                    });
-                }
-
-                // Keep legacy wallet-level position table broadly in sync by decrementing only sold shares.
-                await tx.$executeRaw`
-                    UPDATE "UserPosition"
-                    SET
-                        "balance" = GREATEST(0, "balance" - ${pos.balance}),
-                        "totalCost" = GREATEST(0, GREATEST(0, "balance" - ${pos.balance}) * "avgEntryPrice"),
-                        "updatedAt" = NOW()
-                    WHERE "walletAddress" = ${pos.walletAddress} AND "tokenId" = ${pos.tokenId}
-                `;
+            const intent = resolveManagedLiquidationIntent({
+                hasCopyConfig: Boolean(sub.copyConfigId),
+                indicativeBidPrice: curPrice,
             });
-            liquidatedCount++;
+            const nextRetryAt = new Date(now.getTime() + LIQUIDATION_RETRY_BASE_MS);
+
+            await prisma.managedLiquidationTask.upsert({
+                where: {
+                    subscriptionId_tokenId: {
+                        subscriptionId: sub.id,
+                        tokenId: pos.tokenId,
+                    },
+                },
+                update: {
+                    walletAddress: pos.walletAddress,
+                    copyConfigId: sub.copyConfigId ?? null,
+                    requestedShares: pos.balance,
+                    avgEntryPrice: pos.avgEntryPrice,
+                    indicativePrice: curPrice > 0 ? curPrice : null,
+                    notionalUsd: curPrice > 0 ? Number((pos.balance * curPrice).toFixed(8)) : null,
+                    status: intent.status,
+                    attemptCount: { increment: 1 },
+                    lastAttemptAt: now,
+                    nextRetryAt: intent.status === 'BLOCKED' ? null : nextRetryAt,
+                    errorCode: intent.errorCode,
+                    errorMessage: intent.errorMessage,
+                },
+                create: {
+                    subscriptionId: sub.id,
+                    walletAddress: pos.walletAddress,
+                    copyConfigId: sub.copyConfigId ?? null,
+                    tokenId: pos.tokenId,
+                    requestedShares: pos.balance,
+                    avgEntryPrice: pos.avgEntryPrice,
+                    indicativePrice: curPrice > 0 ? curPrice : null,
+                    notionalUsd: curPrice > 0 ? Number((pos.balance * curPrice).toFixed(8)) : null,
+                    status: intent.status,
+                    attemptCount: 1,
+                    lastAttemptAt: now,
+                    nextRetryAt: intent.status === 'BLOCKED' ? null : nextRetryAt,
+                    errorCode: intent.errorCode,
+                    errorMessage: intent.errorMessage,
+                },
+            });
+
+            taskUpdates += 1;
         }
     }
 
-    return liquidatedCount;
+    return taskUpdates;
 }
 
 async function runCycle(): Promise<void> {

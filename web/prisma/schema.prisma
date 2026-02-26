@@ -269,6 +269,14 @@ enum ManagedPrincipalReservationEntryType {
   RELEASE
 }
 
+enum ManagedLiquidationTaskStatus {
+  PENDING
+  RETRYING
+  BLOCKED
+  COMPLETED
+  FAILED
+}
+
 // Managed risk control actions
 enum ManagedRiskAction {
   DELEVERAGE
@@ -578,6 +586,7 @@ model ManagedSubscription {
   settlement         ManagedSettlement?
   settlementExecutions ManagedSettlementExecution[]
   principalReservations ManagedPrincipalReservationLedger[]
+  liquidationTasks   ManagedLiquidationTask[]
   reserveFundEntries ReserveFundLedger[]
   riskEvents         ManagedRiskEvent[]
   scopedPositions    ManagedSubscriptionPosition[]
@@ -691,6 +700,32 @@ model ManagedPrincipalReservationLedger {
   @@index([walletAddress, createdAt])
   @@index([walletAddress, entryType, createdAt])
   @@index([subscriptionId, createdAt])
+}
+
+model ManagedLiquidationTask {
+  id              String                      @id @default(cuid())
+  subscriptionId  String
+  subscription    ManagedSubscription         @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  walletAddress   String
+  copyConfigId    String?
+  tokenId         String
+  requestedShares Float
+  avgEntryPrice   Float
+  indicativePrice Float?
+  notionalUsd     Float?
+  status          ManagedLiquidationTaskStatus @default(PENDING)
+  attemptCount    Int                         @default(0)
+  lastAttemptAt   DateTime?
+  nextRetryAt     DateTime?
+  errorCode       String?
+  errorMessage    String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@unique([subscriptionId, tokenId])
+  @@index([status, nextRetryAt])
+  @@index([subscriptionId, status])
+  @@index([walletAddress, status])
 }
 
 model ReserveFundLedger {

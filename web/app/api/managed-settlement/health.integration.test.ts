@@ -79,6 +79,10 @@ async function setupRoute(params?: {
     ]);
 
     const commissionLogFindMany = vi.fn().mockResolvedValue([]);
+    const liquidationTaskStatusQuery = vi.fn().mockResolvedValue([
+        { status: 'PENDING', count: 1 as unknown as bigint },
+        { status: 'RETRYING', count: 1 as unknown as bigint },
+    ]);
 
     vi.useFakeTimers();
     vi.setSystemTime(now);
@@ -98,6 +102,7 @@ async function setupRoute(params?: {
             commissionLog: {
                 findMany: commissionLogFindMany,
             },
+            $queryRaw: liquidationTaskStatusQuery,
         },
         isDatabaseEnabled: true,
     }));
@@ -156,6 +161,10 @@ describe('Managed settlement health route integration', () => {
         expect(body.liquidation.totalLiquidating).toBe(2);
         expect(body.liquidation.backlogCount).toBe(1);
         expect(body.liquidation.readyToSettleCount).toBe(1);
+        expect(body.liquidation.taskStatus.pending).toBe(1);
+        expect(body.liquidation.taskStatus.retrying).toBe(1);
+        expect(body.liquidation.taskStatus.blocked).toBe(0);
+        expect(body.liquidation.taskStatus.failed).toBe(0);
 
         expect(body.settlementCommissionParity.checkedSettlements).toBe(2);
         expect(body.settlementCommissionParity.settlementsWithReferral).toBe(1);

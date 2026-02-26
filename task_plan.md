@@ -237,6 +237,13 @@
 - [complete] 订阅模型新增 `custodyAuthorizationId` 引用，详情查询可审计授权 + 预留流水
 - [complete] 新增测试：`principal-reservation` 单测 + `managed-subscriptions.principal-reservation` 集成测试
 
+### Phase F 当前进度（清仓模拟成交替换为显式重试状态）
+- [complete] 新增 `ManagedLiquidationTask` 模型与迁移，持久化清仓任务状态（`PENDING/RETRYING/BLOCKED/COMPLETED/FAILED`）
+- [complete] `managed-wealth-worker` 移除 `SYSTEM_LIQUIDATOR` 模拟成交写入与强制归零持仓逻辑
+- [complete] 清仓阶段改为写入 liquidation task（显式 pending/retry/block）并等待外部执行闭环
+- [complete] health 接口补充 liquidation task 状态统计（pending/retrying/blocked/failed）
+- [complete] 新增纯函数与单测：`liquidation-intent`（状态决策口径）
+
 ## 错误记录
 | 时间 | 位置 | 错误 | 处理 |
 |---|---|---|---|

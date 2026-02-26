@@ -217,3 +217,8 @@
 - 之前订阅创建只校验“净入金 >= 最低门槛”，没有扣减“已被其它活跃订阅占用的本金”，同钱包可重复超额订阅。
 - 通过 `ManagedPrincipalReservationLedger` + 可用余额计算（净入金 - 已预留，且对历史数据用 active subscriptions 做 fallback），可以在不依赖全量历史回填的情况下先强约束新单。
 - 结算阶段补 `RELEASE` 后，资金占用与订阅生命周期形成可追踪闭环；同时把 `custodyAuthorizationId` 挂到订阅上，满足授权审计链路。
+
+### 2026-02-26 新增发现：模拟清仓会污染审计口径，需改为显式清仓任务状态
+- 原有 `managed-wealth-worker` 在 `LIQUIDATING` 阶段直接写 `SYSTEM_LIQUIDATOR` 的 `CopyTrade(EXECUTED)` 并归零持仓，属于模拟成交，不具备真实执行证据。
+- 将该路径替换为 `ManagedLiquidationTask`（`PENDING/RETRYING/BLOCKED/...`）后，系统行为从“伪完成”转为“显式待执行/待重试”，更符合结算完整性和审计可追溯要求。
+- 该改动的代价是：在外部清仓执行器接入前，部分订阅会在 `LIQUIDATING` 停留更久；但这比错误地提前结算更安全。

@@ -387,3 +387,10 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts ...`（本批 15/15），通过。
 - 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
+- 2026-02-26：新增 `ManagedLiquidationTask` 模型与迁移 `20260226204000_add_managed_liquidation_task`，用于托管清仓显式状态跟踪。
+- 2026-02-26：`managed-wealth-worker` 清仓阶段已移除模拟成交写入（不再生成 `SYSTEM_LIQUIDATOR` / `sim-liquidation-*` 记录），改为落库 liquidation task（`PENDING/RETRYING/BLOCKED`）并等待外部执行。
+- 2026-02-26：`/api/managed-settlement/health` 新增 liquidation task 状态统计（pending/retrying/blocked/failed）。
+- 2026-02-26：新增 `web/lib/managed-wealth/liquidation-intent.ts` 与单测 `liquidation-intent.test.ts`，统一清仓任务状态决策口径。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts ...`（本批 18/18），通过。
+- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
