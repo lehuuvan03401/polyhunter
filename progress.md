@@ -287,6 +287,14 @@
   - 新增回填脚本：`web/scripts/db/backfill-managed-subscription-positions.ts`（按 `copyConfigId` 回放 `CopyTrade` 生成订阅维度持仓）。
   - 新增运行命令：`cd web && npm run backfill:managed-positions`。
   - 该脚本已接入代码仓库，尚未在当前环境执行（需真实数据库上下文）。
+- 2026-02-26：Phase B 第三批实现（迁移期 fallback 护栏）：
+  - 新增共享 helper：`web/lib/managed-wealth/subscription-position-scope.ts`。
+  - 逻辑：优先读 `ManagedSubscriptionPosition`；若 scoped 为空，则按 `copyConfigId` 的 `CopyTrade.tokenId` 集合回退查询 legacy `UserPosition`。
+  - `withdraw` / `managed-settlement/run` / `managed-wealth-worker` 已接入该 fallback，降低“回填前误判无仓位可结算”的风险。
+  - 已执行 `cd sdk && npm run build`，通过。
+  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
+  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
+  - 已执行 `cd web && npx tsc --noEmit`，仍被 `subscription-modal.tsx` 既有 3 处类型错误阻断（非本批改动引入）。
 - 2026-02-26：补充边界强校验：
   - `web/app/api/managed-subscriptions/route.ts` 新增 FREE 模式账户托管订阅拦截（`MODE_BOUNDARY_VIOLATION`）。
   - `web/app/api/participation/custody-auth/route.ts` 限制授权模式为 `MANAGED`（拒绝 `FREE`）。

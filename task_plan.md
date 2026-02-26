@@ -213,6 +213,7 @@
 - [complete] managed 关键入口改为按 `subscriptionId` 判定未平仓（withdraw / settlement-run / managed-worker）
 - [complete] 交易执行链路新增 managed 持仓写入（`TradeOrchestrator` 侧按 `copyConfigId` 解析订阅作用域并写入 scoped position）
 - [complete] 新增历史持仓回填脚本（`backfill:managed-positions`）
+- [complete] 迁移期 fallback（scoped 为空时按 copyTrade token 集合回退 legacy position）接入 withdraw/run/worker
 - [pending] 生产读切换前回填验证与对账
 
 ## 错误记录

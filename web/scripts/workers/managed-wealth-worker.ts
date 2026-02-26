@@ -16,6 +16,10 @@ import {
     settleManagedProfitFeeIfNeeded,
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '../../lib/managed-wealth/managed-settlement-service';
+import {
+    countManagedOpenPositionsWithFallback,
+    listManagedOpenPositionsWithFallback,
+} from '../../lib/managed-wealth/subscription-position-scope';
 import { polyClient } from '../../lib/polymarket';
 import { affiliateEngine } from '../../lib/services/affiliate-engine';
 
@@ -183,11 +187,10 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
                 where: { subscriptionId: sub.id },
                 _max: { nav: true },
             }),
-            prisma.managedSubscriptionPosition.findMany({
-                where: {
-                    subscriptionId: sub.id,
-                    balance: { gt: 0 }
-                }
+            listManagedOpenPositionsWithFallback(prisma, {
+                subscriptionId: sub.id,
+                walletAddress: sub.walletAddress,
+                copyConfigId: sub.copyConfigId,
             })
         ]);
 
@@ -315,11 +318,10 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
         if (sub.settlement?.status === 'COMPLETED') continue;
 
         // Check if there are open positions
-        const openPositionsCount = await prisma.managedSubscriptionPosition.count({
-            where: {
-                subscriptionId: sub.id,
-                balance: { gt: 0 }
-            }
+        const openPositionsCount = await countManagedOpenPositionsWithFallback(prisma, {
+            subscriptionId: sub.id,
+            walletAddress: sub.walletAddress,
+            copyConfigId: sub.copyConfigId,
         });
 
         if (openPositionsCount > 0) {
@@ -435,11 +437,10 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
     let liquidatedCount = 0;
 
     for (const sub of liquidatingSubs) {
-        const openPositions = await prisma.managedSubscriptionPosition.findMany({
-            where: {
-                subscriptionId: sub.id,
-                balance: { gt: 0 }
-            }
+        const openPositions = await listManagedOpenPositionsWithFallback(prisma, {
+            subscriptionId: sub.id,
+            walletAddress: sub.walletAddress,
+            copyConfigId: sub.copyConfigId,
         });
 
         if (openPositions.length === 0) continue;
@@ -489,15 +490,16 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
                     }
                 });
 
-                // Delete or zero out user position
-                await tx.managedSubscriptionPosition.update({
-                    where: { id: pos.id },
-                    data: {
-                        balance: 0,
-                        totalCost: 0,
-                        avgEntryPrice: 0,
-                    }
-                });
+                if (pos.source === 'SCOPED') {
+                    await tx.managedSubscriptionPosition.update({
+                        where: { id: pos.id },
+                        data: {
+                            balance: 0,
+                            totalCost: 0,
+                            avgEntryPrice: 0,
+                        }
+                    });
+                }
 
                 // Keep legacy wallet-level position table broadly in sync by decrementing only sold shares.
                 await tx.$executeRaw`

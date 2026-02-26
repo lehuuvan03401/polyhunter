@@ -8,6 +8,7 @@ import {
     settleManagedProfitFeeIfNeeded,
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '@/lib/managed-wealth/managed-settlement-service';
+import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,11 +109,10 @@ export async function POST(request: NextRequest) {
                 continue;
             }
 
-            const openPositionsCount = await prisma.managedSubscriptionPosition.count({
-                where: {
-                    subscriptionId: sub.id,
-                    balance: { gt: 0 },
-                },
+            const openPositionsCount = await countManagedOpenPositionsWithFallback(prisma, {
+                subscriptionId: sub.id,
+                walletAddress: sub.walletAddress,
+                copyConfigId: sub.copyConfigId,
             });
 
             if (openPositionsCount > 0) {

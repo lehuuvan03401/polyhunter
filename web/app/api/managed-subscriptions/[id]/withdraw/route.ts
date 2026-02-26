@@ -9,6 +9,7 @@ import {
     settleManagedProfitFeeIfNeeded,
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '@/lib/managed-wealth/managed-settlement-service';
+import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,11 +138,10 @@ export async function POST(
                 });
             }
 
-            const openPositionsCount = await tx.managedSubscriptionPosition.count({
-                where: {
-                    subscriptionId: subscription.id,
-                    balance: { gt: 0 }
-                }
+            const openPositionsCount = await countManagedOpenPositionsWithFallback(tx, {
+                subscriptionId: subscription.id,
+                walletAddress: walletContext.wallet,
+                copyConfigId: subscription.copyConfigId,
             });
 
             if (openPositionsCount > 0) {
