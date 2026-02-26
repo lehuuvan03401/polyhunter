@@ -241,3 +241,5 @@
   - `openspec/specs/affiliate-system/spec.md`
   - `openspec/specs/fee-logic/spec.md`
 - 已执行 `openspec validate --all --strict --no-interactive`，通过（35/35）。
+- 2026-02-26：新增缺口收口实施计划文档 `docs/plans/2026-02-26-horus-participation-partner-gap-closure-plan.md`，按 P0/P1/P2 分阶段推进剩余部分实现项。
+- 2026-02-26：新增 OpenSpec 变更 `harden-horus-participation-partner-policy`（proposal/tasks/design/spec deltas），用于推进席位硬上限、托管硬门槛、平级奖默认开启、计费口径隔离、月末淘汰自动化与退款 SLA 看门狗。

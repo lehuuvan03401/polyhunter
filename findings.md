@@ -148,3 +148,8 @@
 ### 2026-02-26 开发推进发现（OpenSpec 归档）
 - 任务全量完成后立即归档可把“change 内规则”沉淀为 `specs` 单一事实来源，避免后续继续基于已归档 change 开发导致口径分叉。
 - `openspec validate --all` 在归档后可一次性验证活跃 change 与正式 specs 一致性，适合作为收口闸门。
+
+### 2026-02-26 开发推进发现（缺口收口计划）
+- 目前“部分实现”项可收敛为四类：硬约束（cap/gate）、默认行为（same-level bonus）、自动化（elimination/SLA watchdog）、边界隔离（FREE 与 fee scope）。
+- 优先级上必须先做 P0 约束收口，否则外宣规则与真实系统行为仍存在偏差。
+- 建议用新 OpenSpec change 独立承载本轮收口，避免和已归档 change 混用造成审计歧义。
