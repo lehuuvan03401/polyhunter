@@ -252,6 +252,7 @@ export async function POST(
         // Do not fail user withdrawal if affiliate distribution path is temporarily unavailable.
         try {
             await settleManagedProfitFeeIfNeeded({
+                db: prisma,
                 distributor: async (walletAddress, realizedProfit, tradeId, options) =>
                     affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
                 walletAddress: walletContext.wallet,

@@ -256,6 +256,14 @@ enum ManagedSettlementStatus {
   FAILED
 }
 
+enum ManagedCommissionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
 // Managed risk control actions
 enum ManagedRiskAction {
   DELEVERAGE
@@ -561,6 +569,7 @@ model ManagedSubscription {
 
   navSnapshots       ManagedNavSnapshot[]
   settlement         ManagedSettlement?
+  settlementExecutions ManagedSettlementExecution[]
   reserveFundEntries ReserveFundLedger[]
   riskEvents         ManagedRiskEvent[]
   scopedPositions    ManagedSubscriptionPosition[]
@@ -628,9 +637,32 @@ model ManagedSettlement {
   errorMessage       String?
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
+  execution          ManagedSettlementExecution?
 
   @@index([status, createdAt])
   @@index([settledAt])
+}
+
+model ManagedSettlementExecution {
+  id                    String                  @id @default(cuid())
+  settlementId          String                  @unique
+  settlement            ManagedSettlement       @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  subscriptionId        String
+  subscription          ManagedSubscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  walletAddress         String
+  grossPnl              Float
+  profitFeeTradeId      String                  @unique
+  profitFeeScope        String
+  commissionStatus      ManagedCommissionStatus @default(PENDING)
+  commissionSettledAt   DateTime?
+  commissionSkippedReason String?
+  commissionError       String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@index([commissionStatus, createdAt])
+  @@index([subscriptionId, commissionStatus])
+  @@index([walletAddress, createdAt])
 }
 
 model ReserveFundLedger {

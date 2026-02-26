@@ -2,7 +2,7 @@
 - [ ] 1.1 Add subscription-scoped allocation model (`ManagedSubscriptionAllocation`) with versioning and score snapshots.
 - [ ] 1.2 Add managed principal reservation ledger for subscription-level reserved/released amounts.
 - [x] 1.3 Add execution scope isolation for positions (extend `UserPosition` with scope key or introduce dedicated managed position model).
-- [ ] 1.4 Add settlement execution/idempotency record to unify settlement + commission status transitions.
+- [x] 1.4 Add settlement execution/idempotency record to unify settlement + commission status transitions.
 
 ## 2. Allocation and execution loop
 - [ ] 2.1 Implement score-based trader candidate pipeline from leaderboard/scoring services by strategy profile.
@@ -14,7 +14,7 @@
 - [ ] 3.1 Replace synthetic liquidation records with real executable liquidation path (or explicit pending retry state).
 - [x] 3.2 Refactor settlement into shared domain service used by withdraw API, worker, and admin settlement API.
 - [x] 3.3 Enforce commission distribution trigger parity for profitable managed settlements in all entrypaths.
-- [ ] 3.4 Add idempotency guard for settlement + profit-fee distribution event pair.
+- [x] 3.4 Add idempotency guard for settlement + profit-fee distribution event pair.
 
 ## 4. Participation boundary and principal linkage
 - [ ] 4.1 Enforce managed subscription creation against available managed principal reservation balance.

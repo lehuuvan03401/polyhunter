@@ -224,6 +224,12 @@
 - [complete] 新增路由集成测试：`web/app/api/managed-settlement/health.integration.test.ts`
 - [pending] 接入告警通知与定时巡检脚本（将 health 指标接入现有运维看门狗）
 
+### Phase D 当前进度（结算-分润幂等收口）
+- [complete] 新增 `ManagedSettlementExecution` 模型与迁移，持久化结算后的分润处理状态
+- [complete] `settleManagedProfitFeeIfNeeded` 改造为“可抢占处理”流程（`PENDING/FAILED -> PROCESSING -> COMPLETED|FAILED|SKIPPED`）
+- [complete] withdraw/run/worker 三入口统一接入 execution ledger，避免同一 settlement 重复分润
+- [complete] 新增单测：`web/lib/managed-wealth/managed-settlement-service.test.ts`
+
 ## 错误记录
 | 时间 | 位置 | 错误 | 处理 |
 |---|---|---|---|

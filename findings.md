@@ -207,3 +207,8 @@
   - `LIQUIDATING` 积压（有未平仓位但长期未清）
   - 盈利结算后分润缺失或金额偏差（按 `managed-withdraw:<subscriptionId>:<settlementId>` 对账）
 - 在 admin 增加 `Managed Ops` 面板比单纯日志排查更有效，能把异常列表直接给运营执行处理。
+
+### 2026-02-26 新增发现：仅靠 `AffiliateEngine` 内部查重不足以覆盖跨入口并发
+- 托管结算存在三个入口（withdraw/run/worker），若并发触发同一 settlement，单靠 `CommissionLog` 读后写查重存在竞态窗口。
+- 引入 `ManagedSettlementExecution` 后，可以将“是否已处理/是否在处理中”状态前置到统一账本，用 `updateMany` claim 实现入口级互斥。
+- 该账本同时保留 `FAILED` 原因和 `SKIPPED` 原因，为后续重试器和运维排障提供直接证据。

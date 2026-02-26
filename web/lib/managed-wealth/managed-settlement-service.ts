@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import type { ManagedSubscriptionStatus, PrismaClient } from '@prisma/client';
+import type {
+    ManagedCommissionStatus,
+    ManagedSubscriptionStatus,
+    PrismaClient,
+} from '@prisma/client';
 import { calculateManagedSettlement, calculateReserveBalance } from './settlement-math';
 import type { ParticipationProfitFeeScope } from '@/lib/participation-program/fee-scope';
 
@@ -11,6 +15,11 @@ type SettlementModelDelegates = Pick<
 type LiquidationModelDelegates = Pick<
     PrismaClient,
     'managedSubscription' | 'copyTradingConfig'
+>;
+
+type SettlementExecutionDelegates = Pick<
+    PrismaClient,
+    'managedSettlementExecution'
 >;
 
 type SettlementSubscription = Prisma.ManagedSubscriptionGetPayload<{
@@ -342,7 +351,38 @@ type ProfitFeeDistributor = (
     options?: { scope?: ParticipationProfitFeeScope }
 ) => Promise<void>;
 
+const COMMISSION_CLAIMABLE_STATUSES: ManagedCommissionStatus[] = ['PENDING', 'FAILED'];
+const FINAL_COMMISSION_STATUSES: ManagedCommissionStatus[] = ['COMPLETED', 'SKIPPED'];
+const MAX_COMMISSION_ERROR_LENGTH = 500;
+
+function stringifyCommissionError(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message.slice(0, MAX_COMMISSION_ERROR_LENGTH);
+    }
+    return String(error).slice(0, MAX_COMMISSION_ERROR_LENGTH);
+}
+
+export type ManagedProfitFeeSettlementResult =
+    | {
+        status: 'SKIPPED_NON_PROFIT';
+        tradeId: string;
+    }
+    | {
+        status: 'SKIPPED_ALREADY_FINALIZED';
+        tradeId: string;
+        commissionStatus: ManagedCommissionStatus;
+    }
+    | {
+        status: 'SKIPPED_ALREADY_PROCESSING';
+        tradeId: string;
+    }
+    | {
+        status: 'COMPLETED';
+        tradeId: string;
+    };
+
 export async function settleManagedProfitFeeIfNeeded(input: {
+    db: SettlementExecutionDelegates;
     distributor: ProfitFeeDistributor;
     walletAddress: string;
     subscriptionId: string;
@@ -350,15 +390,115 @@ export async function settleManagedProfitFeeIfNeeded(input: {
     grossPnl: number;
     scope?: ParticipationProfitFeeScope;
     sourcePrefix?: string;
-}): Promise<void> {
+}): Promise<ManagedProfitFeeSettlementResult> {
     const realizedProfit = Number(input.grossPnl ?? 0);
-    if (realizedProfit <= 0) return;
-
     const sourcePrefix = input.sourcePrefix ?? 'managed-withdraw';
-    await input.distributor(
-        input.walletAddress,
-        realizedProfit,
-        `${sourcePrefix}:${input.subscriptionId}:${input.settlementId}`,
-        { scope: input.scope ?? 'MANAGED_WITHDRAWAL' }
-    );
+    const tradeId = `${sourcePrefix}:${input.subscriptionId}:${input.settlementId}`;
+
+    const execution = await input.db.managedSettlementExecution.upsert({
+        where: {
+            settlementId: input.settlementId,
+        },
+        update: {
+            subscriptionId: input.subscriptionId,
+            walletAddress: input.walletAddress,
+            grossPnl: realizedProfit,
+            profitFeeTradeId: tradeId,
+            profitFeeScope: input.scope ?? 'MANAGED_WITHDRAWAL',
+        },
+        create: {
+            settlementId: input.settlementId,
+            subscriptionId: input.subscriptionId,
+            walletAddress: input.walletAddress,
+            grossPnl: realizedProfit,
+            profitFeeTradeId: tradeId,
+            profitFeeScope: input.scope ?? 'MANAGED_WITHDRAWAL',
+            commissionStatus: realizedProfit > 0 ? 'PENDING' : 'SKIPPED',
+            commissionSkippedReason: realizedProfit > 0 ? null : 'NON_PROFITABLE',
+        },
+        select: {
+            commissionStatus: true,
+        },
+    });
+
+    if (realizedProfit <= 0) {
+        if (execution.commissionStatus !== 'SKIPPED') {
+            await input.db.managedSettlementExecution.update({
+                where: {
+                    settlementId: input.settlementId,
+                },
+                data: {
+                    commissionStatus: 'SKIPPED',
+                    commissionSkippedReason: 'NON_PROFITABLE',
+                    commissionError: null,
+                },
+            });
+        }
+        return {
+            status: 'SKIPPED_NON_PROFIT',
+            tradeId,
+        };
+    }
+
+    if (FINAL_COMMISSION_STATUSES.includes(execution.commissionStatus)) {
+        return {
+            status: 'SKIPPED_ALREADY_FINALIZED',
+            tradeId,
+            commissionStatus: execution.commissionStatus,
+        };
+    }
+
+    const claim = await input.db.managedSettlementExecution.updateMany({
+        where: {
+            settlementId: input.settlementId,
+            commissionStatus: { in: COMMISSION_CLAIMABLE_STATUSES },
+        },
+        data: {
+            commissionStatus: 'PROCESSING',
+            commissionError: null,
+            commissionSkippedReason: null,
+        },
+    });
+
+    if (claim.count === 0) {
+        return {
+            status: 'SKIPPED_ALREADY_PROCESSING',
+            tradeId,
+        };
+    }
+
+    try {
+        await input.distributor(
+            input.walletAddress,
+            realizedProfit,
+            tradeId,
+            { scope: input.scope ?? 'MANAGED_WITHDRAWAL' }
+        );
+
+        await input.db.managedSettlementExecution.update({
+            where: {
+                settlementId: input.settlementId,
+            },
+            data: {
+                commissionStatus: 'COMPLETED',
+                commissionSettledAt: new Date(),
+                commissionError: null,
+            },
+        });
+        return {
+            status: 'COMPLETED',
+            tradeId,
+        };
+    } catch (error) {
+        await input.db.managedSettlementExecution.update({
+            where: {
+                settlementId: input.settlementId,
+            },
+            data: {
+                commissionStatus: 'FAILED',
+                commissionError: stringifyCommissionError(error),
+            },
+        });
+        throw error;
+    }
 }

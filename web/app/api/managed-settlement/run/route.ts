@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
 
             try {
                 await settleManagedProfitFeeIfNeeded({
+                    db: prisma,
                     distributor: async (walletAddress, realizedProfit, tradeId, options) =>
                         affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
                     walletAddress: sub.walletAddress,

@@ -369,3 +369,10 @@
 - 2026-02-26：新增 `web/app/api/managed-settlement/health.integration.test.ts`，覆盖未授权拦截与健康指标聚合主路径。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-settlement/health.integration.test.ts`，通过（2/2）。
 - 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
+- 2026-02-26：新增结算分润幂等账本 `ManagedSettlementExecution`（含 `ManagedCommissionStatus`），并新增迁移 `20260226193000_add_managed_settlement_execution_idempotency`。
+- 2026-02-26：`settleManagedProfitFeeIfNeeded` 改造为可抢占幂等流程（`PENDING/FAILED -> PROCESSING -> COMPLETED|FAILED|SKIPPED`），失败会落库 `commissionError`。
+- 2026-02-26：`withdraw` / `managed-settlement/run` / `managed-wealth-worker` 三入口统一接入 execution ledger。
+- 2026-02-26：新增 `web/lib/managed-wealth/managed-settlement-service.test.ts`（5 条）覆盖 non-profit skip、finalized skip、claim 冲突、成功完成、失败落库。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/managed-settlement-service.test.ts app/api/managed-settlement/health.integration.test.ts`，通过（7/7）。
+- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
