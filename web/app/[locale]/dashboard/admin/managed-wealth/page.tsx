@@ -33,6 +33,12 @@ type ManagedOpsHealthResponse = {
         backlogCount: number;
         readyToSettleCount: number;
         backlogOldestAgeMinutes: number;
+        taskStatus: {
+            pending: number;
+            retrying: number;
+            blocked: number;
+            failed: number;
+        };
         backlog: Array<{
             subscriptionId: string;
             walletAddress: string;
@@ -72,7 +78,44 @@ type ManagedOpsHealthResponse = {
     };
 };
 
+type ManagedLiquidationTask = {
+    id: string;
+    subscriptionId: string;
+    walletAddress: string;
+    copyConfigId: string | null;
+    tokenId: string;
+    requestedShares: number;
+    avgEntryPrice: number;
+    indicativePrice: number | null;
+    notionalUsd: number | null;
+    status: 'PENDING' | 'RETRYING' | 'BLOCKED' | 'COMPLETED' | 'FAILED';
+    attemptCount: number;
+    lastAttemptAt: string | null;
+    nextRetryAt: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    updatedAt: string;
+    isDue: boolean;
+};
+
+type ManagedLiquidationTasksResponse = {
+    generatedAt: string;
+    summary: {
+        totalCount: number;
+        dueCount: number;
+        byStatus: {
+            pending: number;
+            retrying: number;
+            blocked: number;
+            completed: number;
+            failed: number;
+        };
+    };
+    tasks: ManagedLiquidationTask[];
+};
+
 const QUERY = 'windowDays=7&liquidationLimit=200&parityLimit=500';
+const TASK_QUERY = 'statuses=PENDING,RETRYING,BLOCKED,FAILED&limit=100';
 
 export default function AdminManagedWealthOpsPage() {
     const { ready, authenticated } = usePrivy();
@@ -80,7 +123,10 @@ export default function AdminManagedWealthOpsPage() {
     const adminWallet = wallets[0]?.address || '';
 
     const [loading, setLoading] = useState(false);
+    const [taskLoading, setTaskLoading] = useState(false);
+    const [taskActionId, setTaskActionId] = useState<string | null>(null);
     const [data, setData] = useState<ManagedOpsHealthResponse | null>(null);
+    const [tasksData, setTasksData] = useState<ManagedLiquidationTasksResponse | null>(null);
 
     const adminHeaders = useMemo(() => ({
         'x-admin-wallet': adminWallet,
@@ -105,6 +151,68 @@ export default function AdminManagedWealthOpsPage() {
         }
     }, [adminHeaders, adminWallet]);
 
+    const fetchTasks = useCallback(async () => {
+        if (!adminWallet) return;
+        setTaskLoading(true);
+        try {
+            const res = await fetch(`/api/managed-liquidation/tasks?${TASK_QUERY}`, {
+                headers: adminHeaders,
+            });
+            const body = await res.json() as ManagedLiquidationTasksResponse & { error?: string };
+            if (!res.ok) {
+                throw new Error(body.error || 'Failed to fetch liquidation tasks');
+            }
+            setTasksData(body);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to fetch liquidation tasks');
+        } finally {
+            setTaskLoading(false);
+        }
+    }, [adminHeaders, adminWallet]);
+
+    const refreshAll = useCallback(async () => {
+        await Promise.all([fetchHealth(), fetchTasks()]);
+    }, [fetchHealth, fetchTasks]);
+
+    const mutateTask = useCallback(async (
+        taskId: string,
+        action: 'retry' | 'requeue' | 'fail'
+    ) => {
+        if (!adminWallet) return;
+        const actionKey = `${action}:${taskId}`;
+        setTaskActionId(actionKey);
+        try {
+            const reason = action === 'fail' ? 'manually failed by admin' : undefined;
+            const res = await fetch('/api/managed-liquidation/tasks', {
+                method: 'POST',
+                headers: {
+                    ...adminHeaders,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action,
+                    taskIds: [taskId],
+                    ...(action === 'retry' ? { delaySeconds: 0 } : {}),
+                    ...(reason ? { reason } : {}),
+                }),
+            });
+            const body = await res.json() as { error?: string; updatedCount?: number };
+            if (!res.ok) {
+                throw new Error(body.error || 'Failed to update liquidation task');
+            }
+            if ((body.updatedCount ?? 0) <= 0) {
+                toast.warning('Task state did not change');
+            } else {
+                toast.success('Task updated');
+            }
+            await Promise.all([fetchHealth(), fetchTasks()]);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to update liquidation task');
+        } finally {
+            setTaskActionId(null);
+        }
+    }, [adminHeaders, adminWallet, fetchHealth, fetchTasks]);
+
     if (!ready || !authenticated) {
         return (
             <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -114,10 +222,12 @@ export default function AdminManagedWealthOpsPage() {
     }
 
     const hasAlerts = Boolean(
-        data
+            data
         && (
             data.allocation.unmappedCount > 0
             || data.liquidation.backlogCount > 0
+            || data.liquidation.taskStatus.blocked > 0
+            || data.liquidation.taskStatus.failed > 0
             || data.settlementCommissionParity.missingCount > 0
             || data.settlementCommissionParity.feeMismatchCount > 0
         )
@@ -142,11 +252,11 @@ export default function AdminManagedWealthOpsPage() {
                             Back
                         </Link>
                         <button
-                            onClick={fetchHealth}
-                            disabled={loading}
+                            onClick={refreshAll}
+                            disabled={loading || taskLoading}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-500 disabled:opacity-60"
                         >
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={`w-4 h-4 ${(loading || taskLoading) ? 'animate-spin' : ''}`} />
                             Refresh
                         </button>
                     </div>
@@ -248,6 +358,90 @@ export default function AdminManagedWealthOpsPage() {
                 </section>
 
                 <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                        <h2 className="text-white font-semibold">Liquidation Task Queue</h2>
+                        <button
+                            onClick={fetchTasks}
+                            disabled={taskLoading}
+                            className="px-3 py-1 rounded-md bg-gray-800 text-gray-200 text-xs hover:bg-gray-700 disabled:opacity-60"
+                        >
+                            Refresh Tasks
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-sm">
+                        <MetricLine label="Pending" value={String(tasksData?.summary.byStatus.pending ?? 0)} />
+                        <MetricLine label="Retrying" value={String(tasksData?.summary.byStatus.retrying ?? 0)} />
+                        <MetricLine label="Blocked" value={String(tasksData?.summary.byStatus.blocked ?? 0)} danger={(tasksData?.summary.byStatus.blocked ?? 0) > 0} />
+                        <MetricLine label="Failed" value={String(tasksData?.summary.byStatus.failed ?? 0)} danger={(tasksData?.summary.byStatus.failed ?? 0) > 0} />
+                        <MetricLine label="Due Now" value={String(tasksData?.summary.dueCount ?? 0)} />
+                    </div>
+                    {!tasksData || tasksData.tasks.length === 0 ? (
+                        <p className="text-sm text-gray-400">No actionable liquidation tasks.</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="text-left text-gray-400 border-b border-gray-800">
+                                    <tr>
+                                        <th className="py-2">Subscription</th>
+                                        <th className="py-2">Token</th>
+                                        <th className="py-2">Status</th>
+                                        <th className="py-2">Attempts</th>
+                                        <th className="py-2">Next Retry</th>
+                                        <th className="py-2">Error</th>
+                                        <th className="py-2 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-gray-200">
+                                    {tasksData.tasks.map((task) => (
+                                        <tr key={task.id} className="border-b border-gray-800/70 align-top">
+                                            <td className="py-2 font-mono text-xs">{task.subscriptionId}</td>
+                                            <td className="py-2 font-mono text-xs">{task.tokenId}</td>
+                                            <td className="py-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-xs ${task.status === 'FAILED' || task.status === 'BLOCKED' ? 'bg-red-900/40 text-red-200' : 'bg-gray-800 text-gray-200'}`}>
+                                                    {task.status}
+                                                </span>
+                                            </td>
+                                            <td className="py-2">{task.attemptCount}</td>
+                                            <td className="py-2 text-xs">
+                                                {task.nextRetryAt ? new Date(task.nextRetryAt).toLocaleString() : 'now'}
+                                            </td>
+                                            <td className="py-2 text-xs text-gray-400 max-w-[280px]">
+                                                {task.errorCode || task.errorMessage || '--'}
+                                            </td>
+                                            <td className="py-2">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => mutateTask(task.id, 'retry')}
+                                                        disabled={Boolean(taskActionId)}
+                                                        className="px-2 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-500 disabled:opacity-50"
+                                                    >
+                                                        {taskActionId === `retry:${task.id}` ? 'Retrying...' : 'Retry'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => mutateTask(task.id, 'requeue')}
+                                                        disabled={Boolean(taskActionId)}
+                                                        className="px-2 py-1 rounded bg-gray-700 text-gray-100 text-xs hover:bg-gray-600 disabled:opacity-50"
+                                                    >
+                                                        {taskActionId === `requeue:${task.id}` ? 'Requeueing...' : 'Requeue'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => mutateTask(task.id, 'fail')}
+                                                        disabled={Boolean(taskActionId)}
+                                                        className="px-2 py-1 rounded bg-red-700 text-red-100 text-xs hover:bg-red-600 disabled:opacity-50"
+                                                    >
+                                                        {taskActionId === `fail:${task.id}` ? 'Failing...' : 'Fail'}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </section>
+
+                <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
                     <h2 className="text-white font-semibold mb-3">Settlement Profit Fee Parity</h2>
                     {!data ? (
                         <p className="text-sm text-gray-400">Load data to inspect parity status.</p>
@@ -286,9 +480,9 @@ export default function AdminManagedWealthOpsPage() {
                     )}
                 </section>
 
-                {data && (
+                {(data || tasksData) && (
                     <p className="text-xs text-gray-500">
-                        Last updated: {new Date(data.generatedAt).toLocaleString()}
+                        Last updated: {new Date((data?.generatedAt || tasksData?.generatedAt) as string).toLocaleString()}
                     </p>
                 )}
             </div>

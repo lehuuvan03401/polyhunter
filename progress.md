@@ -394,3 +394,10 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts ...`（本批 18/18），通过。
 - 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
+- 2026-02-26：新增清仓任务运营接口 `GET/POST /api/managed-liquidation/tasks`，支持任务列表、`retry`、`requeue`、`fail` 手动干预。
+- 2026-02-26：新增 `web/app/api/managed-liquidation/tasks.integration.test.ts`，覆盖未授权拦截、队列查询、重试操作。
+- 2026-02-26：`web/app/[locale]/dashboard/admin/managed-wealth/page.tsx` 接入 liquidation task queue 视图与单条任务操作按钮（Retry/Requeue/Fail）。
+- 2026-02-26：新增真实清仓执行 worker `web/scripts/workers/managed-liquidation-worker.ts`，消费 `ManagedLiquidationTask` 并通过 `CopyTradingExecutionService` 执行 SELL，成功后回写 `CopyTrade` 与持仓递减。
+- 2026-02-26：`web/package.json` 新增脚本 `managed-liquidation:worker`。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-liquidation/tasks.integration.test.ts app/api/managed-settlement/health.integration.test.ts`，通过（5/5）。
+- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。

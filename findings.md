@@ -222,3 +222,8 @@
 - 原有 `managed-wealth-worker` 在 `LIQUIDATING` 阶段直接写 `SYSTEM_LIQUIDATOR` 的 `CopyTrade(EXECUTED)` 并归零持仓，属于模拟成交，不具备真实执行证据。
 - 将该路径替换为 `ManagedLiquidationTask`（`PENDING/RETRYING/BLOCKED/...`）后，系统行为从“伪完成”转为“显式待执行/待重试”，更符合结算完整性和审计可追溯要求。
 - 该改动的代价是：在外部清仓执行器接入前，部分订阅会在 `LIQUIDATING` 停留更久；但这比错误地提前结算更安全。
+
+### 2026-02-26 新增发现：清仓闭环需要“执行器 + 运维控制面”双轨同时存在
+- 仅有自动执行器不足以保障可恢复性：清仓会遇到代理资金不足、缺失 proxy、低流动性等场景，必须提供运营手动干预能力（retry/requeue/fail）。
+- 仅有运维按钮不足以形成闭环：必须有独立 worker 消费 `ManagedLiquidationTask` 并执行真实 SELL，否则任务状态会长期停留在 `PENDING/RETRYING`。
+- 清仓执行成功后必须同步写入 `CopyTrade(EXECUTED)` 与作用域持仓递减，否则 NAV 和结算会继续把已清仓仓位当作未实现盈亏，导致最终结算偏差。

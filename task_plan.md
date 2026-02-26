@@ -244,6 +244,14 @@
 - [complete] health 接口补充 liquidation task 状态统计（pending/retrying/blocked/failed）
 - [complete] 新增纯函数与单测：`liquidation-intent`（状态决策口径）
 
+### Phase G 当前进度（清仓任务执行与运营手动干预）
+- [complete] 新增清仓任务运营 API：`GET/POST /api/managed-liquidation/tasks`（查询、retry、requeue、fail）
+- [complete] 新增管理后台任务队列面板（`Managed Ops`）与单条任务操作按钮
+- [complete] 新增独立执行器 worker：`web/scripts/workers/managed-liquidation-worker.ts`，对 `PENDING/RETRYING` 任务做真实 SELL 执行与状态回写
+- [complete] 执行器成功路径补齐成交落库：写 `CopyTrade(EXECUTED)` + 订阅/legacy 持仓递减 + 任务完成/部分重试
+- [complete] 新增脚本入口：`npm run managed-liquidation:worker`
+- [complete] 新增路由集成测试：`web/app/api/managed-liquidation/tasks.integration.test.ts`
+
 ## 错误记录
 | 时间 | 位置 | 错误 | 处理 |
 |---|---|---|---|
