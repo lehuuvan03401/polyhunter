@@ -250,3 +250,11 @@
   - 新增 `web/app/api/partners/config.integration.test.ts` 覆盖不可增发约束。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（12/12）。
+- 2026-02-26：P0-2/P0-3 已完成第二批实现：
+  - 新增策略门槛工具 `web/lib/participation-program/policy-gates.ts`。
+  - `web/app/api/managed-subscriptions/route.ts` 改为生产默认强制托管激活与托管授权（非生产仍可显式放宽）。
+  - `web/lib/services/affiliate-engine.ts` 平级奖改为生产默认开启；生产显式关闭时输出审计日志。
+  - `web/lib/services/affiliate-engine.ts` 增加利润费结算防重查询，避免同交易重复分发。
+  - 新增测试：`web/lib/participation-program/policy-gates.test.ts` 与 `affiliate-engine` 防重用例。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts app/api/partners/config.integration.test.ts lib/participation-program/partner-program.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（23/23）。

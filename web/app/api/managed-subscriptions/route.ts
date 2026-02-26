@@ -10,6 +10,7 @@ import {
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import { applyOneTimeReferralSubscriptionBonus } from '@/lib/participation-program/referral-subscription-bonus';
 import { resolveManagedSubscriptionTrial } from '@/lib/managed-wealth/subscription-trial';
+import { resolveManagedPolicyGate } from '@/lib/participation-program/policy-gates';
 
 export const dynamic = 'force-dynamic';
 const WITHDRAW_GUARDRAILS = {
@@ -23,8 +24,14 @@ const MANAGED_MIN_PRINCIPAL_USD = resolveNumberEnv(
     1,
     1_000_000_000
 );
-const REQUIRE_MANAGED_ACTIVATION = process.env.PARTICIPATION_REQUIRE_MANAGED_ACTIVATION === 'true';
-const REQUIRE_CUSTODY_AUTH = process.env.PARTICIPATION_REQUIRE_CUSTODY_AUTH === 'true';
+const REQUIRE_MANAGED_ACTIVATION = resolveManagedPolicyGate(
+    process.env.PARTICIPATION_REQUIRE_MANAGED_ACTIVATION,
+    process.env.NODE_ENV
+);
+const REQUIRE_CUSTODY_AUTH = resolveManagedPolicyGate(
+    process.env.PARTICIPATION_REQUIRE_CUSTODY_AUTH,
+    process.env.NODE_ENV
+);
 
 type ReserveCoverageResult = {
     balance: number;

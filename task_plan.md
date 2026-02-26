@@ -167,3 +167,4 @@
 - OpenSpec 变更：`harden-horus-participation-partner-policy`
 - 计划文档：`docs/plans/2026-02-26-horus-participation-partner-gap-closure-plan.md`
 - 阶段 2 进展（P0-1）：已实现全球席位上限 100 不可增发约束（后端归一化 + 配置接口拒绝 >100 + 管理台只读展示 + 集成测试）。
+- 阶段 2 进展（P0-2/P0-3/P0-4 部分）：已实现托管门槛生产默认强制、平级奖生产默认开启策略（含生产关闭审计日志）、利润费重复结算防重。

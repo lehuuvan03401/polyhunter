@@ -3,6 +3,7 @@ import { PrismaClient, AffiliateTier, Prisma } from '@prisma/client';
 import { Referrer } from '@prisma/client'; // Import type
 import { REALIZED_PROFIT_FEE_RATE } from '@/lib/participation-program/rules';
 import { calculateSameLevelBonus } from '@/lib/participation-program/bonuses';
+import { resolveSameLevelBonusPolicy } from '@/lib/participation-program/policy-gates';
 import { prisma } from '@/lib/prisma';
 
 export interface TradeContext {
@@ -27,7 +28,14 @@ const TIER_ORDER: AffiliateTier[] = [
     AffiliateTier.PARTNER,
     AffiliateTier.SUPER_PARTNER,
 ];
-const ENABLE_SAME_LEVEL_BONUS = process.env.PARTICIPATION_ENABLE_SAME_LEVEL_BONUS === 'true';
+const SAME_LEVEL_BONUS_POLICY = resolveSameLevelBonusPolicy(
+    process.env.PARTICIPATION_ENABLE_SAME_LEVEL_BONUS,
+    process.env.NODE_ENV
+);
+if (SAME_LEVEL_BONUS_POLICY.auditMessage) {
+    console.error(SAME_LEVEL_BONUS_POLICY.auditMessage);
+}
+const ENABLE_SAME_LEVEL_BONUS = SAME_LEVEL_BONUS_POLICY.enabled;
 
 export class AffiliateEngine {
     private prisma: PrismaClient;
@@ -334,6 +342,22 @@ export class AffiliateEngine {
         }
 
         const directSponsor = referralRecord.referrer;
+
+        const existingProfitFee = await this.prisma.commissionLog.findFirst({
+            where: {
+                referrerId: directSponsor.id,
+                type: 'PROFIT_FEE',
+                sourceTradeId: tradeId,
+                sourceUserId: traderAddress,
+            },
+            select: { id: true },
+        });
+        if (existingProfitFee) {
+            console.log(
+                `[AffiliateEngine] Profit fee already settled for trade=${tradeId}, trader=${traderAddress}, referrer=${directSponsor.id}`
+            );
+            return;
+        }
 
         // 3. Profit fee is fixed to policy rate across FREE/MANAGED modes
         const feeRate = REALIZED_PROFIT_FEE_RATE;

@@ -5,6 +5,9 @@ type MockPrisma = {
     referral: {
         findUnique: ReturnType<typeof vi.fn>;
     };
+    commissionLog: {
+        findFirst: ReturnType<typeof vi.fn>;
+    };
     $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -26,6 +29,9 @@ function createEngineMock(): {
     const prisma: MockPrisma = {
         referral: {
             findUnique: vi.fn(),
+        },
+        commissionLog: {
+            findFirst: vi.fn().mockResolvedValue(null),
         },
         $transaction: vi.fn().mockImplementation(async (callback: (txArg: typeof tx) => unknown) => callback(tx)),
     };
@@ -94,5 +100,26 @@ describe('AffiliateEngine.distributeProfitFee', () => {
                 }),
             })
         );
+    });
+
+    it('skips duplicate profit-fee settlement for same trade scope', async () => {
+        const { prisma, engine } = createEngineMock();
+        const traderWallet = '0xabc0000000000000000000000000000000000001';
+
+        prisma.referral.findUnique.mockResolvedValue({
+            id: 'referral-1',
+            referrerId: 'referrer-1',
+            referrer: {
+                id: 'referrer-1',
+                walletAddress: '0xabc0000000000000000000000000000000000002',
+            },
+        });
+        prisma.commissionLog.findFirst.mockResolvedValue({
+            id: 'existing-profit-fee',
+        });
+
+        await engine.distributeProfitFee(traderWallet, 125, 'trade-dup');
+
+        expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 });
