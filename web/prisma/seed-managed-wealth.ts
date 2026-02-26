@@ -30,7 +30,7 @@ const termsByStrategy: Record<StrategyProfile, TermTemplate[]> = {
         { durationDays: 60, label: '60D', targetReturnMin: 1.8, targetReturnMax: 4.8, maxDrawdown: 5.0, minYieldRate: 0.25 },
         { durationDays: 90, label: '90D', targetReturnMin: 2.8, targetReturnMax: 7.0, maxDrawdown: 6.5, minYieldRate: 0.4 },
         { durationDays: 180, label: '180D', targetReturnMin: 5.5, targetReturnMax: 14.5, maxDrawdown: 9.0, minYieldRate: 0.8 },
-        { durationDays: 365, label: '365D', targetReturnMin: 12, targetReturnMax: 30, maxDrawdown: 12.0, minYieldRate: 1.6 },
+        { durationDays: 360, label: '360D', targetReturnMin: 12, targetReturnMax: 30, maxDrawdown: 12.0, minYieldRate: 1.6 },
     ],
     MODERATE: [
         { durationDays: 1, label: '1D', targetReturnMin: 0.04, targetReturnMax: 0.12, maxDrawdown: 0.8 },
@@ -41,7 +41,7 @@ const termsByStrategy: Record<StrategyProfile, TermTemplate[]> = {
         { durationDays: 60, label: '60D', targetReturnMin: 4.5, targetReturnMax: 13.0, maxDrawdown: 10.0 },
         { durationDays: 90, label: '90D', targetReturnMin: 7.0, targetReturnMax: 19.0, maxDrawdown: 12.0 },
         { durationDays: 180, label: '180D', targetReturnMin: 14.0, targetReturnMax: 38.0, maxDrawdown: 16.0 },
-        { durationDays: 365, label: '365D', targetReturnMin: 30.0, targetReturnMax: 70.0, maxDrawdown: 22.0 },
+        { durationDays: 360, label: '360D', targetReturnMin: 30.0, targetReturnMax: 70.0, maxDrawdown: 22.0 },
     ],
     AGGRESSIVE: [
         { durationDays: 1, label: '1D', targetReturnMin: 0.08, targetReturnMax: 0.25, maxDrawdown: 1.8 },
@@ -52,7 +52,7 @@ const termsByStrategy: Record<StrategyProfile, TermTemplate[]> = {
         { durationDays: 60, label: '60D', targetReturnMin: 11.0, targetReturnMax: 32.0, maxDrawdown: 20.0 },
         { durationDays: 90, label: '90D', targetReturnMin: 18.0, targetReturnMax: 50.0, maxDrawdown: 25.0 },
         { durationDays: 180, label: '180D', targetReturnMin: 35.0, targetReturnMax: 90.0, maxDrawdown: 32.0 },
-        { durationDays: 365, label: '365D', targetReturnMin: 70.0, targetReturnMax: 180.0, maxDrawdown: 42.0 },
+        { durationDays: 360, label: '360D', targetReturnMin: 70.0, targetReturnMax: 180.0, maxDrawdown: 42.0 },
     ],
 };
 

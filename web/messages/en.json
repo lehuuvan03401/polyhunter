@@ -231,7 +231,7 @@
                     },
                     "terms": {
                         "title": "Flexible Terms",
-                        "desc": "Lock periods from 24h to 365d depending on your liquidity needs."
+                        "desc": "Lock periods from 24h to 360d depending on your liquidity needs."
                     },
                     "nav": {
                         "title": "Real-time NAV",
