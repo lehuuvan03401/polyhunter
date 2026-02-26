@@ -235,3 +235,9 @@
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts app/api/participation/account.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（6/6）。
 - 已执行 `cd web && npx playwright test --config=playwright.config.mjs e2e/participation-partner.spec.mjs`，通过（2/2）。
 - 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
+- OpenSpec 归档完成：`add-horus-participation-partner-program` 已归档到 `openspec/changes/archive/2026-02-26-add-horus-participation-partner-program/`，并合并更新正式规格：
+  - `openspec/specs/participation-program/spec.md`
+  - `openspec/specs/global-partner-program/spec.md`
+  - `openspec/specs/affiliate-system/spec.md`
+  - `openspec/specs/fee-logic/spec.md`
+- 已执行 `openspec validate --all --strict --no-interactive`，通过（35/35）。

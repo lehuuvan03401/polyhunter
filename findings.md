@@ -144,3 +144,7 @@
 - 参与侧 E2E 更适合“规则展示 + 关键门槛行为”组合验证：既验证 FREE/MANAGED 外宣口径，也验证托管最低本金约束的前后端联动。
 - 合伙人操作 E2E 关键在于串联 dry-run、execute、refund 完成三个动作，确保运营路径可闭环，而不是仅验证单个 API 成功。
 - Playwright 首次运行暴露了既有构建阻断：`affiliate-engine` 末尾 `../prisma.js` 路径在 Next build 下不可解析，已修复为 `@/lib/prisma`。
+
+### 2026-02-26 开发推进发现（OpenSpec 归档）
+- 任务全量完成后立即归档可把“change 内规则”沉淀为 `specs` 单一事实来源，避免后续继续基于已归档 change 开发导致口径分叉。
+- `openspec validate --all` 在归档后可一次性验证活跃 change 与正式 specs 一致性，适合作为收口闸门。

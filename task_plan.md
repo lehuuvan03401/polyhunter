@@ -144,3 +144,8 @@
 - [complete] 新增参与机制 E2E（FREE/MANAGED 规则展示 + 托管门槛申购流）
 - [complete] 新增合伙人操作 E2E（淘汰 dry-run/execute + 退款完成流）
 - [complete] 处理 E2E 暴露的构建阻断（affiliate-engine prisma 导入路径）
+
+## OpenSpec 收口进展
+- [complete] 归档 `add-horus-participation-partner-program` 到 `openspec/changes/archive/2026-02-26-add-horus-participation-partner-program`
+- [complete] 将 participation/global-partner 规范沉淀到 `openspec/specs/*`
+- [complete] 执行 `openspec validate --all --strict --no-interactive` 全量校验
