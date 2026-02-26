@@ -483,7 +483,7 @@ model ManagedProduct {
   status               String                  @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
   disclosurePolicy     ManagedDisclosurePolicy @default(TRANSPARENT)
   disclosureDelayHours Int                     @default(0)
-  performanceFeeRate   Float                   @default(0.1)
+  performanceFeeRate   Float                   @default(0.2)
   managementFeeRate    Float                   @default(0.0)
   reserveCoverageMin   Float                   @default(1.2)
   createdAt            DateTime                @default(now())

@@ -1,11 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, X, ShieldCheck, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Loader2, X, ShieldCheck, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 import { MANAGED_STRATEGY_THEMES } from '@/lib/managed-wealth/strategy-theme';
+
+type ManagedBand = 'A' | 'B' | 'C';
+
+const MANAGED_BAND_LIMITS: Record<ManagedBand, { min: number; max: number }> = {
+    A: { min: 500, max: 5000 },
+    B: { min: 5001, max: 50000 },
+    C: { min: 50001, max: 300000 },
+};
 
 export interface ManagedTerm {
     id: string;
@@ -38,6 +46,7 @@ interface SubscriptionModalProps {
     product: ManagedProduct | null;
     walletAddress?: string;
     presetTermId?: string;
+    presetPrincipalBand?: ManagedBand;
     onClose: () => void;
     onRequireLogin: () => void;
     onSuccess?: (subscriptionId: string) => void;
@@ -87,6 +96,7 @@ export function SubscriptionModal({
     product,
     walletAddress,
     presetTermId,
+    presetPrincipalBand,
     onClose,
     onRequireLogin,
     onSuccess,
@@ -105,10 +115,10 @@ export function SubscriptionModal({
     useEffect(() => {
         if (!open || !product) return;
         setTermId(presetTermId || product.terms[0]?.id || '');
-        setPrincipal('500');
+        setPrincipal(String(presetPrincipalBand ? MANAGED_BAND_LIMITS[presetPrincipalBand].min : 500));
         setRiskConfirmed(false);
         setTermsConfirmed(false);
-    }, [open, product, presetTermId]);
+    }, [open, product, presetPrincipalBand, presetTermId]);
 
     const selectedTerm = useMemo(() => {
         if (!product) return null;
@@ -166,7 +176,35 @@ export function SubscriptionModal({
     if (!open || !product) return null;
 
     const theme = MANAGED_STRATEGY_THEMES[product.strategyProfile];
-    const canSubmit = Boolean(walletAddress && selectedTerm && riskConfirmed && termsConfirmed && Number(principal) > 0 && !isSubmitting);
+    const strategyLabel = t(
+        `ProductCard.strategies.${theme.labelKey}` as
+        | 'ProductCard.strategies.Conservative'
+        | 'ProductCard.strategies.Moderate'
+        | 'ProductCard.strategies.Aggressive'
+    );
+    const productName = tProducts(
+        `${product.strategyProfile}.name` as
+        | 'CONSERVATIVE.name'
+        | 'MODERATE.name'
+        | 'AGGRESSIVE.name'
+    );
+    const parsedPrincipal = Number(principal);
+    const principalBandLimit = presetPrincipalBand ? MANAGED_BAND_LIMITS[presetPrincipalBand] : null;
+    const isOutOfBandRange = Boolean(
+        principalBandLimit
+        && Number.isFinite(parsedPrincipal)
+        && (parsedPrincipal < principalBandLimit.min || parsedPrincipal > principalBandLimit.max)
+    );
+    const canSubmit = Boolean(
+        walletAddress
+        && selectedTerm
+        && riskConfirmed
+        && termsConfirmed
+        && Number.isFinite(parsedPrincipal)
+        && parsedPrincipal > 0
+        && !isOutOfBandRange
+        && !isSubmitting
+    );
     const estimatedRange = selectedTerm
         ? managedReturnEstimate?.matched && managedReturnEstimate.row
             ? managedReturnEstimate.row.displayRange
@@ -189,6 +227,16 @@ export function SubscriptionModal({
             toast.error(t('SubscriptionModal.errors.invalidAmount'));
             return;
         }
+        if (principalBandLimit && (amount < principalBandLimit.min || amount > principalBandLimit.max)) {
+            toast.error(
+                t('SubscriptionModal.errors.outOfBandRange', {
+                    band: presetPrincipalBand,
+                    min: principalBandLimit.min.toLocaleString(),
+                    max: principalBandLimit.max.toLocaleString(),
+                })
+            );
+            return;
+        }
 
         setIsSubmitting(true);
         try {
@@ -209,6 +257,7 @@ export function SubscriptionModal({
                     productId: product.id,
                     termId: selectedTerm.id,
                     principal: amount,
+                    principalBand: presetPrincipalBand,
                     acceptedTerms: true,
                 }),
             });
@@ -243,11 +292,10 @@ export function SubscriptionModal({
                     <div className="flex items-start justify-between relative z-10">
                         <div>
                             <div className={`mb-2 inline-flex items-center gap-1.5 rounded-full ${theme.bg} px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${theme.color}`}>
-                                {t('SubscriptionModal.strategyLabel', { strategy: t(`ProductCard.strategies.${theme.labelKey}`) })}
+                                {t('SubscriptionModal.strategyLabel', { strategy: strategyLabel })}
                             </div>
                             <h3 className="text-xl font-bold text-white tracking-tight">
-                                {/* @ts-ignore */}
-                                {t('SubscriptionModal.title', { name: tProducts(`${product.strategyProfile}.name`) })}
+                                {t('SubscriptionModal.title', { name: productName })}
                             </h3>
                         </div>
                         <button
@@ -273,7 +321,7 @@ export function SubscriptionModal({
                                 >
                                     {product.terms.map((term) => (
                                         <option key={term.id} value={term.id} className="bg-[#121417]">
-                                            {term.label} ({t('SubscriptionModal.days', { count: term.durationDays })})
+                                            {term.durationDays} Days
                                         </option>
                                     ))}
                                 </select>
@@ -302,6 +350,21 @@ export function SubscriptionModal({
                                     USDC
                                 </div>
                             </div>
+                            {principalBandLimit && (
+                                <p className={`mt-2 text-xs ${isOutOfBandRange ? 'text-rose-400' : 'text-zinc-500'}`}>
+                                    {isOutOfBandRange
+                                        ? t('SubscriptionModal.bandRangeInvalid', {
+                                            band: presetPrincipalBand,
+                                            min: principalBandLimit.min.toLocaleString(),
+                                            max: principalBandLimit.max.toLocaleString(),
+                                        })
+                                        : t('SubscriptionModal.bandRangeHint', {
+                                            band: presetPrincipalBand,
+                                            min: principalBandLimit.min.toLocaleString(),
+                                            max: principalBandLimit.max.toLocaleString(),
+                                        })}
+                                </p>
+                            )}
                         </label>
                     </div>
 
@@ -368,8 +431,7 @@ export function SubscriptionModal({
                             </div>
                             <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors leading-relaxed">
                                 {t.rich('SubscriptionModal.riskAck', {
-                                    // @ts-ignore
-                                    strategy: t(`ProductCard.strategies.${theme.labelKey}`),
+                                    strategy: strategyLabel,
                                     highlight: (chunks) => <span className="text-white font-medium">{chunks}</span>
                                 })}
                             </span>

@@ -130,6 +130,8 @@
             "days": "{count} 天",
             "investmentAmount": "2. 投资金额",
             "balance": "余额: -- USDC",
+            "bandRangeHint": "当前档位 {band} 可投区间：{min} - {max} USDC",
+            "bandRangeInvalid": "输入金额不在档位 {band} 区间（{min} - {max} USDC）",
             "projectedPerformance": "预期表现",
             "historicalData": "基于历史数据",
             "targetReturn": "目标回报",
@@ -148,6 +150,7 @@
             "errors": {
                 "selectTerm": "请选择期限。",
                 "invalidAmount": "请输入有效的投资金额。",
+                "outOfBandRange": "金额需在档位 {band} 区间内（{min} - {max} USDC）。",
                 "success": "订阅成功创建。",
                 "failed": "订阅失败。",
                 "createFailed": "创建订阅失败"

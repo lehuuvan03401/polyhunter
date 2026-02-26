@@ -24,6 +24,12 @@ const MANAGED_MIN_PRINCIPAL_USD = resolveNumberEnv(
     1,
     1_000_000_000
 );
+type ManagedPrincipalBand = 'A' | 'B' | 'C';
+const MANAGED_BAND_LIMITS: Record<ManagedPrincipalBand, { min: number; max: number }> = {
+    A: { min: 500, max: 5000 },
+    B: { min: 5001, max: 50000 },
+    C: { min: 50001, max: 300000 },
+};
 const REQUIRE_MANAGED_ACTIVATION = resolveManagedPolicyGate(
     process.env.PARTICIPATION_REQUIRE_MANAGED_ACTIVATION,
     process.env.NODE_ENV
@@ -66,6 +72,7 @@ const createSubscriptionSchema = z.object({
     productSlug: z.string().optional(),
     termId: z.string().min(1),
     principal: z.number().positive(),
+    principalBand: z.enum(['A', 'B', 'C']).optional(),
     acceptedTerms: z.boolean(),
     copyConfigId: z.string().optional(),
 }).refine((data) => Boolean(data.productId || data.productSlug), {
@@ -275,6 +282,7 @@ export async function POST(request: NextRequest) {
             productSlug,
             termId,
             principal,
+            principalBand,
             acceptedTerms,
             copyConfigId,
         } = validation.data;
@@ -307,6 +315,21 @@ export async function POST(request: NextRequest) {
                 },
                 { status: 400 }
             );
+        }
+
+        if (principalBand) {
+            const range = MANAGED_BAND_LIMITS[principalBand];
+            if (principal < range.min || principal > range.max) {
+                return NextResponse.json(
+                    {
+                        error: 'Principal outside selected managed band range',
+                        principalBand,
+                        minimumPrincipal: range.min,
+                        maximumPrincipal: range.max,
+                    },
+                    { status: 400 }
+                );
+            }
         }
 
         const account = await prisma.participationAccount.findUnique({

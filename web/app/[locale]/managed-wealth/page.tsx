@@ -14,7 +14,6 @@ import {
     type ManagedReturnPrincipalBandValue,
     type ManagedReturnMatrixRow,
 } from '@/lib/participation-program/rules';
-import { ManagedExternalRulesSection } from '@/components/participation/managed-external-rules-section';
 import { lookupManagedReturnMatrixRowByBand } from '@/lib/participation-program/managed-return-matrix';
 
 const MATRIX_CYCLE_OPTIONS = [7, 30, 90, 180, 360] as const;
@@ -328,8 +327,6 @@ export default function ManagedWealthPage() {
                     <p className="mt-1 text-sm text-zinc-500">{t('empty.desc')}</p>
                 </motion.div>
             )}
-
-            <ManagedExternalRulesSection className="mt-12" />
         </div>
     );
 }

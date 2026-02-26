@@ -130,6 +130,8 @@
             "days": "{count} Days",
             "investmentAmount": "2. Investment Amount",
             "balance": "Bal: -- USDC",
+            "bandRangeHint": "Current band {band} investment range: {min} - {max} USDC",
+            "bandRangeInvalid": "Entered amount is outside band {band} range ({min} - {max} USDC)",
             "projectedPerformance": "Projected Performance",
             "historicalData": "Based on historical data",
             "targetReturn": "Target Return",
@@ -148,6 +150,7 @@
             "errors": {
                 "selectTerm": "Please select a term.",
                 "invalidAmount": "Please enter a valid principal amount.",
+                "outOfBandRange": "Amount must stay within band {band} range ({min} - {max} USDC).",
                 "success": "Subscription created successfully.",
                 "failed": "Subscription failed.",
                 "createFailed": "Failed to create subscription"

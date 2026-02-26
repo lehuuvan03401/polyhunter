@@ -63,7 +63,7 @@ const productDefs = [
         description: 'Conservative managed strategy with principal and minimum-yield protection backed by reserve fund.',
         strategyProfile: 'CONSERVATIVE' as const,
         isGuaranteed: true,
-        performanceFeeRate: 0.1,
+        performanceFeeRate: 0.2,
         reserveCoverageMin: 1.5,
     },
     {
@@ -72,7 +72,7 @@ const productDefs = [
         description: 'Moderate strategy targeting balanced risk and medium-horizon growth.',
         strategyProfile: 'MODERATE' as const,
         isGuaranteed: false,
-        performanceFeeRate: 0.15,
+        performanceFeeRate: 0.2,
         reserveCoverageMin: 1.2,
     },
     {
@@ -114,6 +114,15 @@ async function seedProductAndTerms() {
                 disclosurePolicy: 'TRANSPARENT',
                 disclosureDelayHours: 0,
                 isActive: true,
+            },
+        });
+
+        await prisma.managedTerm.updateMany({
+            where: {
+                productId: product.id,
+            },
+            data: {
+                performanceFeeRate: def.performanceFeeRate,
             },
         });
 

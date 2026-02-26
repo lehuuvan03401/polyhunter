@@ -130,6 +130,8 @@
             "days": "{count} 天",
             "investmentAmount": "2. 投資金額",
             "balance": "餘額: -- USDC",
+            "bandRangeHint": "目前檔位 {band} 可投區間：{min} - {max} USDC",
+            "bandRangeInvalid": "輸入金額不在檔位 {band} 區間（{min} - {max} USDC）",
             "projectedPerformance": "預期表現",
             "historicalData": "基於歷史數據",
             "targetReturn": "目標回報",
@@ -148,6 +150,7 @@
             "errors": {
                 "selectTerm": "請選擇期限。",
                 "invalidAmount": "請輸入有效的投資金額。",
+                "outOfBandRange": "金額需在檔位 {band} 區間內（{min} - {max} USDC）。",
                 "success": "訂閱成功創建。",
                 "failed": "訂閱失敗。",
                 "createFailed": "創建訂閱失敗"

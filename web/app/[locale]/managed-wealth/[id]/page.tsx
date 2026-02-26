@@ -337,7 +337,7 @@ export default function ManagedWealthDetailPage() {
                                             return (
                                                 <>
                                                     <div className="flex items-center justify-between mb-2">
-                                                        <span className="font-bold text-white">{term.label} ({term.durationDays}d)</span>
+                                                        <span className="font-bold text-white">{term.durationDays} Days</span>
                                                         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/10 text-zinc-300">
                                                             {range}
                                                         </span>
@@ -402,6 +402,7 @@ export default function ManagedWealthDetailPage() {
                 product={product}
                 walletAddress={user?.wallet?.address}
                 presetTermId={presetTermId}
+                presetPrincipalBand={selectedBand}
                 onClose={() => setModalOpen(false)}
                 onRequireLogin={login}
             />
