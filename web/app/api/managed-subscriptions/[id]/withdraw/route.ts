@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { z } from 'zod';
-import { calculateManagedSettlement, calculateReserveBalance } from '@/lib/managed-wealth/settlement-math';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import { affiliateEngine } from '@/lib/services/affiliate-engine';
+import {
+    applyManagedSettlementMutation,
+    calculateSettlementForSubscription,
+    settleManagedProfitFeeIfNeeded,
+    transitionSubscriptionToLiquidatingIfNeeded,
+} from '@/lib/managed-wealth/managed-settlement-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,17 +49,6 @@ function resolveNumberEnv(name: string, fallback: number, min: number, max: numb
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.min(max, Math.max(min, parsed));
-}
-
-function resolveEffectivePerformanceFeeRate(input: {
-    baseRate: number;
-    isTrial: boolean;
-    trialEndsAt?: Date | null;
-    endAt?: Date | null;
-}): number {
-    if (!input.isTrial) return input.baseRate;
-    if (!input.trialEndsAt || !input.endAt) return input.baseRate;
-    return input.endAt.getTime() <= input.trialEndsAt.getTime() ? 0 : input.baseRate;
 }
 
 export async function POST(
@@ -152,22 +146,20 @@ export async function POST(
 
             if (openPositionsCount > 0) {
                 let updatedSubscription = subscription;
-                if (subscription.status !== 'LIQUIDATING') {
-                    updatedSubscription = await tx.managedSubscription.update({
+                const transitioned = await transitionSubscriptionToLiquidatingIfNeeded(tx, {
+                    subscriptionId: subscription.id,
+                    currentStatus: subscription.status,
+                    copyConfigId: subscription.copyConfigId,
+                });
+                if (transitioned) {
+                    updatedSubscription = await tx.managedSubscription.findUniqueOrThrow({
                         where: { id: subscription.id },
-                        data: { status: 'LIQUIDATING' },
                         include: {
                             term: true,
                             product: true,
                             settlement: { select: { status: true } }
                         }
                     });
-                    if (subscription.copyConfigId) {
-                        await tx.copyTradingConfig.update({
-                            where: { id: subscription.copyConfigId },
-                            data: { isActive: false }
-                        });
-                    }
                 }
 
                 return {
@@ -176,19 +168,11 @@ export async function POST(
                 };
             }
 
-            const settlementCalc = calculateManagedSettlement({
-                principal: subscription.principal,
-                finalEquity: Number(subscription.currentEquity ?? subscription.principal),
-                highWaterMark: subscription.highWaterMark,
-                performanceFeeRate: resolveEffectivePerformanceFeeRate({
-                    baseRate: Number(subscription.term.performanceFeeRate ?? subscription.product.performanceFeeRate),
-                    isTrial: Boolean(subscription.isTrial),
-                    trialEndsAt: subscription.trialEndsAt,
-                    endAt: subscription.endAt,
-                }),
-                isGuaranteed: guaranteeEligible,
-                minYieldRate: guaranteeEligible ? subscription.term.minYieldRate : null,
-            });
+            const { settlementCalc } = calculateSettlementForSubscription(
+                subscription,
+                now,
+                guaranteeEligible
+            );
             const earlyWithdrawalFeeRate = isEarlyWithdrawal ? EARLY_WITHDRAWAL_FEE_RATE : 0;
             const earlyWithdrawalFee = isEarlyWithdrawal
                 ? Number((settlementCalc.finalPayout * earlyWithdrawalFeeRate).toFixed(6))
@@ -206,57 +190,21 @@ export async function POST(
                 });
             }
 
-            if (settlementCalc.reserveTopup > 0) {
-                const reserveRows = await tx.reserveFundLedger.findMany({
-                    select: { entryType: true, amount: true },
-                });
-                const reserveBalance = calculateReserveBalance(reserveRows);
-                const nextBalance = reserveBalance - settlementCalc.reserveTopup;
-
-                await tx.reserveFundLedger.create({
-                    data: {
-                        entryType: 'GUARANTEE_TOPUP',
-                        amount: settlementCalc.reserveTopup,
-                        balanceAfter: nextBalance,
-                        subscriptionId: subscription.id,
-                        note: 'MANUAL_WITHDRAW_GUARANTEE_TOPUP',
-                    },
-                });
-            }
-
-            const settlement = await tx.managedSettlement.upsert({
-                where: { subscriptionId: subscription.id },
-                update: {
-                    status: 'COMPLETED',
-                    principal: settlementCalc.principal,
-                    finalEquity: settlementCalc.finalEquity,
-                    grossPnl: settlementCalc.grossPnl,
-                    highWaterMark: settlementCalc.highWaterMark,
-                    hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
-                    performanceFeeRate: settlementCalc.performanceFeeRate,
-                    performanceFee: settlementCalc.performanceFee,
-                    guaranteedPayout: settlementCalc.guaranteedPayout,
-                    reserveTopup: settlementCalc.reserveTopup,
-                    finalPayout: finalPayoutAfterFee,
-                    settledAt: now,
-                    errorMessage: null,
-                },
-                create: {
-                    subscriptionId: subscription.id,
-                    status: 'COMPLETED',
-                    principal: settlementCalc.principal,
-                    finalEquity: settlementCalc.finalEquity,
-                    grossPnl: settlementCalc.grossPnl,
-                    highWaterMark: settlementCalc.highWaterMark,
-                    hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
-                    performanceFeeRate: settlementCalc.performanceFeeRate,
-                    performanceFee: settlementCalc.performanceFee,
-                    guaranteedPayout: settlementCalc.guaranteedPayout,
-                    reserveTopup: settlementCalc.reserveTopup,
-                    finalPayout: finalPayoutAfterFee,
-                    settledAt: now,
-                },
+            const settlementResult = await applyManagedSettlementMutation(tx, {
+                subscriptionId: subscription.id,
+                now,
+                guaranteeEligibleOverride: guaranteeEligible,
+                finalPayoutOverride: finalPayoutAfterFee,
+                reserveTopupNote: 'MANUAL_WITHDRAW_GUARANTEE_TOPUP',
+                endAtNow: true,
+                preserveUnmaturedOnNonGuaranteed: true,
             });
+            if (settlementResult.status === 'NOT_FOUND') {
+                throw new ApiError(404, 'Subscription not found');
+            }
+            if (settlementResult.status === 'SKIPPED_ALREADY_SETTLED') {
+                throw new ApiError(409, 'Subscription already settled');
+            }
 
             const drawdownRatio = subscription.principal > 0
                 ? Math.max(0, (subscription.principal - settlementCalc.finalEquity) / subscription.principal)
@@ -275,23 +223,11 @@ export async function POST(
                 });
             }
 
-            const updatedSubscription = await tx.managedSubscription.update({
-                where: { id: subscription.id },
-                data: {
-                    status: 'SETTLED',
-                    currentEquity: settlementCalc.finalEquity,
-                    highWaterMark: Math.max(subscription.highWaterMark, settlementCalc.finalEquity),
-                    maturedAt: guaranteeEligible ? (subscription.maturedAt ?? now) : subscription.maturedAt,
-                    settledAt: now,
-                    endAt: now,
-                },
-            });
-
             return {
                 action: 'SETTLE' as const,
-                updatedSubscription,
-                settlement,
-                guaranteeEligible,
+                updatedSubscription: settlementResult.subscription,
+                settlement: settlementResult.settlement,
+                guaranteeEligible: settlementResult.guaranteeEligible,
                 guardrails: {
                     isEarlyWithdrawal,
                     cooldownHours: WITHDRAW_COOLDOWN_HOURS,
@@ -314,18 +250,19 @@ export async function POST(
 
         const settledResult = result;
         // Do not fail user withdrawal if affiliate distribution path is temporarily unavailable.
-        const realizedProfit = Number(settledResult.settlement.grossPnl ?? 0);
-        if (realizedProfit > 0) {
-            try {
-                await affiliateEngine.distributeProfitFee(
-                    walletContext.wallet,
-                    realizedProfit,
-                    `managed-withdraw:${settledResult.updatedSubscription.id}:${settledResult.settlement.id}`,
-                    { scope: 'MANAGED_WITHDRAWAL' }
-                );
-            } catch (affiliateError) {
-                console.error('[ManagedWithdraw] Profit fee distribution failed:', affiliateError);
-            }
+        try {
+            await settleManagedProfitFeeIfNeeded({
+                distributor: async (walletAddress, realizedProfit, tradeId, options) =>
+                    affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
+                walletAddress: walletContext.wallet,
+                subscriptionId: settledResult.updatedSubscription.id,
+                settlementId: settledResult.settlement.id,
+                grossPnl: settledResult.settlement.grossPnl,
+                scope: 'MANAGED_WITHDRAWAL',
+                sourcePrefix: 'managed-withdraw',
+            });
+        } catch (affiliateError) {
+            console.error('[ManagedWithdraw] Profit fee distribution failed:', affiliateError);
         }
 
         return NextResponse.json({

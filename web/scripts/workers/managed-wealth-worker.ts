@@ -9,10 +9,15 @@ import {
 import {
     calculateCoverageRatio,
     calculateGuaranteeLiability,
-    calculateManagedSettlement,
     calculateReserveBalance,
 } from '../../lib/managed-wealth/settlement-math';
+import {
+    applyManagedSettlementMutation,
+    settleManagedProfitFeeIfNeeded,
+    transitionSubscriptionToLiquidatingIfNeeded,
+} from '../../lib/managed-wealth/managed-settlement-service';
 import { polyClient } from '../../lib/polymarket';
+import { affiliateEngine } from '../../lib/services/affiliate-engine';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
 if (!DATABASE_URL) {
@@ -31,17 +36,6 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 let running = false;
-
-function resolveEffectivePerformanceFeeRate(input: {
-    baseRate: number;
-    isTrial: boolean;
-    trialEndsAt?: Date | null;
-    endAt?: Date | null;
-}): number {
-    if (!input.isTrial) return input.baseRate;
-    if (!input.trialEndsAt || !input.endAt) return input.baseRate;
-    return input.endAt.getTime() <= input.trialEndsAt.getTime() ? 0 : input.baseRate;
-}
 
 async function getReserveBalance(tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>): Promise<number> {
     const rows = await tx.reserveFundLedger.findMany({
@@ -302,20 +296,11 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
             status: { in: ['MATURED', 'RUNNING', 'LIQUIDATING'] },
             endAt: { lte: now },
         },
-        include: {
-            product: {
-                select: {
-                    id: true,
-                    isGuaranteed: true,
-                    performanceFeeRate: true,
-                },
-            },
-            term: {
-                select: {
-                    minYieldRate: true,
-                    performanceFeeRate: true,
-                },
-            },
+        select: {
+            id: true,
+            walletAddress: true,
+            copyConfigId: true,
+            status: true,
             settlement: {
                 select: { id: true, status: true },
             },
@@ -339,107 +324,43 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
 
         if (openPositionsCount > 0) {
             if (sub.status !== 'LIQUIDATING') {
-                await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => {
-                    await tx.managedSubscription.update({
-                        where: { id: sub.id },
-                        data: { status: 'LIQUIDATING' }
+                await prisma.$transaction(async (tx) => {
+                    await transitionSubscriptionToLiquidatingIfNeeded(tx, {
+                        subscriptionId: sub.id,
+                        currentStatus: sub.status,
+                        copyConfigId: sub.copyConfigId,
                     });
-                    if (sub.copyConfigId) {
-                        await tx.copyTradingConfig.update({
-                            where: { id: sub.copyConfigId },
-                            data: { isActive: false }
-                        });
-                    }
                 });
             }
             continue; // Skip settlement until positions are liquidated by the liquidateSubscriptions routine
         }
 
-        const settlementCalc = calculateManagedSettlement({
-            principal: sub.principal,
-            finalEquity: Number(sub.currentEquity ?? sub.principal),
-            highWaterMark: sub.highWaterMark,
-            performanceFeeRate: resolveEffectivePerformanceFeeRate({
-                baseRate: Number(sub.term.performanceFeeRate ?? sub.product.performanceFeeRate),
-                isTrial: Boolean(sub.isTrial),
-                trialEndsAt: sub.trialEndsAt,
-                endAt: sub.endAt,
-            }),
-            isGuaranteed: sub.product.isGuaranteed,
-            minYieldRate: sub.term.minYieldRate,
-        });
+        const mutationResult = await prisma.$transaction(async (tx) =>
+            applyManagedSettlementMutation(tx, {
+                subscriptionId: sub.id,
+                now,
+                reserveTopupNote: 'WORKER_AUTO_SETTLEMENT_GUARANTEE_TOPUP',
+            })
+        );
 
-        await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>) => {
-            const current = await tx.managedSubscription.findUnique({
-                where: { id: sub.id },
-                include: {
-                    settlement: {
-                        select: { status: true },
-                    },
-                },
+        if (mutationResult.status !== 'COMPLETED') {
+            continue;
+        }
+
+        try {
+            await settleManagedProfitFeeIfNeeded({
+                distributor: async (walletAddress, realizedProfit, tradeId, options) =>
+                    affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
+                walletAddress: sub.walletAddress,
+                subscriptionId: mutationResult.subscription.id,
+                settlementId: mutationResult.settlement.id,
+                grossPnl: mutationResult.settlement.grossPnl,
+                scope: 'MANAGED_WITHDRAWAL',
+                sourcePrefix: 'managed-withdraw',
             });
-
-            if (!current) return;
-            if (current.settlement?.status === 'COMPLETED') return;
-
-            if (settlementCalc.reserveTopup > 0) {
-                const reserveBalance = await getReserveBalance(tx);
-                await tx.reserveFundLedger.create({
-                    data: {
-                        entryType: 'GUARANTEE_TOPUP',
-                        amount: settlementCalc.reserveTopup,
-                        balanceAfter: reserveBalance - settlementCalc.reserveTopup,
-                        subscriptionId: sub.id,
-                        note: 'WORKER_AUTO_SETTLEMENT_GUARANTEE_TOPUP',
-                    },
-                });
-            }
-
-            await tx.managedSettlement.upsert({
-                where: { subscriptionId: sub.id },
-                update: {
-                    status: 'COMPLETED',
-                    principal: settlementCalc.principal,
-                    finalEquity: settlementCalc.finalEquity,
-                    grossPnl: settlementCalc.grossPnl,
-                    highWaterMark: settlementCalc.highWaterMark,
-                    hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
-                    performanceFeeRate: settlementCalc.performanceFeeRate,
-                    performanceFee: settlementCalc.performanceFee,
-                    guaranteedPayout: settlementCalc.guaranteedPayout,
-                    reserveTopup: settlementCalc.reserveTopup,
-                    finalPayout: settlementCalc.finalPayout,
-                    settledAt: now,
-                    errorMessage: null,
-                },
-                create: {
-                    subscriptionId: sub.id,
-                    status: 'COMPLETED',
-                    principal: settlementCalc.principal,
-                    finalEquity: settlementCalc.finalEquity,
-                    grossPnl: settlementCalc.grossPnl,
-                    highWaterMark: settlementCalc.highWaterMark,
-                    hwmEligibleProfit: settlementCalc.hwmEligibleProfit,
-                    performanceFeeRate: settlementCalc.performanceFeeRate,
-                    performanceFee: settlementCalc.performanceFee,
-                    guaranteedPayout: settlementCalc.guaranteedPayout,
-                    reserveTopup: settlementCalc.reserveTopup,
-                    finalPayout: settlementCalc.finalPayout,
-                    settledAt: now,
-                },
-            });
-
-            await tx.managedSubscription.update({
-                where: { id: sub.id },
-                data: {
-                    status: 'SETTLED',
-                    maturedAt: current.maturedAt ?? now,
-                    settledAt: now,
-                    currentEquity: settlementCalc.finalEquity,
-                    highWaterMark: Math.max(current.highWaterMark, settlementCalc.finalEquity),
-                },
-            });
-        });
+        } catch (affiliateError) {
+            console.error('[ManagedWealthWorker] Profit fee distribution failed:', affiliateError);
+        }
 
         settled += 1;
     }
