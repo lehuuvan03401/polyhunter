@@ -283,6 +283,10 @@
   - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
   - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
   - 已执行 `cd web && npx tsc --noEmit`，仍受既有 `subscription-modal.tsx` 3 处历史类型错误阻断（非本批改动引入）。
+- 2026-02-26：Phase B 第二批实现（迁移回填工具）：
+  - 新增回填脚本：`web/scripts/db/backfill-managed-subscription-positions.ts`（按 `copyConfigId` 回放 `CopyTrade` 生成订阅维度持仓）。
+  - 新增运行命令：`cd web && npm run backfill:managed-positions`。
+  - 该脚本已接入代码仓库，尚未在当前环境执行（需真实数据库上下文）。
 - 2026-02-26：补充边界强校验：
   - `web/app/api/managed-subscriptions/route.ts` 新增 FREE 模式账户托管订阅拦截（`MODE_BOUNDARY_VIOLATION`）。
   - `web/app/api/participation/custody-auth/route.ts` 限制授权模式为 `MANAGED`（拒绝 `FREE`）。

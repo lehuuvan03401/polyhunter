@@ -212,7 +212,8 @@
 - [complete] 新增订阅维度持仓模型 `ManagedSubscriptionPosition`（schema + migration）
 - [complete] managed 关键入口改为按 `subscriptionId` 判定未平仓（withdraw / settlement-run / managed-worker）
 - [complete] 交易执行链路新增 managed 持仓写入（`TradeOrchestrator` 侧按 `copyConfigId` 解析订阅作用域并写入 scoped position）
-- [pending] 历史持仓回填脚本与读切换验证
+- [complete] 新增历史持仓回填脚本（`backfill:managed-positions`）
+- [pending] 生产读切换前回填验证与对账
 
 ## 错误记录
 | 时间 | 位置 | 错误 | 处理 |
