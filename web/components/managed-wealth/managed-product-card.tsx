@@ -12,6 +12,14 @@ import type { ParticipationStrategyValue } from '@/lib/participation-program/rul
 interface ManagedProductCardProps {
     product: ManagedProduct;
     onSubscribe: (product: ManagedProduct) => void;
+    matrixProjection?: {
+        loading: boolean;
+        cycleDays: number;
+        principalUsd: number | null;
+        principalBand: 'A' | 'B' | 'C' | null;
+        matched: boolean;
+        displayRange: string | null;
+    };
 }
 
 const STRATEGY_ICONS: Record<ParticipationStrategyValue, typeof ShieldCheck> = {
@@ -20,7 +28,7 @@ const STRATEGY_ICONS: Record<ParticipationStrategyValue, typeof ShieldCheck> = {
     AGGRESSIVE: Zap,
 };
 
-export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardProps) {
+export function ManagedProductCard({ product, onSubscribe, matrixProjection }: ManagedProductCardProps) {
     const t = useTranslations('ManagedWealth.ProductCard');
     const tProducts = useTranslations('ManagedWealth.Products');
     const theme = MANAGED_STRATEGY_THEMES[product.strategyProfile];
@@ -29,6 +37,9 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
     // Calculate return range
     const minReturn = Math.min(...product.terms.map(t => t.targetReturnMin));
     const maxReturn = Math.max(...product.terms.map(t => t.targetReturnMax));
+    const fallbackRange = `${minReturn}% - ${maxReturn}%`;
+    const matrixRange = matrixProjection?.matched ? matrixProjection.displayRange : null;
+    const displayRange = matrixRange ?? fallbackRange;
 
     // Calculate duration range
     const minDuration = Math.min(...product.terms.map(t => t.durationDays));
@@ -68,10 +79,24 @@ export function ManagedProductCard({ product, onSubscribe }: ManagedProductCardP
                 <div className="mb-8">
                     <div className="flex items-baseline gap-1">
                         <span className={`text-3xl font-bold tracking-tight ${theme.color}`}>
-                            {minReturn}% - {maxReturn}%
+                            {displayRange}
                         </span>
-                        <span className="text-sm font-medium text-zinc-500">{t('targetReturn')}</span>
+                        <span className="text-sm font-medium text-zinc-500">
+                            {matrixRange ? t('matrixReturn') : t('targetReturn')}
+                        </span>
                     </div>
+                    {matrixProjection?.principalUsd ? (
+                        <p className="mt-1 text-xs text-zinc-500">
+                            {matrixProjection.loading
+                                ? t('matrixLoading')
+                                : matrixRange && matrixProjection.principalBand
+                                    ? t('matrixMeta', {
+                                        cycle: matrixProjection.cycleDays,
+                                        band: matrixProjection.principalBand,
+                                    })
+                                    : t('matrixFallback')}
+                        </p>
+                    ) : null}
                     <p className="mt-2 text-sm text-zinc-400 line-clamp-2">
                         {/* @ts-ignore */}
                         {tProducts(`${product.strategyProfile}.description`)}

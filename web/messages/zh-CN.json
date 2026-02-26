@@ -110,6 +110,10 @@
                 "Aggressive": "激进型"
             },
             "targetReturn": "目标回报",
+            "matrixReturn": "矩阵回报",
+            "matrixLoading": "矩阵匹配中...",
+            "matrixMeta": "{cycle}天周期 · 档位 {band}",
+            "matrixFallback": "当前展示产品默认区间",
             "defaultDescription": "专业托管策略。",
             "lockup": "锁定期",
             "protection": "本金保障",
@@ -192,6 +196,17 @@
             "subtitle": "发现并订阅自动交易策略。",
             "myDashboard": "我的仪表板",
             "loading": "加载策略中...",
+            "matrix": {
+                "title": "收益矩阵模拟器",
+                "subtitle": "输入入金金额与周期，实时预览三种策略收益区间。",
+                "amountLabel": "本金（USDT 等值）",
+                "amountPlaceholder": "请输入本金金额",
+                "cycleLabel": "服务周期",
+                "cycleValue": "{days}天",
+                "bandMatched": "已匹配档位：{band}",
+                "outOfBand": "输入金额超出矩阵支持范围（500 - 300,000 USDT）。",
+                "enterPrincipal": "请输入有效本金后查看匹配收益区间。"
+            },
             "filters": {
                 "strategies": {
                     "ALL": "所有策略",

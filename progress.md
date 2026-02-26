@@ -293,5 +293,9 @@
   - 策略解析新增 `BALANCED -> MODERATE` 别名兼容。
   - 订阅弹窗接入动态估算：`web/components/managed-wealth/subscription-modal.tsx` 按用户输入金额和所选周期实时展示匹配区间与档位标签。
   - 多语言文案补齐：`web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`。
+- 2026-02-26：managed-wealth 页面策略卡片完成矩阵交互集成：
+  - `web/app/[locale]/managed-wealth/page.tsx` 新增“收益矩阵模拟器”（本金输入 + 周期选择），并将匹配结果按策略投射到三张策略卡片。
+  - `web/components/managed-wealth/managed-product-card.tsx` 顶部收益指标改为优先显示矩阵命中区间，同时展示周期与档位（未命中回退产品默认区间）。
+  - 对外规则页保留作为完整政策说明，主交互迁移到策略选择主路径，降低用户理解成本。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/participation-program/managed-return-matrix.test.ts app/api/participation/rules.integration.test.ts`，通过（10/10）。

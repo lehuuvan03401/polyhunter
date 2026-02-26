@@ -110,6 +110,10 @@
                 "Aggressive": "Aggressive"
             },
             "targetReturn": "Target Return",
+            "matrixReturn": "Matrix Return",
+            "matrixLoading": "Matching matrix...",
+            "matrixMeta": "{cycle}d cycle · Band {band}",
+            "matrixFallback": "Showing product default range",
             "defaultDescription": "Professional managed strategy.",
             "lockup": "Lockup",
             "protection": "Protection",
@@ -192,6 +196,17 @@
             "subtitle": "Discover and subscribe to automated trading strategies.",
             "myDashboard": "My Dashboard",
             "loading": "Loading strategies...",
+            "matrix": {
+                "title": "Yield Matrix Simulator",
+                "subtitle": "Input principal and cycle to preview strategy-specific return ranges.",
+                "amountLabel": "Principal (USDT value)",
+                "amountPlaceholder": "Enter principal amount",
+                "cycleLabel": "Cycle",
+                "cycleValue": "{days}d",
+                "bandMatched": "Matched principal band: {band}",
+                "outOfBand": "Principal outside supported matrix range (500 - 300,000 USDT).",
+                "enterPrincipal": "Enter a valid principal to preview matched ranges."
+            },
             "filters": {
                 "strategies": {
                     "ALL": "All Strategies",

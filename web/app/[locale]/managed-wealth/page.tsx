@@ -9,11 +9,26 @@ import { ManagedProduct, SubscriptionModal } from '@/components/managed-wealth/s
 import { ManagedProductCard } from '@/components/managed-wealth/managed-product-card';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
-import { PARTICIPATION_STRATEGIES } from '@/lib/participation-program/rules';
+import {
+    PARTICIPATION_STRATEGIES,
+    type ManagedReturnMatrixRow,
+} from '@/lib/participation-program/rules';
 import { ManagedExternalRulesSection } from '@/components/participation/managed-external-rules-section';
+import { lookupManagedReturnMatrixRow } from '@/lib/participation-program/managed-return-matrix';
 
 const STRATEGY_FILTERS = ['ALL', ...PARTICIPATION_STRATEGIES] as const;
 type StrategyFilter = (typeof STRATEGY_FILTERS)[number];
+const MATRIX_CYCLE_OPTIONS = [7, 30, 90, 180, 360] as const;
+type MatrixCycleOption = (typeof MATRIX_CYCLE_OPTIONS)[number];
+
+type MatrixProjectionByStrategy = Record<
+    (typeof PARTICIPATION_STRATEGIES)[number],
+    {
+        principalBand: 'A' | 'B' | 'C' | null;
+        matched: boolean;
+        displayRange: string | null;
+    }
+>;
 
 export default function ManagedWealthPage() {
     const t = useTranslations('ManagedWealth.Marketplace');
@@ -23,6 +38,10 @@ export default function ManagedWealthPage() {
     const [loading, setLoading] = useState(true);
     const [strategyFilter, setStrategyFilter] = useState<StrategyFilter>('ALL');
     const [guaranteedOnly, setGuaranteedOnly] = useState(false);
+    const [projectionPrincipal, setProjectionPrincipal] = useState('500');
+    const [projectionCycleDays, setProjectionCycleDays] = useState<MatrixCycleOption>(30);
+    const [matrixRows, setMatrixRows] = useState<ManagedReturnMatrixRow[]>([]);
+    const [matrixLoading, setMatrixLoading] = useState(true);
 
     const [modalProduct, setModalProduct] = useState<ManagedProduct | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
@@ -52,6 +71,38 @@ export default function ManagedWealthPage() {
         fetchProducts();
     }, [strategyFilter, guaranteedOnly]);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        async function fetchMatrix() {
+            setMatrixLoading(true);
+            try {
+                const res = await fetch('/api/participation/rules', { cache: 'no-store' });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data?.error || 'Failed to fetch managed return matrix');
+                }
+                if (cancelled) return;
+                setMatrixRows((data?.managedReturnMatrix ?? []) as ManagedReturnMatrixRow[]);
+            } catch (error) {
+                if (!cancelled) {
+                    toast.error(error instanceof Error ? error.message : t('errors.fetchFailed'));
+                    setMatrixRows([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setMatrixLoading(false);
+                }
+            }
+        }
+
+        fetchMatrix();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const stats = useMemo(() => {
         const guaranteed = products.filter((p) => p.isGuaranteed).length;
         return {
@@ -59,6 +110,38 @@ export default function ManagedWealthPage() {
             guaranteed,
         };
     }, [products]);
+
+    const projectionPrincipalUsd = Number(projectionPrincipal);
+    const hasValidProjectionPrincipal = Number.isFinite(projectionPrincipalUsd) && projectionPrincipalUsd > 0;
+
+    const matrixProjectionByStrategy = useMemo<MatrixProjectionByStrategy>(() => {
+        const initial: MatrixProjectionByStrategy = {
+            CONSERVATIVE: { principalBand: null, matched: false, displayRange: null },
+            MODERATE: { principalBand: null, matched: false, displayRange: null },
+            AGGRESSIVE: { principalBand: null, matched: false, displayRange: null },
+        };
+
+        if (!hasValidProjectionPrincipal || matrixRows.length === 0) {
+            return initial;
+        }
+
+        for (const strategy of PARTICIPATION_STRATEGIES) {
+            const matched = lookupManagedReturnMatrixRow(matrixRows, {
+                principalUsd: projectionPrincipalUsd,
+                cycleDays: projectionCycleDays,
+                strategyProfile: strategy,
+            });
+            initial[strategy] = {
+                principalBand: matched.principalBand,
+                matched: Boolean(matched.row),
+                displayRange: matched.displayRange,
+            };
+        }
+
+        return initial;
+    }, [hasValidProjectionPrincipal, matrixRows, projectionCycleDays, projectionPrincipalUsd]);
+
+    const currentBand = matrixProjectionByStrategy.CONSERVATIVE.principalBand;
 
     const openSubscribe = (product: ManagedProduct) => {
         if (!authenticated) {
@@ -193,6 +276,58 @@ export default function ManagedWealthPage() {
                 </button>
             </div>
 
+            <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-4 md:p-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-sm font-semibold text-white">{t('matrix.title')}</p>
+                        <p className="text-xs text-zinc-400">{t('matrix.subtitle')}</p>
+                    </div>
+                    {matrixLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                    ) : null}
+                </div>
+                <div className="grid gap-3 md:grid-cols-[240px_1fr] md:items-end">
+                    <label className="block">
+                        <span className="mb-2 block text-xs text-zinc-500">{t('matrix.amountLabel')}</span>
+                        <div className="relative">
+                            <input
+                                value={projectionPrincipal}
+                                onChange={(event) => setProjectionPrincipal(event.target.value)}
+                                inputMode="decimal"
+                                placeholder={t('matrix.amountPlaceholder')}
+                                className="w-full rounded-xl border border-white/10 bg-[#121417] px-3 py-2 text-sm text-white focus:border-blue-500/60 focus:outline-none"
+                            />
+                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500">USDT</span>
+                        </div>
+                    </label>
+                    <div>
+                        <span className="mb-2 block text-xs text-zinc-500">{t('matrix.cycleLabel')}</span>
+                        <div className="flex flex-wrap gap-2">
+                            {MATRIX_CYCLE_OPTIONS.map((cycle) => (
+                                <button
+                                    key={cycle}
+                                    type="button"
+                                    onClick={() => setProjectionCycleDays(cycle)}
+                                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${projectionCycleDays === cycle
+                                        ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                                        : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                                        }`}
+                                >
+                                    {t('matrix.cycleValue', { days: cycle })}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-3 text-xs text-zinc-400">
+                    {!hasValidProjectionPrincipal
+                        ? t('matrix.enterPrincipal')
+                        : currentBand
+                            ? t('matrix.bandMatched', { band: currentBand })
+                            : t('matrix.outOfBand')}
+                </div>
+            </div>
+
             <motion.div
                 layout
                 className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
@@ -202,6 +337,14 @@ export default function ManagedWealthPage() {
                         <ManagedProductCard
                             key={product.id}
                             product={product}
+                            matrixProjection={{
+                                loading: matrixLoading,
+                                cycleDays: projectionCycleDays,
+                                principalUsd: hasValidProjectionPrincipal ? projectionPrincipalUsd : null,
+                                principalBand: matrixProjectionByStrategy[product.strategyProfile].principalBand,
+                                matched: matrixProjectionByStrategy[product.strategyProfile].matched,
+                                displayRange: matrixProjectionByStrategy[product.strategyProfile].displayRange,
+                            }}
                             onSubscribe={openSubscribe}
                         />
                     ))}

@@ -110,6 +110,10 @@
                 "Aggressive": "激進型"
             },
             "targetReturn": "目標回報",
+            "matrixReturn": "矩陣回報",
+            "matrixLoading": "矩陣匹配中...",
+            "matrixMeta": "{cycle}天週期 · 檔位 {band}",
+            "matrixFallback": "目前顯示產品預設區間",
             "defaultDescription": "專業託管策略。",
             "lockup": "鎖定期",
             "protection": "本金保障",
@@ -192,6 +196,17 @@
             "subtitle": "發現並訂閱自動交易策略。",
             "myDashboard": "我的儀表板",
             "loading": "加載策略中...",
+            "matrix": {
+                "title": "收益矩陣模擬器",
+                "subtitle": "輸入入金金額與週期，即時預覽三種策略收益區間。",
+                "amountLabel": "本金（USDT 等值）",
+                "amountPlaceholder": "請輸入本金金額",
+                "cycleLabel": "服務週期",
+                "cycleValue": "{days}天",
+                "bandMatched": "已匹配檔位：{band}",
+                "outOfBand": "輸入金額超出矩陣支援範圍（500 - 300,000 USDT）。",
+                "enterPrincipal": "請輸入有效本金後查看匹配收益區間。"
+            },
             "filters": {
                 "strategies": {
                     "ALL": "所有策略",
