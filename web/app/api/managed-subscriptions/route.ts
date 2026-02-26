@@ -11,6 +11,11 @@ import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import { applyOneTimeReferralSubscriptionBonus } from '@/lib/participation-program/referral-subscription-bonus';
 import { resolveManagedSubscriptionTrial } from '@/lib/managed-wealth/subscription-trial';
 import { resolveManagedPolicyGate } from '@/lib/participation-program/policy-gates';
+import {
+    assertManagedPrincipalAvailability,
+    ManagedPrincipalAvailabilityError,
+    reserveManagedPrincipal,
+} from '@/lib/managed-wealth/principal-reservation';
 
 export const dynamic = 'force-dynamic';
 const WITHDRAW_GUARDRAILS = {
@@ -241,6 +246,28 @@ export async function GET(request: NextRequest) {
                         settledAt: true,
                     },
                 },
+                custodyAuthorization: {
+                    select: {
+                        id: true,
+                        status: true,
+                        grantedAt: true,
+                        revokedAt: true,
+                    },
+                },
+                principalReservations: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 20,
+                    select: {
+                        id: true,
+                        entryType: true,
+                        amount: true,
+                        managedQualifiedBalance: true,
+                        reservedBalanceAfter: true,
+                        availableBalanceAfter: true,
+                        note: true,
+                        createdAt: true,
+                    },
+                },
             },
             orderBy: { createdAt: 'desc' },
         });
@@ -399,8 +426,12 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        let activeAuthorization: {
+            id: string;
+            grantedAt: Date;
+        } | null = null;
         if (REQUIRE_CUSTODY_AUTH) {
-            const activeAuthorization = await prisma.managedCustodyAuthorization.findFirst({
+            activeAuthorization = await prisma.managedCustodyAuthorization.findFirst({
                 where: {
                     walletAddress: requestWallet,
                     status: 'ACTIVE',
@@ -494,6 +525,7 @@ export async function POST(request: NextRequest) {
 
         const subscription = await prisma.$transaction(async (tx) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`managed_wealth_trial_${requestWallet}`}))`;
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`managed_principal_reservation_${requestWallet}`}))`;
 
             const existingCount = await tx.managedSubscription.count({
                 where: { walletAddress: requestWallet },
@@ -503,6 +535,12 @@ export async function POST(request: NextRequest) {
                 termDurationDays: term.durationDays,
                 now,
             });
+
+            const principalAvailability = await assertManagedPrincipalAvailability(
+                tx,
+                requestWallet,
+                principal
+            );
 
             if (product.isGuaranteed) {
                 const lockKey = `managed_wealth_guaranteed_${product.id}`;
@@ -536,11 +574,28 @@ export async function POST(request: NextRequest) {
                     isTrial: trialApplied,
                     trialEndsAt,
                     copyConfigId: copyConfigId ?? null,
+                    custodyAuthorizationId: activeAuthorization?.id ?? null,
                 },
                 include: {
                     product: true,
                     term: true,
+                    custodyAuthorization: {
+                        select: {
+                            id: true,
+                            status: true,
+                            grantedAt: true,
+                            revokedAt: true,
+                        },
+                    },
                 },
+            });
+
+            await reserveManagedPrincipal(tx, {
+                walletAddress: requestWallet,
+                subscriptionId: createdSubscription.id,
+                amount: principal,
+                snapshot: principalAvailability,
+                note: 'MANAGED_SUBSCRIPTION_CREATED',
             });
 
             await tx.managedNavSnapshot.create({
@@ -569,6 +624,13 @@ export async function POST(request: NextRequest) {
                 trialApplied,
                 trialEndsAt,
                 referralBonusApplied,
+                principalReservation: {
+                    managedQualifiedBalance: principalAvailability.managedQualifiedBalance,
+                    reservedBefore: principalAvailability.reservedBalance,
+                    reservedAfter: Number((principalAvailability.reservedBalance + principal).toFixed(8)),
+                    availableBefore: principalAvailability.availableBalance,
+                    availableAfter: Number((principalAvailability.availableBalance - principal).toFixed(8)),
+                },
             };
         });
 
@@ -579,6 +641,7 @@ export async function POST(request: NextRequest) {
                 trialEndsAt: subscription.trialEndsAt,
                 referralBonusApplied: subscription.referralBonusApplied,
             },
+            principalReservation: subscription.principalReservation,
         }, { status: 201 });
     } catch (error) {
         if (error instanceof ReserveCoverageError) {
@@ -587,6 +650,17 @@ export async function POST(request: NextRequest) {
                     error: error.message,
                     reserveCoverage: error.reserveCoverage,
                     requiredCoverageRatio: error.requiredCoverageRatio,
+                },
+                { status: 409 }
+            );
+        }
+        if (error instanceof ManagedPrincipalAvailabilityError) {
+            return NextResponse.json(
+                {
+                    error: error.message,
+                    code: error.code,
+                    requestedPrincipal: error.requestedPrincipal,
+                    availability: error.details,
                 },
                 { status: 409 }
             );

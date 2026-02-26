@@ -6,10 +6,15 @@ import type {
 } from '@prisma/client';
 import { calculateManagedSettlement, calculateReserveBalance } from './settlement-math';
 import type { ParticipationProfitFeeScope } from '@/lib/participation-program/fee-scope';
+import { releaseManagedPrincipalReservation } from './principal-reservation';
 
 type SettlementModelDelegates = Pick<
     PrismaClient,
-    'managedSubscription' | 'managedSettlement' | 'reserveFundLedger'
+    | 'managedSubscription'
+    | 'managedSettlement'
+    | 'reserveFundLedger'
+    | 'managedPrincipalReservationLedger'
+    | 'netDepositLedger'
 >;
 
 type LiquidationModelDelegates = Pick<
@@ -232,6 +237,12 @@ export async function applyManagedSettlementMutation(
     }
 
     if (subscription.settlement?.status === 'COMPLETED') {
+        await releaseManagedPrincipalReservation(db, {
+            walletAddress: subscription.walletAddress,
+            subscriptionId: subscription.id,
+            amount: subscription.principal,
+            note: 'MANAGED_SUBSCRIPTION_SETTLED',
+        });
         return {
             status: 'SKIPPED_ALREADY_SETTLED',
             subscription,
@@ -331,6 +342,13 @@ export async function applyManagedSettlementMutation(
     const updated = await db.managedSubscription.update({
         where: { id: subscription.id },
         data: updateData,
+    });
+
+    await releaseManagedPrincipalReservation(db, {
+        walletAddress: subscription.walletAddress,
+        subscriptionId: subscription.id,
+        amount: settlementCalc.principal,
+        note: 'MANAGED_SUBSCRIPTION_SETTLED',
     });
 
     return {

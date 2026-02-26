@@ -1,6 +1,6 @@
 ## 1. Data model and migration
 - [ ] 1.1 Add subscription-scoped allocation model (`ManagedSubscriptionAllocation`) with versioning and score snapshots.
-- [ ] 1.2 Add managed principal reservation ledger for subscription-level reserved/released amounts.
+- [x] 1.2 Add managed principal reservation ledger for subscription-level reserved/released amounts.
 - [x] 1.3 Add execution scope isolation for positions (extend `UserPosition` with scope key or introduce dedicated managed position model).
 - [x] 1.4 Add settlement execution/idempotency record to unify settlement + commission status transitions.
 
@@ -17,9 +17,9 @@
 - [x] 3.4 Add idempotency guard for settlement + profit-fee distribution event pair.
 
 ## 4. Participation boundary and principal linkage
-- [ ] 4.1 Enforce managed subscription creation against available managed principal reservation balance.
-- [ ] 4.2 Ensure custody authorization + principal reservation references are auditable from subscription detail.
-- [ ] 4.3 Reject managed operations when mode boundary or reservation constraints are not satisfied.
+- [x] 4.1 Enforce managed subscription creation against available managed principal reservation balance.
+- [x] 4.2 Ensure custody authorization + principal reservation references are auditable from subscription detail.
+- [x] 4.3 Reject managed operations when mode boundary or reservation constraints are not satisfied.
 
 ## 5. Frontend and operator visibility
 - [ ] 5.1 Surface allocation snapshot summary in managed product detail/subscription surfaces.

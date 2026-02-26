@@ -212,3 +212,8 @@
 - 托管结算存在三个入口（withdraw/run/worker），若并发触发同一 settlement，单靠 `CommissionLog` 读后写查重存在竞态窗口。
 - 引入 `ManagedSettlementExecution` 后，可以将“是否已处理/是否在处理中”状态前置到统一账本，用 `updateMany` claim 实现入口级互斥。
 - 该账本同时保留 `FAILED` 原因和 `SKIPPED` 原因，为后续重试器和运维排障提供直接证据。
+
+### 2026-02-26 新增发现：仅看净入金阈值会导致托管理财本金超配
+- 之前订阅创建只校验“净入金 >= 最低门槛”，没有扣减“已被其它活跃订阅占用的本金”，同钱包可重复超额订阅。
+- 通过 `ManagedPrincipalReservationLedger` + 可用余额计算（净入金 - 已预留，且对历史数据用 active subscriptions 做 fallback），可以在不依赖全量历史回填的情况下先强约束新单。
+- 结算阶段补 `RELEASE` 后，资金占用与订阅生命周期形成可追踪闭环；同时把 `custodyAuthorizationId` 挂到订阅上，满足授权审计链路。

@@ -376,3 +376,14 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/managed-settlement-service.test.ts app/api/managed-settlement/health.integration.test.ts`，通过（7/7）。
 - 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
+- 2026-02-26：新增本金预留账本 `ManagedPrincipalReservationLedger` 与枚举 `ManagedPrincipalReservationEntryType`，并新增迁移 `20260226195500_add_managed_principal_reservation_ledger`。
+- 2026-02-26：新增订阅-授权引用迁移 `20260226201000_link_subscription_custody_authorization`，`ManagedSubscription` 增加 `custodyAuthorizationId`。
+- 2026-02-26：新增 `web/lib/managed-wealth/principal-reservation.ts`，实现可用本金计算（含 active-subscription fallback）、预留写账、结算释放写账。
+- 2026-02-26：`POST /api/managed-subscriptions` 已接入本金可用余额硬校验与 `RESERVE` 写账，`GET /api/managed-subscriptions` 增加 `custodyAuthorization` 和 `principalReservations` 审计信息。
+- 2026-02-26：`applyManagedSettlementMutation` 已接入本金预留释放（`RELEASE`），并对已结算场景提供幂等补偿释放。
+- 2026-02-26：新增测试
+  - `web/lib/managed-wealth/principal-reservation.test.ts`（6）
+  - `web/app/api/managed-subscriptions.principal-reservation.integration.test.ts`（1）
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts ...`（本批 15/15），通过。
+- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。

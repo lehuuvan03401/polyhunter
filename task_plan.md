@@ -230,6 +230,13 @@
 - [complete] withdraw/run/worker 三入口统一接入 execution ledger，避免同一 settlement 重复分润
 - [complete] 新增单测：`web/lib/managed-wealth/managed-settlement-service.test.ts`
 
+### Phase E 当前进度（本金预留与授权引用闭环）
+- [complete] 新增本金预留账本模型与迁移：`ManagedPrincipalReservationLedger`（RESERVE/RELEASE）
+- [complete] 订阅创建入口接入可用本金硬校验（净入金 - 已预留）并在不足时拒绝下单
+- [complete] 订阅创建成功后写入 `RESERVE` 账本，结算完成后写入 `RELEASE`（幂等）
+- [complete] 订阅模型新增 `custodyAuthorizationId` 引用，详情查询可审计授权 + 预留流水
+- [complete] 新增测试：`principal-reservation` 单测 + `managed-subscriptions.principal-reservation` 集成测试
+
 ## 错误记录
 | 时间 | 位置 | 错误 | 处理 |
 |---|---|---|---|

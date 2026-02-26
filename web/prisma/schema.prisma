@@ -264,6 +264,11 @@ enum ManagedCommissionStatus {
   FAILED
 }
 
+enum ManagedPrincipalReservationEntryType {
+  RESERVE
+  RELEASE
+}
+
 // Managed risk control actions
 enum ManagedRiskAction {
   DELEVERAGE
@@ -558,6 +563,8 @@ model ManagedSubscription {
   currentEquity        Float?
   copyConfigId         String?
   copyConfig           CopyTradingConfig?        @relation(fields: [copyConfigId], references: [id], onDelete: SetNull)
+  custodyAuthorizationId String?
+  custodyAuthorization ManagedCustodyAuthorization? @relation(fields: [custodyAuthorizationId], references: [id], onDelete: SetNull)
   startAt              DateTime?
   endAt                DateTime?
   maturedAt            DateTime?
@@ -570,6 +577,7 @@ model ManagedSubscription {
   navSnapshots       ManagedNavSnapshot[]
   settlement         ManagedSettlement?
   settlementExecutions ManagedSettlementExecution[]
+  principalReservations ManagedPrincipalReservationLedger[]
   reserveFundEntries ReserveFundLedger[]
   riskEvents         ManagedRiskEvent[]
   scopedPositions    ManagedSubscriptionPosition[]
@@ -578,6 +586,7 @@ model ManagedSubscription {
   @@index([status, endAt])
   @@index([productId, termId])
   @@index([copyConfigId])
+  @@index([custodyAuthorizationId])
 }
 
 model ManagedSubscriptionPosition {
@@ -663,6 +672,25 @@ model ManagedSettlementExecution {
   @@index([commissionStatus, createdAt])
   @@index([subscriptionId, commissionStatus])
   @@index([walletAddress, createdAt])
+}
+
+model ManagedPrincipalReservationLedger {
+  id                    String                             @id @default(cuid())
+  walletAddress         String
+  subscriptionId        String?
+  subscription          ManagedSubscription?               @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  entryType             ManagedPrincipalReservationEntryType
+  amount                Float
+  idempotencyKey        String                             @unique
+  managedQualifiedBalance Float?
+  reservedBalanceAfter  Float?
+  availableBalanceAfter Float?
+  note                  String?
+  createdAt             DateTime                           @default(now())
+
+  @@index([walletAddress, createdAt])
+  @@index([walletAddress, entryType, createdAt])
+  @@index([subscriptionId, createdAt])
 }
 
 model ReserveFundLedger {
@@ -935,6 +963,8 @@ model ManagedCustodyAuthorization {
   revokedAt        DateTime?
   createdAt        DateTime                         @default(now())
   updatedAt        DateTime                         @updatedAt
+
+  managedSubscriptions ManagedSubscription[]
 
   @@index([walletAddress, status, grantedAt])
   @@index([accountId, status])
