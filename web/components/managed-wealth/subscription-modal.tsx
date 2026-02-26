@@ -55,6 +55,33 @@ type SubscriptionCreateResponse = {
     };
 };
 
+type ManagedReturnEstimateRow = {
+    principalBand: 'A' | 'B' | 'C';
+    minPrincipalUsd: number;
+    maxPrincipalUsd: number;
+    termDays: number;
+    strategyProfile: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
+    returnMin: number;
+    returnMax: number;
+    returnUnit: 'PERCENT' | 'MULTIPLIER';
+    displayRange: string;
+};
+
+type ManagedReturnEstimate = {
+    input: {
+        principalUsd: number;
+        cycleDays: number;
+        strategyProfile: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
+    };
+    principalBand: 'A' | 'B' | 'C' | null;
+    matched: boolean;
+    row: ManagedReturnEstimateRow | null;
+};
+
+function formatTermRangeFallback(term: ManagedTerm): string {
+    return `${term.targetReturnMin}% - ${term.targetReturnMax}%`;
+}
+
 export function SubscriptionModal({
     open,
     product,
@@ -72,6 +99,8 @@ export function SubscriptionModal({
     const [riskConfirmed, setRiskConfirmed] = useState(false);
     const [termsConfirmed, setTermsConfirmed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [managedReturnEstimate, setManagedReturnEstimate] = useState<ManagedReturnEstimate | null>(null);
+    const [isEstimatingReturn, setIsEstimatingReturn] = useState(false);
 
     useEffect(() => {
         if (!open || !product) return;
@@ -86,10 +115,63 @@ export function SubscriptionModal({
         return product.terms.find((term) => term.id === termId) || null;
     }, [product, termId]);
 
+    useEffect(() => {
+        if (!open || !product || !selectedTerm) {
+            setManagedReturnEstimate(null);
+            setIsEstimatingReturn(false);
+            return;
+        }
+
+        const parsedPrincipal = Number(principal);
+        if (!Number.isFinite(parsedPrincipal) || parsedPrincipal <= 0) {
+            setManagedReturnEstimate(null);
+            setIsEstimatingReturn(false);
+            return;
+        }
+
+        const controller = new AbortController();
+        const params = new URLSearchParams();
+        params.set('principalUsd', String(parsedPrincipal));
+        params.set('cycleDays', String(selectedTerm.durationDays));
+        params.set('strategy', product.strategyProfile);
+
+        async function fetchEstimate() {
+            setIsEstimatingReturn(true);
+            try {
+                const res = await fetch(`/api/participation/rules?${params.toString()}`, {
+                    cache: 'no-store',
+                    signal: controller.signal,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data?.error || 'Failed to fetch managed return estimate');
+                }
+                setManagedReturnEstimate((data?.managedReturnEstimate as ManagedReturnEstimate | null) ?? null);
+            } catch (error) {
+                if ((error as { name?: string })?.name === 'AbortError') {
+                    return;
+                }
+                setManagedReturnEstimate(null);
+            } finally {
+                if (!controller.signal.aborted) {
+                    setIsEstimatingReturn(false);
+                }
+            }
+        }
+
+        fetchEstimate();
+        return () => controller.abort();
+    }, [open, principal, product, selectedTerm]);
+
     if (!open || !product) return null;
 
     const theme = MANAGED_STRATEGY_THEMES[product.strategyProfile];
     const canSubmit = Boolean(walletAddress && selectedTerm && riskConfirmed && termsConfirmed && Number(principal) > 0 && !isSubmitting);
+    const estimatedRange = selectedTerm
+        ? managedReturnEstimate?.matched && managedReturnEstimate.row
+            ? managedReturnEstimate.row.displayRange
+            : formatTermRangeFallback(selectedTerm)
+        : null;
 
     const submit = async () => {
         if (!walletAddress) {
@@ -231,13 +313,30 @@ export function SubscriptionModal({
                                     <span className={`h-2 w-2 rounded-full ${theme.dot} animate-pulse`} />
                                     {t('SubscriptionModal.projectedPerformance')}
                                 </h4>
-                                <div className={`text-[10px] uppercase tracking-wider font-medium ${theme.lightText} opacity-70`}>{t('SubscriptionModal.historicalData')}</div>
+                                <div className="flex items-center gap-2">
+                                    {managedReturnEstimate?.principalBand ? (
+                                        <span className={`rounded-full border border-white/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide ${theme.lightText}`}>
+                                            {t('SubscriptionModal.matchedBand', { band: managedReturnEstimate.principalBand })}
+                                        </span>
+                                    ) : null}
+                                    {isEstimatingReturn ? (
+                                        <Loader2 className={`h-3.5 w-3.5 animate-spin ${theme.lightText}`} />
+                                    ) : null}
+                                    <div className={`text-[10px] uppercase tracking-wider font-medium ${theme.lightText} opacity-70`}>
+                                        {t('SubscriptionModal.historicalData')}
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-px bg-white/5 rounded-xl overflow-hidden border border-white/5">
                                 <div className="bg-[#0e1014]/50 p-4">
                                     <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">{t('SubscriptionModal.targetReturn')}</div>
-                                    <div className={`text-lg font-bold ${theme.color}`}>{selectedTerm.targetReturnMin}% - {selectedTerm.targetReturnMax}%</div>
+                                    <div className={`text-lg font-bold ${theme.color}`}>{estimatedRange}</div>
+                                    <div className="mt-1 text-[10px] text-zinc-500">
+                                        {managedReturnEstimate?.matched
+                                            ? t('SubscriptionModal.matrixMatched')
+                                            : t('SubscriptionModal.matrixFallback')}
+                                    </div>
                                 </div>
                                 <div className="bg-[#0e1014]/50 p-4">
                                     <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">{t('SubscriptionModal.maxDrawdown')}</div>

@@ -22,6 +22,9 @@ export function parseParticipationStrategy(
 ): ParticipationStrategyValue | undefined {
     if (!value) return undefined;
     const normalized = value.toUpperCase();
+    if (normalized === 'BALANCED') {
+        return 'MODERATE';
+    }
     return PARTICIPATION_STRATEGIES.find((strategy) => strategy === normalized);
 }
 

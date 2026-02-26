@@ -287,3 +287,11 @@
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts lib/participation-program/fee-scope.test.ts lib/participation-program/partner-ops-automation.test.ts app/api/participation/custody-auth.integration.test.ts app/api/managed-subscriptions.mode-boundary.integration.test.ts`，通过（19/19）。
 - 已执行 `openspec validate harden-horus-participation-partner-policy --strict --no-interactive`，通过。
+- 2026-02-26：托管收益矩阵动态匹配能力上线（前后端联动）：
+  - 新增矩阵匹配引擎：`web/lib/participation-program/managed-return-matrix.ts`（按 principal + cycle + strategy 自动命中 A/B/C 行）。
+  - `GET /api/participation/rules` 支持动态估算参数：`principalUsd`、`cycleDays`、`strategy`，返回 `managedReturnEstimate`（档位、命中结果、收益区间）。
+  - 策略解析新增 `BALANCED -> MODERATE` 别名兼容。
+  - 订阅弹窗接入动态估算：`web/components/managed-wealth/subscription-modal.tsx` 按用户输入金额和所选周期实时展示匹配区间与档位标签。
+  - 多语言文案补齐：`web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/participation-program/managed-return-matrix.test.ts app/api/participation/rules.integration.test.ts`，通过（10/10）。

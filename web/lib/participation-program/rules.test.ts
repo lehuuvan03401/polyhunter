@@ -10,6 +10,7 @@ describe('participation strategy options', () => {
         expect(parseParticipationStrategy('conservative')).toBe('CONSERVATIVE');
         expect(parseParticipationStrategy('Moderate')).toBe('MODERATE');
         expect(parseParticipationStrategy('AGGRESSIVE')).toBe('AGGRESSIVE');
+        expect(parseParticipationStrategy('balanced')).toBe('MODERATE');
     });
 
     it('returns undefined for unsupported strategy', () => {
