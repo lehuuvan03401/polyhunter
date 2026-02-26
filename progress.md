@@ -258,3 +258,11 @@
   - 新增测试：`web/lib/participation-program/policy-gates.test.ts` 与 `affiliate-engine` 防重用例。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts app/api/partners/config.integration.test.ts lib/participation-program/partner-program.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（23/23）。
+- 2026-02-26：补充边界强校验：
+  - `web/app/api/managed-subscriptions/route.ts` 新增 FREE 模式账户托管订阅拦截（`MODE_BOUNDARY_VIOLATION`）。
+  - `web/app/api/participation/custody-auth/route.ts` 限制授权模式为 `MANAGED`（拒绝 `FREE`）。
+  - 新增集成测试：
+    - `web/app/api/managed-subscriptions.mode-boundary.integration.test.ts`
+    - `web/app/api/participation/custody-auth.integration.test.ts`
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-subscriptions.mode-boundary.integration.test.ts app/api/participation/custody-auth.integration.test.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts`，通过（13/13）。

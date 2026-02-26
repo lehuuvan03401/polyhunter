@@ -309,16 +309,26 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (REQUIRE_MANAGED_ACTIVATION) {
-            const account = await prisma.participationAccount.findUnique({
-                where: { walletAddress: requestWallet },
-                select: {
-                    status: true,
-                    preferredMode: true,
-                    isRegistrationComplete: true,
-                },
-            });
+        const account = await prisma.participationAccount.findUnique({
+            where: { walletAddress: requestWallet },
+            select: {
+                status: true,
+                preferredMode: true,
+                isRegistrationComplete: true,
+            },
+        });
 
+        if (account?.preferredMode === 'FREE') {
+            return NextResponse.json(
+                {
+                    error: 'Managed subscription is not allowed for FREE mode participation accounts',
+                    code: 'MODE_BOUNDARY_VIOLATION',
+                },
+                { status: 409 }
+            );
+        }
+
+        if (REQUIRE_MANAGED_ACTIVATION) {
             if (!account || !account.isRegistrationComplete) {
                 return NextResponse.json(
                     {

@@ -3,13 +3,12 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
-import { PARTICIPATION_MODES } from '@/lib/participation-program/rules';
 
 export const dynamic = 'force-dynamic';
 
 const createAuthSchema = z.object({
     walletAddress: z.string().min(3),
-    mode: z.enum(PARTICIPATION_MODES).optional().default('MANAGED'),
+    mode: z.literal('MANAGED').optional().default('MANAGED'),
     consentStatement: z.string().min(12),
     scope: z.record(z.string(), z.unknown()).optional(),
 });
