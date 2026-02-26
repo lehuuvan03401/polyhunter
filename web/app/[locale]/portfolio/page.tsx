@@ -28,7 +28,6 @@ import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import { useCopyTradingStore, type CopyTradingConfig } from '@/lib/copy-trading-store';
 import { Button } from '@/components/ui/button';
-import { PendingTradesAlert } from '@/components/copy-trading/pending-trades-alert';
 import { OrderStatusPanel } from '@/components/copy-trading/order-status-panel';
 import { ActiveStrategiesPanel } from '@/components/copy-trading/active-strategies-panel';
 import { useOrderStatus } from '@/lib/hooks/useOrderStatus';
@@ -645,13 +644,6 @@ export default function PortfolioPage() {
                     </div>
                 </div>
             </div>
-
-            {/* Pending Copy Trades Alert */}
-            {user?.wallet?.address && (
-                <div className="mb-6">
-                    <PendingTradesAlert walletAddress={user.wallet.address} />
-                </div>
-            )}
 
             {/* Order Status Monitoring Removed - moved to Tabs */}
 

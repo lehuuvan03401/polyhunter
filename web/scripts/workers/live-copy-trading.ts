@@ -14,12 +14,17 @@
  * MODE=1 npx tsx scripts/workers/live-copy-trading.ts
  * 
  * cd /Users/baronchan/Desktop/Polymarket/poly-sdk/poly-hunter/web
+ * npx tsx scripts/db/wipe-copy-trading-data.ts
+pkill -9 -f "tsx.*live-copy" 2>/dev/null
+CHAIN_ID=137 MODE=1 nohup npx tsx scripts/workers/live-copy-trading.ts > sim.log 2>&1 &
+tail -f sim.log
+
 COPY_MODE=1 \
 CHAIN_ID=137 \
 LIVE_EXECUTION_MODE=EOA \
 LIVE_SELL_MODE=SAME_PERCENT \
 RESET_ON_START=false \
-npx tsx scripts/workers/live-copy-trading.ts
+nohup npx tsx scripts/workers/live-copy-trading.ts > sim.log 2>&1 &
 如果你要走代理钱包模式，把 LIVE_EXECUTION_MODE=PROXY，并确保该用户已创建 Proxy 且执行权限已配置。
  */
 
@@ -924,7 +929,7 @@ async function processRedemptions() {
 
                             // 2. Record Trade
                             const execPrice = 1.0;
-                            let settlementStatus = CopyTradeStatus.EXECUTED;
+                            let settlementStatus: CopyTradeStatus = CopyTradeStatus.EXECUTED;
                             let settlementTxHash = `${TX_PREFIX}redeem-${Date.now()}`;
                             let settlementError = `Redeemed Profit: $${profit.toFixed(4)}`;
                             if (IS_LIVE_MODE) {
