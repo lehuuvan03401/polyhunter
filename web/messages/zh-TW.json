@@ -399,15 +399,15 @@
         },
         "Products": {
             "CONSERVATIVE": {
-                "name": "穩健收益金庫",
+                "name": "穩健型收益金庫",
                 "description": "保守型託管策略，由儲備基金支持本金和最低收益保護。"
             },
             "MODERATE": {
-                "name": "平衡阿爾法金庫",
+                "name": "平衡型收益金庫",
                 "description": "旨在平衡風險和中期增長的穩健策略。"
             },
             "AGGRESSIVE": {
-                "name": "進取機會金庫",
+                "name": "進取型收益金庫",
                 "description": "專注於高波動性機會和更大回撤容忍度的激進策略。"
             }
         }
