@@ -76,6 +76,29 @@ curl -s -X POST "$BASE_URL/api/partners/refunds" \
 - Ensure no `PENDING` refunds are beyond `refundDeadlineAt`.
 - Escalate any overdue refunds immediately.
 
+## Automation Hooks
+
+Run monthly elimination trigger (cron/CI):
+
+```bash
+cd web
+PARTNER_OPS_BASE_URL=https://<host> \
+PARTNER_OPS_ADMIN_WALLET=0x... \
+PARTNER_ELIMINATION_MONTH_KEY=2026-02 \
+PARTNER_ELIMINATION_COUNT=10 \
+npm run partner:eliminate:monthly
+```
+
+Run refund SLA watchdog (alert on overdue):
+
+```bash
+cd web
+PARTNER_OPS_BASE_URL=https://<host> \
+PARTNER_OPS_ADMIN_WALLET=0x... \
+PARTNER_REFUND_SLA_ALLOWED_OVERDUE=0 \
+npm run verify:partner:refund-sla
+```
+
 ## Refill Workflow
 
 1. Determine open seats and current price:

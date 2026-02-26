@@ -266,3 +266,9 @@
     - `web/app/api/participation/custody-auth.integration.test.ts`
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-subscriptions.mode-boundary.integration.test.ts app/api/participation/custody-auth.integration.test.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts`，通过（13/13）。
+- 2026-02-26：新增 P1 自动化脚本：
+  - `web/scripts/services/partner-monthly-elimination.ts`（月末淘汰触发脚本，支持 dry-run 与已执行周期幂等跳过）。
+  - `web/scripts/verify/partner-refund-sla.ts`（退款 SLA 看门狗，按超期阈值失败退出）。
+  - `web/package.json` 新增运行命令：`partner:eliminate:monthly`、`verify:partner:refund-sla`。
+  - 运维文档更新：`docs/operations/runbook-partner-program.md`、`docs/operations/README.md`。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

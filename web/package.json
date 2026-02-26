@@ -15,6 +15,8 @@
     "verify:managed-wealth:lifecycle": "tsx scripts/verify/managed-wealth-lifecycle.ts",
     "verify:managed-wealth:marketing": "npx tsx scripts/verify/managed-wealth-marketing-rules.ts",
     "verify:managed-membership:lifecycle": "npx tsx scripts/verify/managed-membership-lifecycle.ts",
+    "partner:eliminate:monthly": "npx tsx scripts/services/partner-monthly-elimination.ts",
+    "verify:partner:refund-sla": "npx tsx scripts/verify/partner-refund-sla.ts",
     "cache:update": "tsx scripts/debug/update-leaderboard-cache.ts",
     "copy-worker:speed": "COPY_TRADING_SPEED_MODE=true npx tsx scripts/workers/copy-trading-worker.ts",
     "env:mainnet": "tsx scripts/env/setup-env.ts mainnet",

@@ -17,6 +17,9 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/sop-supervisor-dlq.md`
 6. Global partner monthly operations:
    - `docs/operations/runbook-partner-program.md`
+   - automation scripts:
+     - `web/scripts/services/partner-monthly-elimination.ts`
+     - `web/scripts/verify/partner-refund-sla.ts`
 
 ## Copy-Trading Verification
 
