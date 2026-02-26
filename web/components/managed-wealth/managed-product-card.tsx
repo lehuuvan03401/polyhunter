@@ -3,7 +3,6 @@
 import { Link } from '@/i18n/routing';
 import { motion } from 'framer-motion';
 import { ShieldCheck, TrendingUp, Zap, Clock, Percent, ShieldAlert, ArrowRight } from 'lucide-react';
-import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import { ManagedProduct } from '@/components/managed-wealth/subscription-modal';
 import { useTranslations } from 'next-intl';
 import { MANAGED_STRATEGY_THEMES } from '@/lib/managed-wealth/strategy-theme';
@@ -15,8 +14,7 @@ interface ManagedProductCardProps {
     matrixProjection?: {
         loading: boolean;
         cycleDays: number;
-        principalUsd: number | null;
-        principalBand: 'A' | 'B' | 'C' | null;
+        principalBand: 'A' | 'B' | 'C';
         matched: boolean;
         displayRange: string | null;
     };
@@ -45,6 +43,9 @@ export function ManagedProductCard({ product, onSubscribe, matrixProjection }: M
     const minDuration = Math.min(...product.terms.map(t => t.durationDays));
     const maxDuration = Math.max(...product.terms.map(t => t.durationDays));
     const durationLabel = minDuration === maxDuration ? `${minDuration}d` : `${minDuration}-${maxDuration}d`;
+    const detailHref = matrixProjection
+        ? `/managed-wealth/${product.slug}?band=${matrixProjection.principalBand}&cycleDays=${matrixProjection.cycleDays}`
+        : `/managed-wealth/${product.slug}`;
 
     return (
         <motion.div
@@ -69,7 +70,6 @@ export function ManagedProductCard({ product, onSubscribe, matrixProjection }: M
                             {t(`strategies.${theme.labelKey}`)}
                         </div>
                         <h3 className="text-xl font-bold text-white leading-tight group-hover:text-white/90 transition-colors">
-                            {/* @ts-ignore */}
                             {tProducts(`${product.strategyProfile}.name`)}
                         </h3>
                     </div>
@@ -85,11 +85,11 @@ export function ManagedProductCard({ product, onSubscribe, matrixProjection }: M
                             {matrixRange ? t('matrixReturn') : t('targetReturn')}
                         </span>
                     </div>
-                    {matrixProjection?.principalUsd ? (
+                    {matrixProjection ? (
                         <p className="mt-1 text-xs text-zinc-500">
                             {matrixProjection.loading
                                 ? t('matrixLoading')
-                                : matrixRange && matrixProjection.principalBand
+                                : matrixRange
                                     ? t('matrixMeta', {
                                         cycle: matrixProjection.cycleDays,
                                         band: matrixProjection.principalBand,
@@ -98,7 +98,6 @@ export function ManagedProductCard({ product, onSubscribe, matrixProjection }: M
                         </p>
                     ) : null}
                     <p className="mt-2 text-sm text-zinc-400 line-clamp-2">
-                        {/* @ts-ignore */}
                         {tProducts(`${product.strategyProfile}.description`)}
                     </p>
                 </div>
@@ -141,7 +140,7 @@ export function ManagedProductCard({ product, onSubscribe, matrixProjection }: M
                     </button>
 
                     <Link
-                        href={`/managed-wealth/${product.slug}`}
+                        href={detailHref}
                         className="group/link flex w-full items-center justify-center gap-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white"
                     >
                         {t('viewDetails')}

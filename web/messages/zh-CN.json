@@ -197,15 +197,12 @@
             "myDashboard": "我的仪表板",
             "loading": "加载策略中...",
             "matrix": {
-                "title": "收益矩阵模拟器",
-                "subtitle": "输入入金金额与周期，实时预览三种策略收益区间。",
-                "amountLabel": "本金（USDT 等值）",
-                "amountPlaceholder": "请输入本金金额",
+                "title": "托管套餐收益矩阵",
+                "subtitle": "先选择档位与周期，再查看三种策略对应收益区间。",
+                "bandTab": "档位 {band}（<= {maxUsdt} USDC）",
                 "cycleLabel": "服务周期",
                 "cycleValue": "{days}天",
-                "bandMatched": "已匹配档位：{band}",
-                "outOfBand": "输入金额超出矩阵支持范围（500 - 300,000 USDT）。",
-                "enterPrincipal": "请输入有效本金后查看匹配收益区间。"
+                "context": "当前预览：档位 {band} · {days} 天预估收益区间。"
             },
             "filters": {
                 "strategies": {
@@ -274,12 +271,12 @@
             },
             "subscribe": {
                 "title": "选择期限",
-                "desc": "选择适合您投资期限的锁定期。",
-                "principalLabel": "本金（USDT 等值）",
-                "principalPlaceholder": "请输入本金金额",
-                "enterPrincipal": "请输入有效本金后查看匹配收益区间。",
+                "desc": "先选档位，再按周期查看预估收益区间。",
+                "bandLabel": "资金档位",
+                "bandA": "档位 A（<= 5,000 USDC）",
+                "bandB": "档位 B（<= 50,000 USDC）",
+                "bandC": "档位 C（<= 300,000 USDC）",
                 "bandMatched": "已匹配档位：{band}",
-                "outOfBand": "输入金额超出矩阵支持范围（500 - 300,000 USDT）。",
                 "matrixLoading": "矩阵匹配中...",
                 "rangeMatched": "收益区间已按托管矩阵匹配",
                 "rangeFallback": "当前使用产品默认期限区间",

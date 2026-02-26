@@ -197,15 +197,12 @@
             "myDashboard": "My Dashboard",
             "loading": "Loading strategies...",
             "matrix": {
-                "title": "Yield Matrix Simulator",
-                "subtitle": "Input principal and cycle to preview strategy-specific return ranges.",
-                "amountLabel": "Principal (USDT value)",
-                "amountPlaceholder": "Enter principal amount",
+                "title": "Managed Package Yield Matrix",
+                "subtitle": "Select a tier and cycle to preview strategy-specific return ranges.",
+                "bandTab": "Tier {band} (<= {maxUsdt} USDC)",
                 "cycleLabel": "Cycle",
                 "cycleValue": "{days}d",
-                "bandMatched": "Matched principal band: {band}",
-                "outOfBand": "Principal outside supported matrix range (500 - 300,000 USDT).",
-                "enterPrincipal": "Enter a valid principal to preview matched ranges."
+                "context": "Previewing tier {band} · {days}d expected range."
             },
             "filters": {
                 "strategies": {
@@ -274,12 +271,12 @@
             },
             "subscribe": {
                 "title": "Select a Term",
-                "desc": "Choose a lock-up period that suits your investment horizon.",
-                "principalLabel": "Principal (USDT value)",
-                "principalPlaceholder": "Enter principal amount",
-                "enterPrincipal": "Enter a valid principal to preview matched ranges.",
-                "bandMatched": "Matched band: {band}",
-                "outOfBand": "Principal outside matrix range (500 - 300,000 USDT).",
+                "desc": "Pick principal tier and lock-up period to preview expected return ranges.",
+                "bandLabel": "Principal Tier",
+                "bandA": "Tier A (<= 5,000 USDC)",
+                "bandB": "Tier B (<= 50,000 USDC)",
+                "bandC": "Tier C (<= 300,000 USDC)",
+                "bandMatched": "Matched tier: {band}",
                 "matrixLoading": "Matching matrix...",
                 "rangeMatched": "Return range matched from managed matrix",
                 "rangeFallback": "Using product default term range",

@@ -197,15 +197,12 @@
             "myDashboard": "我的儀表板",
             "loading": "加載策略中...",
             "matrix": {
-                "title": "收益矩陣模擬器",
-                "subtitle": "輸入入金金額與週期，即時預覽三種策略收益區間。",
-                "amountLabel": "本金（USDT 等值）",
-                "amountPlaceholder": "請輸入本金金額",
+                "title": "託管套餐收益矩陣",
+                "subtitle": "先選擇檔位與週期，再查看三種策略對應收益區間。",
+                "bandTab": "檔位 {band}（<= {maxUsdt} USDC）",
                 "cycleLabel": "服務週期",
                 "cycleValue": "{days}天",
-                "bandMatched": "已匹配檔位：{band}",
-                "outOfBand": "輸入金額超出矩陣支援範圍（500 - 300,000 USDT）。",
-                "enterPrincipal": "請輸入有效本金後查看匹配收益區間。"
+                "context": "當前預覽：檔位 {band} · {days} 天預估收益區間。"
             },
             "filters": {
                 "strategies": {
@@ -274,12 +271,12 @@
             },
             "subscribe": {
                 "title": "選擇期限",
-                "desc": "選擇適合您投資期限的鎖定期。",
-                "principalLabel": "本金（USDT 等值）",
-                "principalPlaceholder": "請輸入本金金額",
-                "enterPrincipal": "請輸入有效本金後查看匹配收益區間。",
+                "desc": "先選檔位，再按週期查看預估收益區間。",
+                "bandLabel": "資金檔位",
+                "bandA": "檔位 A（<= 5,000 USDC）",
+                "bandB": "檔位 B（<= 50,000 USDC）",
+                "bandC": "檔位 C（<= 300,000 USDC）",
                 "bandMatched": "已匹配檔位：{band}",
-                "outOfBand": "輸入金額超出矩陣支援範圍（500 - 300,000 USDT）。",
                 "matrixLoading": "矩陣匹配中...",
                 "rangeMatched": "收益區間已按託管矩陣匹配",
                 "rangeFallback": "目前使用產品預設期限區間",

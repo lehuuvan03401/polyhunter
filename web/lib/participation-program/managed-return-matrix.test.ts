@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { lookupManagedReturnMatrixRow } from './managed-return-matrix';
+import {
+    lookupManagedReturnMatrixRow,
+    lookupManagedReturnMatrixRowByBand,
+} from './managed-return-matrix';
 import { DEFAULT_MANAGED_RETURN_MATRIX } from './rules';
 
 describe('managed return matrix lookup', () => {
@@ -45,6 +48,31 @@ describe('managed return matrix lookup', () => {
             principalUsd: 1500,
             cycleDays: 15,
             strategyProfile: 'CONSERVATIVE',
+        });
+
+        expect(result.principalBand).toBe('A');
+        expect(result.row).toBeNull();
+        expect(result.displayRange).toBeNull();
+    });
+
+    it('matches row directly by selected band + cycle + strategy', () => {
+        const result = lookupManagedReturnMatrixRowByBand(DEFAULT_MANAGED_RETURN_MATRIX, {
+            principalBand: 'C',
+            cycleDays: 30,
+            strategyProfile: 'AGGRESSIVE',
+        });
+
+        expect(result.principalBand).toBe('C');
+        expect(result.row?.returnMin).toBe(31);
+        expect(result.row?.returnMax).toBe(42);
+        expect(result.displayRange).toBe('31%-42%');
+    });
+
+    it('returns null row for unavailable band-cycle combination', () => {
+        const result = lookupManagedReturnMatrixRowByBand(DEFAULT_MANAGED_RETURN_MATRIX, {
+            principalBand: 'A',
+            cycleDays: 15,
+            strategyProfile: 'MODERATE',
         });
 
         expect(result.principalBand).toBe('A');

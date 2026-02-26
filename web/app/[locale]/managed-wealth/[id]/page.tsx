@@ -1,18 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { ArrowLeft, Loader2, ShieldAlert, ShieldCheck, User2, Wallet, Info } from 'lucide-react';
+import { ArrowLeft, Loader2, ShieldCheck, User2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import { ManagedProduct, ManagedTerm, SubscriptionModal } from '@/components/managed-wealth/subscription-modal';
 import { ManagedNavChart } from '@/components/managed-wealth/managed-nav-chart';
 import { motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
-import { lookupManagedReturnMatrixRow } from '@/lib/participation-program/managed-return-matrix';
-import type { ManagedReturnMatrixRow } from '@/lib/participation-program/rules';
+import { lookupManagedReturnMatrixRowByBand } from '@/lib/participation-program/managed-return-matrix';
+import type { ManagedReturnMatrixRow, ManagedReturnPrincipalBandValue } from '@/lib/participation-program/rules';
 
 type AgentSummary = {
     id: string;
@@ -46,13 +46,14 @@ export default function ManagedWealthDetailPage() {
     const t = useTranslations('ManagedWealth.ProductDetails');
     const tProducts = useTranslations('ManagedWealth.Products');
     const params = useParams<{ id: string }>();
+    const searchParams = useSearchParams();
     const { authenticated, login, user } = usePrivyLogin();
 
     const [loading, setLoading] = useState(true);
     const [detail, setDetail] = useState<ProductDetailResponse | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [presetTermId, setPresetTermId] = useState<string | undefined>();
-    const [projectionPrincipal, setProjectionPrincipal] = useState('500');
+    const [selectedBand, setSelectedBand] = useState<ManagedReturnPrincipalBandValue>('A');
     const [matrixRows, setMatrixRows] = useState<ManagedReturnMatrixRow[]>([]);
     const [matrixLoading, setMatrixLoading] = useState(true);
 
@@ -75,7 +76,7 @@ export default function ManagedWealthDetailPage() {
         };
 
         fetchDetail();
-    }, [params?.id]);
+    }, [params?.id, t]);
 
     useEffect(() => {
         let cancelled = false;
@@ -90,7 +91,7 @@ export default function ManagedWealthDetailPage() {
                 }
                 if (cancelled) return;
                 setMatrixRows((data?.managedReturnMatrix ?? []) as ManagedReturnMatrixRow[]);
-            } catch (error) {
+            } catch {
                 if (!cancelled) {
                     setMatrixRows([]);
                 }
@@ -106,12 +107,9 @@ export default function ManagedWealthDetailPage() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [t]);
 
     const product = detail?.product;
-
-    const projectionPrincipalUsd = Number(projectionPrincipal);
-    const hasValidProjectionPrincipal = Number.isFinite(projectionPrincipalUsd) && projectionPrincipalUsd > 0;
 
     const selectedTerm = useMemo(() => {
         if (!product?.terms?.length) return null;
@@ -120,13 +118,13 @@ export default function ManagedWealthDetailPage() {
 
     const termProjectionMap = useMemo(() => {
         const map = new Map<string, { displayRange: string | null; principalBand: 'A' | 'B' | 'C' | null; matched: boolean }>();
-        if (!product?.terms?.length || !hasValidProjectionPrincipal || matrixRows.length === 0) {
+        if (!product?.terms?.length || matrixRows.length === 0) {
             return map;
         }
 
         for (const term of product.terms) {
-            const matched = lookupManagedReturnMatrixRow(matrixRows, {
-                principalUsd: projectionPrincipalUsd,
+            const matched = lookupManagedReturnMatrixRowByBand(matrixRows, {
+                principalBand: selectedBand,
                 cycleDays: term.durationDays,
                 strategyProfile: product.strategyProfile,
             });
@@ -138,13 +136,27 @@ export default function ManagedWealthDetailPage() {
         }
 
         return map;
-    }, [hasValidProjectionPrincipal, matrixRows, product, projectionPrincipalUsd]);
+    }, [matrixRows, product, selectedBand]);
 
     const selectedTermProjection = selectedTerm ? termProjectionMap.get(selectedTerm.id) : undefined;
     const selectedTermDisplayRange = selectedTermProjection?.displayRange
         ?? (selectedTerm ? `${selectedTerm.targetReturnMin}% - ${selectedTerm.targetReturnMax}%` : null);
     useEffect(() => {
+        const bandFromQuery = (searchParams.get('band') || '').toUpperCase();
+        if (bandFromQuery === 'A' || bandFromQuery === 'B' || bandFromQuery === 'C') {
+            setSelectedBand(bandFromQuery);
+        }
+
+        const cycleDaysFromQuery = Number(searchParams.get('cycleDays'));
         if (product?.terms) {
+            const preferredByCycle =
+                Number.isFinite(cycleDaysFromQuery) && cycleDaysFromQuery > 0
+                    ? product.terms.find((t) => t.durationDays === cycleDaysFromQuery)
+                    : null;
+            if (preferredByCycle) {
+                setPresetTermId(preferredByCycle.id);
+                return;
+            }
             const defaultTerm = product.terms.find((t) => t.durationDays === 30);
             if (defaultTerm) {
                 setPresetTermId(defaultTerm.id);
@@ -152,7 +164,7 @@ export default function ManagedWealthDetailPage() {
             }
             setPresetTermId(product.terms[0]?.id);
         }
-    }, [product]);
+    }, [product, searchParams]);
 
 
     if (loading) {
@@ -198,7 +210,6 @@ export default function ManagedWealthDetailPage() {
                             <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                                 <div>
                                     <h1 className="text-3xl font-bold text-white mb-2">
-                                        {/* @ts-ignore */}
                                         {tProducts(`${product.strategyProfile}.name`)}
                                     </h1>
                                     <div className="flex items-center gap-3">
@@ -226,7 +237,6 @@ export default function ManagedWealthDetailPage() {
                             </div>
 
                             <p className="text-zinc-400 leading-relaxed max-w-2xl">
-                                {/* @ts-ignore */}
                                 {tProducts(`${product.strategyProfile}.description`)}
                             </p>
 
@@ -283,27 +293,29 @@ export default function ManagedWealthDetailPage() {
                         <div className="rounded-3xl border border-white/10 bg-[#121417] p-5 shadow-xl">
                             <h2 className="text-lg font-semibold text-white mb-2">{t('subscribe.title')}</h2>
                             <p className="text-sm text-zinc-500 mb-6">{t('subscribe.desc')}</p>
-
-                            <label className="block mb-4">
-                                <span className="mb-2 block text-xs text-zinc-500">{t('subscribe.principalLabel')}</span>
-                                <div className="relative">
-                                    <input
-                                        value={projectionPrincipal}
-                                        onChange={(event) => setProjectionPrincipal(event.target.value)}
-                                        inputMode="decimal"
-                                        placeholder={t('subscribe.principalPlaceholder')}
-                                        className="w-full rounded-xl border border-white/10 bg-[#0e1014] px-3 py-2 text-sm text-white focus:border-blue-500/60 focus:outline-none"
-                                    />
-                                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500">USDT</span>
+                            <div className="mb-4">
+                                <span className="mb-2 block text-xs text-zinc-500">{t('subscribe.bandLabel')}</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {(['A', 'B', 'C'] as const).map((band) => (
+                                        <button
+                                            key={band}
+                                            type="button"
+                                            onClick={() => setSelectedBand(band)}
+                                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${selectedBand === band
+                                                ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                                                : 'border-white/10 bg-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
+                                                }`}
+                                        >
+                                            {t(`subscribe.band${band}`)}
+                                        </button>
+                                    ))}
                                 </div>
                                 <div className="mt-2 text-xs text-zinc-500">
-                                    {!hasValidProjectionPrincipal
-                                        ? t('subscribe.enterPrincipal')
-                                        : selectedTermProjection?.principalBand
-                                            ? t('subscribe.bandMatched', { band: selectedTermProjection.principalBand })
-                                            : t('subscribe.outOfBand')}
+                                    {selectedTermProjection?.principalBand
+                                        ? t('subscribe.bandMatched', { band: selectedTermProjection.principalBand })
+                                        : t('subscribe.rangeFallback')}
                                 </div>
-                            </label>
+                            </div>
 
                             <div className="space-y-2">
                                 {product.terms.map((term) => (
