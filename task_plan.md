@@ -207,6 +207,7 @@
 ## 实施状态（闭环落地）
 - [complete] Phase A：统一结算与分润语义（提交：`3d9dc1b`）
 - [in_progress] Phase B：持仓/NAV/清仓从钱包维度切换到订阅维度（执行隔离）
+- [in_progress] Phase C：托管闭环运维可见性（健康检查接口 + 管理后台面板）
 
 ### Phase B 当前进度
 - [complete] 新增订阅维度持仓模型 `ManagedSubscriptionPosition`（schema + migration）
@@ -216,6 +217,12 @@
 - [complete] 迁移期 fallback（scoped 为空时按 copyTrade token 集合回退 legacy position）接入 withdraw/run/worker
 - [complete] 新增订阅持仓对账脚本（`verify:managed-positions:scope`）用于读切换前校验
 - [pending] 生产读切换前回填验证与对账
+
+### Phase C 当前进度
+- [complete] 新增托管闭环健康检查接口：`GET /api/managed-settlement/health`（allocation status / liquidation backlog / settlement commission parity）
+- [complete] 新增管理后台 `Managed Ops` 页面：`/dashboard/admin/managed-wealth`，并接入 admin dashboard 快捷入口
+- [complete] 新增路由集成测试：`web/app/api/managed-settlement/health.integration.test.ts`
+- [pending] 接入告警通知与定时巡检脚本（将 health 指标接入现有运维看门狗）
 
 ## 错误记录
 | 时间 | 位置 | 错误 | 处理 |

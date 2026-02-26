@@ -364,3 +364,8 @@
   - `openspec/changes/close-managed-wealth-loop/specs/fee-logic/spec.md`
   - `openspec/changes/close-managed-wealth-loop/specs/participation-program/spec.md`
 - 已执行 `openspec validate close-managed-wealth-loop --strict --no-interactive`，通过。
+- 2026-02-26：新增托管闭环健康检查接口 `GET /api/managed-settlement/health`，输出 allocation 映射状态、清仓积压、结算-盈利费分发一致性（仅对有推荐关系钱包）三类指标。
+- 2026-02-26：新增托管运维后台页 `web/app/[locale]/dashboard/admin/managed-wealth/page.tsx`，支持一键刷新和异常清单查看；主 admin 页新增 `Managed Ops` 入口。
+- 2026-02-26：新增 `web/app/api/managed-settlement/health.integration.test.ts`，覆盖未授权拦截与健康指标聚合主路径。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-settlement/health.integration.test.ts`，通过（2/2）。
+- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。

@@ -259,6 +259,12 @@ export default function AdminDashboardPage() {
 
                     <div className="flex gap-2">
                         <Link
+                            href="/dashboard/admin/managed-wealth"
+                            className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                        >
+                            Managed Ops
+                        </Link>
+                        <Link
                             href="/dashboard/admin/partners"
                             className="px-4 py-2 rounded-lg text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
                         >

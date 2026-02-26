@@ -199,3 +199,11 @@
 - 新增回填脚本后，可在读切换前将历史 `CopyTrade` 回放为 scoped positions，减少迁移窗口内“旧仓位丢失”风险。
 - 迁移期 fallback 采用“copyTrade token universe + legacy userPosition”保守判定，可优先避免误结算；代价是当同钱包多订阅命中相同 token 时，可能出现短期过度阻塞，需靠回填完成后逐步关闭 fallback。
 - 增加 `verify:managed-positions:scope` 对账脚本后，可在正式关闭 fallback 前做量化校验（差异率、回填缺口），降低盲切风险。
+
+### 2026-02-26 新增发现：托管闭环缺少统一运维健康视图
+- 结算入口虽已统一，但缺少“映射缺口/清仓积压/分润一致性”三类可观测指标，运营侧无法快速定位卡点。
+- 增加 `managed-settlement/health` 聚合接口后，可直接识别：
+  - 执行映射缺口（`copyConfigId` 为空且超时）
+  - `LIQUIDATING` 积压（有未平仓位但长期未清）
+  - 盈利结算后分润缺失或金额偏差（按 `managed-withdraw:<subscriptionId>:<settlementId>` 对账）
+- 在 admin 增加 `Managed Ops` 面板比单纯日志排查更有效，能把异常列表直接给运营执行处理。
