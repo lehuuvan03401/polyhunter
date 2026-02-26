@@ -144,8 +144,9 @@ Actions:
 
 ## Release Checklist
 
-- [ ] `openspec validate add-horus-participation-partner-program --strict --no-interactive`
-- [ ] `GET /api/partners/config` healthy in staging and prod
-- [ ] One dry-run cycle completed for current month
-- [ ] Refund dashboard/report reviewed
-- [ ] On-call ownership for monthly cycle assigned
+- [ ] `openspec validate harden-horus-participation-partner-policy --strict --no-interactive`
+- [ ] Gate A (API/model hard constraints): seat-cap immutability, managed/custody hard gates, FREE boundary tests all pass in staging.
+- [ ] Gate B (automation dry-run): monthly elimination scheduler and refund SLA watchdog dry-run pass for 2 consecutive runs.
+- [ ] Gate C (gray release): 7-day staging observation has no overdue refund SLA miss and no duplicate month-cycle execution.
+- [ ] `GET /api/partners/config` healthy in staging and prod.
+- [ ] On-call ownership for monthly cycle and refund SLA incident handling assigned.

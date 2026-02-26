@@ -320,7 +320,8 @@ export async function POST(
                 await affiliateEngine.distributeProfitFee(
                     walletContext.wallet,
                     realizedProfit,
-                    `managed-withdraw:${settledResult.updatedSubscription.id}:${settledResult.settlement.id}`
+                    `managed-withdraw:${settledResult.updatedSubscription.id}:${settledResult.settlement.id}`,
+                    { scope: 'MANAGED_WITHDRAWAL' }
                 );
             } catch (affiliateError) {
                 console.error('[ManagedWithdraw] Profit fee distribution failed:', affiliateError);

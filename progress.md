@@ -272,3 +272,18 @@
   - `web/package.json` 新增运行命令：`partner:eliminate:monthly`、`verify:partner:refund-sla`。
   - 运维文档更新：`docs/operations/runbook-partner-program.md`、`docs/operations/README.md`。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-02-26：新增计费作用域隔离实现：
+  - 新增 `web/lib/participation-program/fee-scope.ts`，统一参与利润费率与作用域判定。
+  - `web/lib/services/affiliate-engine.ts` 增加作用域校验：非参与费路事件写审计日志并跳过结算，避免冲突费路重复计费。
+  - `web/app/api/managed-subscriptions/[id]/withdraw/route.ts` 改为显式传入 `{ scope: 'MANAGED_WITHDRAWAL' }`。
+  - 新增单测：`web/lib/participation-program/fee-scope.test.ts`，并扩展 `affiliate-engine` 用例覆盖 out-of-scope 跳过与显式 scope。
+- 2026-02-26：新增自动化逻辑单测抽象：
+  - 新增 `web/lib/participation-program/partner-ops-automation.ts`（淘汰幂等判定、SLA 逾期判定纯函数）。
+  - 新增 `web/lib/participation-program/partner-ops-automation.test.ts`，覆盖“同月重复执行跳过”与“SLA breach 检测”。
+  - 两个运维脚本改为复用该纯函数库，降低脚本分叉风险。
+- 2026-02-26：补强 custody-auth 模式边界：
+  - `web/app/api/participation/custody-auth/route.ts` 要求参与账户已是 `MANAGED` 模式，否则返回 `MODE_BOUNDARY_VIOLATION`。
+  - `web/app/api/participation/custody-auth.integration.test.ts` 新增“FREE 模式/缺失账户拒绝”用例。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts lib/participation-program/fee-scope.test.ts lib/participation-program/partner-ops-automation.test.ts app/api/participation/custody-auth.integration.test.ts app/api/managed-subscriptions.mode-boundary.integration.test.ts`，通过（19/19）。
+- 已执行 `openspec validate harden-horus-participation-partner-policy --strict --no-interactive`，通过。

@@ -54,7 +54,11 @@ describe('AffiliateEngine.distributeProfitFee', () => {
         const { prisma, engine } = createEngineMock();
         prisma.referral.findUnique.mockResolvedValue(null);
 
-        await engine.distributeProfitFee('0xabc0000000000000000000000000000000000001', 100, 'trade-1');
+        await engine.distributeProfitFee(
+            '0xabc0000000000000000000000000000000000001',
+            100,
+            'managed-withdraw:trade-1'
+        );
 
         expect(prisma.referral.findUnique).toHaveBeenCalled();
         expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -78,7 +82,7 @@ describe('AffiliateEngine.distributeProfitFee', () => {
             return null;
         });
 
-        await engine.distributeProfitFee(traderWallet, 125, 'trade-1');
+        await engine.distributeProfitFee(traderWallet, 125, 'managed-withdraw:trade-1');
 
         expect(tx.referrer.update).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -95,7 +99,7 @@ describe('AffiliateEngine.distributeProfitFee', () => {
                     referrerId: 'referrer-1',
                     amount: 25,
                     type: 'PROFIT_FEE',
-                    sourceTradeId: 'trade-1',
+                    sourceTradeId: 'managed-withdraw:trade-1',
                     sourceUserId: traderWallet,
                 }),
             })
@@ -118,8 +122,49 @@ describe('AffiliateEngine.distributeProfitFee', () => {
             id: 'existing-profit-fee',
         });
 
-        await engine.distributeProfitFee(traderWallet, 125, 'trade-dup');
+        await engine.distributeProfitFee(traderWallet, 125, 'managed-withdraw:trade-dup');
 
         expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('skips out-of-scope profit event to avoid fee route overlap', async () => {
+        const { prisma, engine } = createEngineMock();
+
+        await engine.distributeProfitFee(
+            '0xabc0000000000000000000000000000000000001',
+            100,
+            'legacy-proxy:trade-1'
+        );
+
+        expect(prisma.referral.findUnique).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('accepts explicit participation scope even when tradeId has no scope prefix', async () => {
+        const { prisma, tx, engine } = createEngineMock();
+        const traderWallet = '0xabc0000000000000000000000000000000000001';
+
+        prisma.referral.findUnique.mockResolvedValue({
+            id: 'referral-1',
+            referrerId: 'referrer-1',
+            referrer: {
+                id: 'referrer-1',
+                walletAddress: '0xabc0000000000000000000000000000000000002',
+            },
+        });
+
+        await engine.distributeProfitFee(traderWallet, 50, 'trade-with-explicit-scope', {
+            scope: 'MANAGED_WITHDRAWAL',
+        });
+
+        expect(tx.commissionLog.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    type: 'PROFIT_FEE',
+                    sourceTradeId: 'trade-with-explicit-scope',
+                    amount: 10,
+                }),
+            })
+        );
     });
 });

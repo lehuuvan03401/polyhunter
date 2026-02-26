@@ -1,9 +1,13 @@
 
 import { PrismaClient, AffiliateTier, Prisma } from '@prisma/client';
 import { Referrer } from '@prisma/client'; // Import type
-import { REALIZED_PROFIT_FEE_RATE } from '@/lib/participation-program/rules';
 import { calculateSameLevelBonus } from '@/lib/participation-program/bonuses';
 import { resolveSameLevelBonusPolicy } from '@/lib/participation-program/policy-gates';
+import {
+    PARTICIPATION_PROFIT_FEE_RATE,
+    resolveParticipationProfitFeeScope,
+    type ParticipationProfitFeeScope,
+} from '@/lib/participation-program/fee-scope';
 import { prisma } from '@/lib/prisma';
 
 export interface TradeContext {
@@ -323,10 +327,25 @@ export class AffiliateEngine {
      * @param realizedProfit - The profit amount in USDC
      * @param tradeId - Unique trade identifier
      */
-    async distributeProfitFee(traderAddress: string, realizedProfit: number, tradeId: string) {
+    async distributeProfitFee(
+        traderAddress: string,
+        realizedProfit: number,
+        tradeId: string,
+        options?: {
+            scope?: ParticipationProfitFeeScope;
+        }
+    ) {
         // 1. Guard: No fee if no profit
         if (realizedProfit <= 0) {
             console.log(`[AffiliateEngine] No profit ($${realizedProfit.toFixed(4)}), skipping fee distribution.`);
+            return;
+        }
+
+        const feeScope = resolveParticipationProfitFeeScope(tradeId, options?.scope);
+        if (!feeScope) {
+            console.log(
+                `[AffiliateEngine][AUDIT] Skipping out-of-scope profit fee settlement trade=${tradeId}, trader=${traderAddress}`
+            );
             return;
         }
 
@@ -360,11 +379,11 @@ export class AffiliateEngine {
         }
 
         // 3. Profit fee is fixed to policy rate across FREE/MANAGED modes
-        const feeRate = REALIZED_PROFIT_FEE_RATE;
+        const feeRate = PARTICIPATION_PROFIT_FEE_RATE;
         const feeAmount = realizedProfit * feeRate;
 
         console.log(
-            `[AffiliateEngine] Profit Fee: $${realizedProfit.toFixed(4)} * ${(feeRate * 100).toFixed(0)}% = $${feeAmount.toFixed(4)}`
+            `[AffiliateEngine] Profit Fee: $${realizedProfit.toFixed(4)} * ${(feeRate * 100).toFixed(0)}% = $${feeAmount.toFixed(4)} (scope=${feeScope})`
         );
 
         // 4. Record the commission as a special "PROFIT_FEE" type

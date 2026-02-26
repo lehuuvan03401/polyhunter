@@ -90,20 +90,28 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing wallet signature header' }, { status: 401 });
         }
 
+        const participationAccount = await prisma.participationAccount.findUnique({
+            where: { walletAddress: walletContext.wallet },
+            select: {
+                id: true,
+                preferredMode: true,
+            },
+        });
+
+        if (!participationAccount || participationAccount.preferredMode !== 'MANAGED') {
+            return NextResponse.json(
+                {
+                    error: 'Managed custody authorization requires MANAGED participation mode',
+                    code: 'MODE_BOUNDARY_VIOLATION',
+                },
+                { status: 409 }
+            );
+        }
+
         const scope = parsed.data.scope as Prisma.InputJsonValue | undefined;
         const now = new Date();
 
         const authorization = await prisma.$transaction(async (tx) => {
-            const account = await tx.participationAccount.upsert({
-                where: { walletAddress: walletContext.wallet },
-                update: {},
-                create: {
-                    walletAddress: walletContext.wallet,
-                    status: 'PENDING',
-                },
-                select: { id: true },
-            });
-
             await tx.managedCustodyAuthorization.updateMany({
                 where: {
                     walletAddress: walletContext.wallet,
@@ -117,7 +125,7 @@ export async function POST(request: NextRequest) {
 
             return tx.managedCustodyAuthorization.create({
                 data: {
-                    accountId: account.id,
+                    accountId: participationAccount.id,
                     walletAddress: walletContext.wallet,
                     mode: parsed.data.mode,
                     status: 'ACTIVE',

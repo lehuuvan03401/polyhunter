@@ -1,30 +1,11 @@
 import 'dotenv/config';
-
-type EliminationResponse = {
-    monthKey?: string;
-    eliminated?: number;
-    eliminateCount?: number;
-    code?: string;
-    error?: string;
-};
-
-function toMonthKey(date: Date): string {
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
-}
-
-function parseBool(value: string | undefined, fallback: boolean): boolean {
-    if (!value) return fallback;
-    return value.toLowerCase() === 'true';
-}
-
-function parsePositiveInt(value: string | undefined, fallback: number): number {
-    if (!value) return fallback;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-    return Math.floor(parsed);
-}
+import {
+    evaluateEliminationResponse,
+    parseBool,
+    parsePositiveInt,
+    toMonthKey,
+    type EliminationResponse,
+} from '@/lib/participation-program/partner-ops-automation';
 
 async function main(): Promise<void> {
     const baseUrl = process.env.PARTNER_OPS_BASE_URL || 'http://localhost:3000';
@@ -61,23 +42,25 @@ async function main(): Promise<void> {
 
     const data = (await res.json().catch(() => ({}))) as EliminationResponse;
 
-    if (res.ok) {
+    const evaluation = evaluateEliminationResponse({
+        status: res.status,
+        body: data,
+        allowExistingCycle,
+    });
+
+    if (evaluation.status === 'success') {
         console.log(
             `[partner-monthly-elimination] success monthKey=${data.monthKey || monthKey} dryRun=${dryRun} eliminateCount=${data.eliminateCount ?? eliminateCount} eliminated=${data.eliminated ?? 0}`
         );
         return;
     }
 
-    if (allowExistingCycle && res.status === 409 && data.code === 'CYCLE_ALREADY_EXECUTED') {
+    if (evaluation.reason === 'already_executed') {
         console.log(
             `[partner-monthly-elimination] skipped monthKey=${monthKey} reason=already_executed`
         );
         return;
     }
-
-    throw new Error(
-        `[partner-monthly-elimination] failed status=${res.status} body=${JSON.stringify(data)}`
-    );
 }
 
 main().catch((error) => {
