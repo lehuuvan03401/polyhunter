@@ -108,9 +108,9 @@ export async function POST(request: NextRequest) {
                 continue;
             }
 
-            const openPositionsCount = await prisma.userPosition.count({
+            const openPositionsCount = await prisma.managedSubscriptionPosition.count({
                 where: {
-                    walletAddress: sub.walletAddress,
+                    subscriptionId: sub.id,
                     balance: { gt: 0 },
                 },
             });

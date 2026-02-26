@@ -563,11 +563,30 @@ model ManagedSubscription {
   settlement         ManagedSettlement?
   reserveFundEntries ReserveFundLedger[]
   riskEvents         ManagedRiskEvent[]
+  scopedPositions    ManagedSubscriptionPosition[]
 
   @@index([walletAddress, status])
   @@index([status, endAt])
   @@index([productId, termId])
   @@index([copyConfigId])
+}
+
+model ManagedSubscriptionPosition {
+  id             String              @id @default(cuid())
+  subscriptionId String
+  subscription   ManagedSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  walletAddress  String
+  tokenId        String
+  balance        Float               @default(0)
+  avgEntryPrice  Float               @default(0)
+  totalCost      Float               @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@unique([subscriptionId, tokenId])
+  @@index([subscriptionId])
+  @@index([subscriptionId, balance])
+  @@index([walletAddress, balance])
 }
 
 model ManagedNavSnapshot {

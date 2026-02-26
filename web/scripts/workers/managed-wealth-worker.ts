@@ -183,9 +183,9 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
                 where: { subscriptionId: sub.id },
                 _max: { nav: true },
             }),
-            prisma.userPosition.findMany({
+            prisma.managedSubscriptionPosition.findMany({
                 where: {
-                    walletAddress: sub.walletAddress,
+                    subscriptionId: sub.id,
                     balance: { gt: 0 }
                 }
             })
@@ -315,9 +315,9 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
         if (sub.settlement?.status === 'COMPLETED') continue;
 
         // Check if there are open positions
-        const openPositionsCount = await prisma.userPosition.count({
+        const openPositionsCount = await prisma.managedSubscriptionPosition.count({
             where: {
-                walletAddress: sub.walletAddress,
+                subscriptionId: sub.id,
                 balance: { gt: 0 }
             }
         });
@@ -435,9 +435,9 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
     let liquidatedCount = 0;
 
     for (const sub of liquidatingSubs) {
-        const openPositions = await prisma.userPosition.findMany({
+        const openPositions = await prisma.managedSubscriptionPosition.findMany({
             where: {
-                walletAddress: sub.walletAddress,
+                subscriptionId: sub.id,
                 balance: { gt: 0 }
             }
         });
@@ -490,18 +490,24 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
                 });
 
                 // Delete or zero out user position
-                await tx.userPosition.update({
-                    where: {
-                        walletAddress_tokenId: {
-                            walletAddress: pos.walletAddress,
-                            tokenId: pos.tokenId
-                        }
-                    },
+                await tx.managedSubscriptionPosition.update({
+                    where: { id: pos.id },
                     data: {
                         balance: 0,
                         totalCost: 0,
+                        avgEntryPrice: 0,
                     }
                 });
+
+                // Keep legacy wallet-level position table broadly in sync by decrementing only sold shares.
+                await tx.$executeRaw`
+                    UPDATE "UserPosition"
+                    SET
+                        "balance" = GREATEST(0, "balance" - ${pos.balance}),
+                        "totalCost" = GREATEST(0, GREATEST(0, "balance" - ${pos.balance}) * "avgEntryPrice"),
+                        "updatedAt" = NOW()
+                    WHERE "walletAddress" = ${pos.walletAddress} AND "tokenId" = ${pos.tokenId}
+                `;
             });
             liquidatedCount++;
         }

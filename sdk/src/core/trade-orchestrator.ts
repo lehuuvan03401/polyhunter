@@ -50,6 +50,7 @@ export class TradeOrchestrator {
     private speedProfile: SpeedProfile;
     private deferSettlement: boolean;
     private isSimulation: boolean;
+    private managedScopeCache = new Map<string, { subscriptionId: string | null; expiresAt: number }>();
 
     constructor(
         executionService: CopyTradingExecutionService,
@@ -71,6 +72,98 @@ export class TradeOrchestrator {
 
     private getLevelSize(level: any): number {
         return Number(level?.size ?? level?.amount ?? level?.quantity ?? 0);
+    }
+
+    private async resolveManagedSubscriptionScope(configId: string): Promise<{ subscriptionId: string } | null> {
+        const now = Date.now();
+        const cached = this.managedScopeCache.get(configId);
+        if (cached && cached.expiresAt > now) {
+            return cached.subscriptionId ? { subscriptionId: cached.subscriptionId } : null;
+        }
+
+        const subscription = await this.prisma.managedSubscription.findFirst({
+            where: {
+                copyConfigId: configId,
+                status: { in: ['RUNNING', 'MATURED', 'LIQUIDATING'] },
+            },
+            select: { id: true },
+        });
+
+        this.managedScopeCache.set(configId, {
+            subscriptionId: subscription?.id ?? null,
+            expiresAt: now + 60_000,
+        });
+
+        return subscription ? { subscriptionId: subscription.id } : null;
+    }
+
+    private async upsertManagedScopedPosition(input: {
+        subscriptionId: string;
+        walletAddress: string;
+        tokenId: string;
+        side: 'BUY' | 'SELL';
+        shares: number;
+        notionalUsdc: number;
+        execPrice: number;
+    }): Promise<void> {
+        if (!Number.isFinite(input.shares) || input.shares <= 0) return;
+
+        await this.prisma.$transaction(async (tx) => {
+            const existing = await tx.managedSubscriptionPosition.findUnique({
+                where: {
+                    subscriptionId_tokenId: {
+                        subscriptionId: input.subscriptionId,
+                        tokenId: input.tokenId,
+                    },
+                },
+            });
+
+            if (input.side === 'BUY') {
+                if (!existing) {
+                    await tx.managedSubscriptionPosition.create({
+                        data: {
+                            subscriptionId: input.subscriptionId,
+                            walletAddress: input.walletAddress,
+                            tokenId: input.tokenId,
+                            balance: input.shares,
+                            avgEntryPrice: input.execPrice,
+                            totalCost: input.notionalUsdc,
+                        },
+                    });
+                    return;
+                }
+
+                const nextBalance = existing.balance + input.shares;
+                const nextTotalCost = existing.totalCost + input.notionalUsdc;
+                await tx.managedSubscriptionPosition.update({
+                    where: { id: existing.id },
+                    data: {
+                        walletAddress: input.walletAddress,
+                        balance: nextBalance,
+                        totalCost: nextTotalCost,
+                        avgEntryPrice: nextBalance > 0 ? (nextTotalCost / nextBalance) : 0,
+                    },
+                });
+                return;
+            }
+
+            if (!existing || existing.balance <= 0) {
+                return;
+            }
+
+            const settledShares = Math.min(input.shares, existing.balance);
+            const nextBalance = Math.max(0, existing.balance - settledShares);
+            const nextTotalCost = nextBalance > 0 ? existing.avgEntryPrice * nextBalance : 0;
+            await tx.managedSubscriptionPosition.update({
+                where: { id: existing.id },
+                data: {
+                    walletAddress: input.walletAddress,
+                    balance: nextBalance,
+                    totalCost: nextTotalCost,
+                    avgEntryPrice: nextBalance > 0 ? existing.avgEntryPrice : 0,
+                },
+            });
+        });
     }
 
     /**
@@ -346,6 +439,8 @@ export class TradeOrchestrator {
         if (config.direction === 'COUNTER') {
             copySide = side === 'BUY' ? 'SELL' : 'BUY';
         }
+        const managedScope = await this.resolveManagedSubscriptionScope(config.id);
+        const managedSubscriptionId = managedScope?.subscriptionId ?? null;
 
         let copySizeUsdc = this.calculateCopySize(config, tradeShares, leaderPrice);
         if (copySizeUsdc <= 0) return { executed: false, reason: 'INVALID_COPY_SIZE' };
@@ -524,9 +619,17 @@ export class TradeOrchestrator {
                 return { executed: false, reason: 'NO_SELL_CONFIGURED' };
             }
 
-            const positions = await this.prisma.userPosition.findMany({
-                where: { walletAddress: config.walletAddress.toLowerCase(), tokenId: tokenId, balance: { gt: 0 } }
-            });
+            const positions = managedSubscriptionId
+                ? await this.prisma.managedSubscriptionPosition.findMany({
+                    where: {
+                        subscriptionId: managedSubscriptionId,
+                        tokenId,
+                        balance: { gt: 0 },
+                    },
+                })
+                : await this.prisma.userPosition.findMany({
+                    where: { walletAddress: config.walletAddress.toLowerCase(), tokenId: tokenId, balance: { gt: 0 } }
+                });
 
             if (positions.length === 0) {
                 await this.logSkippedTrade({
@@ -849,6 +952,18 @@ export class TradeOrchestrator {
                     "avgEntryPrice" = CASE WHEN ("UserPosition"."balance" + EXCLUDED."balance") > 0 THEN ("UserPosition"."totalCost" + EXCLUDED."totalCost") / ("UserPosition"."balance" + EXCLUDED."balance") ELSE 0 END,
                     "updatedAt" = CURRENT_TIMESTAMP
             `;
+
+            if (managedSubscriptionId) {
+                await this.upsertManagedScopedPosition({
+                    subscriptionId: managedSubscriptionId,
+                    walletAddress: config.walletAddress.toLowerCase(),
+                    tokenId,
+                    side: copySide as 'BUY' | 'SELL',
+                    shares: copySide === 'BUY' ? resolvedBuyShares : resolvedSellShares,
+                    notionalUsdc: copySizeUsdc,
+                    execPrice,
+                });
+            }
 
             return {
                 executed: true,

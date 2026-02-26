@@ -137,9 +137,9 @@ export async function POST(
                 });
             }
 
-            const openPositionsCount = await tx.userPosition.count({
+            const openPositionsCount = await tx.managedSubscriptionPosition.count({
                 where: {
-                    walletAddress: walletContext.wallet,
+                    subscriptionId: subscription.id,
                     balance: { gt: 0 }
                 }
             });

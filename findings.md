@@ -171,3 +171,28 @@
 ### 2026-02-26 开发推进发现（淘汰/SLA 自动化）
 - 复用现有管理 API（而不是重复实现业务逻辑）可以让调度脚本天然继承幂等保护（如 `CYCLE_ALREADY_EXECUTED`）。
 - SLA 看门狗采用“阈值告警并非直接改状态”更稳妥，避免脚本误操作覆盖运营决策。
+
+### 2026-02-26 新增发现：托管理财闭环仍有核心断点
+- 交易员分配仍是“静态主模板”而非“策略化随机匹配”：`managed-wealth-worker` 只取 `product.agents[0]` 并写固定仓位参数（`web/scripts/workers/managed-wealth-worker.ts:80`, `web/scripts/workers/managed-wealth-worker.ts:105`, `web/scripts/workers/managed-wealth-worker.ts:106`）。
+- 持仓与净值核算仍按钱包聚合，未按订阅隔离：`UserPosition` 唯一键仅 `walletAddress+tokenId`（`web/prisma/schema.prisma:1052`），worker/withdraw 也按钱包查仓（`web/scripts/workers/managed-wealth-worker.ts:192`, `web/scripts/workers/managed-wealth-worker.ts:517`, `web/app/api/managed-subscriptions/[id]/withdraw/route.ts:146`）。
+- 结算后营销分润存在入口不一致：手动提现路径会触发分润（`web/app/api/managed-subscriptions/[id]/withdraw/route.ts:320`），但 admin 批量结算与 worker 自动结算路径未统一触发（`web/app/api/managed-settlement/run/route.ts` 未出现分润调用）。
+- 清仓仍保留模拟成交路径：`SYSTEM_LIQUIDATOR` + `sim-liquidation-*` 记录（`web/scripts/workers/managed-wealth-worker.ts:557`, `web/scripts/workers/managed-wealth-worker.ts:565`），会削弱结算可审计性。
+- 资金授权与本金占用缺少硬关联账本：虽然已有 funding/custody 记录，但订阅创建阶段尚未形成“可用托管余额 -> 本金占用 -> 释放”闭环约束。
+- 收益矩阵主要用于展示和估算，尚未形成“策略承诺 vs 实际表现”的偏离监控与告警机制。
+- 历史提交 `007182175ef4aaabd612a32d3ff32ed824802a23` 的目录仍是 `frontend/*`，当前仓库实际运行目录为 `web/*`，导致用户脚本路径容易误用；同时 `web/package.json` 缺少 `seed:agents` 统一入口。
+
+### 2026-02-26 新增发现：可执行收口路径
+- 可先做“统一结算服务”作为 P0，打通 manual/worker/admin 三路径同一结算+分润语义，先消除最直接的账务不一致风险。
+- 订阅级作用域隔离应成为 P1 主线，优先把持仓/NAV/清仓从钱包聚合改为订阅聚合，再推进多交易员组合分配。
+- 分配引擎可复用现有 `trader-scoring-service`、`leaderboard-cache-service`、`smart-money-discovery-service` 作为候选池，不需要从零重建评分体系。
+- 需新增 `managed-wealth` 正式 spec（当前未在 `openspec/specs` 列表中），已通过新 change 草案承载需求和任务拆分。
+
+### 2026-02-26 新增发现：Phase A 已落地但仍有后续风险
+- 结算写路径与分润触发已在 `withdraw/run/worker` 三入口统一，避免“同业务不同账务语义”。
+- `run` 路径已补上“有持仓不结算”护栏，降低提前结算风险。
+- 当前全量 `tsc` 仍受前端历史类型错误阻断（`subscription-modal.tsx`），后续发布前需要单独清理该阻断项。
+
+### 2026-02-26 新增发现：Phase B 第一批（订阅维度持仓隔离）已落地
+- 通过新增 `ManagedSubscriptionPosition`，managed 结算与清仓判定从“钱包级”切换为“订阅级”，避免同钱包多策略互相卡结算。
+- 在 `TradeOrchestrator` 侧按 `copyConfigId -> managedSubscription` 建立作用域并双写持仓，能在不打断现有 `UserPosition` 的前提下逐步迁移。
+- `managed-wealth-worker` 清仓路径不再直接把钱包 token 持仓归零，而是按订阅持仓递减 legacy 表，降低跨订阅污染风险。

@@ -173,3 +173,48 @@
 - 阶段 2 收口补强：新增参与利润费 scope 解析与显式作用域参数，非参与费路事件将被审计跳过，避免冲突费路重复计费。
 - 阶段 3 收口补强：抽象合伙人自动化纯函数库并新增单测，覆盖“同月淘汰幂等跳过”与“退款 SLA 逾期告警阈值”。
 - 阶段 3 边界补强：`/api/participation/custody-auth` 要求账户已处于 `MANAGED` 模式，拒绝 FREE/未激活账户进入托管授权链路。
+
+---
+
+# 任务计划：托管理财闭环差距分析与实施规划（2026-02-26）
+
+## 目标
+- 深度审计“托管理财”从订阅到结算分润的全链路闭环，识别当前未闭环功能点。
+- 输出可直接执行的阶段化实施计划，并沉淀到 OpenSpec 变更草案。
+
+## 分阶段
+- [complete] 阶段 1：审计现状代码与规范（worker/API/schema/spec）
+- [complete] 阶段 2：提炼 P0/P1/P2 缺口并形成证据链
+- [complete] 阶段 3：输出实现路线文档（研发/测试/上线策略）
+- [complete] 阶段 4：创建 OpenSpec 变更草案并完成严格校验
+
+## 本次交付
+- 计划文档：`docs/plans/2026-02-26-managed-wealth-closed-loop-plan.md`
+- OpenSpec 变更：`openspec/changes/close-managed-wealth-loop`
+  - `proposal.md`
+  - `tasks.md`
+  - `design.md`
+  - `specs/managed-wealth/spec.md`
+  - `specs/fee-logic/spec.md`
+  - `specs/participation-program/spec.md`
+- OpenSpec 校验：`openspec validate close-managed-wealth-loop --strict --no-interactive` 已通过。
+- 实施进展（Phase A，已完成）：
+  - 新增统一结算服务：`web/lib/managed-wealth/managed-settlement-service.ts`
+  - `withdraw` / `managed-settlement/run` / `managed-wealth-worker` 三入口统一复用结算写路径
+  - `managed-settlement/run` 新增“有持仓则转 `LIQUIDATING` 并跳过结算”防护
+  - `managed-settlement/run` 与 worker 补齐盈利分润触发，语义与 `withdraw` 对齐
+
+## 实施状态（闭环落地）
+- [complete] Phase A：统一结算与分润语义（提交：`3d9dc1b`）
+- [in_progress] Phase B：持仓/NAV/清仓从钱包维度切换到订阅维度（执行隔离）
+
+### Phase B 当前进度
+- [complete] 新增订阅维度持仓模型 `ManagedSubscriptionPosition`（schema + migration）
+- [complete] managed 关键入口改为按 `subscriptionId` 判定未平仓（withdraw / settlement-run / managed-worker）
+- [complete] 交易执行链路新增 managed 持仓写入（`TradeOrchestrator` 侧按 `copyConfigId` 解析订阅作用域并写入 scoped position）
+- [pending] 历史持仓回填脚本与读切换验证
+
+## 错误记录
+| 时间 | 位置 | 错误 | 处理 |
+|---|---|---|---|
+| 2026-02-26 | `rg` 查询 | 复杂正则导致 `repetition quantifier expects a valid decimal` | 拆分为多条精确 `rg -n` 查询 |

@@ -258,6 +258,31 @@
   - 新增测试：`web/lib/participation-program/policy-gates.test.ts` 与 `affiliate-engine` 防重用例。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts app/api/partners/config.integration.test.ts lib/participation-program/partner-program.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（23/23）。
+- 2026-02-26：托管理财闭环 Phase A 落地（结算路径统一）：
+  - 新增统一结算服务 `web/lib/managed-wealth/managed-settlement-service.ts`（费率解析、结算计算、结算写入、分润触发 helper、`LIQUIDATING` 状态切换 helper）。
+  - `POST /api/managed-subscriptions/[id]/withdraw` 已改为调用共享结算服务，保留冷却/提前赎回费/风控事件逻辑。
+  - `POST /api/managed-settlement/run` 已接入持仓阻塞护栏：有持仓则转 `LIQUIDATING` 并跳过；无持仓才结算。
+  - `managed-wealth-worker` 结算路径已改为复用共享结算服务；worker 与 run 路径补齐盈利分润触发（非阻断）。
+  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
+  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
+  - 已执行 `cd web && npx tsc --noEmit`，失败（仓库现存 `subscription-modal.tsx` 3 处历史类型错误，非本次改动引入）。
+- 2026-02-26：Phase A 代码已独立提交：
+  - commit: `3d9dc1b`
+  - message: `feat(managed-wealth): unify settlement flow across withdraw run and worker`
+- 2026-02-26：按用户要求，开始推进 Phase B（订阅维度执行隔离）：
+  - 已先完成未提交文件盘点与基线确认；
+  - 下一步进入数据模型与受影响链路改造（positions/NAV/liquidation）。
+- 2026-02-26：Phase B 第一批实现（订阅维度持仓隔离）：
+  - 新增 `ManagedSubscriptionPosition` 数据模型与迁移：`web/prisma/migrations/20260226180000_add_managed_subscription_position_scope/migration.sql`。
+  - `sdk/src/core/trade-orchestrator.ts` 新增 managed 订阅作用域解析与 scoped position 维护（BUY/SELL）。
+  - `web/app/api/managed-subscriptions/[id]/withdraw/route.ts` 未平仓判定改为 `managedSubscriptionPosition`（按订阅）。
+  - `web/app/api/managed-settlement/run/route.ts` 未平仓判定改为 `managedSubscriptionPosition`（按订阅）。
+  - `web/scripts/workers/managed-wealth-worker.ts` NAV、结算阻塞、清仓持仓读取改为订阅维度；清仓时同步递减 legacy `UserPosition`，避免直接清零污染同钱包其他策略。
+  - 已执行 `cd web && npx prisma generate`，通过。
+  - 已执行 `cd sdk && npm run build`，通过。
+  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
+  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
+  - 已执行 `cd web && npx tsc --noEmit`，仍受既有 `subscription-modal.tsx` 3 处历史类型错误阻断（非本批改动引入）。
 - 2026-02-26：补充边界强校验：
   - `web/app/api/managed-subscriptions/route.ts` 新增 FREE 模式账户托管订阅拦截（`MODE_BOUNDARY_VIOLATION`）。
   - `web/app/api/participation/custody-auth/route.ts` 限制授权模式为 `MANAGED`（拒绝 `FREE`）。
@@ -304,3 +329,18 @@
   - 文案补齐：`web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/participation-program/managed-return-matrix.test.ts app/api/participation/rules.integration.test.ts`，通过（10/10）。
+- 2026-02-26：完成托管理财闭环深度审计（worker/API/schema/spec），定位核心断点：
+  - 静态主交易员映射（非随机算法分配）；
+  - 钱包级持仓聚合导致订阅隔离不完整；
+  - worker/admin 结算路径与手动提现路径分润触发不一致；
+  - 清仓存在模拟成交路径；
+  - 资金授权与本金占用链路缺少硬账本关联。
+- 2026-02-26：新增实施计划文档 `docs/plans/2026-02-26-managed-wealth-closed-loop-plan.md`，按 P0/P1/P2 拆分后端、前端、数据模型、测试与发布策略。
+- 2026-02-26：新增 OpenSpec 变更 `close-managed-wealth-loop`：
+  - `openspec/changes/close-managed-wealth-loop/proposal.md`
+  - `openspec/changes/close-managed-wealth-loop/tasks.md`
+  - `openspec/changes/close-managed-wealth-loop/design.md`
+  - `openspec/changes/close-managed-wealth-loop/specs/managed-wealth/spec.md`
+  - `openspec/changes/close-managed-wealth-loop/specs/fee-logic/spec.md`
+  - `openspec/changes/close-managed-wealth-loop/specs/participation-program/spec.md`
+- 已执行 `openspec validate close-managed-wealth-loop --strict --no-interactive`，通过。
