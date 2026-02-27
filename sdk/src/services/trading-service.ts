@@ -243,34 +243,43 @@ export class TradingService {
     // 第二步：获取（或派生）L2 API 凭据。
     // 生产环境下应优先复用已有凭据，减少重复派生调用。
     if (!this.credentials) {
-      const creds = await this.clobClient.createOrDeriveApiKey();
+      let creds: any = null;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          creds = await this.clobClient.createOrDeriveApiKey();
+          if (creds && creds.key) break;
+        } catch (e: any) {
+          console.warn(`[TradingService] ⚠️ Error deriving API key:`, e.message);
+        }
+        retries--;
+        if (retries > 0) {
+          console.log(`[TradingService] ⏳ Retrying createOrDeriveApiKey in 2s...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+
+      if (!creds || !creds.key) {
+        throw new Error("[TradingService] ❌ Failed to create or derive API Key from ClobClient. The network may be rejecting the connection or you may be rate limited.");
+      }
+
       this.credentials = {
         key: creds.key,
         secret: creds.secret,
         passphrase: creds.passphrase,
       };
+      // console.log(`[TradingService] 🔑 Derived API Key: ${this.credentials.key}`);
     }
 
     // 第三步：使用 L2 凭据重建 client，后续交易请求走 API 鉴权路径。
     // 这样可以避免每次交易都依赖钱包签名，降低延迟和复杂度。
-    const clientOptions: any = {
-      key: this.credentials.key,
-      secret: this.credentials.secret,
-      passphrase: this.credentials.passphrase,
-    };
-
-    if (this.config.funderAddress) {
-      clientOptions.funderAddress = this.config.funderAddress;
-    }
-    if (this.config.signatureType !== undefined) {
-      clientOptions.signatureType = this.config.signatureType;
-    }
-
     this.clobClient = new ClobClient(
       CLOB_HOST,
       this.chainId,
       this.wallet,
-      clientOptions
+      this.credentials,
+      this.config.signatureType,
+      this.config.funderAddress
     );
 
     this.initialized = true;
