@@ -56,24 +56,30 @@ async function buildResponsePayload(
     }
 
     // 2. Layer: Database Cache (Preferred)
+    // Serve DB cache even when metadata is stale/failed/in-progress, then refresh in background.
     const useCache = !forceRefresh && process.env.USE_LEADERBOARD_CACHE !== 'false' && isDatabaseEnabled;
-    const meta = useCache ? await getSmartMoneyCacheMetadata() : null;
-    if (useCache && meta && meta.status === 'SUCCESS') {
-        const cachedTraders = (await getSmartMoneyFromCache(page, limit)) as DiscoveredSmartMoneyTrader[] | null;
-        if (cachedTraders && cachedTraders.length > 0) {
-            const fresh = isCacheFresh(meta.lastUpdateAt, 10);
-            if (!fresh) {
-                scheduleBackgroundUpdate(Math.max(100, page * limit));
-            }
-            memoryCache[cacheKey] = { data: cachedTraders, fetchedAt: now };
-            return {
-                source: 'database',
-                cached: true,
-                fresh,
-                lastUpdateAt: meta.lastUpdateAt,
-                traders: cachedTraders,
-            };
+    const [meta, cachedTraders] = useCache
+        ? await Promise.all([
+            getSmartMoneyCacheMetadata(),
+            getSmartMoneyFromCache(page, limit) as Promise<DiscoveredSmartMoneyTrader[] | null>,
+        ])
+        : [null, null];
+
+    if (cachedTraders && cachedTraders.length > 0) {
+        const fresh = meta ? isCacheFresh(meta.lastUpdateAt, 10) : false;
+        const shouldRefreshCache = !meta || meta.status !== 'SUCCESS' || !fresh;
+        if (shouldRefreshCache) {
+            scheduleBackgroundUpdate(Math.max(100, page * limit));
         }
+
+        memoryCache[cacheKey] = { data: cachedTraders, fetchedAt: now };
+        return {
+            source: 'database',
+            cached: true,
+            fresh,
+            lastUpdateAt: meta?.lastUpdateAt,
+            traders: cachedTraders,
+        };
     }
 
     // 3. Layer: Live Fallback
@@ -110,8 +116,8 @@ async function buildResponsePayload(
 
     memoryCache[cacheKey] = { data: liveTraders, fetchedAt: now };
 
-    // Trigger background update when DB cache is missing or stale
-    if (useCache && (!meta || !isCacheFresh(meta.lastUpdateAt, 10))) {
+    // Trigger background update when DB cache is missing, stale, or in failed/in-progress state
+    if (useCache && (!meta || meta.status !== 'SUCCESS' || !isCacheFresh(meta.lastUpdateAt, 10))) {
         scheduleBackgroundUpdate(Math.max(100, page * limit));
     }
 
