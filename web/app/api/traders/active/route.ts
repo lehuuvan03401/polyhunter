@@ -84,6 +84,7 @@ type ActiveTraderResponse = {
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in-memory
 const DB_CACHE_TTL_MINUTES = 10; // 10 minutes DB cache
 const BG_UPDATE_COOLDOWN = 2 * 60 * 1000; // 2 minutes
+const RESPONSE_CACHE_CONTROL = 'public, max-age=30, stale-while-revalidate=300';
 const LEADERBOARD_TTL_MS = 60 * 1000; // 1 minute
 const TRADER_DETAIL_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const TRADER_ERROR_TTL_MS = 30 * 1000; // 30 seconds
@@ -393,7 +394,9 @@ export async function GET(request: NextRequest) {
 
         if (!forceRefresh && inFlightRequests[cacheKey]) {
             const sharedPayload = await inFlightRequests[cacheKey];
-            return NextResponse.json(sharedPayload);
+            return NextResponse.json(sharedPayload, {
+                headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
+            });
         }
 
         const requestPromise = buildResponsePayload(limit, period, forceRefresh);
@@ -401,7 +404,9 @@ export async function GET(request: NextRequest) {
 
         try {
             const payload = await requestPromise;
-            return NextResponse.json(payload);
+            return NextResponse.json(payload, {
+                headers: { 'Cache-Control': RESPONSE_CACHE_CONTROL },
+            });
         } finally {
             delete inFlightRequests[cacheKey];
         }
@@ -409,7 +414,10 @@ export async function GET(request: NextRequest) {
         console.error('[ActiveTraders] Error:', error);
         return NextResponse.json(
             { error: 'Failed to fetch active traders', traders: [] },
-            { status: 500 }
+            {
+                status: 500,
+                headers: { 'Cache-Control': 'no-store' },
+            }
         );
     }
 }
