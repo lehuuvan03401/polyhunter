@@ -5,6 +5,7 @@ import { LeaderboardTable, ActiveTrader, populateCache } from './leaderboard-tab
 import { LeaderboardSkeleton } from './leaderboard-skeleton';
 
 const PERIODS = ['7d', '15d', '30d', '90d'] as const;
+const DEFAULT_PERIOD = '30d';
 const CACHE_KEY_PREFIX = 'polyhunter:leaderboard_';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -29,7 +30,7 @@ function getLocalCache(period: string): ActiveTrader[] | null {
                 return data;
             }
         }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
     return null;
 }
 
@@ -41,7 +42,7 @@ function setLocalCache(period: string, data: ActiveTrader[]) {
                 timestamp: Date.now()
             }));
         }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
 }
 
 export function LeaderboardSection() {
@@ -49,46 +50,68 @@ export function LeaderboardSection() {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const loadAllPeriods = async () => {
-            // Step 1: Check localStorage for ALL periods, populate in-memory cache
-            let hasCachedData = false;
+        let cancelled = false;
+        let deferredTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const refreshPeriod = async (period: string): Promise<ActiveTrader[]> => {
+            const data = await fetchTradersByPeriod(period);
+            if (data.length > 0) {
+                populateCache(period, data);
+                setLocalCache(period, data);
+            }
+            return data;
+        };
+
+        const loadLeaderboard = async () => {
+            // Step 1: Hydrate cache from localStorage first
             for (const period of PERIODS) {
                 const cached = getLocalCache(period);
                 if (cached && cached.length > 0) {
                     populateCache(period, cached);
-                    if (period === '30d') {
-                        setInitialData(cached);
-                        hasCachedData = true;
-                    }
                 }
             }
 
-            // If we have cached 30d data, show it immediately
-            if (hasCachedData) {
-                setIsLoading(false);
-            }
+            const cachedDefault = getLocalCache(DEFAULT_PERIOD);
 
-            // Step 2: Fetch all periods in parallel (background refresh or initial load)
-            const results = await Promise.all(
-                PERIODS.map(async (period) => {
-                    const data = await fetchTradersByPeriod(period);
-                    if (data.length > 0) {
-                        populateCache(period, data);
-                        setLocalCache(period, data);
+            // Show default period immediately when available
+            if (cachedDefault && cachedDefault.length > 0) {
+                if (!cancelled) {
+                    setInitialData(cachedDefault);
+                    setIsLoading(false);
+                }
+
+                // Refresh default period in background
+                void refreshPeriod(DEFAULT_PERIOD).then((freshDefault) => {
+                    if (!cancelled && freshDefault.length > 0) {
+                        setInitialData(freshDefault);
                     }
-                    return { period, data };
-                })
-            );
-
-            // Update initial data with fresh 30d data
-            const fresh30d = results.find(r => r.period === '30d')?.data || [];
-            if (fresh30d.length > 0) {
-                setInitialData(fresh30d);
+                });
+            } else {
+                // No default-period cache: fetch only default period first to unblock UI
+                const freshDefault = await refreshPeriod(DEFAULT_PERIOD);
+                if (!cancelled && freshDefault.length > 0) {
+                    setInitialData(freshDefault);
+                }
+                if (!cancelled) {
+                    setIsLoading(false);
+                }
             }
-            setIsLoading(false);
+
+            // Step 2: Defer remaining periods so first paint is not blocked by slower endpoints
+            deferredTimer = setTimeout(() => {
+                for (const period of PERIODS) {
+                    if (period === DEFAULT_PERIOD) continue;
+                    void refreshPeriod(period);
+                }
+            }, 1200);
         };
 
-        loadAllPeriods();
+        void loadLeaderboard();
+
+        return () => {
+            cancelled = true;
+            if (deferredTimer) clearTimeout(deferredTimer);
+        };
     }, []);
 
     if (isLoading && initialData.length === 0) {
