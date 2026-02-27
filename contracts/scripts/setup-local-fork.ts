@@ -5,8 +5,8 @@ import path from 'path';
 import fs from 'fs';
 
 // Load env from frontend root (.env.local takes precedence)
-dotenv.config({ path: path.resolve(__dirname, "../../frontend/.env.local") });
-dotenv.config({ path: path.resolve(__dirname, "../../frontend/.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../web/.env.local") });
+dotenv.config({ path: path.resolve(__dirname, "../../web/.env") });
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const MASTER_PK = process.env.TRADING_PRIVATE_KEY;
@@ -108,8 +108,8 @@ async function main() {
 
     // Automate .env update
     try {
-        const envLocalPath = path.resolve(__dirname, "../../frontend/.env.local");
-        const envPath = path.resolve(__dirname, "../../frontend/.env");
+        const envLocalPath = path.resolve(__dirname, "../../web/.env.local");
+        const envPath = path.resolve(__dirname, "../../web/.env");
         const targetEnvPath = fs.existsSync(envLocalPath) ? envLocalPath : envPath;
 
         let envContent = "";

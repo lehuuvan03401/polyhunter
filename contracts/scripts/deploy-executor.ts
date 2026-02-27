@@ -3,7 +3,7 @@ import { ethers, network } from "hardhat";
 import * as dotenv from "dotenv";
 import { HDNodeWallet } from "ethers";
 
-dotenv.config({ path: "../../frontend/.env" }); // Load from frontend .env where secrets are
+dotenv.config({ path: "../../web/.env" }); // Load from web .env where secrets are
 
 async function main() {
     console.log("🚀 Starting deployment of PolyHunterExecutor...");
@@ -77,7 +77,7 @@ async function main() {
     try {
         const fs = require('fs');
         const path = require('path');
-        const envPath = path.resolve(__dirname, "../../frontend/.env");
+        const envPath = path.resolve(__dirname, "../../web/.env");
 
         let envContent = "";
         if (fs.existsSync(envPath)) {
@@ -97,7 +97,7 @@ async function main() {
         }
 
         fs.writeFileSync(envPath, envContent);
-        console.log(`🤖 Auto-updated ${varName} in frontend/.env`);
+        console.log(`🤖 Auto-updated ${varName} in web/.env`);
     } catch (e: any) {
         console.warn(`⚠️ Failed to auto-update .env: ${e.message}`);
     }

@@ -230,7 +230,7 @@ export function SubscriptionModal({
         if (principalBandLimit && (amount < principalBandLimit.min || amount > principalBandLimit.max)) {
             toast.error(
                 t('SubscriptionModal.errors.outOfBandRange', {
-                    band: presetPrincipalBand,
+                    band: presetPrincipalBand || '',
                     min: principalBandLimit.min.toLocaleString(),
                     max: principalBandLimit.max.toLocaleString(),
                 })
@@ -354,12 +354,12 @@ export function SubscriptionModal({
                                 <p className={`mt-2 text-xs ${isOutOfBandRange ? 'text-rose-400' : 'text-zinc-500'}`}>
                                     {isOutOfBandRange
                                         ? t('SubscriptionModal.bandRangeInvalid', {
-                                            band: presetPrincipalBand,
+                                            band: presetPrincipalBand || '',
                                             min: principalBandLimit.min.toLocaleString(),
                                             max: principalBandLimit.max.toLocaleString(),
                                         })
                                         : t('SubscriptionModal.bandRangeHint', {
-                                            band: presetPrincipalBand,
+                                            band: presetPrincipalBand || '',
                                             min: principalBandLimit.min.toLocaleString(),
                                             max: principalBandLimit.max.toLocaleString(),
                                         })}

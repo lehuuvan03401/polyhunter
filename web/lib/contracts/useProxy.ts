@@ -293,11 +293,14 @@ export function useProxy(): UseProxyReturn {
             const legacyFactoryAddr = (ADDRESSES as any).legacyProxyFactory; // Cast to bypass TS if missing on some types, but we added it
             if (legacyFactoryAddr && legacyFactoryAddr !== ADDRESSES.proxyFactory) {
                 try {
-                    const legacyFactory = new ethers.Contract(legacyFactoryAddr, PROXY_FACTORY_ABI, provider);
-                    legacyAddr = await legacyFactory.getUserProxy(walletAddress);
-                    legacyExists = legacyAddr !== ethers.constants.AddressZero;
+                    const legacyCode = await provider.getCode(legacyFactoryAddr);
+                    if (legacyCode && legacyCode !== '0x') {
+                        const legacyFactory = new ethers.Contract(legacyFactoryAddr, PROXY_FACTORY_ABI, provider);
+                        legacyAddr = await legacyFactory.getUserProxy(walletAddress);
+                        legacyExists = legacyAddr !== ethers.constants.AddressZero;
+                    }
                 } catch (e) {
-                    console.error('Error fetching legacy proxy address:', e);
+                    console.warn('Could not fetch legacy proxy address:', e instanceof Error ? e.message : String(e));
                 }
             }
 
