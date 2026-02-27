@@ -518,7 +518,7 @@ function OrderRow({
                         </span>
                         {order.leaderTxHash && (
                             <a
-                                href={`https://polygonscan.com/tx/${order.leaderTxHash}`}
+                                href={`https://polygonscan.com/tx/${order.leaderTxHash.split(':')[0]}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-400 hover:text-blue-300"
@@ -636,12 +636,12 @@ function OrderRow({
                                 <div className="col-span-2 sm:col-span-1">
                                     <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-0.5">{t('details.leaderTx')}</span>
                                     <a
-                                        href={`https://polygonscan.com/tx/${order.leaderTxHash}`}
+                                        href={`https://polygonscan.com/tx/${order.leaderTxHash.split(':')[0]}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-mono break-all"
                                     >
-                                        {order.leaderTxHash.slice(0, 10)}...{order.leaderTxHash.slice(-8)}
+                                        {order.leaderTxHash.split(':')[0].slice(0, 10)}...{order.leaderTxHash.split(':')[0].slice(-8)}
                                         <ExternalLink className="h-3 w-3" />
                                     </a>
                                 </div>
@@ -667,7 +667,7 @@ function OrderRow({
                         </div>
                     )}
 
-                    {order.orderId && (
+                    {order.orderId && !isSimulation && !order.orderId.toLowerCase().startsWith('sim-') && !order.orderId.toLowerCase().startsWith('live-') && !order.orderId.toLowerCase().startsWith('adjust-') && !order.orderId.toLowerCase().startsWith('settle-') && (
                         <div className="mt-3 ml-[3.5rem]">
                             <a
                                 href={`https://polygonscan.com/tx/${order.orderId}`}
