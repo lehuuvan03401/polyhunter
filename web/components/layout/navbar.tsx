@@ -54,7 +54,7 @@ export function Navbar() {
 
     return (
         <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="container flex h-16 max-w-7xl items-center justify-between gap-4 md:gap-8">
+            <div className="container flex h-16 max-w-7xl items-center justify-between gap-3 md:gap-5 lg:gap-6">
 
 
                 {/* Logo */}
@@ -72,7 +72,7 @@ export function Navbar() {
                 </Link>
 
                 {/* Center Nav */}
-                <nav className="hidden md:flex flex-1 items-center justify-start lg:justify-center overflow-x-auto gap-3 lg:gap-5 xl:gap-8 text-sm font-medium whitespace-nowrap [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <nav className="hidden md:flex min-w-0 flex-1 items-center justify-start lg:justify-center overflow-x-auto gap-2.5 lg:gap-4 xl:gap-6 px-1 lg:px-2 text-sm font-medium whitespace-nowrap [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                     <Link href="/" className={cn("transition-colors hover:text-foreground/80", pathname === "/" ? "text-foreground" : "text-muted-foreground")}>
                         {t('traders')}
                     </Link>
@@ -116,16 +116,14 @@ export function Navbar() {
                 </nav>
 
                 {/* Right Side */}
-                <div className="flex items-center gap-2 md:gap-4 shrink-0 whitespace-nowrap">
-                    <LanguageSwitcher />
-
+                <div className="flex items-center gap-2 md:gap-3 lg:gap-4 shrink-0 whitespace-nowrap">
                     {!ready ? (
                         // Loading Skeleton
                         <div className="h-9 w-24 bg-white/5 animate-pulse rounded-lg" />
                     ) : authenticated ? (
-                        <div className="flex items-center gap-3 lg:gap-6">
+                        <div className="flex items-center gap-2 lg:gap-4">
                             {/* Balance Stats */}
-                            <div className="hidden lg:flex items-center gap-3 xl:gap-6 mr-2">
+                            <div className="hidden lg:flex items-center gap-2.5 xl:gap-5 mr-1">
                                 <div className="flex flex-col items-end">
                                     <span className="text-[10px] font-bold text-muted-foreground tracking-wider mb-0.5">{t('total')}</span>
                                     <span className="text-sm font-bold text-[#22c55e] font-mono tracking-tight">
@@ -159,6 +157,8 @@ export function Navbar() {
                             )}
                         </button>
                     )}
+
+                    <LanguageSwitcher />
                 </div>
             </div>
         </header>
