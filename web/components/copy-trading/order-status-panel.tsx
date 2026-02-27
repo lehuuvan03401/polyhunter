@@ -610,13 +610,13 @@ function OrderRow({
                             <DetailItem label={t('details.orderId')} value={order.orderId || 'N/A'} copyable={!!order.orderId} />
                             <DetailItem
                                 label={t('details.priceEx')}
-                                value={`$${order.price.toFixed(2)}`}
-                                subValue={order.leaderPrice ? `Leader: $${order.leaderPrice.toFixed(2)}` : undefined}
+                                value={`$${order.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}
+                                subValue={order.leaderPrice ? `Leader: $${order.leaderPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : undefined}
                             />
                             <DetailItem
                                 label={t('details.slippage')}
-                                value={order.leaderPrice ? `${((order.price - order.leaderPrice) / order.leaderPrice * 100).toFixed(2)}%` : '-'}
-                                color={order.leaderPrice ? (order.price > order.leaderPrice ? 'text-red-400' : 'text-green-400') : undefined}
+                                value={order.leaderPrice ? (order.price === order.leaderPrice ? '0.00%' : `${((order.price - order.leaderPrice) / order.leaderPrice * 100).toFixed(2)}%`) : '-'}
+                                color={order.leaderPrice ? (order.price > order.leaderPrice ? 'text-red-400' : (order.price < order.leaderPrice ? 'text-green-400' : 'text-muted-foreground')) : undefined}
                             />
                             <DetailItem
                                 label={t('details.mode')}
