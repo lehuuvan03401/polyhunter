@@ -69,7 +69,7 @@ export function ManagedNavChart({
     const padding = (maxNav - minNav) * 0.1 || 0.01;
 
     return (
-        <div style={{ height, width: '100%' }}>
+        <div style={{ height, width: '100%', minWidth: 0, minHeight: height }}>
             <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                     <defs>
