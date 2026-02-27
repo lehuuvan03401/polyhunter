@@ -443,7 +443,9 @@ export class TradeOrchestrator {
         const managedSubscriptionId = managedScope?.subscriptionId ?? null;
 
         let copySizeUsdc = this.calculateCopySize(config, tradeShares, leaderPrice);
-        if (copySizeUsdc <= 0) return { executed: false, reason: 'INVALID_COPY_SIZE' };
+        if (copySizeUsdc < 1) {
+            return { executed: false, reason: 'MIN_SIZE_REQUIREMENT_NOT_MET' };
+        }
 
         const strategy = this.getStrategyOverrides(config.strategyProfile);
         let overrides = {};

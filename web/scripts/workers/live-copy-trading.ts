@@ -1256,6 +1256,13 @@ async function main() {
     if (IS_LIVE_MODE) {
         await fallbackTradingService.initialize();
         console.log('✅ TradingService initialized for live EOA execution.');
+
+        if (LIVE_EXECUTION_MODE === 'EOA') {
+            console.log('🛡️  Verifying USDC allowance for EOA execution...');
+            // Approve max allowance to ensure trades don't fail midway due to insufficient allowance
+            await fallbackTradingService.verifyAndApproveAllowance('COLLATERAL', undefined, MAX_BUDGET * 1e6);
+            console.log('✅ USDC allowance verified.');
+        }
     }
 
     await seedConfig();

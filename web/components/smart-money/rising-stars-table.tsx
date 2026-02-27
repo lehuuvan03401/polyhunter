@@ -49,7 +49,7 @@ const fetcher = (url: string) => fetch(url).then((res) => {
     return res.json();
 });
 
-export function RisingStarsTable({ limit = 20, initialPeriod = '90d' }: RisingStarsTableProps) {
+export function RisingStarsTable({ limit = 20, initialPeriod = '7d' }: RisingStarsTableProps) {
     const t = useTranslations('SmartMoney.rising');
     const { authenticated, login, isLoggingIn } = usePrivyLogin();
     const [period, setPeriod] = useState<Period>(initialPeriod);

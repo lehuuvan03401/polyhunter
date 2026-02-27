@@ -22,7 +22,8 @@ import {
     getLeaderboardFromCache,
     getCacheMetadata,
     isCacheFresh,
-    Period as CachePeriod
+    Period as CachePeriod,
+    updateLeaderboardCache,
 } from '@/lib/services/leaderboard-cache-service';
 import { isDatabaseEnabled } from '@/lib/prisma';
 import {
@@ -82,6 +83,7 @@ type ActiveTraderResponse = {
 // ===== Cache Settings =====
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in-memory
 const DB_CACHE_TTL_MINUTES = 10; // 10 minutes DB cache
+const BG_UPDATE_COOLDOWN = 2 * 60 * 1000; // 2 minutes
 const LEADERBOARD_TTL_MS = 60 * 1000; // 1 minute
 const TRADER_DETAIL_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const TRADER_ERROR_TTL_MS = 30 * 1000; // 30 seconds
@@ -89,9 +91,23 @@ const TRADER_ERROR_TTL_MS = 30 * 1000; // 30 seconds
 // In-memory cache by period
 const memoryCache: Record<string, CachedData> = {};
 const inFlightRequests: Record<string, Promise<ActiveTraderResponse> | undefined> = {};
+const lastBackgroundUpdateAtByPeriod: Partial<Record<CachePeriod, number>> = {};
 type LeaderboardSnapshot = Awaited<ReturnType<typeof polyClient.dataApi.getLeaderboard>>;
 const leaderboardCache = createTTLCache<LeaderboardSnapshot>();
 const traderDetailCache = createTTLCache<ActiveTrader | null>();
+
+function scheduleBackgroundUpdate(period: CachePeriod, limit: number) {
+    const now = Date.now();
+    const lastUpdateAt = lastBackgroundUpdateAtByPeriod[period] ?? 0;
+    if (now - lastUpdateAt < BG_UPDATE_COOLDOWN) {
+        return;
+    }
+
+    lastBackgroundUpdateAtByPeriod[period] = now;
+    updateLeaderboardCache(period, Math.max(limit, 20)).catch((error) => {
+        console.error(`[ActiveTraders] Background cache update failed for ${period}:`, error);
+    });
+}
 
 // ===== Score Calculation =====
 // Now uses trader-scoring-service for scientific scoring
@@ -294,6 +310,7 @@ async function buildResponsePayload(
 ): Promise<ActiveTraderResponse> {
     const now = Date.now();
     const cacheKey = `${period}-${limit}`;
+    const cachePeriod = period as CachePeriod;
 
     // Layer 1: In-memory cache check
     const inMemory = memoryCache[cacheKey];
@@ -309,27 +326,35 @@ async function buildResponsePayload(
     }
 
     // Layer 2: Database cache check
-    if (!forceRefresh && isDatabaseEnabled && process.env.USE_LEADERBOARD_CACHE !== 'false') {
-        const dbTraders = await getLeaderboardFromCache(period as CachePeriod, limit);
-        const dbMeta = await getCacheMetadata(period as CachePeriod);
+    // Serve DB cache even when metadata is stale/failed/missing, then refresh in background.
+    const useCache = !forceRefresh && isDatabaseEnabled && process.env.USE_LEADERBOARD_CACHE !== 'false';
+    const [dbTraders, dbMeta] = useCache
+        ? await Promise.all([
+            getLeaderboardFromCache(cachePeriod, limit),
+            getCacheMetadata(cachePeriod),
+        ])
+        : [null, null];
 
-        if (dbTraders && dbMeta) {
-            const fresh = isCacheFresh(dbMeta.lastUpdateAt, DB_CACHE_TTL_MINUTES);
-
-            memoryCache[cacheKey] = {
-                traders: dbTraders as any[],
-                fetchedAt: dbMeta.lastUpdateAt.getTime(),
-            };
-
-            return {
-                traders: dbTraders as any[], // Cast for compatibility with older cached data
-                cached: true,
-                source: 'database',
-                fresh,
-                cachedAt: dbMeta.lastUpdateAt.toISOString(),
-                algorithm: 'active-traders-v2-period',
-            };
+    if (dbTraders && dbTraders.length > 0) {
+        const fresh = dbMeta ? isCacheFresh(dbMeta.lastUpdateAt, DB_CACHE_TTL_MINUTES) : false;
+        const shouldRefreshCache = !dbMeta || dbMeta.status !== 'SUCCESS' || !fresh || (dbMeta.traderCount ?? 0) < limit;
+        if (shouldRefreshCache) {
+            scheduleBackgroundUpdate(cachePeriod, limit);
         }
+
+        memoryCache[cacheKey] = {
+            traders: dbTraders as ActiveTrader[],
+            fetchedAt: now,
+        };
+
+        return {
+            traders: dbTraders as ActiveTrader[], // Cast for compatibility with older cached data
+            cached: true,
+            source: 'database',
+            fresh,
+            cachedAt: (dbMeta?.lastUpdateAt ?? new Date(now)).toISOString(),
+            algorithm: 'active-traders-v2-period',
+        };
     }
 
     // Layer 3: Fetch fresh data from Polymarket (Fallback)
@@ -340,6 +365,11 @@ async function buildResponsePayload(
         traders,
         fetchedAt: now,
     };
+
+    // Warm DB cache asynchronously after live fetch to improve next requests.
+    if (useCache) {
+        scheduleBackgroundUpdate(cachePeriod, limit);
+    }
 
     console.log(`[ActiveTraders] Found ${traders.length} active traders for ${period} (Live Fetch)`);
 

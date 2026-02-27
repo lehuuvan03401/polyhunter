@@ -11,6 +11,7 @@ import { useTranslations } from 'next-intl';
 import { preload } from 'swr';
 
 type Tab = 'performers' | 'rising';
+const DEFAULT_RISING_PERIOD = '7d';
 
 // Fetcher for SWR preload
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -25,10 +26,17 @@ export function SmartMoneyPage() {
     useEffect(() => {
         // Pre-fetch SmartMoney page 1
         preload('/api/traders/smart-money?page=1&limit=20', fetcher);
-        // Pre-fetch Rising Stars for all periods
-        ['7d', '15d', '30d', '90d'].forEach((period) => {
-            preload(`/api/traders/active?limit=20&period=${period}`, fetcher);
-        });
+        // Pre-fetch the default Rising Stars period first for instant tab switch.
+        preload(`/api/traders/active?limit=20&period=${DEFAULT_RISING_PERIOD}`, fetcher);
+
+        // Defer less-frequently used periods to avoid a heavy burst on initial load.
+        const timer = setTimeout(() => {
+            ['15d', '30d', '90d'].forEach((period) => {
+                preload(`/api/traders/active?limit=20&period=${period}`, fetcher);
+            });
+        }, 1200);
+
+        return () => clearTimeout(timer);
     }, []);
 
     if (!ready) {
@@ -208,7 +216,7 @@ export function SmartMoneyPage() {
                                 </>
                             ) : (
                                 <Suspense fallback={<TableSkeleton />}>
-                                    <RisingStarsTable limit={20} />
+                                    <RisingStarsTable limit={20} initialPeriod={DEFAULT_RISING_PERIOD} />
                                 </Suspense>
                             )}
                         </div>
