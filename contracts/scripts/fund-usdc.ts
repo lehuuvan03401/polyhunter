@@ -8,7 +8,7 @@ type Erc20Like = {
 
 async function main() {
     // Target Address: Hardhat #0 (Default) or passed as argument
-    const targetAddress = process.env.TARGET_FUND_ADDRESS || '0x90F79bf6EB2c4f870365E785982E1f101E93b906';
+    const targetAddress = process.env.TARGET_FUND_ADDRESS || '0xdD2FD4581271e230360230F9337D5c0430Bf44C0';
 
     // USDC Address on Polygon
     const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';

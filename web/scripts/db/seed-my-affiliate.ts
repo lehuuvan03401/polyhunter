@@ -1,6 +1,6 @@
 /**
  * Seed affiliate data for a specific wallet (for UI testing)
- * Run: npx tsx scripts/seed-my-affiliate.ts
+ * Run: npx tsx scripts/db/seed-my-affiliate.ts
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -18,7 +18,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Hardhat default account #0 as fallback
-const DEFAULT_WALLET = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'.toLowerCase();
+const DEFAULT_WALLET = '0xdD2FD4581271e230360230F9337D5c0430Bf44C0'.toLowerCase();
 
 // Get wallet from command line arg or use default
 const args = process.argv.slice(2);
