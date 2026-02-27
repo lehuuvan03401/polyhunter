@@ -1,4 +1,6 @@
-
+/**
+ * npx hardhat run scripts/fund-usdc.ts --network localhost
+ */
 import { ethers } from 'hardhat';
 
 type Erc20Like = {
