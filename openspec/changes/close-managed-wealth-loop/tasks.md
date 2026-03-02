@@ -22,7 +22,7 @@
 - [x] 4.3 Reject managed operations when mode boundary or reservation constraints are not satisfied.
 
 ## 5. Frontend and operator visibility
-- [ ] 5.1 Surface allocation snapshot summary in managed product detail/subscription surfaces.
+- [x] 5.1 Surface allocation snapshot summary in managed product detail/subscription surfaces.
 - [x] 5.2 Show explicit principal band/minimum constraints in subscription flow.
 - [x] 5.3 Add operations panel/endpoint for loop health: allocation status, liquidation backlog, settlement/commission parity.
 

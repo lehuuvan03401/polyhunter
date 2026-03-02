@@ -280,6 +280,10 @@
                 "title": "Strategy Composition",
                 "weight": "Weight"
             },
+            "allocationSnapshots": {
+                "title": "Recent Allocation Snapshots",
+                "version": "Snapshot v{version}"
+            },
             "subscribe": {
                 "title": "Select a Term",
                 "desc": "Pick principal tier and lock-up period to preview expected return ranges.",

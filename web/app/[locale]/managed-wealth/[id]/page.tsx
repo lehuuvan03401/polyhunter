@@ -45,7 +45,23 @@ type ProductDetailResponse = {
         runningSubscriptionCount: number;
     };
     chartData: { date: string; value: number }[];
+    allocationSnapshots: Array<{
+        subscriptionId: string;
+        version: number;
+        createdAt: string;
+        selectedWeights: Array<{
+            address: string;
+            weight: number;
+        }>;
+    }>;
 };
+
+const ALLOCATION_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+});
 
 export default function ManagedWealthDetailPage() {
     const t = useTranslations('ManagedWealth.ProductDetails');
@@ -147,6 +163,12 @@ export default function ManagedWealthDetailPage() {
     const selectedTermDisplayRange = selectedTermProjection?.displayRange
         ?? (selectedTerm ? `${selectedTerm.targetReturnMin}% - ${selectedTerm.targetReturnMax}%` : null);
     const selectedBandRange = MANAGED_BAND_LIMITS[selectedBand];
+    const formatAllocationTime = (value: string) =>
+        ALLOCATION_TIME_FORMATTER.format(new Date(value));
+    const formatTraderAddress = (address: string) =>
+        address.length > 12
+            ? `${address.slice(0, 6)}...${address.slice(-4)}`
+            : address;
     useEffect(() => {
         const bandFromQuery = (searchParams.get('band') || '').toUpperCase();
         if (bandFromQuery === 'A' || bandFromQuery === 'B' || bandFromQuery === 'C') {
@@ -291,6 +313,35 @@ export default function ManagedWealthDetailPage() {
                             ))}
                         </div>
                     </div>
+
+                    {detail?.allocationSnapshots?.length ? (
+                        <div>
+                            <h2 className="text-lg font-semibold text-white mb-4">{t('allocationSnapshots.title')}</h2>
+                            <div className="grid gap-3">
+                                {detail.allocationSnapshots.map((snapshot) => (
+                                    <div
+                                        key={`${snapshot.subscriptionId}:${snapshot.version}`}
+                                        className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                                    >
+                                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+                                            <span>{t('allocationSnapshots.version', { version: snapshot.version })}</span>
+                                            <span>{formatAllocationTime(snapshot.createdAt)}</span>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {snapshot.selectedWeights.map((row) => (
+                                                <span
+                                                    key={`${snapshot.subscriptionId}:${row.address}`}
+                                                    className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-200"
+                                                >
+                                                    {formatTraderAddress(row.address)} · {Math.round(row.weight * 100)}%
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
 
                 {/* Right Column: Terms & Action */}

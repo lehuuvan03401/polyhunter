@@ -5,6 +5,34 @@ import { PARTICIPATION_SERVICE_PERIODS_DAYS } from '@/lib/participation-program/
 
 export const dynamic = 'force-dynamic';
 
+function normalizeManagedAllocationWeights(
+    value: Prisma.JsonValue | null | undefined
+): Array<{ address: string; weight: number }> {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((row) => {
+        if (typeof row !== 'object' || row === null) {
+            return [];
+        }
+
+        const candidate = row as {
+            address?: unknown;
+            weight?: unknown;
+        };
+        if (typeof candidate.address !== 'string') {
+            return [];
+        }
+
+        const weight = Number(candidate.weight ?? 0);
+        return [{
+            address: candidate.address.toLowerCase(),
+            weight: Number.isFinite(weight) ? weight : 0,
+        }];
+    });
+}
+
 export async function GET(
     _request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -65,10 +93,26 @@ export async function GET(
             return NextResponse.json({ error: 'Product not found' }, { status: 404 });
         }
 
-        const [subscriptionCount, runningSubscriptionCount] = await Promise.all([
+        const [subscriptionCount, runningSubscriptionCount, recentAllocations] = await Promise.all([
             prisma.managedSubscription.count({ where: { productId: product.id } }),
             prisma.managedSubscription.count({
                 where: { productId: product.id, status: 'RUNNING' },
+            }),
+            prisma.managedSubscriptionAllocation.findMany({
+                where: {
+                    status: 'ACTIVE',
+                    subscription: {
+                        productId: product.id,
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 3,
+                select: {
+                    subscriptionId: true,
+                    version: true,
+                    createdAt: true,
+                    selectedWeights: true,
+                },
             }),
         ]);
 
@@ -102,6 +146,13 @@ export async function GET(
                 value: bucket.sum / bucket.count,
             }));
 
+        const allocationSnapshots = recentAllocations.map((allocation) => ({
+            subscriptionId: allocation.subscriptionId,
+            version: allocation.version,
+            createdAt: allocation.createdAt,
+            selectedWeights: normalizeManagedAllocationWeights(allocation.selectedWeights),
+        }));
+
         return NextResponse.json({
             product,
             stats: {
@@ -109,6 +160,7 @@ export async function GET(
                 runningSubscriptionCount,
             },
             chartData,
+            allocationSnapshots,
         });
     } catch (error) {
         console.error('Failed to fetch managed product detail:', error);

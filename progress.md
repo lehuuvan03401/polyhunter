@@ -431,5 +431,9 @@
 - 2026-03-02：推进 `close-managed-wealth-loop` 的 `5.1`（订阅面板侧）：
   - `GET /api/managed-subscriptions` 已补充轻量 `allocationSummary`（active version + normalized selected weights），避免前端直接消费整段 JSON relation。
   - `web/components/managed-wealth/managed-subscription-item.tsx` 已在订阅卡片展示 allocation version、更新时间和主要分配权重预览。
-  - 当前仅完成 `/managed-wealth/my` 订阅面板，产品详情页的 allocation snapshot 展示仍待补齐，因此 `5.1` 暂不勾选完成。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `5.1`：
+  - `web/app/api/managed-products/[id]/route.ts` 新增 `allocationSnapshots`，向产品详情页返回最近 active allocation 的版本和权重摘要。
+  - `web/app/[locale]/managed-wealth/[id]/page.tsx` 新增 “Recent Allocation Snapshots” 区块；至此产品详情页和 `/managed-wealth/my` 订阅面板都已展示 allocation snapshot summary。
+  - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json` 已补齐相关文案。
 - 已执行 `cd web && npx tsc --noEmit`，通过。

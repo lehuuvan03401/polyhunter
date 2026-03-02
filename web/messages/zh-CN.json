@@ -280,6 +280,10 @@
                 "title": "策略组合",
                 "weight": "权重"
             },
+            "allocationSnapshots": {
+                "title": "最近分配快照",
+                "version": "快照 v{version}"
+            },
             "subscribe": {
                 "title": "选择期限",
                 "desc": "先选档位，再按周期查看预估收益区间。",
