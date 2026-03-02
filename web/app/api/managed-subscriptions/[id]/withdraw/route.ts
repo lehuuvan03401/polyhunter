@@ -10,6 +10,7 @@ import {
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '@/lib/managed-wealth/managed-settlement-service';
 import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
+import { resolveManagedExecutionConfigIds } from '@/lib/managed-wealth/execution-targets';
 
 export const dynamic = 'force-dynamic';
 
@@ -138,9 +139,14 @@ export async function POST(
                 });
             }
 
+            const executionConfigIds = await resolveManagedExecutionConfigIds(tx, {
+                subscriptionId: subscription.id,
+                fallbackCopyConfigId: subscription.copyConfigId,
+            });
             const openPositionsCount = await countManagedOpenPositionsWithFallback(tx, {
                 subscriptionId: subscription.id,
                 walletAddress: walletContext.wallet,
+                copyConfigIds: executionConfigIds,
                 copyConfigId: subscription.copyConfigId,
             });
 
@@ -149,6 +155,7 @@ export async function POST(
                 const transitioned = await transitionSubscriptionToLiquidatingIfNeeded(tx, {
                     subscriptionId: subscription.id,
                     currentStatus: subscription.status,
+                    copyConfigIds: executionConfigIds,
                     copyConfigId: subscription.copyConfigId,
                 });
                 if (transitioned) {

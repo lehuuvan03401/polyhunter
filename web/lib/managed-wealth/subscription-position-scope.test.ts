@@ -6,6 +6,9 @@ import {
 
 function createDbMocks() {
     return {
+        managedSubscriptionExecutionTarget: {
+            findMany: vi.fn().mockResolvedValue([]),
+        },
         managedSubscriptionPosition: {
             findMany: vi.fn(),
             count: vi.fn(),
@@ -69,9 +72,32 @@ describe('subscription position scope helpers', () => {
     it('falls back to legacy positions within the managed token universe', async () => {
         const db = createDbMocks();
         db.managedSubscriptionPosition.findMany.mockResolvedValue([]);
-        db.copyTrade.findMany.mockResolvedValue([
+        db.managedSubscriptionExecutionTarget.findMany.mockResolvedValue([
+            {
+                copyConfigId: 'cfg-1',
+                allocationVersion: 2,
+                targetWeight: 0.6,
+                targetOrder: 0,
+                isPrimary: true,
+                isActive: true,
+            },
+            {
+                copyConfigId: 'cfg-2',
+                allocationVersion: 2,
+                targetWeight: 0.4,
+                targetOrder: 1,
+                isPrimary: false,
+                isActive: true,
+            },
+        ]);
+        db.copyTrade.findMany.mockResolvedValueOnce([
             { tokenId: 'token-1' },
             { tokenId: 'token-2' },
+        ]);
+        db.copyTrade.findMany.mockResolvedValueOnce([
+            { tokenId: 'token-1' },
+            { tokenId: 'token-2' },
+            { tokenId: 'token-3' },
         ]);
         db.userPosition.findMany.mockResolvedValue([
             {
@@ -98,6 +124,15 @@ describe('subscription position scope helpers', () => {
         });
 
         expect(db.copyTrade.findMany).toHaveBeenCalledTimes(2);
+        expect(db.copyTrade.findMany).toHaveBeenNthCalledWith(1, {
+            where: {
+                configId: { in: ['cfg-1', 'cfg-2'] },
+                tokenId: { not: null },
+                status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
+            },
+            select: { tokenId: true },
+            distinct: ['tokenId'],
+        });
         expect(db.userPosition.findMany).toHaveBeenCalledWith({
             where: {
                 walletAddress: '0xabc',
@@ -130,6 +165,7 @@ describe('subscription position scope helpers', () => {
         });
 
         expect(count).toBe(0);
+        expect(db.managedSubscriptionExecutionTarget.findMany).not.toHaveBeenCalled();
         expect(db.copyTrade.findMany).not.toHaveBeenCalled();
         expect(db.userPosition.count).not.toHaveBeenCalled();
     });

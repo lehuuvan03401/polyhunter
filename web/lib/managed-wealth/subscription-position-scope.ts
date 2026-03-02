@@ -1,9 +1,40 @@
-import type { PrismaClient } from '@prisma/client';
+import {
+    type ManagedExecutionTargetSelection,
+    resolveManagedExecutionConfigIds,
+} from './execution-targets';
 
-type PositionScopeDb = Pick<
-    PrismaClient,
-    'managedSubscriptionPosition' | 'copyTrade' | 'userPosition'
->;
+type PositionScopeDb = {
+    managedSubscriptionExecutionTarget: {
+        findMany: (...args: any[]) => Promise<ManagedExecutionTargetSelection[]>;
+    };
+    managedSubscriptionPosition: {
+        findMany: (...args: any[]) => Promise<Array<{
+            id: string;
+            walletAddress: string;
+            tokenId: string;
+            balance: number;
+            avgEntryPrice: number;
+            totalCost: number;
+        }>>;
+        count: (...args: any[]) => Promise<number>;
+    };
+    copyTrade: {
+        findMany: (...args: any[]) => Promise<Array<{
+            tokenId: string | null;
+        }>>;
+    };
+    userPosition: {
+        findMany: (...args: any[]) => Promise<Array<{
+            id: string;
+            walletAddress: string;
+            tokenId: string;
+            balance: number;
+            avgEntryPrice: number;
+            totalCost: number;
+        }>>;
+        count: (...args: any[]) => Promise<number>;
+    };
+};
 
 function isScopeFallbackEnabled(): boolean {
     return process.env.MANAGED_POSITION_SCOPE_FALLBACK !== 'false';
@@ -21,11 +52,17 @@ export type ManagedOpenPosition = {
 
 async function listManagedTokenUniverse(
     db: PositionScopeDb,
-    copyConfigId: string
+    copyConfigIds: string[]
 ): Promise<string[]> {
+    if (copyConfigIds.length === 0) {
+        return [];
+    }
+
     const rows = await db.copyTrade.findMany({
         where: {
-            configId: copyConfigId,
+            configId: copyConfigIds.length === 1
+                ? copyConfigIds[0]
+                : { in: copyConfigIds },
             tokenId: { not: null },
             status: { in: ['EXECUTED', 'SETTLEMENT_PENDING'] },
         },
@@ -43,6 +80,7 @@ export async function listManagedOpenPositionsWithFallback(
     input: {
         subscriptionId: string;
         walletAddress: string;
+        copyConfigIds?: string[] | null;
         copyConfigId?: string | null;
     }
 ): Promise<ManagedOpenPosition[]> {
@@ -68,11 +106,22 @@ export async function listManagedOpenPositionsWithFallback(
         }));
     }
 
-    if (!isScopeFallbackEnabled() || !input.copyConfigId) {
+    if (!isScopeFallbackEnabled()) {
         return [];
     }
 
-    const tokenIds = await listManagedTokenUniverse(db, input.copyConfigId);
+    const configIds = input.copyConfigIds && input.copyConfigIds.length > 0
+        ? input.copyConfigIds
+        : await resolveManagedExecutionConfigIds(db, {
+            subscriptionId: input.subscriptionId,
+            fallbackCopyConfigId: input.copyConfigId,
+        });
+
+    if (!isScopeFallbackEnabled() || configIds.length === 0) {
+        return [];
+    }
+
+    const tokenIds = await listManagedTokenUniverse(db, configIds);
     if (tokenIds.length === 0) {
         return [];
     }
@@ -104,6 +153,7 @@ export async function countManagedOpenPositionsWithFallback(
     input: {
         subscriptionId: string;
         walletAddress: string;
+        copyConfigIds?: string[] | null;
         copyConfigId?: string | null;
     }
 ): Promise<number> {
@@ -118,11 +168,22 @@ export async function countManagedOpenPositionsWithFallback(
         return scopedCount;
     }
 
-    if (!isScopeFallbackEnabled() || !input.copyConfigId) {
+    if (!isScopeFallbackEnabled()) {
         return 0;
     }
 
-    const tokenIds = await listManagedTokenUniverse(db, input.copyConfigId);
+    const configIds = input.copyConfigIds && input.copyConfigIds.length > 0
+        ? input.copyConfigIds
+        : await resolveManagedExecutionConfigIds(db, {
+            subscriptionId: input.subscriptionId,
+            fallbackCopyConfigId: input.copyConfigId,
+        });
+
+    if (configIds.length === 0) {
+        return 0;
+    }
+
+    const tokenIds = await listManagedTokenUniverse(db, configIds);
     if (tokenIds.length === 0) {
         return 0;
     }

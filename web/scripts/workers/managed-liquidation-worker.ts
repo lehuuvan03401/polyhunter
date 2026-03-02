@@ -13,6 +13,7 @@ import { createUnifiedCache } from '../../../sdk/src/core/unified-cache';
 import { TradingService } from '../../../sdk/src/services/trading-service';
 import { CopyTradingExecutionService } from '../../../sdk/src/services/copy-trading-execution-service';
 import { listManagedOpenPositionsWithFallback } from '../../lib/managed-wealth/subscription-position-scope';
+import { resolvePrimaryManagedExecutionTarget } from '../../lib/managed-wealth/execution-targets';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const RPC_URL = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
@@ -394,7 +395,10 @@ async function processTask(task: ManagedLiquidationTask, now: Date): Promise<'co
         return 'completed';
     }
 
-    const copyConfigId = subscription.copyConfigId || task.copyConfigId;
+    const copyConfigId = await resolvePrimaryManagedExecutionTarget(prisma, {
+        subscriptionId: subscription.id,
+        fallbackCopyConfigId: subscription.copyConfigId || task.copyConfigId,
+    });
     if (!copyConfigId) {
         await markTask(task.id, {
             status: 'BLOCKED',

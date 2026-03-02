@@ -86,6 +86,12 @@ async function setupRunRoute() {
         countManagedOpenPositionsWithFallback,
     }));
 
+    vi.doMock('@/lib/managed-wealth/execution-targets', () => ({
+        resolveManagedExecutionConfigIds: vi.fn(async (_db: unknown, input: { fallbackCopyConfigId?: string | null }) =>
+            input.fallbackCopyConfigId ? [input.fallbackCopyConfigId] : []
+        ),
+    }));
+
     const route = await import('@/app/api/managed-settlement/run/route');
 
     return {
@@ -184,6 +190,12 @@ async function setupWithdrawRoute() {
 
     vi.doMock('@/lib/managed-wealth/subscription-position-scope', () => ({
         countManagedOpenPositionsWithFallback,
+    }));
+
+    vi.doMock('@/lib/managed-wealth/execution-targets', () => ({
+        resolveManagedExecutionConfigIds: vi.fn(async (_db: unknown, input: { fallbackCopyConfigId?: string | null }) =>
+            input.fallbackCopyConfigId ? [input.fallbackCopyConfigId] : []
+        ),
     }));
 
     const route = await import('@/app/api/managed-subscriptions/[id]/withdraw/route');

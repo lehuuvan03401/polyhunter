@@ -7,7 +7,7 @@
 ## 2. Allocation and execution loop
 - [x] 2.1 Implement score-based trader candidate pipeline from leaderboard/scoring services by strategy profile.
 - [x] 2.2 Implement weighted-random assignment per subscription with deterministic seed persistence.
-- [ ] 2.3 Support multi-trader allocation per managed subscription and controlled rebalance behavior.
+- [x] 2.3 Support multi-trader allocation per managed subscription and controlled rebalance behavior.
 - [x] 2.4 Update managed worker to consume allocation snapshots instead of static primary-agent mapping.
 
 ## 3. Liquidation and settlement parity

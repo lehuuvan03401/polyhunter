@@ -160,6 +160,7 @@ export async function transitionSubscriptionToLiquidatingIfNeeded(
     input: {
         subscriptionId: string;
         currentStatus: ManagedSubscriptionStatus;
+        copyConfigIds?: string[] | null;
         copyConfigId?: string | null;
     }
 ): Promise<boolean> {
@@ -172,20 +173,23 @@ export async function transitionSubscriptionToLiquidatingIfNeeded(
         data: { status: 'LIQUIDATING' },
     });
 
-    if (input.copyConfigId) {
-        try {
-            await db.copyTradingConfig.update({
-                where: { id: input.copyConfigId },
-                data: { isActive: false },
-            });
-        } catch (error) {
-            if (
-                !(error instanceof Prisma.PrismaClientKnownRequestError)
-                || error.code !== 'P2025'
-            ) {
-                throw error;
-            }
-        }
+    const configIds = Array.from(
+        new Set(
+            (input.copyConfigIds ?? []).filter(Boolean).concat(
+                input.copyConfigId ? [input.copyConfigId] : []
+            )
+        )
+    );
+
+    if (configIds.length > 0) {
+        await db.copyTradingConfig.updateMany({
+            where: {
+                id: { in: configIds },
+            },
+            data: {
+                isActive: false,
+            },
+        });
     }
 
     return true;

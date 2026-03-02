@@ -447,3 +447,11 @@
   - `web/scripts/workers/managed-wealth-worker.ts` 新增 `MANAGED_ALLOCATION_SNAPSHOT_ENABLED`。设为 `false` 时，可回退到旧的 `product.agents[0]` 主模板映射路径，跳过 allocation snapshot 读写。
   - 当前仅覆盖 worker 映射路径；settlement service 的独立回滚开关仍未补齐，因此 `6.4` 暂不勾选完成。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `2.3`：
+  - `web/prisma/schema.prisma` 新增 `ManagedSubscriptionExecutionTarget`，并补充迁移 `web/prisma/migrations/20260302113000_add_managed_execution_targets/migration.sql`，将“订阅 -> 多个执行配置”的关系显式建模，同时保留 `copyConfigId` 作为主执行 target 的兼容字段。
+  - 新增 `web/lib/managed-wealth/execution-targets.ts` 与单测 `execution-targets.test.ts`，统一解析 active execution target、主 target 和 legacy `copyConfigId` fallback。
+  - `web/scripts/workers/managed-wealth-worker.ts` 现已按 allocation snapshot 的多 trader 权重创建/复用多个 `CopyTradingConfig`，并在 active allocation version 变化时按最小变更关闭过期 target config、更新 `ManagedSubscriptionExecutionTarget`，实现受控 rebalance。
+  - NAV、settlement、withdraw、health 和 liquidation path 已全部切到 execution-target 解析层；`subscription-position-scope` 现支持按多 config 的 token universe 做 scoped/legacy fallback 统计。
+- 已执行 `cd web && npx prisma generate`，通过。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts lib/managed-wealth/execution-targets.test.ts lib/managed-wealth/subscription-position-scope.test.ts app/api/managed-settlement/health.integration.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（14/14）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

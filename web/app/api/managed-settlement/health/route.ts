@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { isAdminRequest } from '@/lib/participation-program/partner-program';
 import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
+import { resolveManagedExecutionConfigIds } from '@/lib/managed-wealth/execution-targets';
 import {
     PARTICIPATION_PROFIT_FEE_RATE,
     PARTICIPATION_PROFIT_FEE_SCOPE_PREFIX,
@@ -104,9 +105,14 @@ export async function GET(request: NextRequest) {
         const inspectedLiquidating = liquidatingSubscriptions.slice(0, liquidationLimit);
         const liquidationDetails = await Promise.all(
             inspectedLiquidating.map(async (sub) => {
+                const executionConfigIds = await resolveManagedExecutionConfigIds(prisma, {
+                    subscriptionId: sub.id,
+                    fallbackCopyConfigId: sub.copyConfigId,
+                });
                 const openPositionsCount = await countManagedOpenPositionsWithFallback(prisma, {
                     subscriptionId: sub.id,
                     walletAddress: sub.walletAddress,
+                    copyConfigIds: executionConfigIds,
                     copyConfigId: sub.copyConfigId,
                 });
                 return {

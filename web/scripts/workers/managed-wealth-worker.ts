@@ -4,7 +4,8 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
     Prisma,
-    PrismaClient
+    PrismaClient,
+    type AgentTemplate
 } from '@prisma/client';
 import {
     buildManagedAllocationSeed,
@@ -25,6 +26,7 @@ import {
     countManagedOpenPositionsWithFallback,
     listManagedOpenPositionsWithFallback,
 } from '../../lib/managed-wealth/subscription-position-scope';
+import { resolveManagedExecutionConfigIds } from '../../lib/managed-wealth/execution-targets';
 import { resolveManagedLiquidationIntent } from '../../lib/managed-wealth/liquidation-intent';
 import { polyClient } from '../../lib/polymarket';
 import { affiliateEngine } from '../../lib/services/affiliate-engine';
@@ -41,6 +43,7 @@ const MAP_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_MAP_BATCH_S
 const NAV_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_NAV_BATCH_SIZE || 500));
 const SETTLEMENT_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_SETTLEMENT_BATCH_SIZE || 300));
 const LIQUIDATION_RETRY_BASE_MS = Math.max(10_000, Number(process.env.MANAGED_LIQUIDATION_RETRY_BASE_MS || 120_000));
+const MANAGED_ALLOCATION_TARGET_COUNT = Math.max(1, Number(process.env.MANAGED_ALLOCATION_TARGET_COUNT || 3));
 const MANAGED_ALLOCATION_SNAPSHOT_ENABLED = process.env.MANAGED_ALLOCATION_SNAPSHOT_ENABLED !== 'false';
 
 const pool = new Pool({ connectionString: DATABASE_URL });
@@ -56,30 +59,58 @@ async function getReserveBalance(tx: Omit<PrismaClient, '$connect' | '$disconnec
     return calculateReserveBalance(rows);
 }
 
-function extractSelectedTraderAddress(selectedWeights: unknown): string | null {
+function extractSelectedTargetWeights(
+    selectedWeights: unknown
+): Array<{ address: string; weight: number }> {
     if (!Array.isArray(selectedWeights) || selectedWeights.length === 0) {
-        return null;
+        return [];
     }
 
-    for (const row of selectedWeights) {
-        if (
-            typeof row === 'object' &&
-            row !== null &&
-            'address' in row &&
-            typeof (row as { address?: unknown }).address === 'string'
-        ) {
-            return ((row as { address: string }).address).toLowerCase();
+    return selectedWeights.flatMap((row) => {
+        if (typeof row !== 'object' || row === null) {
+            return [];
         }
-    }
 
-    return null;
+        const candidate = row as {
+            address?: unknown;
+            weight?: unknown;
+        };
+        if (typeof candidate.address !== 'string') {
+            return [];
+        }
+
+        const weight = Number(candidate.weight ?? 0);
+        return [{
+            address: candidate.address.toLowerCase(),
+            weight: Number.isFinite(weight) && weight > 0 ? weight : 0,
+        }];
+    });
 }
 
 async function ensureExecutionMappings(now: Date): Promise<number> {
     const candidates = await prisma.managedSubscription.findMany({
         where: {
             status: { in: ['PENDING', 'RUNNING'] },
-            copyConfigId: null,
+            OR: [
+                { copyConfigId: null },
+                {
+                    executionTargets: {
+                        none: {
+                            isActive: true,
+                        },
+                    },
+                },
+                {
+                    allocations: {
+                        some: {
+                            status: 'ACTIVE',
+                            version: {
+                                gt: 1,
+                            },
+                        },
+                    },
+                },
+            ],
             product: {
                 isActive: true,
                 status: 'ACTIVE',
@@ -102,7 +133,91 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
 
     let mapped = 0;
     for (const sub of candidates) {
-        let selectedAgent = null;
+        const activeExecutionTargets = await prisma.managedSubscriptionExecutionTarget.findMany({
+            where: {
+                subscriptionId: sub.id,
+                isActive: true,
+            },
+            orderBy: [
+                { isPrimary: 'desc' },
+                { targetOrder: 'asc' },
+                { createdAt: 'asc' },
+            ],
+            select: {
+                copyConfigId: true,
+                allocationVersion: true,
+                targetWeight: true,
+                targetOrder: true,
+                isPrimary: true,
+                copyConfig: {
+                    select: {
+                        traderAddress: true,
+                        agentId: true,
+                    },
+                },
+            },
+        });
+        const existingAllocation = MANAGED_ALLOCATION_SNAPSHOT_ENABLED
+            ? await prisma.managedSubscriptionAllocation.findFirst({
+                where: {
+                    subscriptionId: sub.id,
+                    status: 'ACTIVE',
+                },
+                orderBy: { version: 'desc' },
+                select: {
+                    version: true,
+                    selectedWeights: true,
+                },
+            })
+            : null;
+        const existingAllocationTargets = extractSelectedTargetWeights(existingAllocation?.selectedWeights);
+
+        if (
+            sub.copyConfigId &&
+            activeExecutionTargets.length === 0 &&
+            existingAllocationTargets.length <= 1
+        ) {
+            await prisma.managedSubscriptionExecutionTarget.upsert({
+                where: {
+                    subscriptionId_copyConfigId: {
+                        subscriptionId: sub.id,
+                        copyConfigId: sub.copyConfigId,
+                    },
+                },
+                update: {
+                    targetWeight: 1,
+                    targetOrder: 0,
+                    isPrimary: true,
+                    isActive: true,
+                    deactivatedAt: null,
+                },
+                create: {
+                    subscriptionId: sub.id,
+                    copyConfigId: sub.copyConfigId,
+                    targetWeight: 1,
+                    targetOrder: 0,
+                    isPrimary: true,
+                    isActive: true,
+                    activatedAt: now,
+                },
+            });
+            await prisma.managedSubscription.update({
+                where: { id: sub.id },
+                data: {
+                    status: 'RUNNING',
+                    startAt: sub.startAt ?? now,
+                    endAt: sub.endAt ?? new Date(now.getTime() + sub.term.durationDays * 24 * 60 * 60 * 1000),
+                },
+            });
+            mapped += 1;
+            continue;
+        }
+
+        let desiredTargets: Array<{
+            agent: AgentTemplate;
+            weight: number;
+        }> = [];
+        let allocationVersion: number | null = null;
 
         if (MANAGED_ALLOCATION_SNAPSHOT_ENABLED) {
             const templateCandidates = buildManagedTemplateCandidates({
@@ -121,25 +236,25 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                 continue;
             }
 
-            const existingAllocation = await prisma.managedSubscriptionAllocation.findFirst({
-                where: {
-                    subscriptionId: sub.id,
-                    status: 'ACTIVE',
-                },
-                orderBy: { version: 'desc' },
-                select: {
-                    selectedWeights: true,
-                },
-            });
+            allocationVersion = existingAllocation?.version ?? null;
+            desiredTargets = existingAllocationTargets
+                .map((target) => {
+                    const agent = sub.product.agents.find(
+                        (item) => item.agent.traderAddress.toLowerCase() === target.address
+                    )?.agent ?? null;
 
-            let selectedTraderAddress = extractSelectedTraderAddress(existingAllocation?.selectedWeights);
-            selectedAgent = selectedTraderAddress
-                ? (sub.product.agents.find(
-                    (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
-                )?.agent ?? null)
-                : null;
+                    if (!agent) {
+                        return null;
+                    }
 
-            if (!selectedAgent) {
+                    return {
+                        agent,
+                        weight: target.weight > 0 ? target.weight : 0,
+                    };
+                })
+                .filter((target): target is NonNullable<typeof target> => target !== null);
+
+            if (desiredTargets.length === 0) {
                 const versionAgg = await prisma.managedSubscriptionAllocation.aggregate({
                     where: { subscriptionId: sub.id },
                     _max: { version: true },
@@ -155,15 +270,14 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                     strategyProfile: sub.product.strategyProfile,
                     version: nextVersion,
                     seed,
-                    targetCount: 1,
+                    targetCount: Math.min(templateCandidates.length, MANAGED_ALLOCATION_TARGET_COUNT),
                     reason: existingAllocation
                         ? 'REFRESH_PRODUCT_TEMPLATE_ALLOCATION'
                         : 'INITIAL_PRODUCT_TEMPLATE_ALLOCATION',
                     generatedAt: now.toISOString(),
                     candidates: templateCandidates,
                 });
-                const nextSelectedTrader = snapshot.targets[0]?.address ?? null;
-                if (!nextSelectedTrader) {
+                if (snapshot.targets.length === 0) {
                     console.warn(`[ManagedWealthWorker] Allocation snapshot produced no targets; skip ${sub.id}`);
                     continue;
                 }
@@ -191,69 +305,216 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                     });
                 });
 
-                selectedTraderAddress = nextSelectedTrader;
-                selectedAgent = sub.product.agents.find(
-                    (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
-                )?.agent ?? null;
+                allocationVersion = snapshot.version;
+                desiredTargets = snapshot.targets
+                    .map((target) => {
+                        const agent = sub.product.agents.find(
+                            (item) => item.agent.traderAddress.toLowerCase() === target.address
+                        )?.agent ?? null;
+
+                        if (!agent) {
+                            return null;
+                        }
+
+                        return {
+                            agent,
+                            weight: target.weight,
+                        };
+                    })
+                    .filter((target): target is NonNullable<typeof target> => target !== null);
             }
         } else {
-            selectedAgent = sub.product.agents[0]?.agent ?? null;
+            const fallbackAgent = sub.product.agents[0]?.agent ?? null;
+            if (fallbackAgent) {
+                desiredTargets = [{
+                    agent: fallbackAgent,
+                    weight: 1,
+                }];
+            }
         }
 
-        if (!selectedAgent) {
+        if (desiredTargets.length === 0) {
             console.warn(`[ManagedWealthWorker] No execution agent could be resolved for subscription ${sub.id}; skip`);
             continue;
         }
 
-        const existingConfig = await prisma.copyTradingConfig.findFirst({
-            where: {
+        const normalizedDesiredTargets = desiredTargets.map((target, targetOrder) => ({
+            agent: target.agent,
+            targetWeight: target.weight > 0
+                ? Number(target.weight.toFixed(8))
+                : Number((1 / desiredTargets.length).toFixed(8)),
+            targetOrder,
+            isPrimary: targetOrder === 0,
+        }));
+        const alreadySynced = activeExecutionTargets.length === normalizedDesiredTargets.length
+            && normalizedDesiredTargets.every((target, index) => {
+                const current = activeExecutionTargets[index];
+                if (!current) return false;
+
+                return (
+                    current.copyConfig.agentId === target.agent.id
+                    && current.copyConfig.traderAddress.toLowerCase() === target.agent.traderAddress.toLowerCase()
+                    && Number(current.targetWeight.toFixed(8)) === target.targetWeight
+                    && current.targetOrder === target.targetOrder
+                    && current.isPrimary === target.isPrimary
+                    && (current.allocationVersion ?? null) === allocationVersion
+                );
+            });
+
+        if (alreadySynced) {
+            const primaryConfigId = activeExecutionTargets[0]?.copyConfigId ?? sub.copyConfigId ?? null;
+            const needsSubscriptionTouch =
+                sub.copyConfigId !== primaryConfigId
+                || sub.status !== 'RUNNING'
+                || !sub.startAt
+                || !sub.endAt;
+
+            if (needsSubscriptionTouch) {
+                await prisma.managedSubscription.update({
+                    where: { id: sub.id },
+                    data: {
+                        copyConfigId: primaryConfigId,
+                        status: 'RUNNING',
+                        startAt: sub.startAt ?? now,
+                        endAt: sub.endAt ?? new Date(now.getTime() + sub.term.durationDays * 24 * 60 * 60 * 1000),
+                    },
+                });
+                mapped += 1;
+            }
+            continue;
+        }
+
+        const preparedTargets: Array<{
+            copyConfigId: string;
+            targetWeight: number;
+            targetOrder: number;
+            isPrimary: boolean;
+        }> = [];
+
+        for (const target of normalizedDesiredTargets) {
+            const matchingTarget = activeExecutionTargets.find((current) =>
+                current.copyConfig.agentId === target.agent.id
+                && current.copyConfig.traderAddress.toLowerCase() === target.agent.traderAddress.toLowerCase()
+            );
+            const configData = {
                 walletAddress: sub.walletAddress,
-                traderAddress: selectedAgent.traderAddress.toLowerCase(),
-                agentId: selectedAgent.id,
+                traderAddress: target.agent.traderAddress.toLowerCase(),
+                traderName: target.agent.traderName ?? target.agent.name,
+                strategyProfile: sub.product.strategyProfile,
+                mode: 'FIXED_AMOUNT' as const,
+                sizeScale: target.agent.sizeScale,
+                fixedAmount: Math.max(1, Number((sub.principal * 0.1 * target.targetWeight).toFixed(2))),
+                maxSizePerTrade: Math.max(1, Number((sub.principal * 0.2 * target.targetWeight).toFixed(2))),
+                minSizePerTrade: target.agent.minSizePerTrade,
+                stopLoss: target.agent.stopLoss,
+                takeProfit: target.agent.takeProfit,
+                maxOdds: target.agent.maxOdds,
+                minLiquidity: target.agent.minLiquidity,
+                minVolume: target.agent.minVolume,
+                sellMode: target.agent.sellMode,
+                autoExecute: true,
+                channel: 'EVENT_LISTENER' as const,
+                executionMode: 'PROXY' as const,
+                direction: 'COPY',
+                slippageType: 'AUTO',
+                maxSlippage: 2,
                 isActive: true,
-            },
-            select: { id: true },
-        });
+                agentId: target.agent.id,
+            };
+            const configId = matchingTarget
+                ? (
+                    await prisma.copyTradingConfig.update({
+                        where: { id: matchingTarget.copyConfigId },
+                        data: configData,
+                        select: { id: true },
+                    })
+                ).id
+                : (
+                    await prisma.copyTradingConfig.create({
+                        data: configData,
+                        select: { id: true },
+                    })
+                ).id;
 
-        const configId = existingConfig?.id ?? (
-            await prisma.copyTradingConfig.create({
-                data: {
-                    walletAddress: sub.walletAddress,
-                    traderAddress: selectedAgent.traderAddress.toLowerCase(),
-                    traderName: selectedAgent.traderName ?? selectedAgent.name,
-                    strategyProfile: sub.product.strategyProfile,
-                    mode: 'FIXED_AMOUNT', // Force FIXED_AMOUNT for deterministic risk based on principal
-                    sizeScale: selectedAgent.sizeScale,
-                    fixedAmount: Math.max(1, Number((sub.principal * 0.1).toFixed(2))), // 10% per trade
-                    maxSizePerTrade: Math.max(1, Number((sub.principal * 0.2).toFixed(2))), // 20% cap
-                    minSizePerTrade: selectedAgent.minSizePerTrade,
-                    stopLoss: selectedAgent.stopLoss,
-                    takeProfit: selectedAgent.takeProfit,
-                    maxOdds: selectedAgent.maxOdds,
-                    minLiquidity: selectedAgent.minLiquidity,
-                    minVolume: selectedAgent.minVolume,
-                    sellMode: selectedAgent.sellMode,
-                    autoExecute: true,
-                    channel: 'EVENT_LISTENER',
-                    executionMode: 'PROXY',
-                    direction: 'COPY',
-                    slippageType: 'AUTO',
-                    maxSlippage: 2,
-                    isActive: true,
-                    agentId: selectedAgent.id,
-                },
-                select: { id: true },
-            })
-        ).id;
-
-        await prisma.managedSubscription.update({
-            where: { id: sub.id },
-            data: {
+            preparedTargets.push({
                 copyConfigId: configId,
-                status: 'RUNNING',
-                startAt: sub.startAt ?? now,
-                endAt: sub.endAt ?? new Date(now.getTime() + sub.term.durationDays * 24 * 60 * 60 * 1000),
-            },
+                targetWeight: target.targetWeight,
+                targetOrder: target.targetOrder,
+                isPrimary: target.isPrimary,
+            });
+        }
+
+        const staleConfigIds = activeExecutionTargets
+            .map((target) => target.copyConfigId)
+            .filter((copyConfigId) =>
+                !preparedTargets.some((target) => target.copyConfigId === copyConfigId)
+            );
+
+        await prisma.$transaction(async (tx) => {
+            await tx.managedSubscriptionExecutionTarget.updateMany({
+                where: {
+                    subscriptionId: sub.id,
+                    isActive: true,
+                    copyConfigId: {
+                        notIn: preparedTargets.map((target) => target.copyConfigId),
+                    },
+                },
+                data: {
+                    isActive: false,
+                    isPrimary: false,
+                    deactivatedAt: now,
+                },
+            });
+
+            if (staleConfigIds.length > 0) {
+                await tx.copyTradingConfig.updateMany({
+                    where: {
+                        id: { in: staleConfigIds },
+                    },
+                    data: {
+                        isActive: false,
+                    },
+                });
+            }
+
+            for (const target of preparedTargets) {
+                await tx.managedSubscriptionExecutionTarget.upsert({
+                    where: {
+                        subscriptionId_copyConfigId: {
+                            subscriptionId: sub.id,
+                            copyConfigId: target.copyConfigId,
+                        },
+                    },
+                    update: {
+                        allocationVersion,
+                        targetWeight: target.targetWeight,
+                        targetOrder: target.targetOrder,
+                        isPrimary: target.isPrimary,
+                        isActive: true,
+                        deactivatedAt: null,
+                    },
+                    create: {
+                        subscriptionId: sub.id,
+                        copyConfigId: target.copyConfigId,
+                        allocationVersion,
+                        targetWeight: target.targetWeight,
+                        targetOrder: target.targetOrder,
+                        isPrimary: target.isPrimary,
+                        isActive: true,
+                        activatedAt: now,
+                    },
+                });
+            }
+
+            await tx.managedSubscription.update({
+                where: { id: sub.id },
+                data: {
+                    copyConfigId: preparedTargets[0]?.copyConfigId ?? null,
+                    status: 'RUNNING',
+                    startAt: sub.startAt ?? now,
+                    endAt: sub.endAt ?? new Date(now.getTime() + sub.term.durationDays * 24 * 60 * 60 * 1000),
+                },
+            });
         });
 
         mapped += 1;
@@ -287,12 +548,18 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
     const currentPriceMap = new Map<string, number>();
 
     for (const sub of runningSubs) {
-        if (!sub.copyConfigId) continue;
+        const executionConfigIds = await resolveManagedExecutionConfigIds(prisma, {
+            subscriptionId: sub.id,
+            fallbackCopyConfigId: sub.copyConfigId,
+        });
+        if (executionConfigIds.length === 0) continue;
 
         const [tradeAgg, previousSnapshot, peakAgg, openPositions] = await Promise.all([
             prisma.copyTrade.aggregate({
                 where: {
-                    configId: sub.copyConfigId,
+                    configId: executionConfigIds.length === 1
+                        ? executionConfigIds[0]
+                        : { in: executionConfigIds },
                     status: 'EXECUTED',
                 },
                 _sum: {
@@ -314,6 +581,7 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
             listManagedOpenPositionsWithFallback(prisma, {
                 subscriptionId: sub.id,
                 walletAddress: sub.walletAddress,
+                copyConfigIds: executionConfigIds,
                 copyConfigId: sub.copyConfigId,
             })
         ]);
@@ -441,10 +709,16 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
     for (const sub of candidates) {
         if (sub.settlement?.status === 'COMPLETED') continue;
 
+        const executionConfigIds = await resolveManagedExecutionConfigIds(prisma, {
+            subscriptionId: sub.id,
+            fallbackCopyConfigId: sub.copyConfigId,
+        });
+
         // Check if there are open positions
         const openPositionsCount = await countManagedOpenPositionsWithFallback(prisma, {
             subscriptionId: sub.id,
             walletAddress: sub.walletAddress,
+            copyConfigIds: executionConfigIds,
             copyConfigId: sub.copyConfigId,
         });
 
@@ -454,6 +728,7 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
                     await transitionSubscriptionToLiquidatingIfNeeded(tx, {
                         subscriptionId: sub.id,
                         currentStatus: sub.status,
+                        copyConfigIds: executionConfigIds,
                         copyConfigId: sub.copyConfigId,
                     });
                 });
@@ -562,9 +837,15 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
     let taskUpdates = 0;
 
     for (const sub of liquidatingSubs) {
+        const executionConfigIds = await resolveManagedExecutionConfigIds(prisma, {
+            subscriptionId: sub.id,
+            fallbackCopyConfigId: sub.copyConfigId,
+        });
+
         const openPositions = await listManagedOpenPositionsWithFallback(prisma, {
             subscriptionId: sub.id,
             walletAddress: sub.walletAddress,
+            copyConfigIds: executionConfigIds,
             copyConfigId: sub.copyConfigId,
         });
 
@@ -607,7 +888,7 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
         for (const pos of openPositions) {
             const curPrice = currentPriceMap.get(pos.tokenId) ?? 0;
             const intent = resolveManagedLiquidationIntent({
-                hasCopyConfig: Boolean(sub.copyConfigId),
+                hasCopyConfig: executionConfigIds.length > 0,
                 indicativeBidPrice: curPrice,
             });
             const nextRetryAt = new Date(now.getTime() + LIQUIDATION_RETRY_BASE_MS);
@@ -621,7 +902,7 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
                 },
                 update: {
                     walletAddress: pos.walletAddress,
-                    copyConfigId: sub.copyConfigId ?? null,
+                    copyConfigId: executionConfigIds[0] ?? sub.copyConfigId ?? null,
                     requestedShares: pos.balance,
                     avgEntryPrice: pos.avgEntryPrice,
                     indicativePrice: curPrice > 0 ? curPrice : null,
@@ -636,7 +917,7 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
                 create: {
                     subscriptionId: sub.id,
                     walletAddress: pos.walletAddress,
-                    copyConfigId: sub.copyConfigId ?? null,
+                    copyConfigId: executionConfigIds[0] ?? sub.copyConfigId ?? null,
                     tokenId: pos.tokenId,
                     requestedShares: pos.balance,
                     avgEntryPrice: pos.avgEntryPrice,

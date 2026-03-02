@@ -9,6 +9,7 @@ import {
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '@/lib/managed-wealth/managed-settlement-service';
 import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
+import { resolveManagedExecutionConfigIds } from '@/lib/managed-wealth/execution-targets';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,9 +110,15 @@ export async function POST(request: NextRequest) {
                 continue;
             }
 
+            const executionConfigIds = await resolveManagedExecutionConfigIds(prisma, {
+                subscriptionId: sub.id,
+                fallbackCopyConfigId: sub.copyConfigId,
+            });
+
             const openPositionsCount = await countManagedOpenPositionsWithFallback(prisma, {
                 subscriptionId: sub.id,
                 walletAddress: sub.walletAddress,
+                copyConfigIds: executionConfigIds,
                 copyConfigId: sub.copyConfigId,
             });
 
@@ -121,6 +128,7 @@ export async function POST(request: NextRequest) {
                         await transitionSubscriptionToLiquidatingIfNeeded(tx, {
                             subscriptionId: sub.id,
                             currentStatus: sub.status,
+                            copyConfigIds: executionConfigIds,
                             copyConfigId: sub.copyConfigId,
                         });
                     });

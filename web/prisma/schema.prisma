@@ -441,6 +441,7 @@ model CopyTradingConfig {
   copyTrades           CopyTrade[]
   copyTradeArchives    CopyTradeArchive[]
   managedSubscriptions ManagedSubscription[]
+  executionTargets     ManagedSubscriptionExecutionTarget[]
 
   // Agent Relation
   agentId       String?
@@ -607,7 +608,8 @@ model ManagedSubscription {
   updatedAt            DateTime                  @updatedAt
 
   navSnapshots       ManagedNavSnapshot[]
-  allocations       ManagedSubscriptionAllocation[]
+  allocations        ManagedSubscriptionAllocation[]
+  executionTargets   ManagedSubscriptionExecutionTarget[]
   settlement         ManagedSettlement?
   settlementExecutions ManagedSettlementExecution[]
   principalReservations ManagedPrincipalReservationLedger[]
@@ -621,6 +623,27 @@ model ManagedSubscription {
   @@index([productId, termId])
   @@index([copyConfigId])
   @@index([custodyAuthorizationId])
+}
+
+model ManagedSubscriptionExecutionTarget {
+  id                String              @id @default(cuid())
+  subscriptionId    String
+  subscription      ManagedSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  copyConfigId      String
+  copyConfig        CopyTradingConfig   @relation(fields: [copyConfigId], references: [id], onDelete: Cascade)
+  allocationVersion Int?
+  targetWeight      Float               @default(1)
+  targetOrder       Int                 @default(0)
+  isPrimary         Boolean             @default(false)
+  isActive          Boolean             @default(true)
+  activatedAt       DateTime            @default(now())
+  deactivatedAt     DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([subscriptionId, copyConfigId])
+  @@index([subscriptionId, isActive, targetOrder])
+  @@index([copyConfigId, isActive])
 }
 
 model ManagedSubscriptionPosition {

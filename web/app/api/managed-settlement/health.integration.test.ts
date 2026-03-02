@@ -123,6 +123,12 @@ async function setupRoute(params?: {
         },
     }));
 
+    vi.doMock('@/lib/managed-wealth/execution-targets', () => ({
+        resolveManagedExecutionConfigIds: vi.fn(async (_db: unknown, input: { fallbackCopyConfigId?: string | null }) =>
+            input.fallbackCopyConfigId ? [input.fallbackCopyConfigId] : []
+        ),
+    }));
+
     const route = await import('@/app/api/managed-settlement/health/route');
 
     return {
