@@ -609,6 +609,16 @@ export default function ParticipationPage() {
                                         >
                                             {t('errors.reviewRules')}
                                         </Link>
+                                        {activationFailureDetail.mode === 'MANAGED' && canActivateFree ? (
+                                            <ActionButton
+                                                onClick={() => void handleAccountAction('ACTIVATE', 'FREE')}
+                                                disabled={Boolean(actionLoading)}
+                                                loading={actionLoading === 'ACTIVATE:FREE'}
+                                                variant="secondary"
+                                            >
+                                                {t('errors.activateFreeInstead')}
+                                            </ActionButton>
+                                        ) : null}
                                     </div>
                                 </div>
                             ) : null}

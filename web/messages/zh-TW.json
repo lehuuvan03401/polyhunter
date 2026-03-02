@@ -439,7 +439,8 @@
             "shortfallProgress": "距離門檻進度：{percent}%",
             "recommendedAction": "至少補充 {amount} 後再啟用 MANAGED 模式。",
             "goToFunding": "去補資",
-            "reviewRules": "查看規則"
+            "reviewRules": "查看規則",
+            "activateFreeInstead": "改為啟用 FREE"
         },
         "hero": {
             "title": "參與體系看板",

@@ -439,7 +439,8 @@
             "shortfallProgress": "距离门槛进度：{percent}%",
             "recommendedAction": "至少补充 {amount} 后再激活 MANAGED 模式。",
             "goToFunding": "去补资",
-            "reviewRules": "查看规则"
+            "reviewRules": "查看规则",
+            "activateFreeInstead": "改为激活 FREE"
         },
         "hero": {
             "title": "参与体系看板",

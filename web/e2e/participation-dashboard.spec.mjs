@@ -296,6 +296,25 @@ test.describe('Participation dashboard E2E', () => {
                 return;
             }
 
+            if (payload.action === 'ACTIVATE' && payload.mode === 'FREE') {
+                state.account = {
+                    ...state.account,
+                    status: 'ACTIVE',
+                    preferredMode: 'FREE',
+                    activatedAt: '2026-03-02T00:00:00.000Z',
+                };
+
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        account: state.account,
+                        message: 'Participation activated',
+                    }),
+                });
+                return;
+            }
+
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
@@ -366,7 +385,10 @@ test.describe('Participation dashboard E2E', () => {
         ).toBeVisible();
         await expect(page.getByRole('link', { name: 'Go To Funding' })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Review Rules' })).toBeVisible();
-        await expect(page.getByText('Mode not selected')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Activate FREE Instead' })).toBeVisible();
+        await page.getByRole('button', { name: 'Activate FREE Instead' }).click();
+        await expect(page.getByText('Mode: FREE')).toBeVisible();
+        await expect(page.getByText('Mode not selected')).toHaveCount(0);
     });
 
     test('renders localized participation dashboard in zh-CN locale', async ({ page }) => {

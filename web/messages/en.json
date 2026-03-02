@@ -439,7 +439,8 @@
             "shortfallProgress": "Progress to threshold: {percent}%",
             "recommendedAction": "Top up at least {amount} to activate MANAGED mode.",
             "goToFunding": "Go To Funding",
-            "reviewRules": "Review Rules"
+            "reviewRules": "Review Rules",
+            "activateFreeInstead": "Activate FREE Instead"
         },
         "hero": {
             "title": "Participation Dashboard",
