@@ -381,6 +381,9 @@ test.describe('Participation dashboard E2E', () => {
             page.getByRole('main').getByText('Progress to threshold: 90.0%')
         ).toBeVisible();
         await expect(
+            page.getByRole('progressbar', { name: 'Threshold progress' })
+        ).toBeVisible();
+        await expect(
             page.getByRole('main').getByText('Top up at least 50.00 MCN to activate MANAGED mode.')
         ).toBeVisible();
         await expect(page.getByRole('link', { name: 'Go To Funding' })).toBeVisible();

@@ -436,6 +436,7 @@
             "requiredThreshold": "所需門檻：{amount}",
             "currentNetQualified": "當前淨有效資金：{amount}",
             "deficit": "仍需補足：{amount}",
+            "thresholdProgressLabel": "門檻進度",
             "shortfallProgress": "距離門檻進度：{percent}%",
             "recommendedAction": "至少補充 {amount} 後再啟用 MANAGED 模式。",
             "goToFunding": "去補資",

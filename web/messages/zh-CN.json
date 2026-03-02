@@ -436,6 +436,7 @@
             "requiredThreshold": "所需门槛：{amount}",
             "currentNetQualified": "当前净有效资金：{amount}",
             "deficit": "仍需补足：{amount}",
+            "thresholdProgressLabel": "门槛进度",
             "shortfallProgress": "距离门槛进度：{percent}%",
             "recommendedAction": "至少补充 {amount} 后再激活 MANAGED 模式。",
             "goToFunding": "去补资",

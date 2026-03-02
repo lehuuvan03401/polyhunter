@@ -436,6 +436,7 @@
             "requiredThreshold": "Required threshold: {amount}",
             "currentNetQualified": "Current net qualified capital: {amount}",
             "deficit": "Missing amount: {amount}",
+            "thresholdProgressLabel": "Threshold progress",
             "shortfallProgress": "Progress to threshold: {percent}%",
             "recommendedAction": "Top up at least {amount} to activate MANAGED mode.",
             "goToFunding": "Go To Funding",

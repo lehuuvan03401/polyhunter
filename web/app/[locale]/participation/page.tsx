@@ -593,7 +593,26 @@ export default function ParticipationPage() {
                                     <div>{t('errors.currentNetQualified', { amount: formatMcn(activationFailureDetail.currentNetMcnEquivalent) })}</div>
                                     <div>{t('errors.deficit', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
                                     {managedActivationProgress !== null ? (
-                                        <div>{t('errors.shortfallProgress', { percent: managedActivationProgress.toFixed(1) })}</div>
+                                        <div className="mt-2">
+                                            <div className="mb-1 flex items-center justify-between text-[11px] text-amber-100/80">
+                                                <span>{t('errors.thresholdProgressLabel')}</span>
+                                                <span>{managedActivationProgress.toFixed(1)}%</span>
+                                            </div>
+                                            <div
+                                                role="progressbar"
+                                                aria-label={t('errors.thresholdProgressLabel')}
+                                                aria-valuemin={0}
+                                                aria-valuemax={100}
+                                                aria-valuenow={Number(managedActivationProgress.toFixed(1))}
+                                                className="h-1.5 w-full overflow-hidden rounded bg-amber-300/20"
+                                            >
+                                                <div
+                                                    className="h-full rounded bg-amber-200/80 transition-all"
+                                                    style={{ width: `${managedActivationProgress.toFixed(1)}%` }}
+                                                />
+                                            </div>
+                                            <div className="mt-1">{t('errors.shortfallProgress', { percent: managedActivationProgress.toFixed(1) })}</div>
+                                        </div>
                                     ) : null}
                                     <div>{t('errors.recommendedAction', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
                                     <div className="mt-2 flex flex-wrap gap-2">
