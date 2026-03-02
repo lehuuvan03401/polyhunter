@@ -418,3 +418,8 @@
   - 当前仍维持 `targetCount=1` 以适配单 `copyConfigId` 执行模型，因此 `2.3`（多 trader 执行）仍待实现。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts`，通过（4/4）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.1`：
+  - 新增 `web/lib/managed-wealth/subscription-position-scope.test.ts`，覆盖 scoped 优先、按 token universe 的 legacy fallback、关闭 fallback 的边界行为。
+  - 与现有 `allocation-service.test.ts`、`managed-settlement-service.test.ts` 组合后，allocation determinism / scope-isolated accounting / settlement idempotency 三类单测均已覆盖。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts lib/managed-wealth/subscription-position-scope.test.ts lib/managed-wealth/managed-settlement-service.test.ts`，通过（12/12）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
