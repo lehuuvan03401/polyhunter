@@ -444,6 +444,9 @@
         },
         "status": {
             "notRegistered": "未註冊",
+            "active": "已啟用",
+            "pending": "待啟用",
+            "suspended": "已暫停",
             "mode": "模式：{mode}",
             "modeNotSelected": "尚未選擇模式",
             "netUsdEquivalent": "{amount} 淨 USD 等值",

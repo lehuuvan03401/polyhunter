@@ -422,7 +422,13 @@ export default function ParticipationPage() {
     const canActivateManaged = isRegistered && Boolean(eligibility?.managedQualified) && !isManagedActive;
     const hasActiveCustodyAuthorization = Boolean(activeCustodyAuthorization);
     const canAuthorizeCustody = isManagedActive && !hasActiveCustodyAuthorization;
-    const accountStatus = account?.status ?? t('status.notRegistered');
+    const accountStatus = account
+        ? account.status === 'ACTIVE'
+            ? t('status.active')
+            : account.status === 'PENDING'
+                ? t('status.pending')
+                : t('status.suspended')
+        : t('status.notRegistered');
     const accountModeNote = account?.preferredMode
         ? t('status.mode', { mode: account.preferredMode })
         : t('status.modeNotSelected');

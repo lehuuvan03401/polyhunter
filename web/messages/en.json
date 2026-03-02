@@ -444,6 +444,9 @@
         },
         "status": {
             "notRegistered": "NOT_REGISTERED",
+            "active": "ACTIVE",
+            "pending": "PENDING",
+            "suspended": "SUSPENDED",
             "mode": "Mode: {mode}",
             "modeNotSelected": "Mode not selected",
             "netUsdEquivalent": "{amount} net USD equivalent",
