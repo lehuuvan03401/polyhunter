@@ -435,7 +435,11 @@
             "activationMode": "Activation mode: {mode}",
             "requiredThreshold": "Required threshold: {amount}",
             "currentNetQualified": "Current net qualified capital: {amount}",
-            "deficit": "Missing amount: {amount}"
+            "deficit": "Missing amount: {amount}",
+            "shortfallProgress": "Progress to threshold: {percent}%",
+            "recommendedAction": "Top up at least {amount} to activate MANAGED mode.",
+            "goToFunding": "Go To Funding",
+            "reviewRules": "Review Rules"
         },
         "hero": {
             "title": "Participation Dashboard",

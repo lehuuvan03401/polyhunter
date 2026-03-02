@@ -435,7 +435,11 @@
             "activationMode": "啟用模式：{mode}",
             "requiredThreshold": "所需門檻：{amount}",
             "currentNetQualified": "當前淨有效資金：{amount}",
-            "deficit": "仍需補足：{amount}"
+            "deficit": "仍需補足：{amount}",
+            "shortfallProgress": "距離門檻進度：{percent}%",
+            "recommendedAction": "至少補充 {amount} 後再啟用 MANAGED 模式。",
+            "goToFunding": "去補資",
+            "reviewRules": "查看規則"
         },
         "hero": {
             "title": "參與體系看板",

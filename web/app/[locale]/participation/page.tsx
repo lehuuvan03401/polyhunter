@@ -492,6 +492,15 @@ export default function ParticipationPage() {
     const promotionLevelNote = promotionProgress
         ? t('status.directLegs', { count: promotionProgress.directLegCount })
         : t('status.noPromotionSnapshot');
+    const managedActivationProgress = activationFailureDetail
+        ? Math.max(
+            0,
+            Math.min(
+                100,
+                (activationFailureDetail.currentNetMcnEquivalent / Math.max(1, activationFailureDetail.requiredThreshold)) * 100
+            )
+        )
+        : null;
 
     const handleCreateCustodyAuthorization = async () => {
         if (!user?.wallet?.address || actionLoading) return;
@@ -583,6 +592,24 @@ export default function ParticipationPage() {
                                     <div>{t('errors.requiredThreshold', { amount: formatMcn(activationFailureDetail.requiredThreshold) })}</div>
                                     <div>{t('errors.currentNetQualified', { amount: formatMcn(activationFailureDetail.currentNetMcnEquivalent) })}</div>
                                     <div>{t('errors.deficit', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
+                                    {managedActivationProgress !== null ? (
+                                        <div>{t('errors.shortfallProgress', { percent: managedActivationProgress.toFixed(1) })}</div>
+                                    ) : null}
+                                    <div>{t('errors.recommendedAction', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <Link
+                                            href="/managed-wealth"
+                                            className="rounded-lg bg-amber-400/20 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-400/30 transition-colors"
+                                        >
+                                            {t('errors.goToFunding')}
+                                        </Link>
+                                        <Link
+                                            href="/affiliate/rules"
+                                            className="rounded-lg border border-amber-200/40 bg-transparent px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-300/10 transition-colors"
+                                        >
+                                            {t('errors.reviewRules')}
+                                        </Link>
+                                    </div>
                                 </div>
                             ) : null}
                         </div>

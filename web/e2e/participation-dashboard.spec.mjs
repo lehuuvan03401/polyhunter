@@ -358,6 +358,14 @@ test.describe('Participation dashboard E2E', () => {
         await expect(
             page.getByRole('main').getByText('Missing amount: 50.00 MCN')
         ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Progress to threshold: 90.0%')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Top up at least 50.00 MCN to activate MANAGED mode.')
+        ).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Go To Funding' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Review Rules' })).toBeVisible();
         await expect(page.getByText('Mode not selected')).toBeVisible();
     });
 
