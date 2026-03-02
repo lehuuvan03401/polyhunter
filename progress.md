@@ -437,3 +437,9 @@
   - `web/app/[locale]/managed-wealth/[id]/page.tsx` 新增 “Recent Allocation Snapshots” 区块；至此产品详情页和 `/managed-wealth/my` 订阅面板都已展示 allocation snapshot summary。
   - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json` 已补齐相关文案。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：推进 `close-managed-wealth-loop` 的 `6.2`（首批入口 parity）：
+  - 新增 `web/app/api/managed-settlement/entrypoint-parity.integration.test.ts`，覆盖 `managed-settlement/run` 与 `managed-subscriptions/[id]/withdraw` 两条入口。
+  - 断言两条入口都会走共享的 settlement domain service，并以相同 `scope=MANAGED_WITHDRAWAL` / `sourcePrefix=managed-withdraw` 触发利润分润。
+  - 当前仍未覆盖 worker 脚本入口，因此 `6.2` 暂不勾选完成。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（2/2）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
