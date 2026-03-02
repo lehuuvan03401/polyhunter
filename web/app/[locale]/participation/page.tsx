@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
@@ -93,6 +93,9 @@ type WalletHeadersFactory = (params: {
     pathWithQuery: string;
 }) => Promise<Record<string, string>>;
 
+type ParticipationAccountAction = 'REGISTER' | 'ACTIVATE';
+type ParticipationMode = 'FREE' | 'MANAGED';
+
 async function fetchJson<T>(path: string, headers: Record<string, string>): Promise<T> {
     const res = await fetch(path, {
         headers,
@@ -140,6 +143,40 @@ async function loadParticipationDashboard(
     return { account, levels, promotion };
 }
 
+async function postParticipationAccountAction(
+    walletAddress: string,
+    action: ParticipationAccountAction,
+    createWalletAuthHeaders: WalletHeadersFactory,
+    mode?: ParticipationMode
+) {
+    const path = '/api/participation/account';
+    const walletHeaders = await createWalletAuthHeaders({
+        walletAddress,
+        method: 'POST',
+        pathWithQuery: path,
+    });
+
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...walletHeaders,
+        },
+        body: JSON.stringify({
+            walletAddress,
+            action,
+            ...(mode ? { mode } : {}),
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.error || `Failed to ${action.toLowerCase()} participation`);
+    }
+
+    return data as { message?: string };
+}
+
 function formatUsd(value: number): string {
     return `$${value.toLocaleString(undefined, {
         minimumFractionDigits: 2,
@@ -159,68 +196,29 @@ export default function ParticipationPage() {
     const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [dashboard, setDashboard] = useState<ParticipationDashboardData | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        let cancelled = false;
-
-        async function run(initialLoad: boolean) {
-            if (!authenticated || !user?.wallet?.address) {
-                if (!cancelled) {
-                    setDashboard(null);
-                    setError(null);
-                    setLoading(false);
-                    setRefreshing(false);
-                }
-                return;
-            }
-
-            if (!cancelled) {
-                if (initialLoad) {
-                    setLoading(true);
-                } else {
-                    setRefreshing(true);
-                }
-                setError(null);
-            }
-
-            try {
-                const data = await loadParticipationDashboard(
-                    user.wallet.address,
-                    createWalletAuthHeaders
-                );
-                if (!cancelled) {
-                    setDashboard(data);
-                }
-            } catch (fetchError) {
-                if (!cancelled) {
-                    const message = fetchError instanceof Error
-                        ? fetchError.message
-                        : 'Failed to load participation dashboard';
-                    setError(message);
-                    toast.error(message);
-                }
-            } finally {
-                if (!cancelled) {
-                    setLoading(false);
-                    setRefreshing(false);
-                }
-            }
+    const loadDashboard = useCallback(async (options?: { initialLoad?: boolean; silent?: boolean }) => {
+        if (!authenticated || !user?.wallet?.address) {
+            setDashboard(null);
+            setError(null);
+            setLoading(false);
+            setRefreshing(false);
+            return;
         }
 
-        void run(true);
+        const initialLoad = options?.initialLoad === true;
+        const silent = options?.silent === true;
 
-        return () => {
-            cancelled = true;
-        };
-    }, [authenticated, user?.wallet?.address, createWalletAuthHeaders]);
-
-    const handleRefresh = async () => {
-        if (!user?.wallet?.address || refreshing) return;
-
-        setRefreshing(true);
+        if (initialLoad) {
+            setLoading(true);
+        } else if (!silent) {
+            setRefreshing(true);
+        }
         setError(null);
+
         try {
             const data = await loadParticipationDashboard(
                 user.wallet.address,
@@ -234,7 +232,52 @@ export default function ParticipationPage() {
             setError(message);
             toast.error(message);
         } finally {
+            setLoading(false);
             setRefreshing(false);
+        }
+    }, [authenticated, user?.wallet?.address, createWalletAuthHeaders]);
+
+    useEffect(() => {
+        void loadDashboard({ initialLoad: true });
+    }, [loadDashboard]);
+
+    const handleRefresh = async () => {
+        if (!user?.wallet?.address || refreshing) return;
+        await loadDashboard();
+    };
+
+    const handleAccountAction = async (
+        action: ParticipationAccountAction,
+        mode?: ParticipationMode
+    ) => {
+        if (!user?.wallet?.address || actionLoading) return;
+
+        const actionKey = mode ? `${action}:${mode}` : action;
+        setActionLoading(actionKey);
+        setError(null);
+
+        try {
+            const result = await postParticipationAccountAction(
+                user.wallet.address,
+                action,
+                createWalletAuthHeaders,
+                mode
+            );
+            toast.success(
+                result.message ??
+                (action === 'REGISTER'
+                    ? 'Participation registration completed'
+                    : `Participation activated in ${mode} mode`)
+            );
+            await loadDashboard({ silent: true });
+        } catch (actionError) {
+            const message = actionError instanceof Error
+                ? actionError.message
+                : 'Failed to update participation account';
+            setError(message);
+            toast.error(message);
+        } finally {
+            setActionLoading(null);
         }
     };
 
@@ -274,6 +317,12 @@ export default function ParticipationPage() {
     const eligibility = dashboard?.account.eligibility;
     const levelProgress = dashboard?.levels.progress;
     const promotionProgress = dashboard?.promotion.progress;
+    const isRegistered = Boolean(account?.isRegistrationComplete);
+    const isActive = account?.status === 'ACTIVE';
+    const isFreeActive = isActive && account?.preferredMode === 'FREE';
+    const isManagedActive = isActive && account?.preferredMode === 'MANAGED';
+    const canActivateFree = isRegistered && Boolean(eligibility?.freeQualified) && !isFreeActive;
+    const canActivateManaged = isRegistered && Boolean(eligibility?.managedQualified) && !isManagedActive;
 
     return (
         <div className="container py-10 min-h-screen">
@@ -426,7 +475,7 @@ export default function ParticipationPage() {
 
                 <Panel title="Recommended Next Actions" subtitle="Use the current state to decide what to do next.">
                     <ActionItem
-                        done={Boolean(account?.isRegistrationComplete)}
+                        done={isRegistered}
                         text="Complete participation registration first."
                     />
                     <ActionItem
@@ -438,10 +487,38 @@ export default function ParticipationPage() {
                         text="Reach the MANAGED threshold before managed custody workflows."
                     />
                     <ActionItem
-                        done={Boolean(account?.preferredMode === 'MANAGED' && account?.status === 'ACTIVE')}
+                        done={Boolean(isManagedActive)}
                         text="Switch to MANAGED mode if you want custody-based execution."
                     />
                     <div className="mt-4 flex flex-wrap gap-3">
+                        {!isRegistered ? (
+                            <ActionButton
+                                onClick={() => void handleAccountAction('REGISTER')}
+                                disabled={Boolean(actionLoading)}
+                                loading={actionLoading === 'REGISTER'}
+                            >
+                                Complete Registration
+                            </ActionButton>
+                        ) : null}
+                        {!isFreeActive ? (
+                            <ActionButton
+                                onClick={() => void handleAccountAction('ACTIVATE', 'FREE')}
+                                disabled={!canActivateFree || Boolean(actionLoading)}
+                                loading={actionLoading === 'ACTIVATE:FREE'}
+                                variant="secondary"
+                            >
+                                Activate FREE Mode
+                            </ActionButton>
+                        ) : null}
+                        {!isManagedActive ? (
+                            <ActionButton
+                                onClick={() => void handleAccountAction('ACTIVATE', 'MANAGED')}
+                                disabled={!canActivateManaged || Boolean(actionLoading)}
+                                loading={actionLoading === 'ACTIVATE:MANAGED'}
+                            >
+                                Activate MANAGED Mode
+                            </ActionButton>
+                        ) : null}
                         <Link href="/managed-wealth" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors">
                             Open Managed Wealth
                         </Link>
@@ -529,5 +606,34 @@ function ActionItem({
                 {text}
             </span>
         </div>
+    );
+}
+
+function ActionButton({
+    children,
+    onClick,
+    disabled,
+    loading,
+    variant = 'primary',
+}: {
+    children: ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+    variant?: 'primary' | 'secondary';
+}) {
+    const baseClassName = variant === 'secondary'
+        ? 'rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors'
+        : 'rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors';
+
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className={`${baseClassName} inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {children}
+        </button>
     );
 }
