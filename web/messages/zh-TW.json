@@ -430,6 +430,69 @@
         }
     },
     "ParticipationDashboard": {
+        "errors": {
+            "loadDashboardFailed": "載入參與看板失敗"
+        },
+        "hero": {
+            "title": "參與體系看板",
+            "subtitle": "在同一頁面追蹤啟用狀態、資金門檻、V 級進度與雙區晉升進度。",
+            "backToAffiliate": "返回聯盟中心",
+            "refresh": "重新整理",
+            "connectDescription": "連接錢包後查看參與狀態、等級進度與雙區晉升情況。",
+            "connectWallet": "連接錢包",
+            "connecting": "連接中..."
+        },
+        "status": {
+            "notRegistered": "未註冊",
+            "mode": "模式：{mode}",
+            "modeNotSelected": "尚未選擇模式",
+            "netUsdEquivalent": "{amount} 淨 USD 等值",
+            "noFundingYet": "尚無資金紀錄",
+            "none": "無",
+            "dividend": "分紅 {percent}%",
+            "noLevelSnapshot": "尚無等級快照",
+            "directLegs": "直推支線 {count}",
+            "noPromotionSnapshot": "尚無晉升快照"
+        },
+        "cards": {
+            "accountStatus": "帳戶狀態",
+            "netQualifiedCapital": "淨有效資金",
+            "currentLevel": "當前 V 級",
+            "promotionProgress": "晉升進度"
+        },
+        "activation": {
+            "panelTitle": "啟用與資格",
+            "panelSubtitle": "註冊、啟用與資金門檻資格檢查。",
+            "registration": "註冊狀態",
+            "activatedAt": "啟用時間",
+            "registeredAt": "註冊時間",
+            "complete": "已完成",
+            "pending": "待完成",
+            "qualified": "已達標",
+            "notYet": "未達標"
+        },
+        "level": {
+            "panelTitle": "等級快照",
+            "panelSubtitle": "基於團隊淨入金的每日 V 級評估。",
+            "selfNetDeposit": "個人淨入金",
+            "teamNetDeposit": "團隊淨入金",
+            "directTeamWallets": "直推團隊錢包數",
+            "nextLevel": "下一等級",
+            "gapToNext": "距離下一等級",
+            "latestSnapshot": "最新快照",
+            "max": "最高級"
+        },
+        "promotion": {
+            "panelTitle": "雙區晉升",
+            "panelSubtitle": "追蹤弱區進度與下一等級差距。",
+            "leftZone": "左區",
+            "rightZone": "右區",
+            "weakZone": "弱區",
+            "strongZone": "強區",
+            "nextLevel": "下一晉升等級",
+            "gapToNext": "距離下一等級",
+            "max": "最高級"
+        },
         "toast": {
             "registrationCompleted": "參與註冊已完成",
             "activated": "參與體系已啟用（{mode} 模式）",

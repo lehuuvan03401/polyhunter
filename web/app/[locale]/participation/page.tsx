@@ -322,7 +322,7 @@ export default function ParticipationPage() {
         } catch (fetchError) {
             const message = fetchError instanceof Error
                 ? fetchError.message
-                : 'Failed to load participation dashboard';
+                : t('errors.loadDashboardFailed');
             setError(message);
             toast.error(message);
         } finally {
@@ -390,16 +390,16 @@ export default function ParticipationPage() {
                     <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-500/10">
                         <Shield className="h-8 w-8 text-blue-400" />
                     </div>
-                    <h1 className="text-3xl font-bold text-white">Participation Dashboard</h1>
+                    <h1 className="text-3xl font-bold text-white">{t('hero.title')}</h1>
                     <p className="mt-4 text-zinc-400">
-                        Connect your wallet to view participation status, level progress, and double-zone promotion.
+                        {t('hero.connectDescription')}
                     </p>
                     <button
                         onClick={login}
                         disabled={isLoggingIn}
                         className="mt-8 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white transition-all hover:bg-blue-500 disabled:opacity-60"
                     >
-                        {isLoggingIn ? 'Connecting...' : 'Connect Wallet'}
+                        {isLoggingIn ? t('hero.connecting') : t('hero.connectWallet')}
                     </button>
                 </div>
             </div>
@@ -422,6 +422,21 @@ export default function ParticipationPage() {
     const canActivateManaged = isRegistered && Boolean(eligibility?.managedQualified) && !isManagedActive;
     const hasActiveCustodyAuthorization = Boolean(activeCustodyAuthorization);
     const canAuthorizeCustody = isManagedActive && !hasActiveCustodyAuthorization;
+    const accountStatus = account?.status ?? t('status.notRegistered');
+    const accountModeNote = account?.preferredMode
+        ? t('status.mode', { mode: account.preferredMode })
+        : t('status.modeNotSelected');
+    const netQualifiedNote = netDeposits
+        ? t('status.netUsdEquivalent', { amount: formatUsd(netDeposits.netUsd) })
+        : t('status.noFundingYet');
+    const currentLevel = levelProgress?.level ?? t('status.none');
+    const currentLevelNote = levelProgress
+        ? t('status.dividend', { percent: (levelProgress.dividendRate * 100).toFixed(0) })
+        : t('status.noLevelSnapshot');
+    const promotionLevel = promotionProgress?.promotionLevel ?? t('status.none');
+    const promotionLevelNote = promotionProgress
+        ? t('status.directLegs', { count: promotionProgress.directLegCount })
+        : t('status.noPromotionSnapshot');
 
     const handleCreateCustodyAuthorization = async () => {
         if (!user?.wallet?.address || actionLoading) return;
@@ -476,16 +491,16 @@ export default function ParticipationPage() {
                 <div>
                     <Link href="/affiliate" className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors group">
                         <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                        Back to affiliate center
+                        {t('hero.backToAffiliate')}
                     </Link>
                     <div className="mt-4 flex items-center gap-3">
                         <div className="rounded-2xl bg-blue-500/10 p-3">
                             <Sparkles className="h-6 w-6 text-blue-300" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-white">Participation Dashboard</h1>
+                            <h1 className="text-3xl font-bold text-white">{t('hero.title')}</h1>
                             <p className="mt-1 text-zinc-400">
-                                Track activation, capital thresholds, V-level progress, and double-zone promotion in one place.
+                                {t('hero.subtitle')}
                             </p>
                         </div>
                     </div>
@@ -497,7 +512,7 @@ export default function ParticipationPage() {
                     className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10 disabled:opacity-60"
                 >
                     {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    Refresh
+                    {t('hero.refresh')}
                 </button>
             </div>
 
@@ -511,110 +526,106 @@ export default function ParticipationPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <StatusCard
                     icon={<Shield className="h-5 w-5 text-blue-300" />}
-                    title="Account Status"
-                    value={account?.status ?? 'NOT_REGISTERED'}
-                    note={account?.preferredMode ? `Mode: ${account.preferredMode}` : 'Mode not selected'}
+                    title={t('cards.accountStatus')}
+                    value={accountStatus}
+                    note={accountModeNote}
                 />
                 <StatusCard
                     icon={<Wallet className="h-5 w-5 text-emerald-300" />}
-                    title="Net Qualified Capital"
+                    title={t('cards.netQualifiedCapital')}
                     value={netDeposits ? `${netDeposits.netMcnEquivalent.toFixed(2)} MCN` : '--'}
-                    note={netDeposits ? `${formatUsd(netDeposits.netUsd)} net USD equivalent` : 'No funding yet'}
+                    note={netQualifiedNote}
                 />
                 <StatusCard
                     icon={<BarChart3 className="h-5 w-5 text-violet-300" />}
-                    title="Current V Level"
-                    value={levelProgress?.level ?? 'NONE'}
-                    note={levelProgress
-                        ? `Dividend ${(levelProgress.dividendRate * 100).toFixed(0)}%`
-                        : 'No level snapshot yet'}
+                    title={t('cards.currentLevel')}
+                    value={currentLevel}
+                    note={currentLevelNote}
                 />
                 <StatusCard
                     icon={<GitBranch className="h-5 w-5 text-amber-300" />}
-                    title="Promotion Progress"
-                    value={promotionProgress?.promotionLevel ?? 'NONE'}
-                    note={promotionProgress
-                        ? `Direct legs ${promotionProgress.directLegCount}`
-                        : 'No promotion snapshot yet'}
+                    title={t('cards.promotionProgress')}
+                    value={promotionLevel}
+                    note={promotionLevelNote}
                 />
             </div>
 
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                <Panel title="Activation & Eligibility" subtitle="Registration, activation, and capital threshold readiness.">
+                <Panel title={t('activation.panelTitle')} subtitle={t('activation.panelSubtitle')}>
                     <MetricRow
-                        label="Registration"
-                        value={account?.isRegistrationComplete ? 'Complete' : 'Pending'}
+                        label={t('activation.registration')}
+                        value={account?.isRegistrationComplete ? t('activation.complete') : t('activation.pending')}
                     />
                     <MetricRow
-                        label="Activated At"
+                        label={t('activation.activatedAt')}
                         value={formatDate(account?.activatedAt)}
                     />
                     <MetricRow
-                        label="Registered At"
+                        label={t('activation.registeredAt')}
                         value={formatDate(account?.registrationCompletedAt)}
                     />
                     <MetricRow
                         label={`FREE >= ${eligibility?.thresholds.FREE ?? 100}U`}
-                        value={eligibility?.freeQualified ? 'Qualified' : 'Not yet'}
+                        value={eligibility?.freeQualified ? t('activation.qualified') : t('activation.notYet')}
                         positive={Boolean(eligibility?.freeQualified)}
                     />
                     <MetricRow
                         label={`MANAGED >= ${eligibility?.thresholds.MANAGED ?? 500}U`}
-                        value={eligibility?.managedQualified ? 'Qualified' : 'Not yet'}
+                        value={eligibility?.managedQualified ? t('activation.qualified') : t('activation.notYet')}
                         positive={Boolean(eligibility?.managedQualified)}
                     />
                 </Panel>
 
-                <Panel title="Level Snapshot" subtitle="Daily V-level evaluation based on team net deposits.">
+                <Panel title={t('level.panelTitle')} subtitle={t('level.panelSubtitle')}>
                     <MetricRow
-                        label="Self Net Deposit"
+                        label={t('level.selfNetDeposit')}
                         value={levelProgress ? formatUsd(levelProgress.selfNetDepositUsd) : '--'}
                     />
                     <MetricRow
-                        label="Team Net Deposit"
+                        label={t('level.teamNetDeposit')}
                         value={levelProgress ? formatUsd(levelProgress.teamNetDepositUsd) : '--'}
                     />
                     <MetricRow
-                        label="Direct Team Wallets"
+                        label={t('level.directTeamWallets')}
                         value={levelProgress ? String(levelProgress.directTeamWalletCount) : '--'}
                     />
                     <MetricRow
-                        label="Next Level"
-                        value={levelProgress?.nextLevel ?? 'MAX'}
+                        label={t('level.nextLevel')}
+                        value={levelProgress?.nextLevel ?? t('level.max')}
                     />
                     <MetricRow
-                        label="Gap to Next"
+                        label={t('level.gapToNext')}
                         value={levelProgress ? formatUsd(levelProgress.remainingToNextUsd) : '--'}
                     />
                     <MetricRow
-                        label="Latest Snapshot"
+                        label={t('level.latestSnapshot')}
                         value={formatDate(dashboard?.levels.latestSnapshot?.snapshotDate)}
                     />
                 </Panel>
 
-                <Panel title="Double-Zone Promotion" subtitle="Track weak-zone progress and next-level gap.">
+                <Panel title={t('promotion.panelTitle')} subtitle={t('promotion.panelSubtitle')}>
                     <MetricRow
-                        label="Left Zone"
+                        label={t('promotion.leftZone')}
                         value={promotionProgress ? formatUsd(promotionProgress.leftNetDepositUsd) : '--'}
                     />
                     <MetricRow
-                        label="Right Zone"
+                        label={t('promotion.rightZone')}
                         value={promotionProgress ? formatUsd(promotionProgress.rightNetDepositUsd) : '--'}
                     />
                     <MetricRow
-                        label="Weak Zone"
+                        label={t('promotion.weakZone')}
                         value={promotionProgress ? formatUsd(promotionProgress.weakZoneNetDepositUsd) : '--'}
                     />
                     <MetricRow
-                        label="Strong Zone"
+                        label={t('promotion.strongZone')}
                         value={promotionProgress ? formatUsd(promotionProgress.strongZoneNetDepositUsd) : '--'}
                     />
                     <MetricRow
-                        label="Next Promotion Level"
-                        value={promotionProgress?.nextLevel ?? 'MAX'}
+                        label={t('promotion.nextLevel')}
+                        value={promotionProgress?.nextLevel ?? t('promotion.max')}
                     />
                     <MetricRow
-                        label="Gap to Next"
+                        label={t('promotion.gapToNext')}
                         value={promotionProgress ? formatUsd(promotionProgress.nextLevelGapUsd) : '--'}
                     />
                 </Panel>

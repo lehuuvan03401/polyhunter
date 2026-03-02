@@ -430,6 +430,69 @@
         }
     },
     "ParticipationDashboard": {
+        "errors": {
+            "loadDashboardFailed": "加载参与看板失败"
+        },
+        "hero": {
+            "title": "参与体系看板",
+            "subtitle": "在同一页面跟踪激活状态、资金门槛、V 级进度和双区晋升进度。",
+            "backToAffiliate": "返回联盟中心",
+            "refresh": "刷新",
+            "connectDescription": "连接钱包后查看参与状态、等级进度和双区晋升情况。",
+            "connectWallet": "连接钱包",
+            "connecting": "连接中..."
+        },
+        "status": {
+            "notRegistered": "未注册",
+            "mode": "模式：{mode}",
+            "modeNotSelected": "未选择模式",
+            "netUsdEquivalent": "{amount} 净 USD 等值",
+            "noFundingYet": "暂无资金记录",
+            "none": "无",
+            "dividend": "分红 {percent}%",
+            "noLevelSnapshot": "暂无等级快照",
+            "directLegs": "直推支线 {count}",
+            "noPromotionSnapshot": "暂无晋升快照"
+        },
+        "cards": {
+            "accountStatus": "账户状态",
+            "netQualifiedCapital": "净有效资金",
+            "currentLevel": "当前 V 级",
+            "promotionProgress": "晋升进度"
+        },
+        "activation": {
+            "panelTitle": "激活与资格",
+            "panelSubtitle": "注册、激活和资金门槛资格检查。",
+            "registration": "注册状态",
+            "activatedAt": "激活时间",
+            "registeredAt": "注册时间",
+            "complete": "已完成",
+            "pending": "待完成",
+            "qualified": "已达标",
+            "notYet": "未达标"
+        },
+        "level": {
+            "panelTitle": "等级快照",
+            "panelSubtitle": "基于团队净入金的每日 V 级评估。",
+            "selfNetDeposit": "个人净入金",
+            "teamNetDeposit": "团队净入金",
+            "directTeamWallets": "直推团队钱包数",
+            "nextLevel": "下一等级",
+            "gapToNext": "距离下一等级",
+            "latestSnapshot": "最近快照",
+            "max": "最高级"
+        },
+        "promotion": {
+            "panelTitle": "双区晋升",
+            "panelSubtitle": "跟踪弱区进度和下一等级差距。",
+            "leftZone": "左区",
+            "rightZone": "右区",
+            "weakZone": "弱区",
+            "strongZone": "强区",
+            "nextLevel": "下一晋升等级",
+            "gapToNext": "距离下一等级",
+            "max": "最高级"
+        },
         "toast": {
             "registrationCompleted": "参与注册已完成",
             "activated": "参与体系已激活（{mode} 模式）",

@@ -430,6 +430,69 @@
         }
     },
     "ParticipationDashboard": {
+        "errors": {
+            "loadDashboardFailed": "Failed to load participation dashboard"
+        },
+        "hero": {
+            "title": "Participation Dashboard",
+            "subtitle": "Track activation, capital thresholds, V-level progress, and double-zone promotion in one place.",
+            "backToAffiliate": "Back to affiliate center",
+            "refresh": "Refresh",
+            "connectDescription": "Connect your wallet to view participation status, level progress, and double-zone promotion.",
+            "connectWallet": "Connect Wallet",
+            "connecting": "Connecting..."
+        },
+        "status": {
+            "notRegistered": "NOT_REGISTERED",
+            "mode": "Mode: {mode}",
+            "modeNotSelected": "Mode not selected",
+            "netUsdEquivalent": "{amount} net USD equivalent",
+            "noFundingYet": "No funding yet",
+            "none": "NONE",
+            "dividend": "Dividend {percent}%",
+            "noLevelSnapshot": "No level snapshot yet",
+            "directLegs": "Direct legs {count}",
+            "noPromotionSnapshot": "No promotion snapshot yet"
+        },
+        "cards": {
+            "accountStatus": "Account Status",
+            "netQualifiedCapital": "Net Qualified Capital",
+            "currentLevel": "Current V Level",
+            "promotionProgress": "Promotion Progress"
+        },
+        "activation": {
+            "panelTitle": "Activation & Eligibility",
+            "panelSubtitle": "Registration, activation, and capital threshold readiness.",
+            "registration": "Registration",
+            "activatedAt": "Activated At",
+            "registeredAt": "Registered At",
+            "complete": "Complete",
+            "pending": "Pending",
+            "qualified": "Qualified",
+            "notYet": "Not yet"
+        },
+        "level": {
+            "panelTitle": "Level Snapshot",
+            "panelSubtitle": "Daily V-level evaluation based on team net deposits.",
+            "selfNetDeposit": "Self Net Deposit",
+            "teamNetDeposit": "Team Net Deposit",
+            "directTeamWallets": "Direct Team Wallets",
+            "nextLevel": "Next Level",
+            "gapToNext": "Gap to Next",
+            "latestSnapshot": "Latest Snapshot",
+            "max": "MAX"
+        },
+        "promotion": {
+            "panelTitle": "Double-Zone Promotion",
+            "panelSubtitle": "Track weak-zone progress and next-level gap.",
+            "leftZone": "Left Zone",
+            "rightZone": "Right Zone",
+            "weakZone": "Weak Zone",
+            "strongZone": "Strong Zone",
+            "nextLevel": "Next Promotion Level",
+            "gapToNext": "Gap to Next",
+            "max": "MAX"
+        },
         "toast": {
             "registrationCompleted": "Participation registration completed",
             "activated": "Participation activated in {mode} mode",
