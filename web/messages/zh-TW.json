@@ -429,6 +429,45 @@
             }
         }
     },
+    "ParticipationDashboard": {
+        "toast": {
+            "registrationCompleted": "參與註冊已完成",
+            "activated": "參與體系已啟用（{mode} 模式）",
+            "accountActionFailed": "更新參與帳戶失敗",
+            "custodyGranted": "託管授權已建立",
+            "custodyGrantFailed": "建立託管授權失敗",
+            "custodyRevoked": "託管授權已撤銷",
+            "custodyRevokeFailed": "撤銷託管授權失敗"
+        },
+        "custody": {
+            "panelTitle": "託管授權",
+            "panelSubtitle": "為 MANAGED 模式授予或撤銷託管執行授權。",
+            "authorizationStatus": "授權狀態",
+            "active": "已授權",
+            "notAuthorized": "未授權",
+            "authorizedAt": "授權時間",
+            "lastRevokedAt": "最近撤銷時間",
+            "managedRequirement": "MANAGED 模式要求",
+            "requirementSatisfied": "已滿足",
+            "activateManagedFirst": "請先啟用 MANAGED 模式"
+        },
+        "actions": {
+            "panelTitle": "建議下一步",
+            "panelSubtitle": "根據目前狀態完成關鍵操作。",
+            "checkRegistration": "先完成參與註冊。",
+            "checkFreeThreshold": "達到 FREE 門檻後可啟用基礎參與模式。",
+            "checkManagedThreshold": "達到 MANAGED 門檻後再進入託管流程。",
+            "checkManagedMode": "如需託管執行，請切換至 MANAGED 模式。",
+            "checkCustodyAuthorization": "MANAGED 啟用後再進行託管授權。",
+            "completeRegistration": "完成註冊",
+            "activateFree": "啟用 FREE 模式",
+            "activateManaged": "啟用 MANAGED 模式",
+            "authorizeManagedCustody": "建立託管授權",
+            "revokeAuthorization": "撤銷授權",
+            "openManagedWealth": "前往託管理財",
+            "viewPolicyRules": "查看規則說明"
+        }
+    },
     "Navbar": {
         "traders": "首頁",
         "markets": "市場",

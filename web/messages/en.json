@@ -429,6 +429,45 @@
             }
         }
     },
+    "ParticipationDashboard": {
+        "toast": {
+            "registrationCompleted": "Participation registration completed",
+            "activated": "Participation activated in {mode} mode",
+            "accountActionFailed": "Failed to update participation account",
+            "custodyGranted": "Managed custody authorization granted",
+            "custodyGrantFailed": "Failed to create managed custody authorization",
+            "custodyRevoked": "Managed custody authorization revoked",
+            "custodyRevokeFailed": "Failed to revoke managed custody authorization"
+        },
+        "custody": {
+            "panelTitle": "Managed Custody Authorization",
+            "panelSubtitle": "Grant or revoke managed custody permission for MANAGED mode execution.",
+            "authorizationStatus": "Authorization Status",
+            "active": "ACTIVE",
+            "notAuthorized": "NOT_AUTHORIZED",
+            "authorizedAt": "Authorized At",
+            "lastRevokedAt": "Last Revoked At",
+            "managedRequirement": "Managed Mode Requirement",
+            "requirementSatisfied": "Satisfied",
+            "activateManagedFirst": "Activate MANAGED first"
+        },
+        "actions": {
+            "panelTitle": "Recommended Next Actions",
+            "panelSubtitle": "Use the current state to decide what to do next.",
+            "checkRegistration": "Complete participation registration first.",
+            "checkFreeThreshold": "Reach the FREE threshold to activate basic participation.",
+            "checkManagedThreshold": "Reach the MANAGED threshold before managed custody workflows.",
+            "checkManagedMode": "Switch to MANAGED mode if you want custody-based execution.",
+            "checkCustodyAuthorization": "Authorize managed custody after MANAGED activation.",
+            "completeRegistration": "Complete Registration",
+            "activateFree": "Activate FREE Mode",
+            "activateManaged": "Activate MANAGED Mode",
+            "authorizeManagedCustody": "Authorize Managed Custody",
+            "revokeAuthorization": "Revoke Authorization",
+            "openManagedWealth": "Open Managed Wealth",
+            "viewPolicyRules": "View Policy Rules"
+        }
+    },
     "Navbar": {
         "traders": "Home",
         "markets": "Markets",

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
 import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
+import { useTranslations } from 'next-intl';
 import {
     AlertCircle,
     ArrowLeft,
@@ -284,6 +285,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export default function ParticipationPage() {
+    const t = useTranslations('ParticipationDashboard');
     const { authenticated, ready, login, user, isLoggingIn } = usePrivyLogin();
     const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [loading, setLoading] = useState(true);
@@ -358,14 +360,14 @@ export default function ParticipationPage() {
             toast.success(
                 result.message ??
                 (action === 'REGISTER'
-                    ? 'Participation registration completed'
-                    : `Participation activated in ${mode} mode`)
+                    ? t('toast.registrationCompleted')
+                    : t('toast.activated', { mode: mode ?? 'MANAGED' }))
             );
             await loadDashboard({ silent: true });
         } catch (actionError) {
             const message = actionError instanceof Error
                 ? actionError.message
-                : 'Failed to update participation account';
+                : t('toast.accountActionFailed');
             setError(message);
             toast.error(message);
         } finally {
@@ -431,12 +433,12 @@ export default function ParticipationPage() {
                 user.wallet.address,
                 createWalletAuthHeaders
             );
-            toast.success('Managed custody authorization granted');
+            toast.success(t('toast.custodyGranted'));
             await loadDashboard({ silent: true });
         } catch (actionError) {
             const message = actionError instanceof Error
                 ? actionError.message
-                : 'Failed to create managed custody authorization';
+                : t('toast.custodyGrantFailed');
             setError(message);
             toast.error(message);
         } finally {
@@ -455,12 +457,12 @@ export default function ParticipationPage() {
                 createWalletAuthHeaders,
                 activeCustodyAuthorization.id
             );
-            toast.success('Managed custody authorization revoked');
+            toast.success(t('toast.custodyRevoked'));
             await loadDashboard({ silent: true });
         } catch (actionError) {
             const message = actionError instanceof Error
                 ? actionError.message
-                : 'Failed to revoke managed custody authorization';
+                : t('toast.custodyRevokeFailed');
             setError(message);
             toast.error(message);
         } finally {
@@ -617,23 +619,23 @@ export default function ParticipationPage() {
                     />
                 </Panel>
 
-                <Panel title="Managed Custody Authorization" subtitle="Grant or revoke managed custody permission for MANAGED mode execution.">
+                <Panel title={t('custody.panelTitle')} subtitle={t('custody.panelSubtitle')}>
                     <MetricRow
-                        label="Authorization Status"
-                        value={hasActiveCustodyAuthorization ? 'ACTIVE' : 'NOT_AUTHORIZED'}
+                        label={t('custody.authorizationStatus')}
+                        value={hasActiveCustodyAuthorization ? t('custody.active') : t('custody.notAuthorized')}
                         positive={hasActiveCustodyAuthorization}
                     />
                     <MetricRow
-                        label="Authorized At"
+                        label={t('custody.authorizedAt')}
                         value={formatDate(activeCustodyAuthorization?.grantedAt)}
                     />
                     <MetricRow
-                        label="Last Revoked At"
+                        label={t('custody.lastRevokedAt')}
                         value={formatDate(latestRevokedAuthorization?.revokedAt)}
                     />
                     <MetricRow
-                        label="Managed Mode Requirement"
-                        value={isManagedActive ? 'Satisfied' : 'Activate MANAGED first'}
+                        label={t('custody.managedRequirement')}
+                        value={isManagedActive ? t('custody.requirementSatisfied') : t('custody.activateManagedFirst')}
                         positive={isManagedActive}
                     />
                     <div className="mt-4 flex flex-wrap gap-3">
@@ -643,7 +645,7 @@ export default function ParticipationPage() {
                                 disabled={!canAuthorizeCustody || Boolean(actionLoading)}
                                 loading={actionLoading === 'CUSTODY:GRANT'}
                             >
-                                Authorize Managed Custody
+                                {t('actions.authorizeManagedCustody')}
                             </ActionButton>
                         ) : (
                             <ActionButton
@@ -652,32 +654,32 @@ export default function ParticipationPage() {
                                 loading={actionLoading === 'CUSTODY:REVOKE'}
                                 variant="secondary"
                             >
-                                Revoke Authorization
+                                {t('actions.revokeAuthorization')}
                             </ActionButton>
                         )}
                     </div>
                 </Panel>
 
-                <Panel title="Recommended Next Actions" subtitle="Use the current state to decide what to do next.">
+                <Panel title={t('actions.panelTitle')} subtitle={t('actions.panelSubtitle')}>
                     <ActionItem
                         done={isRegistered}
-                        text="Complete participation registration first."
+                        text={t('actions.checkRegistration')}
                     />
                     <ActionItem
                         done={Boolean(eligibility?.freeQualified)}
-                        text="Reach the FREE threshold to activate basic participation."
+                        text={t('actions.checkFreeThreshold')}
                     />
                     <ActionItem
                         done={Boolean(eligibility?.managedQualified)}
-                        text="Reach the MANAGED threshold before managed custody workflows."
+                        text={t('actions.checkManagedThreshold')}
                     />
                     <ActionItem
                         done={Boolean(isManagedActive)}
-                        text="Switch to MANAGED mode if you want custody-based execution."
+                        text={t('actions.checkManagedMode')}
                     />
                     <ActionItem
                         done={hasActiveCustodyAuthorization}
-                        text="Authorize managed custody after MANAGED activation."
+                        text={t('actions.checkCustodyAuthorization')}
                     />
                     <div className="mt-4 flex flex-wrap gap-3">
                         {!isRegistered ? (
@@ -686,7 +688,7 @@ export default function ParticipationPage() {
                                 disabled={Boolean(actionLoading)}
                                 loading={actionLoading === 'REGISTER'}
                             >
-                                Complete Registration
+                                {t('actions.completeRegistration')}
                             </ActionButton>
                         ) : null}
                         {!isFreeActive ? (
@@ -696,7 +698,7 @@ export default function ParticipationPage() {
                                 loading={actionLoading === 'ACTIVATE:FREE'}
                                 variant="secondary"
                             >
-                                Activate FREE Mode
+                                {t('actions.activateFree')}
                             </ActionButton>
                         ) : null}
                         {!isManagedActive ? (
@@ -705,14 +707,14 @@ export default function ParticipationPage() {
                                 disabled={!canActivateManaged || Boolean(actionLoading)}
                                 loading={actionLoading === 'ACTIVATE:MANAGED'}
                             >
-                                Activate MANAGED Mode
+                                {t('actions.activateManaged')}
                             </ActionButton>
                         ) : null}
                         <Link href="/managed-wealth" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors">
-                            Open Managed Wealth
+                            {t('actions.openManagedWealth')}
                         </Link>
                         <Link href="/affiliate/rules" className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors">
-                            View Policy Rules
+                            {t('actions.viewPolicyRules')}
                         </Link>
                     </div>
                 </Panel>

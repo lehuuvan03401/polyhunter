@@ -233,4 +233,119 @@ test.describe('Participation dashboard E2E', () => {
         await expect(page.getByText('$550,000.00').first()).toBeVisible();
         await expect(page.getByText('Open Managed Wealth')).toBeVisible();
     });
+
+    test('shows activation failure banner when managed activation is rejected by API', async ({ page }) => {
+        const state = {
+            account: {
+                status: 'PENDING',
+                preferredMode: null,
+                isRegistrationComplete: true,
+                registrationCompletedAt: '2026-03-01T00:00:00.000Z',
+                activatedAt: null,
+            },
+        };
+
+        await page.route('**/api/participation/account?**', async (route) => {
+            const request = route.request();
+            expect(request.headers()['x-wallet-address']).toBe(MOCK_WALLET);
+
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    account: state.account,
+                    netDeposits: {
+                        depositUsd: 450,
+                        withdrawUsd: 0,
+                        netUsd: 450,
+                        depositMcn: 450,
+                        withdrawMcn: 0,
+                        netMcnEquivalent: 450,
+                    },
+                    eligibility: {
+                        freeQualified: true,
+                        managedQualified: true,
+                        thresholds: {
+                            FREE: 100,
+                            MANAGED: 500,
+                        },
+                    },
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/account', async (route) => {
+            if (route.request().method() !== 'POST') {
+                await route.continue();
+                return;
+            }
+
+            const payload = route.request().postDataJSON();
+            if (payload.action === 'ACTIVATE' && payload.mode === 'MANAGED') {
+                await route.fulfill({
+                    status: 409,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        error: 'Qualified funding required before activation',
+                        mode: 'MANAGED',
+                        requiredThreshold: 500,
+                        currentNetMcnEquivalent: 450,
+                        deficit: 50,
+                    }),
+                });
+                return;
+            }
+
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    account: state.account,
+                    message: 'noop',
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/custody-auth?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    activeAuthorization: null,
+                    recentAuthorizations: [],
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/levels?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/promotion?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.goto('/en/participation');
+
+        await expect(page.getByRole('button', { name: 'Activate MANAGED Mode' })).toBeVisible();
+        await page.getByRole('button', { name: 'Activate MANAGED Mode' }).click();
+        await expect(
+            page.getByRole('main').getByText('Qualified funding required before activation')
+        ).toBeVisible();
+        await expect(page.getByText('Mode not selected')).toBeVisible();
+    });
 });
