@@ -467,3 +467,7 @@
   - `web/lib/managed-wealth/execution-targets.test.ts` 已补充 rollback 开关用例，确认 scope 关闭时不会访问 execution-target relation。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/execution-targets.test.ts lib/managed-wealth/managed-settlement-entrypoint.test.ts lib/managed-wealth/subscription-position-scope.test.ts app/api/managed-settlement/health.integration.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（14/14）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.3`：
+  - `web/e2e/managed-wealth.spec.mjs` 现已补充 mocked dashboard withdraw 流程：用户从 marketplace 进入产品详情并完成申购，然后在 `/managed-wealth/my` 对运行中的订阅执行一键 withdraw，页面 reload 后校验已结算的 `Final Payout` 状态。
+  - 现有“查看已结算详情”用例已抽到共享 mock 响应；整份 spec 现在覆盖“申购 -> 仪表盘 -> 提现/结算完成”的用户最短闭环。
+- 已执行 `cd web && npm run test:managed-wealth:e2e`，通过（3/3）。
