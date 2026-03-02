@@ -91,6 +91,9 @@ export function Navbar() {
                             <Link key="affiliate" href="/affiliate" className={cn("transition-colors hover:text-foreground/80", pathname === "/affiliate" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('affiliates')}
                             </Link>
+                            <Link key="participation" href="/participation" className={cn("transition-colors hover:text-foreground/80", pathname === "/participation" ? "text-foreground" : "text-muted-foreground")}>
+                                {t('participation')}
+                            </Link>
                             <Link key="portfolio" href="/portfolio" className={cn("transition-colors hover:text-foreground/80", pathname === "/portfolio" ? "text-foreground" : "text-muted-foreground")}>
                                 {t('portfolio')}
                             </Link>
