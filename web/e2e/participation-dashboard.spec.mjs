@@ -348,4 +348,79 @@ test.describe('Participation dashboard E2E', () => {
         ).toBeVisible();
         await expect(page.getByText('Mode not selected')).toBeVisible();
     });
+
+    test('renders localized participation dashboard in zh-CN locale', async ({ page }) => {
+        const state = {
+            account: null,
+        };
+
+        await page.route('**/api/participation/account?**', async (route) => {
+            const request = route.request();
+            expect(request.headers()['x-wallet-address']).toBe(MOCK_WALLET);
+
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    account: state.account,
+                    netDeposits: {
+                        depositUsd: 0,
+                        withdrawUsd: 0,
+                        netUsd: 0,
+                        depositMcn: 0,
+                        withdrawMcn: 0,
+                        netMcnEquivalent: 0,
+                    },
+                    eligibility: {
+                        freeQualified: false,
+                        managedQualified: false,
+                        thresholds: {
+                            FREE: 100,
+                            MANAGED: 500,
+                        },
+                    },
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/custody-auth?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    activeAuthorization: null,
+                    recentAuthorizations: [],
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/levels?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/promotion?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.goto('/zh-CN/participation');
+
+        await expect(page.getByRole('heading', { name: '参与体系看板' })).toBeVisible();
+        await expect(page.getByText('账户状态')).toBeVisible();
+        await expect(page.getByText('建议下一步')).toBeVisible();
+        await expect(page.getByRole('button', { name: '完成注册' })).toBeVisible();
+    });
 });
