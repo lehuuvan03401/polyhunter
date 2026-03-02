@@ -346,6 +346,18 @@ test.describe('Participation dashboard E2E', () => {
         await expect(
             page.getByRole('main').getByText('Qualified funding required before activation')
         ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Activation mode: MANAGED')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Required threshold: 500.00 MCN')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Current net qualified capital: 450.00 MCN')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Missing amount: 50.00 MCN')
+        ).toBeVisible();
         await expect(page.getByText('Mode not selected')).toBeVisible();
     });
 

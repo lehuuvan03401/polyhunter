@@ -116,6 +116,16 @@ type WalletHeadersFactory = (params: {
 
 type ParticipationAccountAction = 'REGISTER' | 'ACTIVATE';
 type ParticipationMode = 'FREE' | 'MANAGED';
+type ActivationFailureDetail = {
+    mode: ParticipationMode;
+    requiredThreshold: number;
+    currentNetMcnEquivalent: number;
+    deficit: number;
+};
+
+type ParticipationActionError = Error & {
+    activationFailureDetail?: ActivationFailureDetail;
+};
 
 async function fetchJson<T>(path: string, headers: Record<string, string>): Promise<T> {
     const res = await fetch(path, {
@@ -199,7 +209,30 @@ async function postParticipationAccountAction(
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data?.error || `Failed to ${action.toLowerCase()} participation`);
+        const error = new Error(
+            data?.error || `Failed to ${action.toLowerCase()} participation`
+        ) as ParticipationActionError;
+
+        const requiredThreshold = Number(data?.requiredThreshold);
+        const currentNetMcnEquivalent = Number(data?.currentNetMcnEquivalent);
+        const deficit = Number(data?.deficit);
+
+        if (
+            action === 'ACTIVATE' &&
+            mode &&
+            Number.isFinite(requiredThreshold) &&
+            Number.isFinite(currentNetMcnEquivalent) &&
+            Number.isFinite(deficit)
+        ) {
+            error.activationFailureDetail = {
+                mode,
+                requiredThreshold,
+                currentNetMcnEquivalent,
+                deficit,
+            };
+        }
+
+        throw error;
     }
 
     return data as { message?: string };
@@ -277,6 +310,13 @@ function formatUsd(value: number): string {
     })}`;
 }
 
+function formatMcn(value: number): string {
+    return `${value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })} MCN`;
+}
+
 function formatDate(value: string | null | undefined): string {
     if (!value) return '--';
     const parsed = new Date(value);
@@ -293,6 +333,7 @@ export default function ParticipationPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [dashboard, setDashboard] = useState<ParticipationDashboardData | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [activationFailureDetail, setActivationFailureDetail] = useState<ActivationFailureDetail | null>(null);
 
     const loadDashboard = useCallback(async (options?: { initialLoad?: boolean; silent?: boolean }) => {
         if (!authenticated || !user?.wallet?.address) {
@@ -349,6 +390,7 @@ export default function ParticipationPage() {
         const actionKey = mode ? `${action}:${mode}` : action;
         setActionLoading(actionKey);
         setError(null);
+        setActivationFailureDetail(null);
 
         try {
             const result = await postParticipationAccountAction(
@@ -368,6 +410,13 @@ export default function ParticipationPage() {
             const message = actionError instanceof Error
                 ? actionError.message
                 : t('toast.accountActionFailed');
+            const detail = actionError instanceof Error
+                ? (actionError as ParticipationActionError).activationFailureDetail
+                : undefined;
+
+            if (detail) {
+                setActivationFailureDetail(detail);
+            }
             setError(message);
             toast.error(message);
         } finally {
@@ -523,9 +572,21 @@ export default function ParticipationPage() {
             </div>
 
             {error ? (
-                <div className="mb-6 flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                    <AlertCircle className="h-4 w-4 shrink-0" />
-                    {error}
+                <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                    <div className="flex items-start gap-2">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="min-w-0">
+                            <div>{error}</div>
+                            {activationFailureDetail ? (
+                                <div className="mt-2 space-y-1 text-xs text-amber-100/90">
+                                    <div>{t('errors.activationMode', { mode: activationFailureDetail.mode })}</div>
+                                    <div>{t('errors.requiredThreshold', { amount: formatMcn(activationFailureDetail.requiredThreshold) })}</div>
+                                    <div>{t('errors.currentNetQualified', { amount: formatMcn(activationFailureDetail.currentNetMcnEquivalent) })}</div>
+                                    <div>{t('errors.deficit', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
                 </div>
             ) : null}
 

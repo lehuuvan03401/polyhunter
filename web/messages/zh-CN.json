@@ -431,7 +431,11 @@
     },
     "ParticipationDashboard": {
         "errors": {
-            "loadDashboardFailed": "加载参与看板失败"
+            "loadDashboardFailed": "加载参与看板失败",
+            "activationMode": "激活模式：{mode}",
+            "requiredThreshold": "所需门槛：{amount}",
+            "currentNetQualified": "当前净有效资金：{amount}",
+            "deficit": "仍需补足：{amount}"
         },
         "hero": {
             "title": "参与体系看板",

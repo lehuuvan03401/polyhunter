@@ -431,7 +431,11 @@
     },
     "ParticipationDashboard": {
         "errors": {
-            "loadDashboardFailed": "Failed to load participation dashboard"
+            "loadDashboardFailed": "Failed to load participation dashboard",
+            "activationMode": "Activation mode: {mode}",
+            "requiredThreshold": "Required threshold: {amount}",
+            "currentNetQualified": "Current net qualified capital: {amount}",
+            "deficit": "Missing amount: {amount}"
         },
         "hero": {
             "title": "Participation Dashboard",
