@@ -407,3 +407,8 @@
   - `ManagedSubscription` 已补充 `allocations` relation，为后续分配服务和前端快照查询预留结构。
 - 已执行 `cd web && npx prisma format`，通过。
 - 已执行 `cd web && npx prisma generate`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `2.1/2.2` 基础域服务：
+  - 新增 `web/lib/managed-wealth/allocation-service.ts`，提供候选池合并、按策略画像过滤、确定性 seed 生成、带权随机选择，以及可直接接入现有 `leaderboard-cache` / `smart-money-discovery` 的运行时入口。
+  - 新增单测 `web/lib/managed-wealth/allocation-service.test.ts`，覆盖候选筛选、seed 稳定性、相同 seed 下的选择稳定性。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts`，通过（3/3）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
