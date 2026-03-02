@@ -3,9 +3,11 @@ import { expect, test } from '@playwright/test';
 const MOCK_WALLET = (process.env.NEXT_PUBLIC_E2E_MOCK_WALLET ?? '0x1111111111111111111111111111111111111111').toLowerCase();
 
 test.describe('Participation dashboard E2E', () => {
-    test('authenticated user can register and activate managed participation while viewing progress', async ({ page }) => {
+    test('authenticated user can register, activate managed mode, and manage custody authorization', async ({ page }) => {
         const state = {
             account: null,
+            activeAuthorization: null,
+            recentAuthorizations: [],
         };
 
         await page.route('**/api/participation/account?**', async (route) => {
@@ -83,6 +85,77 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
+        await page.route('**/api/participation/custody-auth?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    activeAuthorization: state.activeAuthorization,
+                    recentAuthorizations: state.recentAuthorizations,
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/custody-auth', async (route) => {
+            const method = route.request().method();
+
+            if (method === 'POST') {
+                const authorization = {
+                    id: 'auth-e2e-1',
+                    mode: 'MANAGED',
+                    status: 'ACTIVE',
+                    grantedAt: '2026-03-02T01:00:00.000Z',
+                    revokedAt: null,
+                    createdAt: '2026-03-02T01:00:00.000Z',
+                };
+
+                state.activeAuthorization = authorization;
+                state.recentAuthorizations = [
+                    authorization,
+                    ...state.recentAuthorizations.filter((item) => item.id !== authorization.id),
+                ];
+
+                await route.fulfill({
+                    status: 201,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ authorization }),
+                });
+                return;
+            }
+
+            if (method === 'DELETE') {
+                if (!state.activeAuthorization) {
+                    await route.fulfill({
+                        status: 404,
+                        contentType: 'application/json',
+                        body: JSON.stringify({ error: 'No active authorization found' }),
+                    });
+                    return;
+                }
+
+                const revokedAuthorization = {
+                    ...state.activeAuthorization,
+                    status: 'REVOKED',
+                    revokedAt: '2026-03-02T02:00:00.000Z',
+                };
+
+                state.activeAuthorization = null;
+                state.recentAuthorizations = [
+                    revokedAuthorization,
+                    ...state.recentAuthorizations.filter((item) => item.id !== revokedAuthorization.id),
+                ];
+
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ revoked: 1 }),
+                });
+                return;
+            }
+
+            await route.continue();
+        });
+
         await page.route('**/api/participation/levels?**', async (route) => {
             await route.fulfill({
                 status: 200,
@@ -141,6 +214,18 @@ test.describe('Participation dashboard E2E', () => {
 
         await page.getByRole('button', { name: 'Activate MANAGED Mode' }).click();
         await expect(page.getByText('Mode: MANAGED')).toBeVisible();
+        await page.getByRole('button', { name: 'Authorize Managed Custody' }).click();
+
+        const custodyPanel = page.locator('section').filter({
+            has: page.getByRole('heading', { name: 'Managed Custody Authorization' }),
+        });
+        await expect(custodyPanel.getByText('ACTIVE', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Revoke Authorization' })).toBeVisible();
+
+        await page.getByRole('button', { name: 'Revoke Authorization' }).click();
+        await expect(custodyPanel.getByText('NOT_AUTHORIZED', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Authorize Managed Custody' })).toBeVisible();
+
         await expect(page.getByText('1250.00 MCN')).toBeVisible();
         await expect(page.getByText('Dividend 50%')).toBeVisible();
         await expect(page.getByText('Direct legs 2')).toBeVisible();

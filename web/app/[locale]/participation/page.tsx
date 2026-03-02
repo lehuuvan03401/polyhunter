@@ -81,10 +81,30 @@ type ParticipationPromotionResponse = {
     } | null;
 };
 
+type ParticipationCustodyAuthResponse = {
+    activeAuthorization: {
+        id: string;
+        mode: 'MANAGED';
+        status: 'ACTIVE' | 'REVOKED';
+        grantedAt: string;
+        revokedAt: string | null;
+        createdAt: string;
+    } | null;
+    recentAuthorizations: Array<{
+        id: string;
+        mode: 'MANAGED';
+        status: 'ACTIVE' | 'REVOKED';
+        grantedAt: string;
+        revokedAt: string | null;
+        createdAt: string;
+    }>;
+};
+
 type ParticipationDashboardData = {
     account: ParticipationAccountResponse;
     levels: ParticipationLevelsResponse;
     promotion: ParticipationPromotionResponse;
+    custodyAuth: ParticipationCustodyAuthResponse;
 };
 
 type WalletHeadersFactory = (params: {
@@ -115,8 +135,9 @@ async function loadParticipationDashboard(
     const accountPath = `/api/participation/account?wallet=${encodeURIComponent(walletAddress)}`;
     const levelsPath = `/api/participation/levels?wallet=${encodeURIComponent(walletAddress)}`;
     const promotionPath = `/api/participation/promotion?wallet=${encodeURIComponent(walletAddress)}`;
+    const custodyAuthPath = `/api/participation/custody-auth?wallet=${encodeURIComponent(walletAddress)}`;
 
-    const [accountHeaders, levelsHeaders, promotionHeaders] = await Promise.all([
+    const [accountHeaders, levelsHeaders, promotionHeaders, custodyAuthHeaders] = await Promise.all([
         createWalletAuthHeaders({
             walletAddress,
             method: 'GET',
@@ -132,15 +153,21 @@ async function loadParticipationDashboard(
             method: 'GET',
             pathWithQuery: promotionPath,
         }),
+        createWalletAuthHeaders({
+            walletAddress,
+            method: 'GET',
+            pathWithQuery: custodyAuthPath,
+        }),
     ]);
 
-    const [account, levels, promotion] = await Promise.all([
+    const [account, levels, promotion, custodyAuth] = await Promise.all([
         fetchJson<ParticipationAccountResponse>(accountPath, accountHeaders),
         fetchJson<ParticipationLevelsResponse>(levelsPath, levelsHeaders),
         fetchJson<ParticipationPromotionResponse>(promotionPath, promotionHeaders),
+        fetchJson<ParticipationCustodyAuthResponse>(custodyAuthPath, custodyAuthHeaders),
     ]);
 
-    return { account, levels, promotion };
+    return { account, levels, promotion, custodyAuth };
 }
 
 async function postParticipationAccountAction(
@@ -175,6 +202,71 @@ async function postParticipationAccountAction(
     }
 
     return data as { message?: string };
+}
+
+async function createManagedCustodyAuthorization(
+    walletAddress: string,
+    createWalletAuthHeaders: WalletHeadersFactory
+) {
+    const path = '/api/participation/custody-auth';
+    const walletHeaders = await createWalletAuthHeaders({
+        walletAddress,
+        method: 'POST',
+        pathWithQuery: path,
+    });
+
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...walletHeaders,
+        },
+        body: JSON.stringify({
+            walletAddress,
+            mode: 'MANAGED',
+            consentStatement: 'I authorize Catalyst managed custody execution for managed strategy.',
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.error || 'Failed to authorize managed custody');
+    }
+
+    return data as { authorization?: { id: string } };
+}
+
+async function revokeManagedCustodyAuthorization(
+    walletAddress: string,
+    createWalletAuthHeaders: WalletHeadersFactory,
+    authorizationId?: string
+) {
+    const path = '/api/participation/custody-auth';
+    const walletHeaders = await createWalletAuthHeaders({
+        walletAddress,
+        method: 'DELETE',
+        pathWithQuery: path,
+    });
+
+    const res = await fetch(path, {
+        method: 'DELETE',
+        headers: {
+            'content-type': 'application/json',
+            ...walletHeaders,
+        },
+        body: JSON.stringify({
+            walletAddress,
+            ...(authorizationId ? { authorizationId } : {}),
+            reason: 'User revoked authorization from participation dashboard',
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.error || 'Failed to revoke managed custody authorization');
+    }
+
+    return data as { revoked?: number };
 }
 
 function formatUsd(value: number): string {
@@ -317,12 +409,64 @@ export default function ParticipationPage() {
     const eligibility = dashboard?.account.eligibility;
     const levelProgress = dashboard?.levels.progress;
     const promotionProgress = dashboard?.promotion.progress;
+    const activeCustodyAuthorization = dashboard?.custodyAuth.activeAuthorization ?? null;
+    const recentAuthorizations = dashboard?.custodyAuth.recentAuthorizations ?? [];
+    const latestRevokedAuthorization = recentAuthorizations.find((item) => item.status === 'REVOKED');
     const isRegistered = Boolean(account?.isRegistrationComplete);
     const isActive = account?.status === 'ACTIVE';
     const isFreeActive = isActive && account?.preferredMode === 'FREE';
     const isManagedActive = isActive && account?.preferredMode === 'MANAGED';
     const canActivateFree = isRegistered && Boolean(eligibility?.freeQualified) && !isFreeActive;
     const canActivateManaged = isRegistered && Boolean(eligibility?.managedQualified) && !isManagedActive;
+    const hasActiveCustodyAuthorization = Boolean(activeCustodyAuthorization);
+    const canAuthorizeCustody = isManagedActive && !hasActiveCustodyAuthorization;
+
+    const handleCreateCustodyAuthorization = async () => {
+        if (!user?.wallet?.address || actionLoading) return;
+        setActionLoading('CUSTODY:GRANT');
+        setError(null);
+
+        try {
+            await createManagedCustodyAuthorization(
+                user.wallet.address,
+                createWalletAuthHeaders
+            );
+            toast.success('Managed custody authorization granted');
+            await loadDashboard({ silent: true });
+        } catch (actionError) {
+            const message = actionError instanceof Error
+                ? actionError.message
+                : 'Failed to create managed custody authorization';
+            setError(message);
+            toast.error(message);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleRevokeCustodyAuthorization = async () => {
+        if (!user?.wallet?.address || actionLoading || !activeCustodyAuthorization?.id) return;
+        setActionLoading('CUSTODY:REVOKE');
+        setError(null);
+
+        try {
+            await revokeManagedCustodyAuthorization(
+                user.wallet.address,
+                createWalletAuthHeaders,
+                activeCustodyAuthorization.id
+            );
+            toast.success('Managed custody authorization revoked');
+            await loadDashboard({ silent: true });
+        } catch (actionError) {
+            const message = actionError instanceof Error
+                ? actionError.message
+                : 'Failed to revoke managed custody authorization';
+            setError(message);
+            toast.error(message);
+        } finally {
+            setActionLoading(null);
+        }
+    };
 
     return (
         <div className="container py-10 min-h-screen">
@@ -473,6 +617,47 @@ export default function ParticipationPage() {
                     />
                 </Panel>
 
+                <Panel title="Managed Custody Authorization" subtitle="Grant or revoke managed custody permission for MANAGED mode execution.">
+                    <MetricRow
+                        label="Authorization Status"
+                        value={hasActiveCustodyAuthorization ? 'ACTIVE' : 'NOT_AUTHORIZED'}
+                        positive={hasActiveCustodyAuthorization}
+                    />
+                    <MetricRow
+                        label="Authorized At"
+                        value={formatDate(activeCustodyAuthorization?.grantedAt)}
+                    />
+                    <MetricRow
+                        label="Last Revoked At"
+                        value={formatDate(latestRevokedAuthorization?.revokedAt)}
+                    />
+                    <MetricRow
+                        label="Managed Mode Requirement"
+                        value={isManagedActive ? 'Satisfied' : 'Activate MANAGED first'}
+                        positive={isManagedActive}
+                    />
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        {!hasActiveCustodyAuthorization ? (
+                            <ActionButton
+                                onClick={() => void handleCreateCustodyAuthorization()}
+                                disabled={!canAuthorizeCustody || Boolean(actionLoading)}
+                                loading={actionLoading === 'CUSTODY:GRANT'}
+                            >
+                                Authorize Managed Custody
+                            </ActionButton>
+                        ) : (
+                            <ActionButton
+                                onClick={() => void handleRevokeCustodyAuthorization()}
+                                disabled={Boolean(actionLoading)}
+                                loading={actionLoading === 'CUSTODY:REVOKE'}
+                                variant="secondary"
+                            >
+                                Revoke Authorization
+                            </ActionButton>
+                        )}
+                    </div>
+                </Panel>
+
                 <Panel title="Recommended Next Actions" subtitle="Use the current state to decide what to do next.">
                     <ActionItem
                         done={isRegistered}
@@ -489,6 +674,10 @@ export default function ParticipationPage() {
                     <ActionItem
                         done={Boolean(isManagedActive)}
                         text="Switch to MANAGED mode if you want custody-based execution."
+                    />
+                    <ActionItem
+                        done={hasActiveCustodyAuthorization}
+                        text="Authorize managed custody after MANAGED activation."
                     />
                     <div className="mt-4 flex flex-wrap gap-3">
                         {!isRegistered ? (
