@@ -9,6 +9,7 @@ import {
     ManagedMembershipPaymentToken,
     ManagedMembershipPlanType,
 } from '@/lib/managed-wealth/membership-plans';
+import { getManagedPrincipalAvailability } from '@/lib/managed-wealth/principal-reservation';
 
 export const dynamic = 'force-dynamic';
 
@@ -195,6 +196,17 @@ export async function POST(request: NextRequest) {
                 throw new Error(`ACTIVE_MEMBERSHIP_EXISTS:${activeMembership.endsAt.toISOString()}`);
             }
 
+            // Verify user has sufficient qualified balance to cover membership cost
+            const availability = await getManagedPrincipalAvailability(tx, walletContext.wallet);
+            if (availability.availableBalance < price.finalPriceUsd) {
+                throw new Error(
+                    `INSUFFICIENT_BALANCE:${JSON.stringify({
+                        required: price.finalPriceUsd,
+                        available: availability.availableBalance,
+                    })}`
+                );
+            }
+
             const id = randomUUID();
             const endsAt = new Date(now.getTime() + price.durationDays * 24 * 60 * 60 * 1000);
 
@@ -264,6 +276,18 @@ export async function POST(request: NextRequest) {
             const activeUntil = error.message.slice('ACTIVE_MEMBERSHIP_EXISTS:'.length);
             return NextResponse.json(
                 { error: 'Active membership already exists', activeUntil },
+                { status: 409 }
+            );
+        }
+
+        if (error instanceof Error && error.message.startsWith('INSUFFICIENT_BALANCE:')) {
+            const details = JSON.parse(error.message.slice('INSUFFICIENT_BALANCE:'.length));
+            return NextResponse.json(
+                {
+                    error: 'Insufficient qualified balance for membership purchase',
+                    code: 'INSUFFICIENT_BALANCE',
+                    ...details,
+                },
                 { status: 409 }
             );
         }

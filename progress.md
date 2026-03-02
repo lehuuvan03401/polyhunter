@@ -471,3 +471,50 @@
   - `web/e2e/managed-wealth.spec.mjs` 现已补充 mocked dashboard withdraw 流程：用户从 marketplace 进入产品详情并完成申购，然后在 `/managed-wealth/my` 对运行中的订阅执行一键 withdraw，页面 reload 后校验已结算的 `Final Payout` 状态。
   - 现有“查看已结算详情”用例已抽到共享 mock 响应；整份 spec 现在覆盖“申购 -> 仪表盘 -> 提现/结算完成”的用户最短闭环。
 - 已执行 `cd web && npm run test:managed-wealth:e2e`，通过（3/3）。
+
+## 2026-03-02（Participation Program 审计）
+- 已读取现有 `task_plan.md`、`findings.md`、`progress.md`，确认仓库内已有 Participation Program 的历史推进记录，可作为“任务完成情况”基线。
+- 已完成第一轮文件盘点：
+  - Participation Program 代码入口：`web/lib/participation-program/*`
+  - API 入口：`web/app/api/participation/*`、`web/app/api/partners/*`
+  - 规范入口：`openspec/specs/participation-program/spec.md`、`openspec/specs/global-partner-program/spec.md`
+  - 变更记录：`openspec/changes/archive/2026-02-26-add-horus-participation-partner-program/*`、`openspec/changes/harden-horus-participation-partner-policy/*`
+- 当前状态：进入“规范与实现逐项核对”阶段。
+- 已完成验证：
+  - `cd web && npx vitest run lib/participation-program/*.test.ts app/api/participation/*.integration.test.ts app/api/partners/*.integration.test.ts` -> `16 files / 67 tests` 全通过。
+  - `cd web && npx tsc --noEmit` -> 通过。
+  - `openspec validate harden-horus-participation-partner-policy --strict --no-interactive` -> 通过。
+- 当前状态：进入“汇总结论与风险”阶段。
+- 已补充整改建议方向：
+  - P1：`partners/config` 读权限口径统一、补齐 levels/promotion 定时调度入口与 runbook。
+  - P2：OpenSpec `Purpose` 文案收口、spec 边界说明、用户侧 participation 状态可视化增强。
+- 已完成 P1 修复第一批：
+  - `web/app/api/partners/config/route.ts`：`GET` 新增管理员鉴权。
+  - `web/app/api/partners/config.integration.test.ts`：新增未授权 `GET` 覆盖，现为 4 个用例。
+  - `web/scripts/services/participation-levels-daily-snapshot.ts`：新增 daily level snapshot 触发脚本。
+  - `web/scripts/services/participation-promotion-daily-snapshot.ts`：新增 daily promotion snapshot 触发脚本。
+  - `web/package.json`：新增 `participation:levels:daily` / `participation:promotion:daily` scripts。
+  - `docs/operations/runbook-participation-program.md`：新增参与系统 daily operations runbook。
+  - `docs/operations/README.md`：新增 Participation daily snapshot operations 索引。
+- 已执行验证：
+  - `cd web && npx vitest run app/api/partners/config.integration.test.ts app/api/participation/*.integration.test.ts lib/participation-program/*.test.ts` -> `15 files / 67 tests` 全通过。
+  - `cd web && npx tsc --noEmit` -> 通过。
+- 已完成第二批收口：
+  - `openspec/specs/participation-program/spec.md`、`openspec/specs/global-partner-program/spec.md`、`openspec/specs/affiliate-system/spec.md`、`openspec/specs/fee-logic/spec.md`：补齐 `Purpose` 文案与职责边界。
+  - 提交：`3b05982` (`clarify participation spec ownership`)
+  - 校验：`openspec validate --specs --strict --no-interactive` -> `12 passed`
+- 已完成第三批前台补强：
+  - `web/app/[locale]/participation/page.tsx`：新增用户侧 participation dashboard。
+  - `web/components/layout/user-menu.tsx`：新增 Participation 菜单入口。
+  - 提交：`2b60c78` (`add participation dashboard page`)
+  - 校验：`cd web && npx tsc --noEmit` -> 通过。
+- 已完成第四批测试补强：
+  - `web/e2e/participation-dashboard.spec.mjs`：新增 participation dashboard E2E，用 mocked API 覆盖账号状态、V 级和双区进度展示。
+  - 首次运行因断言文本格式与 strict 模式匹配过严失败，已修正为与真实渲染一致的断言。
+  - 校验：`cd web && npx playwright test --config=playwright.config.mjs e2e/participation-dashboard.spec.mjs` -> 通过（1/1）。
+  - 提交：`50eb115` (`test participation dashboard e2e`)
+- 已完成第五批入口曝光补强：
+  - `web/components/layout/navbar.tsx`：已登录用户主导航新增 Participation 入口。
+  - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`：补充 `Navbar.participation` 文案。
+  - 校验：`cd web && npx tsc --noEmit` -> 通过。
+  - 提交：`d523403` (`surface participation in main nav`)

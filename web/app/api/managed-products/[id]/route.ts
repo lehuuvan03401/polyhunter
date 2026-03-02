@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { PARTICIPATION_SERVICE_PERIODS_DAYS } from '@/lib/participation-program/rules';
+import { normalizeManagedAllocationWeights } from '@/lib/managed-wealth/allocation-weights';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,33 +15,7 @@ function isPrismaSchemaMissingError(error: unknown): error is { code: string } {
     return code === 'P2021' || code === 'P2022';
 }
 
-function normalizeManagedAllocationWeights(
-    value: Prisma.JsonValue | null | undefined
-): Array<{ address: string; weight: number }> {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return value.flatMap((row) => {
-        if (typeof row !== 'object' || row === null) {
-            return [];
-        }
-
-        const candidate = row as {
-            address?: unknown;
-            weight?: unknown;
-        };
-        if (typeof candidate.address !== 'string') {
-            return [];
-        }
-
-        const weight = Number(candidate.weight ?? 0);
-        return [{
-            address: candidate.address.toLowerCase(),
-            weight: Number.isFinite(weight) ? weight : 0,
-        }];
-    });
-}
+// normalizeManagedAllocationWeights is imported from shared module above.
 
 async function listRecentManagedAllocations(productId: string) {
     try {
@@ -111,16 +86,6 @@ export async function GET(
                         },
                     },
                     orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-                },
-                subscriptions: {
-                    select: {
-                        id: true,
-                        status: true,
-                        principal: true,
-                        createdAt: true,
-                    },
-                    orderBy: { createdAt: 'desc' },
-                    take: 5,
                 },
             },
         });

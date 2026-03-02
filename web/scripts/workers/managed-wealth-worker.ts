@@ -596,6 +596,7 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
         let unrealizedPnl = 0;
 
         // Fetch prices for any open positions that we haven't fetched yet
+        let allPricesFailed = false;
         if (openPositions.length > 0) {
             const tokensToFetch = openPositions.map((p: { tokenId: string }) => p.tokenId).filter((tid: string) => !currentPriceMap.has(tid));
             if (tokensToFetch.length > 0) {
@@ -613,13 +614,26 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
                     });
                 } catch (err) {
                     console.warn('[ManagedWealthWorker] Failed to fetch CLOB prices for NAV:', err);
+                    // If ALL prices for this subscription's positions failed to fetch,
+                    // skip NAV update to avoid writing a misleading zero-unrealizedPnl snapshot.
+                    const hasAnyPrice = openPositions.some((p: { tokenId: string }) => currentPriceMap.has(p.tokenId));
+                    if (!hasAnyPrice) {
+                        allPricesFailed = true;
+                    }
                 }
             }
 
-            for (const pos of openPositions) {
-                const curPrice = currentPriceMap.get(pos.tokenId) ?? pos.avgEntryPrice;
-                unrealizedPnl += pos.balance * (curPrice - pos.avgEntryPrice);
+            if (!allPricesFailed) {
+                for (const pos of openPositions) {
+                    const curPrice = currentPriceMap.get(pos.tokenId) ?? pos.avgEntryPrice;
+                    unrealizedPnl += pos.balance * (curPrice - pos.avgEntryPrice);
+                }
             }
+        }
+
+        if (allPricesFailed) {
+            console.warn(`[ManagedWealthWorker] Skipping NAV snapshot for sub ${sub.id}: all price fetches failed`);
+            continue;
         }
 
         const equity = Number((sub.principal + realizedPnl + unrealizedPnl).toFixed(8));

@@ -16,6 +16,8 @@ import {
     ManagedPrincipalAvailabilityError,
     reserveManagedPrincipal,
 } from '@/lib/managed-wealth/principal-reservation';
+import { resolveNumberEnv } from '@/lib/managed-wealth/env-utils';
+import { normalizeManagedAllocationWeights } from '@/lib/managed-wealth/allocation-weights';
 
 export const dynamic = 'force-dynamic';
 const WITHDRAW_GUARDRAILS = {
@@ -100,47 +102,7 @@ function parseStatusParam(value: string | null): ManagedSubscriptionStatus | und
     return undefined;
 }
 
-function normalizeManagedAllocationWeights(
-    value: Prisma.JsonValue | null | undefined
-): Array<{ address: string; weight: number; weightScore: number | null }> {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return value.flatMap((row) => {
-        if (typeof row !== 'object' || row === null) {
-            return [];
-        }
-
-        const candidate = row as {
-            address?: unknown;
-            weight?: unknown;
-            weightScore?: unknown;
-        };
-        if (typeof candidate.address !== 'string') {
-            return [];
-        }
-
-        const weight = Number(candidate.weight ?? 0);
-        const weightScore = candidate.weightScore == null
-            ? null
-            : Number(candidate.weightScore);
-
-        return [{
-            address: candidate.address.toLowerCase(),
-            weight: Number.isFinite(weight) ? weight : 0,
-            weightScore: weightScore !== null && Number.isFinite(weightScore) ? weightScore : null,
-        }];
-    });
-}
-
-function resolveNumberEnv(name: string, fallback: number, min: number, max: number): number {
-    const raw = process.env[name];
-    if (!raw) return fallback;
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return fallback;
-    return Math.min(max, Math.max(min, parsed));
-}
+// resolveNumberEnv and normalizeManagedAllocationWeights are imported from shared modules above.
 
 async function getReserveCoverageAfterSubscription(
     db: ReserveCoverageDb,

@@ -227,3 +227,34 @@
 - 仅有自动执行器不足以保障可恢复性：清仓会遇到代理资金不足、缺失 proxy、低流动性等场景，必须提供运营手动干预能力（retry/requeue/fail）。
 - 仅有运维按钮不足以形成闭环：必须有独立 worker 消费 `ManagedLiquidationTask` 并执行真实 SELL，否则任务状态会长期停留在 `PENDING/RETRYING`。
 - 清仓执行成功后必须同步写入 `CopyTrade(EXECUTED)` 与作用域持仓递减，否则 NAV 和结算会继续把已清仓仓位当作未实现盈亏，导致最终结算偏差。
+
+### 2026-03-02 新增发现：Participation Program 代码面已具备完整主干入口
+- `web/lib/participation-program/` 下已存在规则、等级、晋升、平级奖、推荐奖励、费率作用域、合伙人运营自动化等核心模块，说明参与体系不是停留在文档层。
+- API 入口覆盖 `rules/account/funding/levels/promotion/custody-auth` 以及 `partners/*`，说明“参与账户主流程 + 全球合伙人治理”两条线都已进入可调用状态。
+- `web/prisma/migrations/20260225162000_add_participation_program_m1/migration.sql` 表明至少 M1 级数据库建模已落地，后续需要继续核对 schema 字段与 API 使用是否一致。
+
+### 2026-03-02 新增发现：任务清单与代码实现基本一致，当前更像“已交付 + 少量文档尾差”
+- `openspec/changes/archive/2026-02-26-add-horus-participation-partner-program/tasks.md` 与 `openspec/changes/harden-horus-participation-partner-policy/tasks.md` 均为全量勾选，且仓库内可找到对应的 schema、API、脚本、UI、测试入口。
+- 当前 `web` 下参与系统相关测试已实跑通过：`npx vitest run lib/participation-program/*.test.ts app/api/participation/*.integration.test.ts app/api/partners/*.integration.test.ts`，结果为 `16 files / 67 tests` 全通过；`npx tsc --noEmit` 也通过。
+- `openspec validate harden-horus-participation-partner-policy --strict --no-interactive` 当前通过，说明规范变更本身仍处于有效状态。
+- 主要可见尾差不在功能，而在规范沉淀质量：`openspec/specs/participation-program/spec.md` 与 `openspec/specs/global-partner-program/spec.md` 的 `Purpose` 仍是 `TBD`，归档后的正式规范还没做最后文案收口。
+
+### 2026-03-02 新增发现：后续整改优先级应集中在“权限一致性 + 调度落地”
+- `GET /api/partners/config` 当前无管理员校验，但同一 runbook 将其置于 partner 运维流程中，权限口径存在轻微不一致，适合作为 P1 快修项。
+- `levels` / `promotion` 已有管理员快照接口，但 `web/package.json` 下没有对应的定时脚本入口，说明“引擎已实现、日调度未内建”，适合作为 P1 运维落地项。
+- `participation-program` / `global-partner-program` 正式 spec 的 `Purpose` 未填写，以及参与规则分散在 `participation-program` 与 `affiliate-system` 两份 spec 中，属于 P2 文档治理项。
+
+### 2026-03-02 新增发现：P1 修复已完成第一批落地
+- `GET /api/partners/config` 现已与其他 partner 运维接口对齐，未携带管理员身份时返回 `401`。
+- `web/scripts/services/participation-levels-daily-snapshot.ts` 与 `web/scripts/services/participation-promotion-daily-snapshot.ts` 已提供可直接接入 cron/CI 的 daily 触发入口。
+- `docs/operations/runbook-participation-program.md` 已补齐 daily cadence、dry-run、失败处理和发布检查项，降低后续运营接线成本。
+
+### 2026-03-02 新增发现：P2 文档与前台可见性也已推进
+- 正式 spec 中 `participation-program`、`global-partner-program`、`affiliate-system`、`fee-logic` 的 `Purpose` 已补齐，不再保留 `TBD` 占位。
+- `participation-program` 的 `Purpose` 已明确说明：激活/模式/授权由该 spec 负责，激励与分佣由 `affiliate-system` / `fee-logic` 负责，后续改动时更容易定位规范归属。
+- 用户侧新增 `/participation` 页面，直接聚合 `account` / `levels` / `promotion` 三个 API，并通过 `useManagedWalletAuth` 复用现有签名头逻辑，避免另起一套鉴权协议。
+- 用户菜单已新增 Participation 入口，当前至少具备可达性；若后续要提升曝光度，可再决定是否进入主导航。
+
+### 2026-03-02 新增发现：Participation 入口现在已具备“可见 + 可测”
+- 新增 `web/e2e/participation-dashboard.spec.mjs` 后，`/participation` 的已登录展示至少有一条真实浏览器回归用例覆盖，避免后续页面静默失效。
+- 主导航已新增 Participation 链接，并补齐中英繁三套文案，入口不再只依赖用户菜单发现。

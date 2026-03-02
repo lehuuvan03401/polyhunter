@@ -256,3 +256,82 @@
 | 时间 | 位置 | 错误 | 处理 |
 |---|---|---|---|
 | 2026-02-26 | `rg` 查询 | 复杂正则导致 `repetition quantifier expects a valid decimal` | 拆分为多条精确 `rg -n` 查询 |
+
+---
+
+# 任务计划：Participation Program 完成度审计（2026-03-02）
+
+## 目标
+- 基于仓库现状，审计 `Participation Program` 相关规范、代码、测试和运维入口。
+- 输出“已完成 / 部分完成 / 待确认”的状态判断，并标注证据来源。
+
+## 分阶段
+- [in_progress] 阶段 1：梳理规范与历史任务（OpenSpec + planning files）
+- [pending] 阶段 2：核对代码实现（Prisma + API + lib + UI）
+- [pending] 阶段 3：核对验证覆盖（unit/integration/e2e + scripts）
+- [pending] 阶段 4：形成审计结论与风险说明
+
+## 审计重点
+1. 参与账户、入金、等级、晋升、托管授权是否已形成闭环。
+2. 全球合伙人席位、月度淘汰、退款与后台治理是否已落地。
+3. 规范任务清单与实际代码实现之间是否存在明显偏差。
+
+## 审计结论（阶段更新）
+- [complete] 阶段 1：梳理规范与历史任务（已确认 archived 主变更与 hardening 变更任务均全量勾选）
+- [complete] 阶段 2：核对代码实现（Prisma、API、核心 lib、后台页、规则展示均有落地）
+- [complete] 阶段 3：核对验证覆盖（参与系统相关 16 个 Vitest 文件、67 个测试当前通过）
+- [in_progress] 阶段 4：输出总结（整理成面对用户的完成度分析）
+
+## 后续修复执行（2026-03-02）
+- [complete] P1-1：`GET /api/partners/config` 收紧为管理员可读，并补集成测试
+- [complete] P1-2：新增 `participation:levels:daily` 运维脚本入口
+- [complete] P1-3：新增 `participation:promotion:daily` 运维脚本入口
+- [complete] P1-4：新增 Participation daily operations runbook，并更新 operations 索引
+- [complete] P2-1/P2-2：正式 spec `Purpose` 文案收口，并补齐 participation / affiliate / fee 责任边界说明
+- [complete] P2-3：新增用户侧 `/participation` 页面与用户菜单入口
+- [complete] P2-4：新增 `/participation` 页面 E2E 用例
+- [complete] P2-5：将 Participation 提升到主导航入口
+
+---
+
+# 任务计划：Managed Wealth 审计修复（2026-03-02）
+
+## 目标
+- 修复 managed-wealth 审计报告中发现的 17 项问题（其中 #2、#3 为设计选型，实际修复 15 项）
+
+## 分阶段
+- [x] Phase 1：代码去重 + 信息泄露修复（#6, #14, #15, #16）
+- [/] Phase 2：业务逻辑修复（#1, #4, #7, #11, #12, #13）
+- [ ] Phase 3：监控与安全（#5, #8, #9, #10）
+- [ ] Phase 4：防滥用（#17）
+
+## Phase 1 执行清单
+- [x] 提取 `resolveNumberEnv` 到 `lib/managed-wealth/env-utils.ts`
+- [x] 统一 `normalizeManagedAllocationWeights` 到 `lib/managed-wealth/allocation-weights.ts`
+- [x] 替换 `managed-subscriptions/route.ts` 中的内联定义
+- [x] 替换 `withdraw/route.ts` 中的内联定义
+- [x] 替换 `managed-products/[id]/route.ts` 中的内联定义
+- [x] 移除产品详情公开 API 中的 subscriptions（保留 allocationSnapshots，前端需要）
+
+## Phase 2 执行清单
+- [ ] 会员购买增加余额扣款验证（#1）
+- [ ] 新增管理员取消认购 API（#4）
+- [ ] 交易历史增加游标分页（#7）
+- [ ] 清仓任务增加最大重试限制（#11）
+- [ ] NAV 刷新价格异常时跳过更新（#12）
+- [ ] Worker 增加会员过期检查步骤（#13）
+
+## Phase 3 执行清单
+- [ ] 新增风险事件查询 API（#5）
+- [ ] Worker 增加更多风险事件写入 + 结构化日志（#5, #9）
+- [ ] 认购创建增加频率限制（#8）
+- [ ] Worker 增加定期全量执行映射刷新（#10）
+- [ ] 管理后台增加风险事件面板
+
+## Phase 4 执行清单
+- [ ] 试用机制增加冷却/防滥用（#17）
+
+## 错误记录
+| 时间 | 位置 | 错误 | 处理 |
+|---|---|---|---|
+| - | - | 暂无 | - |

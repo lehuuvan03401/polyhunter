@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
             requireSignature: true,
         });
         const limit = Math.min(Math.max(Number(searchParams.get('limit') || 200), 1), 1000);
+        const cursor = searchParams.get('cursor'); // ISO date string for cursor-based pagination
 
         if (!walletContext.ok) {
             return NextResponse.json(
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
         const subscriptions = await prisma.managedSubscription.findMany({
             where: {
                 walletAddress: walletContext.wallet,
+                ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
             },
             include: {
                 product: {

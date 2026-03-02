@@ -11,6 +11,7 @@ import {
 import { finalizeManagedSettlementEntry } from '@/lib/managed-wealth/managed-settlement-entrypoint';
 import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
 import { resolveManagedExecutionConfigIds } from '@/lib/managed-wealth/execution-targets';
+import { resolveNumberEnv } from '@/lib/managed-wealth/env-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,13 +46,7 @@ class ApiError extends Error {
     }
 }
 
-function resolveNumberEnv(name: string, fallback: number, min: number, max: number): number {
-    const raw = process.env[name];
-    if (!raw) return fallback;
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return fallback;
-    return Math.min(max, Math.max(min, parsed));
-}
+
 
 export async function POST(
     request: NextRequest,
