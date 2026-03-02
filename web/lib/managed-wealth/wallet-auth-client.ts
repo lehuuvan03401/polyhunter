@@ -28,6 +28,9 @@ function normalizePathWithQuery(pathWithQuery: string): string {
 // Cache session signatures per wallet to avoid repeated MetaMask popups.
 // Session signatures are path-agnostic and valid for the full auth window.
 // We refresh at 80% of the window to avoid edge-case expiry during a request.
+//
+// pendingSessionSign deduplicates concurrent callers: only the first caller
+// triggers MetaMask, all others await the same in-flight promise.
 
 type CachedSession = {
     signature: string;
@@ -35,6 +38,7 @@ type CachedSession = {
 };
 
 const sessionCache = new Map<string, CachedSession>();
+const pendingSessionSign = new Map<string, Promise<CachedSession>>();
 
 const SESSION_REFRESH_MS = MANAGED_WALLET_AUTH_WINDOW_MS * 0.8; // refresh at 80% of window (4 min)
 
@@ -72,7 +76,7 @@ export function useManagedWalletAuth() {
         const method = params.method.toUpperCase();
         const isReadOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 
-        // ── For read-only requests: use cached session signature ──
+        // ── For read-only requests: use cached or in-flight session signature ──
         if (isReadOnly) {
             const cached = getCachedSession(normalizedWallet);
             if (cached) {
@@ -81,9 +85,54 @@ export function useManagedWalletAuth() {
                 headers['x-wallet-auth-type'] = 'session';
                 return headers;
             }
+
+            // Deduplicate: if another caller is already signing, await that promise
+            const pendingKey = normalizedWallet;
+            const pending = pendingSessionSign.get(pendingKey);
+            if (pending) {
+                const session = await pending;
+                headers['x-wallet-signature'] = session.signature;
+                headers['x-wallet-timestamp'] = String(session.timestamp);
+                headers['x-wallet-auth-type'] = 'session';
+                return headers;
+            }
+
+            // First caller: create the signing promise and share it
+            const signPromise = (async (): Promise<CachedSession> => {
+                const wallet = wallets.find(
+                    (candidate) => candidate.address?.toLowerCase() === normalizedWallet
+                ) || wallets[0];
+                if (!wallet) throw new Error('Wallet not connected');
+
+                const provider = await wallet.getEthereumProvider();
+                const { ethers } = await import('ethers');
+                const web3Provider = new ethers.providers.Web3Provider(provider);
+                const signer = web3Provider.getSigner();
+                const timestamp = Date.now();
+
+                const message = buildManagedWalletSessionMessage({
+                    walletAddress: normalizedWallet,
+                    timestamp,
+                });
+                const signature = await signer.signMessage(message);
+                const session: CachedSession = { signature, timestamp };
+                setCachedSession(normalizedWallet, session);
+                return session;
+            })();
+
+            pendingSessionSign.set(pendingKey, signPromise);
+            try {
+                const session = await signPromise;
+                headers['x-wallet-signature'] = session.signature;
+                headers['x-wallet-timestamp'] = String(session.timestamp);
+                headers['x-wallet-auth-type'] = 'session';
+                return headers;
+            } finally {
+                pendingSessionSign.delete(pendingKey);
+            }
         }
 
-        // ── Resolve wallet provider ──
+        // ── For mutating requests: sign per-request with path for replay protection ──
         const wallet = wallets.find(
             (candidate) => candidate.address?.toLowerCase() === normalizedWallet
         ) || wallets[0];
@@ -97,34 +146,17 @@ export function useManagedWalletAuth() {
         const web3Provider = new ethers.providers.Web3Provider(provider);
         const signer = web3Provider.getSigner();
         const timestamp = Date.now();
+        const pathWithQuery = normalizePathWithQuery(params.pathWithQuery);
+        const message = buildManagedWalletAuthMessage({
+            walletAddress: normalizedWallet,
+            method: params.method,
+            pathWithQuery,
+            timestamp,
+        });
+        const signature = await signer.signMessage(message);
 
-        if (isReadOnly) {
-            // Sign a session (path-agnostic) message and cache it
-            const message = buildManagedWalletSessionMessage({
-                walletAddress: normalizedWallet,
-                timestamp,
-            });
-            const signature = await signer.signMessage(message);
-
-            setCachedSession(normalizedWallet, { signature, timestamp });
-
-            headers['x-wallet-signature'] = signature;
-            headers['x-wallet-timestamp'] = String(timestamp);
-            headers['x-wallet-auth-type'] = 'session';
-        } else {
-            // For mutating requests: sign per-request with path for replay protection
-            const pathWithQuery = normalizePathWithQuery(params.pathWithQuery);
-            const message = buildManagedWalletAuthMessage({
-                walletAddress: normalizedWallet,
-                method: params.method,
-                pathWithQuery,
-                timestamp,
-            });
-            const signature = await signer.signMessage(message);
-
-            headers['x-wallet-signature'] = signature;
-            headers['x-wallet-timestamp'] = String(timestamp);
-        }
+        headers['x-wallet-signature'] = signature;
+        headers['x-wallet-timestamp'] = String(timestamp);
 
         return headers;
     }, [wallets]);
