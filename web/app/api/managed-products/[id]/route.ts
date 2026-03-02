@@ -5,6 +5,15 @@ import { PARTICIPATION_SERVICE_PERIODS_DAYS } from '@/lib/participation-program/
 
 export const dynamic = 'force-dynamic';
 
+function isPrismaSchemaMissingError(error: unknown): error is { code: string } {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return false;
+    }
+
+    const code = (error as { code?: unknown }).code;
+    return code === 'P2021' || code === 'P2022';
+}
+
 function normalizeManagedAllocationWeights(
     value: Prisma.JsonValue | null | undefined
 ): Array<{ address: string; weight: number }> {
@@ -31,6 +40,33 @@ function normalizeManagedAllocationWeights(
             weight: Number.isFinite(weight) ? weight : 0,
         }];
     });
+}
+
+async function listRecentManagedAllocations(productId: string) {
+    try {
+        return await prisma.managedSubscriptionAllocation.findMany({
+            where: {
+                status: 'ACTIVE',
+                subscription: {
+                    productId,
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 3,
+            select: {
+                subscriptionId: true,
+                version: true,
+                createdAt: true,
+                selectedWeights: true,
+            },
+        });
+    } catch (error) {
+        if (isPrismaSchemaMissingError(error)) {
+            return [];
+        }
+
+        throw error;
+    }
 }
 
 export async function GET(
@@ -98,22 +134,7 @@ export async function GET(
             prisma.managedSubscription.count({
                 where: { productId: product.id, status: 'RUNNING' },
             }),
-            prisma.managedSubscriptionAllocation.findMany({
-                where: {
-                    status: 'ACTIVE',
-                    subscription: {
-                        productId: product.id,
-                    },
-                },
-                orderBy: { createdAt: 'desc' },
-                take: 3,
-                select: {
-                    subscriptionId: true,
-                    version: true,
-                    createdAt: true,
-                    selectedWeights: true,
-                },
-            }),
+            listRecentManagedAllocations(product.id),
         ]);
 
         const rawSnapshots = await prisma.managedNavSnapshot.findMany({
@@ -164,7 +185,7 @@ export async function GET(
         });
     } catch (error) {
         console.error('Failed to fetch managed product detail:', error);
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
+        if (isPrismaSchemaMissingError(error)) {
             return NextResponse.json(
                 { error: 'Managed wealth tables are not initialized' },
                 { status: 503 }
