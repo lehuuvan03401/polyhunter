@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useRouter } from 'next/navigation';
-import { Settings, HelpCircle, LogOut, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Settings, HelpCircle, LogOut, ChevronDown, ChevronUp, Loader2, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -90,6 +90,10 @@ export function UserMenu() {
                     </div>
 
                     <div className="p-1">
+                        <Link href="/participation" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                            <Shield className="w-4 h-4" />
+                            Participation
+                        </Link>
                         <Link href="/settings" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
                             <Settings className="w-4 h-4" />
                             Settings
