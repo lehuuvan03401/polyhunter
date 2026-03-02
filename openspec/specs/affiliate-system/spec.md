@@ -1,7 +1,7 @@
 # affiliate-system Specification
 
 ## Purpose
-TBD - created by archiving change fix-affiliate-system-issues. Update Purpose after archive.
+Define referral graph behavior, commission distribution, tier progression, team-volume accounting, and participation-linked incentive systems including net-deposit levels, same-level bonuses, and double-zone promotion.
 ## Requirements
 ### Requirement: Automatic Tier Upgrade
 The system SHALL automatically evaluate and upgrade a referrer's tier after commission distribution based on team size and volume thresholds.
@@ -201,4 +201,3 @@ The system SHALL track one-push-two double-zone promotion progress and expose cu
 - **GIVEN** double-zone requirement for next level is satisfied
 - **WHEN** promotion engine evaluates progress
 - **THEN** user promotion level is updated and persisted
-

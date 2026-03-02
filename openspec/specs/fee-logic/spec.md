@@ -1,7 +1,7 @@
 # fee-logic Specification
 
 ## Purpose
-TBD - created by archiving change implement-profit-based-fees. Update Purpose after archive.
+Define when profit-based participation fees may be charged and how the fixed realized-profit fee is calculated for `FREE` and `MANAGED` flows.
 ## Requirements
 ### Requirement: Affiliate Commission Trigger
 The system MUST ONLY trigger commission distribution when a copy-trade or managed-trade closes with realized profit for the participant.
@@ -34,4 +34,3 @@ The system MUST calculate profit fee at a fixed rate of 20% of realized profit f
 - **GIVEN** a participant realizes profit of $0 or negative value
 - **WHEN** fee is calculated
 - **THEN** fee amount MUST be $0
-

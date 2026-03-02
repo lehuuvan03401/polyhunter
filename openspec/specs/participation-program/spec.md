@@ -1,7 +1,8 @@
 # participation-program Specification
 
 ## Purpose
-TBD - created by archiving change add-horus-participation-partner-program. Update Purpose after archive.
+Define the core participation lifecycle: funding channels, activation gates, mode thresholds, managed package metadata, newcomer trial rules, and managed custody authorization boundaries.
+This capability owns participation onboarding and execution-mode safety constraints. Incentive progression, team rewards, and profit-fee settlement are specified under `affiliate-system` and `fee-logic`.
 ## Requirements
 ### Requirement: Dual Funding Channels
 The system SHALL support two participation funding channels: exchange funding and TP wallet funding. All recorded values MUST be normalized to MCN-equivalent and USD-equivalent amounts.
@@ -99,4 +100,3 @@ User principal MUST remain in user-controlled wallet/account unless explicit man
 - **WHEN** managed execution is enabled
 - **THEN** the system stores explicit custody authorization proof
 - **AND** all managed actions are auditable by authorization reference
-

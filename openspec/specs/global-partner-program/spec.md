@@ -1,7 +1,7 @@
 # global-partner-program Specification
 
 ## Purpose
-TBD - created by archiving change add-horus-participation-partner-program. Update Purpose after archive.
+Define the governance rules for the global partner seat program: fixed seat cap, monthly elimination, refund SLA, refill pricing, and partner privilege mapping.
 ## Requirements
 ### Requirement: Fixed Global Partner Seat Cap
 The system SHALL enforce a hard cap of 100 global partner seats and MUST NOT allocate seats beyond this cap.
@@ -53,4 +53,3 @@ An active global partner seat SHALL grant V5-equivalent benefit scope and dedica
 - **GIVEN** a partner seat changes to `ELIMINATED`
 - **WHEN** authorization is re-evaluated
 - **THEN** partner-console access and seat-derived privileges are revoked
-
