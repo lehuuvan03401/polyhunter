@@ -428,3 +428,8 @@
   - `web/app/[locale]/managed-wealth/[id]/page.tsx` 右侧订阅区新增“最低本金”与“清仓完成后才最终结算”的前置信息，避免用户在打开弹窗前看不到关键约束。
   - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json` 已补齐对应多语言文案。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：推进 `close-managed-wealth-loop` 的 `5.1`（订阅面板侧）：
+  - `GET /api/managed-subscriptions` 已补充轻量 `allocationSummary`（active version + normalized selected weights），避免前端直接消费整段 JSON relation。
+  - `web/components/managed-wealth/managed-subscription-item.tsx` 已在订阅卡片展示 allocation version、更新时间和主要分配权重预览。
+  - 当前仅完成 `/managed-wealth/my` 订阅面板，产品详情页的 allocation snapshot 展示仍待补齐，因此 `5.1` 暂不勾选完成。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

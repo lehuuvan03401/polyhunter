@@ -42,6 +42,15 @@ export interface ManagedSubscriptionItemProps {
             reserveTopup?: number;
             settledAt: string;
         } | null;
+        allocationSummary?: {
+            version: number;
+            createdAt: string;
+            selectedWeights: Array<{
+                address: string;
+                weight: number;
+                weightScore?: number | null;
+            }>;
+        } | null;
         navSnapshots: Array<{
             snapshotAt: string;
             nav: number;
@@ -88,7 +97,14 @@ export function ManagedSubscriptionItem({
         && new Date(subscription.endAt).getTime() > now
         && withdrawGuardrails
     );
+    const primaryAllocation = subscription.allocationSummary?.selectedWeights[0] ?? null;
+    const allocationPreview = subscription.allocationSummary?.selectedWeights.slice(0, 3) ?? [];
     const progress = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
+
+    const formatTraderAddress = (address: string) =>
+        address.length > 12
+            ? `${address.slice(0, 6)}...${address.slice(-4)}`
+            : address;
 
     return (
         <motion.div
@@ -135,6 +151,15 @@ export function ManagedSubscriptionItem({
                                     {t(`status.${subscription.status}`)}
                                 </span>
                                 <span>{subscription.term.label} ({subscription.term.durationDays}d)</span>
+                                {primaryAllocation && (
+                                    <span className="truncate">
+                                        {t('allocationPill', {
+                                            version: subscription.allocationSummary?.version ?? 1,
+                                            trader: formatTraderAddress(primaryAllocation.address),
+                                            weight: Math.round(primaryAllocation.weight * 100),
+                                        })}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -220,6 +245,27 @@ export function ManagedSubscriptionItem({
                                             <span className="text-zinc-500">{t('disclosure')}</span>
                                             <DisclosurePolicyPill policy={subscription.product.disclosurePolicy} delayHours={subscription.product.disclosureDelayHours} />
                                         </div>
+                                        {subscription.allocationSummary && allocationPreview.length > 0 && (
+                                            <div className="col-span-2 rounded-lg border border-blue-500/15 bg-blue-500/5 p-2 text-xs">
+                                                <div className="flex items-center justify-between text-zinc-300">
+                                                    <span>{t('allocationTitle')}</span>
+                                                    <span>{t('allocationVersion', { version: subscription.allocationSummary.version })}</span>
+                                                </div>
+                                                <div className="mt-1 text-zinc-500">
+                                                    {t('allocationUpdated')}: {format(new Date(subscription.allocationSummary.createdAt), 'MMM d, HH:mm')}
+                                                </div>
+                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                    {allocationPreview.map((row) => (
+                                                        <span
+                                                            key={`${subscription.id}-${row.address}`}
+                                                            className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-200"
+                                                        >
+                                                            {formatTraderAddress(row.address)} · {Math.round(row.weight * 100)}%
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                         {trialActive && (
                                             <div className="flex justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 p-2">
                                                 <span className="text-amber-300">{t('trialEnds')}</span>

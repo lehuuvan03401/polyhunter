@@ -100,6 +100,40 @@ function parseStatusParam(value: string | null): ManagedSubscriptionStatus | und
     return undefined;
 }
 
+function normalizeManagedAllocationWeights(
+    value: Prisma.JsonValue | null | undefined
+): Array<{ address: string; weight: number; weightScore: number | null }> {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((row) => {
+        if (typeof row !== 'object' || row === null) {
+            return [];
+        }
+
+        const candidate = row as {
+            address?: unknown;
+            weight?: unknown;
+            weightScore?: unknown;
+        };
+        if (typeof candidate.address !== 'string') {
+            return [];
+        }
+
+        const weight = Number(candidate.weight ?? 0);
+        const weightScore = candidate.weightScore == null
+            ? null
+            : Number(candidate.weightScore);
+
+        return [{
+            address: candidate.address.toLowerCase(),
+            weight: Number.isFinite(weight) ? weight : 0,
+            weightScore: weightScore !== null && Number.isFinite(weightScore) ? weightScore : null,
+        }];
+    });
+}
+
 function resolveNumberEnv(name: string, fallback: number, min: number, max: number): number {
     const raw = process.env[name];
     if (!raw) return fallback;
@@ -268,12 +302,40 @@ export async function GET(request: NextRequest) {
                         createdAt: true,
                     },
                 },
+                allocations: {
+                    where: {
+                        status: 'ACTIVE',
+                    },
+                    orderBy: { version: 'desc' },
+                    take: 1,
+                    select: {
+                        version: true,
+                        createdAt: true,
+                        selectedWeights: true,
+                    },
+                },
             },
             orderBy: { createdAt: 'desc' },
         });
 
+        const serializedSubscriptions = subscriptions.map((subscription) => {
+            const latestAllocation = subscription.allocations[0] ?? null;
+            const { allocations, ...rest } = subscription;
+
+            return {
+                ...rest,
+                allocationSummary: latestAllocation
+                    ? {
+                        version: latestAllocation.version,
+                        createdAt: latestAllocation.createdAt,
+                        selectedWeights: normalizeManagedAllocationWeights(latestAllocation.selectedWeights),
+                    }
+                    : null,
+            };
+        });
+
         return NextResponse.json({
-            subscriptions,
+            subscriptions: serializedSubscriptions,
             withdrawGuardrails: WITHDRAW_GUARDRAILS,
         });
     } catch (error) {
