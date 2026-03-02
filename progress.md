@@ -401,3 +401,9 @@
 - 2026-02-26：`web/package.json` 新增脚本 `managed-liquidation:worker`。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-liquidation/tasks.integration.test.ts app/api/managed-settlement/health.integration.test.ts`，通过（5/5）。
 - 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `1.1` 数据模型任务：
+  - `web/prisma/schema.prisma` 新增 `ManagedSubscriptionAllocationStatus` 与 `ManagedSubscriptionAllocation`，支持按订阅保存 allocation version、seed、score snapshot、selected weights。
+  - 新增迁移 `web/prisma/migrations/20260302100000_add_managed_subscription_allocation/migration.sql`。
+  - `ManagedSubscription` 已补充 `allocations` relation，为后续分配服务和前端快照查询预留结构。
+- 已执行 `cd web && npx prisma format`，通过。
+- 已执行 `cd web && npx prisma generate`，通过。

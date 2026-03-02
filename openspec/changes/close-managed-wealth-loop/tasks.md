@@ -1,5 +1,5 @@
 ## 1. Data model and migration
-- [ ] 1.1 Add subscription-scoped allocation model (`ManagedSubscriptionAllocation`) with versioning and score snapshots.
+- [x] 1.1 Add subscription-scoped allocation model (`ManagedSubscriptionAllocation`) with versioning and score snapshots.
 - [x] 1.2 Add managed principal reservation ledger for subscription-level reserved/released amounts.
 - [x] 1.3 Add execution scope isolation for positions (extend `UserPosition` with scope key or introduce dedicated managed position model).
 - [x] 1.4 Add settlement execution/idempotency record to unify settlement + commission status transitions.

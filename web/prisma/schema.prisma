@@ -264,6 +264,12 @@ enum ManagedCommissionStatus {
   FAILED
 }
 
+enum ManagedSubscriptionAllocationStatus {
+  ACTIVE
+  SUPERSEDED
+  REVOKED
+}
+
 enum ManagedPrincipalReservationEntryType {
   RESERVE
   RELEASE
@@ -555,6 +561,24 @@ model ManagedProductAgent {
   @@index([agentId])
 }
 
+model ManagedSubscriptionAllocation {
+  id              String                              @id @default(cuid())
+  subscriptionId  String
+  subscription    ManagedSubscription                 @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  version         Int
+  status          ManagedSubscriptionAllocationStatus @default(ACTIVE)
+  reason          String?
+  seed            String
+  scoreSnapshot   Json
+  selectedWeights Json
+  createdAt       DateTime                            @default(now())
+  updatedAt       DateTime                            @updatedAt
+
+  @@unique([subscriptionId, version])
+  @@index([subscriptionId, status, createdAt])
+  @@index([status, createdAt])
+}
+
 model ManagedSubscription {
   id                   String                    @id @default(cuid())
   walletAddress        String
@@ -583,6 +607,7 @@ model ManagedSubscription {
   updatedAt            DateTime                  @updatedAt
 
   navSnapshots       ManagedNavSnapshot[]
+  allocations       ManagedSubscriptionAllocation[]
   settlement         ManagedSettlement?
   settlementExecutions ManagedSettlementExecution[]
   principalReservations ManagedPrincipalReservationLedger[]
