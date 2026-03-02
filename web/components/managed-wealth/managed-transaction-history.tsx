@@ -84,7 +84,8 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
         };
 
         fetchTransactions();
-    }, [walletAddress, createWalletAuthHeaders]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [walletAddress]);
 
     if (loading) {
         return (
@@ -185,8 +186,8 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
                                 </div>
                                 <div className="col-span-1 text-right">
                                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${tx.status === 'COMPLETED'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                                         }`}>
                                         {tx.status === 'COMPLETED' ? (
                                             <CheckCircle2 className="h-2.5 w-2.5" />
@@ -231,8 +232,8 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
                                         {tProducts(`${tx.strategyProfile}.name`)}
                                     </span>
                                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${tx.status === 'COMPLETED'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                                         }`}>
                                         {t(`status.${tx.status}`)}
                                     </span>

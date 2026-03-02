@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { ethers } from 'ethers';
 import {
     buildManagedWalletAuthMessage,
+    buildManagedWalletSessionMessage,
     MANAGED_WALLET_AUTH_WINDOW_MS,
 } from '@/lib/managed-wealth/wallet-auth-message';
 
@@ -68,6 +69,7 @@ export function resolveWalletContext(
     if (shouldRequireSignature && !bypassSignature) {
         const signature = request.headers.get('x-wallet-signature');
         const timestampRaw = request.headers.get('x-wallet-timestamp');
+        const authType = request.headers.get('x-wallet-auth-type'); // 'session' or absent
 
         if (!signature || !timestampRaw) {
             return {
@@ -95,13 +97,23 @@ export function resolveWalletContext(
             };
         }
 
-        const pathWithQuery = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-        const message = buildManagedWalletAuthMessage({
-            walletAddress: resolvedWallet,
-            method: request.method,
-            pathWithQuery,
-            timestamp,
-        });
+        let message: string;
+        if (authType === 'session') {
+            // Session-style: path-agnostic wallet ownership proof (used for GET requests)
+            message = buildManagedWalletSessionMessage({
+                walletAddress: resolvedWallet,
+                timestamp,
+            });
+        } else {
+            // Request-style: path-specific signature (used for mutating requests)
+            const pathWithQuery = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+            message = buildManagedWalletAuthMessage({
+                walletAddress: resolvedWallet,
+                method: request.method,
+                pathWithQuery,
+                timestamp,
+            });
+        }
 
         try {
             const recovered = ethers.utils.verifyMessage(message, signature).toLowerCase();

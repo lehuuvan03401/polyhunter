@@ -18,3 +18,20 @@ export function buildManagedWalletAuthMessage(params: ManagedWalletAuthMessagePa
     ].join('\n');
 }
 
+type ManagedWalletSessionMessageParams = {
+    walletAddress: string;
+    timestamp: number;
+};
+
+/**
+ * Build a path-agnostic session message for wallet ownership proof.
+ * Used for GET requests to avoid repeated MetaMask signature prompts.
+ */
+export function buildManagedWalletSessionMessage(params: ManagedWalletSessionMessageParams): string {
+    return [
+        MANAGED_WALLET_AUTH_PREFIX,
+        'type:session',
+        `wallet:${params.walletAddress.toLowerCase()}`,
+        `timestamp:${params.timestamp}`,
+    ].join('\n');
+}

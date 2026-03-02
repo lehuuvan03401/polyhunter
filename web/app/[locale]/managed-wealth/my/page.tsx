@@ -92,7 +92,8 @@ export default function MyManagedWealthPage() {
         };
 
         fetchSubscriptions();
-    }, [authenticated, user?.wallet?.address, statusFilter, createWalletAuthHeaders, t]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authenticated, user?.wallet?.address, statusFilter]);
 
     useEffect(() => {
         const fetchMembership = async () => {
@@ -130,7 +131,8 @@ export default function MyManagedWealthPage() {
         };
 
         fetchMembership();
-    }, [authenticated, user?.wallet?.address, createWalletAuthHeaders, t]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authenticated, user?.wallet?.address]);
 
     const createMembership = async (planType: 'MONTHLY' | 'QUARTERLY') => {
         if (!user?.wallet?.address) {

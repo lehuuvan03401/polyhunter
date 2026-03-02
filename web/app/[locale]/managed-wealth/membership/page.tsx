@@ -67,7 +67,8 @@ export default function ManagedMembershipHistoryPage() {
         };
 
         fetchHistory();
-    }, [authenticated, user?.wallet?.address, statusFilter, createWalletAuthHeaders, t]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authenticated, user?.wallet?.address, statusFilter]);
 
     const statusClass = useMemo<Record<MembershipStatus, string>>(() => ({
         ACTIVE: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
