@@ -5,9 +5,9 @@ import { affiliateEngine } from '@/lib/services/affiliate-engine';
 import {
     applyManagedSettlementMutation,
     calculateSettlementForSubscription,
-    settleManagedProfitFeeIfNeeded,
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '@/lib/managed-wealth/managed-settlement-service';
+import { finalizeManagedSettlementEntry } from '@/lib/managed-wealth/managed-settlement-entrypoint';
 import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
 import { resolveManagedExecutionConfigIds } from '@/lib/managed-wealth/execution-targets';
 
@@ -191,21 +191,16 @@ export async function POST(request: NextRequest) {
                 reserveTopup: mutationResult.settlement.reserveTopup,
             });
 
-            try {
-                await settleManagedProfitFeeIfNeeded({
-                    db: prisma,
-                    distributor: async (walletAddress, realizedProfit, tradeId, options) =>
-                        affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
-                    walletAddress: sub.walletAddress,
-                    subscriptionId: mutationResult.subscription.id,
-                    settlementId: mutationResult.settlement.id,
-                    grossPnl: mutationResult.settlement.grossPnl,
-                    scope: 'MANAGED_WITHDRAWAL',
-                    sourcePrefix: 'managed-withdraw',
-                });
-            } catch (affiliateError) {
-                console.error('[ManagedSettlementRun] Profit fee distribution failed:', affiliateError);
-            }
+            await finalizeManagedSettlementEntry({
+                db: prisma,
+                distributor: async (walletAddress, realizedProfit, tradeId, options) =>
+                    affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
+                walletAddress: sub.walletAddress,
+                mutationResult,
+                onProfitFeeError: (affiliateError) => {
+                    console.error('[ManagedSettlementRun] Profit fee distribution failed:', affiliateError);
+                },
+            });
         }
 
         return NextResponse.json({

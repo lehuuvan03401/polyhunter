@@ -6,9 +6,9 @@ import { affiliateEngine } from '@/lib/services/affiliate-engine';
 import {
     applyManagedSettlementMutation,
     calculateSettlementForSubscription,
-    settleManagedProfitFeeIfNeeded,
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '@/lib/managed-wealth/managed-settlement-service';
+import { finalizeManagedSettlementEntry } from '@/lib/managed-wealth/managed-settlement-entrypoint';
 import { countManagedOpenPositionsWithFallback } from '@/lib/managed-wealth/subscription-position-scope';
 import { resolveManagedExecutionConfigIds } from '@/lib/managed-wealth/execution-targets';
 
@@ -257,21 +257,21 @@ export async function POST(
 
         const settledResult = result;
         // Do not fail user withdrawal if affiliate distribution path is temporarily unavailable.
-        try {
-            await settleManagedProfitFeeIfNeeded({
-                db: prisma,
-                distributor: async (walletAddress, realizedProfit, tradeId, options) =>
-                    affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
-                walletAddress: walletContext.wallet,
-                subscriptionId: settledResult.updatedSubscription.id,
-                settlementId: settledResult.settlement.id,
-                grossPnl: settledResult.settlement.grossPnl,
-                scope: 'MANAGED_WITHDRAWAL',
-                sourcePrefix: 'managed-withdraw',
-            });
-        } catch (affiliateError) {
-            console.error('[ManagedWithdraw] Profit fee distribution failed:', affiliateError);
-        }
+        await finalizeManagedSettlementEntry({
+            db: prisma,
+            distributor: async (walletAddress, realizedProfit, tradeId, options) =>
+                affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
+            walletAddress: walletContext.wallet,
+            mutationResult: {
+                status: 'COMPLETED',
+                subscription: settledResult.updatedSubscription,
+                settlement: settledResult.settlement,
+                guaranteeEligible: settledResult.guaranteeEligible,
+            },
+            onProfitFeeError: (affiliateError) => {
+                console.error('[ManagedWithdraw] Profit fee distribution failed:', affiliateError);
+            },
+        });
 
         return NextResponse.json({
             success: true,

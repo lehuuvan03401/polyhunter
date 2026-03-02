@@ -19,9 +19,9 @@ import {
 } from '../../lib/managed-wealth/settlement-math';
 import {
     applyManagedSettlementMutation,
-    settleManagedProfitFeeIfNeeded,
     transitionSubscriptionToLiquidatingIfNeeded,
 } from '../../lib/managed-wealth/managed-settlement-service';
+import { finalizeManagedSettlementEntry } from '../../lib/managed-wealth/managed-settlement-entrypoint';
 import {
     countManagedOpenPositionsWithFallback,
     listManagedOpenPositionsWithFallback,
@@ -748,21 +748,16 @@ async function settleMaturedSubscriptions(now: Date): Promise<number> {
             continue;
         }
 
-        try {
-            await settleManagedProfitFeeIfNeeded({
-                db: prisma,
-                distributor: async (walletAddress, realizedProfit, tradeId, options) =>
-                    affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
-                walletAddress: sub.walletAddress,
-                subscriptionId: mutationResult.subscription.id,
-                settlementId: mutationResult.settlement.id,
-                grossPnl: mutationResult.settlement.grossPnl,
-                scope: 'MANAGED_WITHDRAWAL',
-                sourcePrefix: 'managed-withdraw',
-            });
-        } catch (affiliateError) {
-            console.error('[ManagedWealthWorker] Profit fee distribution failed:', affiliateError);
-        }
+        await finalizeManagedSettlementEntry({
+            db: prisma,
+            distributor: async (walletAddress, realizedProfit, tradeId, options) =>
+                affiliateEngine.distributeProfitFee(walletAddress, realizedProfit, tradeId, options),
+            walletAddress: sub.walletAddress,
+            mutationResult,
+            onProfitFeeError: (affiliateError) => {
+                console.error('[ManagedWealthWorker] Profit fee distribution failed:', affiliateError);
+            },
+        });
 
         settled += 1;
     }

@@ -455,3 +455,9 @@
 - 已执行 `cd web && npx prisma generate`，通过。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts lib/managed-wealth/execution-targets.test.ts lib/managed-wealth/subscription-position-scope.test.ts app/api/managed-settlement/health.integration.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（14/14）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.2`：
+  - 新增 `web/lib/managed-wealth/managed-settlement-entrypoint.ts`，把三条入口共享的利润分润收口逻辑统一到 `finalizeManagedSettlementEntry`，固定 `scope=MANAGED_WITHDRAWAL` / `sourcePrefix=managed-withdraw`。
+  - `web/scripts/workers/managed-wealth-worker.ts`、`web/app/api/managed-settlement/run/route.ts`、`web/app/api/managed-subscriptions/[id]/withdraw/route.ts` 已全部改为复用该 helper，worker 路径不再与 API 路径分叉维护。
+  - 新增 `web/lib/managed-wealth/managed-settlement-entrypoint.test.ts`；结合现有 `entrypoint-parity.integration.test.ts`，现在既验证了 run/withdraw 两条 API 入口，也通过共享 helper 覆盖了 worker 的结算收口契约。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/managed-settlement-entrypoint.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（5/5）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
