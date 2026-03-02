@@ -443,3 +443,7 @@
   - 当前仍未覆盖 worker 脚本入口，因此 `6.2` 暂不勾选完成。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（2/2）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：推进 `close-managed-wealth-loop` 的 `6.4`（worker rollback 开关）：
+  - `web/scripts/workers/managed-wealth-worker.ts` 新增 `MANAGED_ALLOCATION_SNAPSHOT_ENABLED`。设为 `false` 时，可回退到旧的 `product.agents[0]` 主模板映射路径，跳过 allocation snapshot 读写。
+  - 当前仅覆盖 worker 映射路径；settlement service 的独立回滚开关仍未补齐，因此 `6.4` 暂不勾选完成。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

@@ -41,6 +41,7 @@ const MAP_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_MAP_BATCH_S
 const NAV_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_NAV_BATCH_SIZE || 500));
 const SETTLEMENT_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_SETTLEMENT_BATCH_SIZE || 300));
 const LIQUIDATION_RETRY_BASE_MS = Math.max(10_000, Number(process.env.MANAGED_LIQUIDATION_RETRY_BASE_MS || 120_000));
+const MANAGED_ALLOCATION_SNAPSHOT_ENABLED = process.env.MANAGED_ALLOCATION_SNAPSHOT_ENABLED !== 'false';
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -101,100 +102,106 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
 
     let mapped = 0;
     for (const sub of candidates) {
-        const templateCandidates = buildManagedTemplateCandidates({
-            strategyProfile: sub.product.strategyProfile,
-            templates: sub.product.agents.map((item) => ({
-                traderAddress: item.agent.traderAddress,
-                name: item.agent.name,
-                traderName: item.agent.traderName,
-                profileImage: item.agent.avatarUrl,
-                weight: item.weight,
-                isPrimary: item.isPrimary,
-            })),
-        });
-        if (templateCandidates.length === 0) {
-            console.warn(`[ManagedWealthWorker] No agent mapping found for product ${sub.productId}; skip ${sub.id}`);
-            continue;
-        }
+        let selectedAgent = null;
 
-        const existingAllocation = await prisma.managedSubscriptionAllocation.findFirst({
-            where: {
-                subscriptionId: sub.id,
-                status: 'ACTIVE',
-            },
-            orderBy: { version: 'desc' },
-            select: {
-                selectedWeights: true,
-            },
-        });
-
-        let selectedTraderAddress = extractSelectedTraderAddress(existingAllocation?.selectedWeights);
-        let selectedAgent = selectedTraderAddress
-            ? (sub.product.agents.find(
-                (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
-            )?.agent ?? null)
-            : null;
-
-        if (!selectedAgent) {
-            const versionAgg = await prisma.managedSubscriptionAllocation.aggregate({
-                where: { subscriptionId: sub.id },
-                _max: { version: true },
-            });
-            const nextVersion = Number(versionAgg._max.version ?? 0) + 1;
-            const seed = buildManagedAllocationSeed({
-                subscriptionId: sub.id,
-                version: nextVersion,
-                walletAddress: sub.walletAddress,
+        if (MANAGED_ALLOCATION_SNAPSHOT_ENABLED) {
+            const templateCandidates = buildManagedTemplateCandidates({
                 strategyProfile: sub.product.strategyProfile,
+                templates: sub.product.agents.map((item) => ({
+                    traderAddress: item.agent.traderAddress,
+                    name: item.agent.name,
+                    traderName: item.agent.traderName,
+                    profileImage: item.agent.avatarUrl,
+                    weight: item.weight,
+                    isPrimary: item.isPrimary,
+                })),
             });
-            const snapshot = buildManagedAllocationSnapshot({
-                strategyProfile: sub.product.strategyProfile,
-                version: nextVersion,
-                seed,
-                targetCount: 1,
-                reason: existingAllocation
-                    ? 'REFRESH_PRODUCT_TEMPLATE_ALLOCATION'
-                    : 'INITIAL_PRODUCT_TEMPLATE_ALLOCATION',
-                generatedAt: now.toISOString(),
-                candidates: templateCandidates,
-            });
-            const nextSelectedTrader = snapshot.targets[0]?.address ?? null;
-            if (!nextSelectedTrader) {
-                console.warn(`[ManagedWealthWorker] Allocation snapshot produced no targets; skip ${sub.id}`);
+            if (templateCandidates.length === 0) {
+                console.warn(`[ManagedWealthWorker] No agent mapping found for product ${sub.productId}; skip ${sub.id}`);
                 continue;
             }
 
-            await prisma.$transaction(async (tx) => {
-                await tx.managedSubscriptionAllocation.updateMany({
-                    where: {
-                        subscriptionId: sub.id,
-                        status: 'ACTIVE',
-                    },
-                    data: {
-                        status: 'SUPERSEDED',
-                    },
-                });
-                await tx.managedSubscriptionAllocation.create({
-                    data: {
-                        subscriptionId: sub.id,
-                        version: snapshot.version,
-                        status: 'ACTIVE',
-                        reason: snapshot.reason,
-                        seed: snapshot.seed,
-                        scoreSnapshot: snapshot.scoreSnapshot as Prisma.InputJsonValue,
-                        selectedWeights: snapshot.selectedWeights as Prisma.InputJsonValue,
-                    },
-                });
+            const existingAllocation = await prisma.managedSubscriptionAllocation.findFirst({
+                where: {
+                    subscriptionId: sub.id,
+                    status: 'ACTIVE',
+                },
+                orderBy: { version: 'desc' },
+                select: {
+                    selectedWeights: true,
+                },
             });
 
-            selectedTraderAddress = nextSelectedTrader;
-            selectedAgent = sub.product.agents.find(
-                (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
-            )?.agent ?? null;
+            let selectedTraderAddress = extractSelectedTraderAddress(existingAllocation?.selectedWeights);
+            selectedAgent = selectedTraderAddress
+                ? (sub.product.agents.find(
+                    (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
+                )?.agent ?? null)
+                : null;
+
+            if (!selectedAgent) {
+                const versionAgg = await prisma.managedSubscriptionAllocation.aggregate({
+                    where: { subscriptionId: sub.id },
+                    _max: { version: true },
+                });
+                const nextVersion = Number(versionAgg._max.version ?? 0) + 1;
+                const seed = buildManagedAllocationSeed({
+                    subscriptionId: sub.id,
+                    version: nextVersion,
+                    walletAddress: sub.walletAddress,
+                    strategyProfile: sub.product.strategyProfile,
+                });
+                const snapshot = buildManagedAllocationSnapshot({
+                    strategyProfile: sub.product.strategyProfile,
+                    version: nextVersion,
+                    seed,
+                    targetCount: 1,
+                    reason: existingAllocation
+                        ? 'REFRESH_PRODUCT_TEMPLATE_ALLOCATION'
+                        : 'INITIAL_PRODUCT_TEMPLATE_ALLOCATION',
+                    generatedAt: now.toISOString(),
+                    candidates: templateCandidates,
+                });
+                const nextSelectedTrader = snapshot.targets[0]?.address ?? null;
+                if (!nextSelectedTrader) {
+                    console.warn(`[ManagedWealthWorker] Allocation snapshot produced no targets; skip ${sub.id}`);
+                    continue;
+                }
+
+                await prisma.$transaction(async (tx) => {
+                    await tx.managedSubscriptionAllocation.updateMany({
+                        where: {
+                            subscriptionId: sub.id,
+                            status: 'ACTIVE',
+                        },
+                        data: {
+                            status: 'SUPERSEDED',
+                        },
+                    });
+                    await tx.managedSubscriptionAllocation.create({
+                        data: {
+                            subscriptionId: sub.id,
+                            version: snapshot.version,
+                            status: 'ACTIVE',
+                            reason: snapshot.reason,
+                            seed: snapshot.seed,
+                            scoreSnapshot: snapshot.scoreSnapshot as Prisma.InputJsonValue,
+                            selectedWeights: snapshot.selectedWeights as Prisma.InputJsonValue,
+                        },
+                    });
+                });
+
+                selectedTraderAddress = nextSelectedTrader;
+                selectedAgent = sub.product.agents.find(
+                    (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
+                )?.agent ?? null;
+            }
+        } else {
+            selectedAgent = sub.product.agents[0]?.agent ?? null;
         }
 
         if (!selectedAgent) {
-            console.warn(`[ManagedWealthWorker] Active allocation does not map to a product agent; skip ${sub.id}`);
+            console.warn(`[ManagedWealthWorker] No execution agent could be resolved for subscription ${sub.id}; skip`);
             continue;
         }
 
