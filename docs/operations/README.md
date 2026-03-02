@@ -8,6 +8,7 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/runbook.md`
 2. Production deployment guide:
    - `docs/operations/production_deployment.md`
+   - `docs/operations/managed-wealth-rollout-checklist.md`
 3. Supervisor scaling deployment:
    - `docs/operations/deploy-supervisor-capacity-controls.md`
    - `docs/operations/sop-supervisor-capacity-controls.md`
