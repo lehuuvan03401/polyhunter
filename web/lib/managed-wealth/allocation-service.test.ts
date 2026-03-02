@@ -5,6 +5,7 @@ import {
     buildManagedAllocationCandidates,
     buildManagedAllocationSeed,
     buildManagedAllocationSnapshot,
+    buildManagedTemplateCandidates,
 } from './allocation-service';
 
 function createLeaderboardTrader(
@@ -105,6 +106,29 @@ describe('managed allocation service', () => {
         });
 
         expect(seed).toBe('sub-1:0xabc:MODERATE:3');
+    });
+
+    it('converts product templates into sorted allocation candidates', () => {
+        const candidates = buildManagedTemplateCandidates({
+            strategyProfile: 'MODERATE',
+            templates: [
+                {
+                    traderAddress: '0x111',
+                    name: 'Secondary',
+                    weight: 0.9,
+                    isPrimary: false,
+                },
+                {
+                    traderAddress: '0x222',
+                    name: 'Primary',
+                    weight: 0.9,
+                    isPrimary: true,
+                },
+            ],
+        });
+
+        expect(candidates.map((candidate) => candidate.address)).toEqual(['0x222', '0x111']);
+        expect(candidates[0].scoreSnapshot.sourceSnapshots[0].source).toBe('PRODUCT_TEMPLATE');
     });
 
     it('produces stable weighted selections for the same seed', () => {

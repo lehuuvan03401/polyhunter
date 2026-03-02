@@ -3,7 +3,7 @@ import type { CachedTrader } from '../services/leaderboard-cache-service';
 import type { DiscoveredSmartMoneyTrader } from '../services/smart-money-discovery-service';
 
 type TraderDataQuality = 'full' | 'limited' | 'insufficient';
-type AllocationSource = 'LEADERBOARD' | 'SMART_MONEY';
+type AllocationSource = 'LEADERBOARD' | 'SMART_MONEY' | 'PRODUCT_TEMPLATE';
 
 type StrategyRules = {
     minScore: number;
@@ -228,6 +228,58 @@ export function buildManagedAllocationSeed(input: {
         input.strategyProfile,
         String(input.version),
     ].join(':');
+}
+
+export function buildManagedTemplateCandidates(input: {
+    strategyProfile: StrategyProfile;
+    templates: Array<{
+        traderAddress: string;
+        name?: string | null;
+        traderName?: string | null;
+        profileImage?: string | null;
+        weight?: number | null;
+        isPrimary?: boolean;
+    }>;
+}): ManagedAllocationCandidate[] {
+    return input.templates
+        .map<ManagedAllocationCandidate | null>((template) => {
+            const normalizedWeight = Math.max(0, Number(template.weight ?? 0));
+            if (normalizedWeight <= 0) return null;
+
+            const sourceScore = normalizedWeight * 100 * (template.isPrimary ? 1.1 : 1);
+            const compositeScore = Number(sourceScore.toFixed(8));
+
+            return {
+                address: template.traderAddress.toLowerCase(),
+                name: template.traderName ?? template.name ?? null,
+                profileImage: template.profileImage ?? undefined,
+                compositeScore,
+                weightScore: Math.max(compositeScore, 0.0001),
+                scoreSnapshot: {
+                    strategyProfile: input.strategyProfile,
+                    baseScore: compositeScore,
+                    drawdownRatio: 0,
+                    copyFriendliness: 100,
+                    dataQualityWeight: 1,
+                    activityWeight: 1,
+                    sourceBonus: template.isPrimary ? 1.1 : 1,
+                    sourceCount: 1,
+                    sourceSnapshots: [
+                        {
+                            source: 'PRODUCT_TEMPLATE',
+                            sourceScore: compositeScore,
+                            copyFriendliness: 100,
+                            drawdownRatio: 0,
+                            recentTrades: 1,
+                            activePositions: 1,
+                            dataQuality: 'limited',
+                        },
+                    ],
+                },
+            };
+        })
+        .filter((candidate): candidate is ManagedAllocationCandidate => candidate !== null)
+        .sort((left, right) => right.compositeScore - left.compositeScore);
 }
 
 export function buildManagedAllocationCandidates(input: {

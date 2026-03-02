@@ -3,8 +3,14 @@ import 'dotenv/config';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
+    Prisma,
     PrismaClient
 } from '@prisma/client';
+import {
+    buildManagedAllocationSeed,
+    buildManagedAllocationSnapshot,
+    buildManagedTemplateCandidates,
+} from '../../lib/managed-wealth/allocation-service';
 import {
     calculateCoverageRatio,
     calculateGuaranteeLiability,
@@ -49,6 +55,25 @@ async function getReserveBalance(tx: Omit<PrismaClient, '$connect' | '$disconnec
     return calculateReserveBalance(rows);
 }
 
+function extractSelectedTraderAddress(selectedWeights: unknown): string | null {
+    if (!Array.isArray(selectedWeights) || selectedWeights.length === 0) {
+        return null;
+    }
+
+    for (const row of selectedWeights) {
+        if (
+            typeof row === 'object' &&
+            row !== null &&
+            'address' in row &&
+            typeof (row as { address?: unknown }).address === 'string'
+        ) {
+            return ((row as { address: string }).address).toLowerCase();
+        }
+    }
+
+    return null;
+}
+
 async function ensureExecutionMappings(now: Date): Promise<number> {
     const candidates = await prisma.managedSubscription.findMany({
         where: {
@@ -76,17 +101,108 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
 
     let mapped = 0;
     for (const sub of candidates) {
-        const primaryAgent = sub.product.agents[0]?.agent;
-        if (!primaryAgent) {
+        const templateCandidates = buildManagedTemplateCandidates({
+            strategyProfile: sub.product.strategyProfile,
+            templates: sub.product.agents.map((item) => ({
+                traderAddress: item.agent.traderAddress,
+                name: item.agent.name,
+                traderName: item.agent.traderName,
+                profileImage: item.agent.avatarUrl,
+                weight: item.weight,
+                isPrimary: item.isPrimary,
+            })),
+        });
+        if (templateCandidates.length === 0) {
             console.warn(`[ManagedWealthWorker] No agent mapping found for product ${sub.productId}; skip ${sub.id}`);
+            continue;
+        }
+
+        const existingAllocation = await prisma.managedSubscriptionAllocation.findFirst({
+            where: {
+                subscriptionId: sub.id,
+                status: 'ACTIVE',
+            },
+            orderBy: { version: 'desc' },
+            select: {
+                selectedWeights: true,
+            },
+        });
+
+        let selectedTraderAddress = extractSelectedTraderAddress(existingAllocation?.selectedWeights);
+        let selectedAgent = selectedTraderAddress
+            ? (sub.product.agents.find(
+                (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
+            )?.agent ?? null)
+            : null;
+
+        if (!selectedAgent) {
+            const versionAgg = await prisma.managedSubscriptionAllocation.aggregate({
+                where: { subscriptionId: sub.id },
+                _max: { version: true },
+            });
+            const nextVersion = Number(versionAgg._max.version ?? 0) + 1;
+            const seed = buildManagedAllocationSeed({
+                subscriptionId: sub.id,
+                version: nextVersion,
+                walletAddress: sub.walletAddress,
+                strategyProfile: sub.product.strategyProfile,
+            });
+            const snapshot = buildManagedAllocationSnapshot({
+                strategyProfile: sub.product.strategyProfile,
+                version: nextVersion,
+                seed,
+                targetCount: 1,
+                reason: existingAllocation
+                    ? 'REFRESH_PRODUCT_TEMPLATE_ALLOCATION'
+                    : 'INITIAL_PRODUCT_TEMPLATE_ALLOCATION',
+                generatedAt: now.toISOString(),
+                candidates: templateCandidates,
+            });
+            const nextSelectedTrader = snapshot.targets[0]?.address ?? null;
+            if (!nextSelectedTrader) {
+                console.warn(`[ManagedWealthWorker] Allocation snapshot produced no targets; skip ${sub.id}`);
+                continue;
+            }
+
+            await prisma.$transaction(async (tx) => {
+                await tx.managedSubscriptionAllocation.updateMany({
+                    where: {
+                        subscriptionId: sub.id,
+                        status: 'ACTIVE',
+                    },
+                    data: {
+                        status: 'SUPERSEDED',
+                    },
+                });
+                await tx.managedSubscriptionAllocation.create({
+                    data: {
+                        subscriptionId: sub.id,
+                        version: snapshot.version,
+                        status: 'ACTIVE',
+                        reason: snapshot.reason,
+                        seed: snapshot.seed,
+                        scoreSnapshot: snapshot.scoreSnapshot as Prisma.InputJsonValue,
+                        selectedWeights: snapshot.selectedWeights as Prisma.InputJsonValue,
+                    },
+                });
+            });
+
+            selectedTraderAddress = nextSelectedTrader;
+            selectedAgent = sub.product.agents.find(
+                (item) => item.agent.traderAddress.toLowerCase() === selectedTraderAddress
+            )?.agent ?? null;
+        }
+
+        if (!selectedAgent) {
+            console.warn(`[ManagedWealthWorker] Active allocation does not map to a product agent; skip ${sub.id}`);
             continue;
         }
 
         const existingConfig = await prisma.copyTradingConfig.findFirst({
             where: {
                 walletAddress: sub.walletAddress,
-                traderAddress: primaryAgent.traderAddress.toLowerCase(),
-                agentId: primaryAgent.id,
+                traderAddress: selectedAgent.traderAddress.toLowerCase(),
+                agentId: selectedAgent.id,
                 isActive: true,
             },
             select: { id: true },
@@ -96,20 +212,20 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
             await prisma.copyTradingConfig.create({
                 data: {
                     walletAddress: sub.walletAddress,
-                    traderAddress: primaryAgent.traderAddress.toLowerCase(),
-                    traderName: primaryAgent.traderName ?? primaryAgent.name,
+                    traderAddress: selectedAgent.traderAddress.toLowerCase(),
+                    traderName: selectedAgent.traderName ?? selectedAgent.name,
                     strategyProfile: sub.product.strategyProfile,
                     mode: 'FIXED_AMOUNT', // Force FIXED_AMOUNT for deterministic risk based on principal
-                    sizeScale: primaryAgent.sizeScale,
+                    sizeScale: selectedAgent.sizeScale,
                     fixedAmount: Math.max(1, Number((sub.principal * 0.1).toFixed(2))), // 10% per trade
                     maxSizePerTrade: Math.max(1, Number((sub.principal * 0.2).toFixed(2))), // 20% cap
-                    minSizePerTrade: primaryAgent.minSizePerTrade,
-                    stopLoss: primaryAgent.stopLoss,
-                    takeProfit: primaryAgent.takeProfit,
-                    maxOdds: primaryAgent.maxOdds,
-                    minLiquidity: primaryAgent.minLiquidity,
-                    minVolume: primaryAgent.minVolume,
-                    sellMode: primaryAgent.sellMode,
+                    minSizePerTrade: selectedAgent.minSizePerTrade,
+                    stopLoss: selectedAgent.stopLoss,
+                    takeProfit: selectedAgent.takeProfit,
+                    maxOdds: selectedAgent.maxOdds,
+                    minLiquidity: selectedAgent.minLiquidity,
+                    minVolume: selectedAgent.minVolume,
+                    sellMode: selectedAgent.sellMode,
                     autoExecute: true,
                     channel: 'EVENT_LISTENER',
                     executionMode: 'PROXY',
@@ -117,7 +233,7 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                     slippageType: 'AUTO',
                     maxSlippage: 2,
                     isActive: true,
-                    agentId: primaryAgent.id,
+                    agentId: selectedAgent.id,
                 },
                 select: { id: true },
             })

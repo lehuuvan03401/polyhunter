@@ -412,3 +412,9 @@
   - 新增单测 `web/lib/managed-wealth/allocation-service.test.ts`，覆盖候选筛选、seed 稳定性、相同 seed 下的选择稳定性。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts`，通过（3/3）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `2.4` worker 接线：
+  - `web/scripts/workers/managed-wealth-worker.ts` 现在会优先读取 active `ManagedSubscriptionAllocation`；若不存在或失效，则基于 `ManagedProductAgent` 权重生成并落库新的 allocation snapshot，再按 snapshot 选中的 trader 建立 `copyConfigId`。
+  - `allocation-service` 新增 `buildManagedTemplateCandidates`，让产品模板权重也走统一的 snapshot / selection 结构。
+  - 当前仍维持 `targetCount=1` 以适配单 `copyConfigId` 执行模型，因此 `2.3`（多 trader 执行）仍待实现。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts`，通过（4/4）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。
