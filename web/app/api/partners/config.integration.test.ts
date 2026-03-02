@@ -7,6 +7,10 @@ type PartnerConfigRow = {
     refillPriceUsd: number;
 };
 
+function createGetRequest(url: string) {
+    return new NextRequest(url);
+}
+
 function createJsonRequest(url: string, body: unknown) {
     return new NextRequest(url, {
         method: 'POST',
@@ -119,10 +123,23 @@ describe('Partner config route integration', () => {
             },
         });
 
-        const res = await get();
+        const res = await get(createGetRequest('http://localhost/api/partners/config'));
         const body = await res.json();
 
         expect(res.status).toBe(200);
         expect(body.config.maxSeats).toBe(100);
+    });
+
+    it('rejects unauthorized GET requests', async () => {
+        const { get, ensureMock } = await setupConfigRoute({
+            isAdmin: false,
+        });
+
+        const res = await get(createGetRequest('http://localhost/api/partners/config'));
+        const body = await res.json();
+
+        expect(res.status).toBe(401);
+        expect(body.error).toBe('Unauthorized');
+        expect(ensureMock).not.toHaveBeenCalled();
     });
 });

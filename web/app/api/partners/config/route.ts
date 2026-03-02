@@ -15,8 +15,12 @@ const updateConfigSchema = z.object({
     refillPriceUsd: z.number().nonnegative().max(1_000_000).optional(),
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
+        if (!isAdminRequest(request)) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         if (!isDatabaseEnabled) {
             return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
         }

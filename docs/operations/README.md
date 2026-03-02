@@ -21,6 +21,11 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - automation scripts:
      - `web/scripts/services/partner-monthly-elimination.ts`
      - `web/scripts/verify/partner-refund-sla.ts`
+7. Participation daily snapshot operations:
+   - `docs/operations/runbook-participation-program.md`
+   - automation scripts:
+     - `web/scripts/services/participation-levels-daily-snapshot.ts`
+     - `web/scripts/services/participation-promotion-daily-snapshot.ts`
 
 ## Copy-Trading Verification
 
