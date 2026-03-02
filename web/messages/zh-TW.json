@@ -132,6 +132,7 @@
             "balance": "餘額: -- USDC",
             "bandRangeHint": "目前檔位 {band} 可投區間：{min} - {max} USDC",
             "bandRangeInvalid": "輸入金額不在檔位 {band} 區間（{min} - {max} USDC）",
+            "minimumPrincipalHint": "本次訂閱最低本金：{amount} USDC",
             "projectedPerformance": "預期表現",
             "historicalData": "基於歷史數據",
             "targetReturn": "目標回報",
@@ -140,6 +141,8 @@
             "matrixFallback": "目前使用產品期限預設區間",
             "maxDrawdown": "最大回撤",
             "guaranteedFloor": "最低保障",
+            "executionPolicyTitle": "執行規則",
+            "executionPolicyDetail": "只有在所有未平倉位完成清倉後，系統才會確認最終結算。當前展示的收益區間在清倉完成前僅作預估參考。",
             "riskAck": "我確認我了解與<highlight>{strategy}</highlight>策略相關的特定風險，包括潛在的回撤。",
             "termsAck": "我接受服務條款、披露政策，並同意智能合約執行。",
             "importantNotice": "重要提示",
@@ -150,6 +153,7 @@
             "errors": {
                 "selectTerm": "請選擇期限。",
                 "invalidAmount": "請輸入有效的投資金額。",
+                "belowMinimum": "本次訂閱本金至少需要 {amount} USDC。",
                 "outOfBandRange": "金額需在檔位 {band} 區間內（{min} - {max} USDC）。",
                 "success": "訂閱成功創建。",
                 "failed": "訂閱失敗。",
@@ -287,6 +291,8 @@
                 "maxDrawdown": "最大回撤: {value}%",
                 "guaranteed": "保本",
                 "action": "立即訂閱",
+                "minimumPrincipalLabel": "最低本金",
+                "executionTiming": "只有在所有未平倉位清倉完成後，系統才會確認最終結算。",
                 "disclaimer": "資金由非託管智能合約持有"
             },
             "errors": {

@@ -9,7 +9,7 @@ import { MANAGED_STRATEGY_THEMES } from '@/lib/managed-wealth/strategy-theme';
 
 type ManagedBand = 'A' | 'B' | 'C';
 
-const MANAGED_BAND_LIMITS: Record<ManagedBand, { min: number; max: number }> = {
+export const MANAGED_BAND_LIMITS: Record<ManagedBand, { min: number; max: number }> = {
     A: { min: 500, max: 5000 },
     B: { min: 5001, max: 50000 },
     C: { min: 50001, max: 300000 },
@@ -190,6 +190,11 @@ export function SubscriptionModal({
     );
     const parsedPrincipal = Number(principal);
     const principalBandLimit = presetPrincipalBand ? MANAGED_BAND_LIMITS[presetPrincipalBand] : null;
+    const minimumPrincipal = principalBandLimit?.min ?? MANAGED_BAND_LIMITS.A.min;
+    const isBelowMinimum = Boolean(
+        Number.isFinite(parsedPrincipal) &&
+        parsedPrincipal < minimumPrincipal
+    );
     const isOutOfBandRange = Boolean(
         principalBandLimit
         && Number.isFinite(parsedPrincipal)
@@ -202,6 +207,7 @@ export function SubscriptionModal({
         && termsConfirmed
         && Number.isFinite(parsedPrincipal)
         && parsedPrincipal > 0
+        && !isBelowMinimum
         && !isOutOfBandRange
         && !isSubmitting
     );
@@ -225,6 +231,14 @@ export function SubscriptionModal({
         const amount = Number(principal);
         if (!Number.isFinite(amount) || amount <= 0) {
             toast.error(t('SubscriptionModal.errors.invalidAmount'));
+            return;
+        }
+        if (amount < minimumPrincipal) {
+            toast.error(
+                t('SubscriptionModal.errors.belowMinimum', {
+                    amount: minimumPrincipal.toLocaleString(),
+                })
+            );
             return;
         }
         if (principalBandLimit && (amount < principalBandLimit.min || amount > principalBandLimit.max)) {
@@ -365,6 +379,11 @@ export function SubscriptionModal({
                                         })}
                                 </p>
                             )}
+                            <p className={`mt-1 text-xs ${isBelowMinimum ? 'text-amber-400' : 'text-zinc-500'}`}>
+                                {t('SubscriptionModal.minimumPrincipalHint', {
+                                    amount: minimumPrincipal.toLocaleString(),
+                                })}
+                            </p>
                         </label>
                     </div>
 
@@ -417,6 +436,15 @@ export function SubscriptionModal({
                             </div>
                         </div>
                     )}
+
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                            {t('SubscriptionModal.executionPolicyTitle')}
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-zinc-300">
+                            {t('SubscriptionModal.executionPolicyDetail')}
+                        </p>
+                    </div>
 
                     {/* Legal Section */}
                     <div className="space-y-4 pt-2 border-t border-white/5">

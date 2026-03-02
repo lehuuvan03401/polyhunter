@@ -132,6 +132,7 @@
             "balance": "余额: -- USDC",
             "bandRangeHint": "当前档位 {band} 可投区间：{min} - {max} USDC",
             "bandRangeInvalid": "输入金额不在档位 {band} 区间（{min} - {max} USDC）",
+            "minimumPrincipalHint": "本次订阅最低本金：{amount} USDC",
             "projectedPerformance": "预期表现",
             "historicalData": "基于历史数据",
             "targetReturn": "目标回报",
@@ -140,6 +141,8 @@
             "matrixFallback": "当前使用产品期限默认区间",
             "maxDrawdown": "最大回撤",
             "guaranteedFloor": "最低保障",
+            "executionPolicyTitle": "执行规则",
+            "executionPolicyDetail": "只有在所有未平仓位完成清仓后，系统才会确认最终结算。当前展示的收益区间在清仓完成前仅作预估参考。",
             "riskAck": "我确认我了解与<highlight>{strategy}</highlight>策略相关的特定风险，包括潜在的回撤。",
             "termsAck": "我接受服务条款、披露政策，并同意智能合约执行。",
             "importantNotice": "重要提示",
@@ -150,6 +153,7 @@
             "errors": {
                 "selectTerm": "请选择期限。",
                 "invalidAmount": "请输入有效的投资金额。",
+                "belowMinimum": "本次订阅本金至少需要 {amount} USDC。",
                 "outOfBandRange": "金额需在档位 {band} 区间内（{min} - {max} USDC）。",
                 "success": "订阅成功创建。",
                 "failed": "订阅失败。",
@@ -287,6 +291,8 @@
                 "maxDrawdown": "最大回撤: {value}%",
                 "guaranteed": "保本",
                 "action": "立即订阅",
+                "minimumPrincipalLabel": "最低本金",
+                "executionTiming": "只有在所有未平仓位清仓完成后，系统才会确认最终结算。",
                 "disclaimer": "资金由非托管智能合约持有"
             },
             "errors": {

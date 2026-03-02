@@ -423,3 +423,8 @@
   - 与现有 `allocation-service.test.ts`、`managed-settlement-service.test.ts` 组合后，allocation determinism / scope-isolated accounting / settlement idempotency 三类单测均已覆盖。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts lib/managed-wealth/subscription-position-scope.test.ts lib/managed-wealth/managed-settlement-service.test.ts`，通过（12/12）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `5.2`：
+  - `web/components/managed-wealth/subscription-modal.tsx` 现已显式展示最低申购额，并在输入低于最低本金时前端禁用确认、给出明确错误提示。
+  - `web/app/[locale]/managed-wealth/[id]/page.tsx` 右侧订阅区新增“最低本金”与“清仓完成后才最终结算”的前置信息，避免用户在打开弹窗前看不到关键约束。
+  - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json` 已补齐对应多语言文案。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

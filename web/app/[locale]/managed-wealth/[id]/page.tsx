@@ -7,7 +7,12 @@ import { usePrivyLogin } from '@/lib/privy-login';
 import { ArrowLeft, Loader2, ShieldCheck, User2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
-import { ManagedProduct, ManagedTerm, SubscriptionModal } from '@/components/managed-wealth/subscription-modal';
+import {
+    MANAGED_BAND_LIMITS,
+    ManagedProduct,
+    ManagedTerm,
+    SubscriptionModal,
+} from '@/components/managed-wealth/subscription-modal';
 import { ManagedNavChart } from '@/components/managed-wealth/managed-nav-chart';
 import { motion } from 'framer-motion';
 import { useTranslations } from 'next-intl';
@@ -141,6 +146,7 @@ export default function ManagedWealthDetailPage() {
     const selectedTermProjection = selectedTerm ? termProjectionMap.get(selectedTerm.id) : undefined;
     const selectedTermDisplayRange = selectedTermProjection?.displayRange
         ?? (selectedTerm ? `${selectedTerm.targetReturnMin}% - ${selectedTerm.targetReturnMax}%` : null);
+    const selectedBandRange = MANAGED_BAND_LIMITS[selectedBand];
     useEffect(() => {
         const bandFromQuery = (searchParams.get('band') || '').toUpperCase();
         if (bandFromQuery === 'A' || bandFromQuery === 'B' || bandFromQuery === 'C') {
@@ -385,9 +391,21 @@ export default function ManagedWealthDetailPage() {
                                 >
                                     {t('subscribe.action')}
                                 </button>
-                                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-500">
-                                    <Info className="h-3.5 w-3.5" />
-                                    <span>{t('subscribe.disclaimer')}</span>
+                                <div className="mt-4 space-y-2 text-xs text-zinc-500">
+                                    <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+                                        <span>{t('subscribe.minimumPrincipalLabel')}</span>
+                                        <span className="font-medium text-zinc-300">
+                                            {selectedBandRange.min.toLocaleString()} USDC
+                                        </span>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <span>{t('subscribe.executionTiming')}</span>
+                                    </div>
+                                    <div className="flex items-start gap-2">
+                                        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <span>{t('subscribe.disclaimer')}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

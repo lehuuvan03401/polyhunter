@@ -23,7 +23,7 @@
 
 ## 5. Frontend and operator visibility
 - [ ] 5.1 Surface allocation snapshot summary in managed product detail/subscription surfaces.
-- [ ] 5.2 Show explicit principal band/minimum constraints in subscription flow.
+- [x] 5.2 Show explicit principal band/minimum constraints in subscription flow.
 - [x] 5.3 Add operations panel/endpoint for loop health: allocation status, liquidation backlog, settlement/commission parity.
 
 ## 6. Validation and rollout

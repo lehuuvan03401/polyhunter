@@ -132,6 +132,7 @@
             "balance": "Bal: -- USDC",
             "bandRangeHint": "Current band {band} investment range: {min} - {max} USDC",
             "bandRangeInvalid": "Entered amount is outside band {band} range ({min} - {max} USDC)",
+            "minimumPrincipalHint": "Minimum principal for this subscription: {amount} USDC",
             "projectedPerformance": "Projected Performance",
             "historicalData": "Based on historical data",
             "targetReturn": "Target Return",
@@ -140,6 +141,8 @@
             "matrixFallback": "Fallback to product term range",
             "maxDrawdown": "Max Drawdown",
             "guaranteedFloor": "Guaranteed Floor",
+            "executionPolicyTitle": "Execution Policy",
+            "executionPolicyDetail": "Open positions must be fully liquidated before final payout is settled. Estimated ranges are indicative until the liquidation leg completes.",
             "riskAck": "I verify that I understand the specific risks associated with <highlight>{strategy}</highlight> strategies, including potential drawdown.",
             "termsAck": "I accept the Terms of Service, Disclosure Policy, and agree to the smart contract execution.",
             "importantNotice": "Important Notice",
@@ -150,6 +153,7 @@
             "errors": {
                 "selectTerm": "Please select a term.",
                 "invalidAmount": "Please enter a valid principal amount.",
+                "belowMinimum": "Principal must be at least {amount} USDC for this subscription.",
                 "outOfBandRange": "Amount must stay within band {band} range ({min} - {max} USDC).",
                 "success": "Subscription created successfully.",
                 "failed": "Subscription failed.",
@@ -287,6 +291,8 @@
                 "maxDrawdown": "Max DD: {value}%",
                 "guaranteed": "Guaranteed",
                 "action": "Subscribe Now",
+                "minimumPrincipalLabel": "Minimum Principal",
+                "executionTiming": "Final payout settles only after all open positions are fully liquidated.",
                 "disclaimer": "Funds are held in non-custodial smart contracts"
             },
             "errors": {
