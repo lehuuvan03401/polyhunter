@@ -13,6 +13,10 @@ type ExecutionTargetDb = {
     };
 };
 
+function isManagedExecutionTargetScopeEnabled(): boolean {
+    return process.env.MANAGED_EXECUTION_TARGET_SCOPE_ENABLED !== 'false';
+}
+
 export function normalizeManagedExecutionConfigIds(input: {
     targets?: Array<Pick<ManagedExecutionTargetSelection, 'copyConfigId' | 'isActive'>> | null;
     fallbackCopyConfigId?: string | null;
@@ -80,6 +84,12 @@ export async function resolveManagedExecutionConfigIds(
         fallbackCopyConfigId?: string | null;
     }
 ): Promise<string[]> {
+    if (!isManagedExecutionTargetScopeEnabled()) {
+        return normalizeManagedExecutionConfigIds({
+            fallbackCopyConfigId: input.fallbackCopyConfigId,
+        });
+    }
+
     const targets = await listActiveManagedExecutionTargets(db, input.subscriptionId);
     return normalizeManagedExecutionConfigIds({
         targets,
@@ -94,6 +104,10 @@ export async function resolvePrimaryManagedExecutionTarget(
         fallbackCopyConfigId?: string | null;
     }
 ): Promise<string | null> {
+    if (!isManagedExecutionTargetScopeEnabled()) {
+        return input.fallbackCopyConfigId ?? null;
+    }
+
     const targets = await listActiveManagedExecutionTargets(db, input.subscriptionId);
     return resolvePrimaryManagedExecutionConfigId({
         targets,

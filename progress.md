@@ -461,3 +461,9 @@
   - 新增 `web/lib/managed-wealth/managed-settlement-entrypoint.test.ts`；结合现有 `entrypoint-parity.integration.test.ts`，现在既验证了 run/withdraw 两条 API 入口，也通过共享 helper 覆盖了 worker 的结算收口契约。
 - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/managed-settlement-entrypoint.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（5/5）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
+- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.4`：
+  - `web/scripts/workers/managed-wealth-worker.ts` 新增 `MANAGED_MULTI_TARGET_EXECUTION_ENABLED`，设为 `false` 时会把 allocation snapshot 折叠为单 target，并停止多 trader 扩展/再平衡，保留旧的单 `copyConfigId` 执行口径。
+  - `web/lib/managed-wealth/execution-targets.ts` 新增 `MANAGED_EXECUTION_TARGET_SCOPE_ENABLED`；关闭后，NAV / settlement / liquidation / health / withdraw 等读取路径会直接退回 legacy `copyConfigId`，忽略 `ManagedSubscriptionExecutionTarget` 关系。
+  - `web/lib/managed-wealth/execution-targets.test.ts` 已补充 rollback 开关用例，确认 scope 关闭时不会访问 execution-target relation。
+- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/execution-targets.test.ts lib/managed-wealth/managed-settlement-entrypoint.test.ts lib/managed-wealth/subscription-position-scope.test.ts app/api/managed-settlement/health.integration.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（14/14）。
+- 已执行 `cd web && npx tsc --noEmit`，通过。

@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     normalizeManagedExecutionConfigIds,
     resolvePrimaryManagedExecutionConfigId,
     resolveManagedExecutionConfigIds,
 } from './execution-targets';
+
+const ORIGINAL_EXECUTION_SCOPE = process.env.MANAGED_EXECUTION_TARGET_SCOPE_ENABLED;
+
+afterEach(() => {
+    if (ORIGINAL_EXECUTION_SCOPE === undefined) {
+        delete process.env.MANAGED_EXECUTION_TARGET_SCOPE_ENABLED;
+    } else {
+        process.env.MANAGED_EXECUTION_TARGET_SCOPE_ENABLED = ORIGINAL_EXECUTION_SCOPE;
+    }
+});
 
 describe('managed execution target helpers', () => {
     it('prefers active execution target config ids over the legacy fallback', () => {
@@ -77,5 +87,24 @@ describe('managed execution target helpers', () => {
                 isActive: true,
             },
         });
+    });
+
+    it('supports rolling back to the legacy copyConfigId-only read path', async () => {
+        process.env.MANAGED_EXECUTION_TARGET_SCOPE_ENABLED = 'false';
+
+        const managedSubscriptionExecutionTarget = {
+            findMany: vi.fn(),
+        };
+
+        const ids = await resolveManagedExecutionConfigIds(
+            { managedSubscriptionExecutionTarget } as never,
+            {
+                subscriptionId: 'sub-1',
+                fallbackCopyConfigId: 'cfg-legacy',
+            }
+        );
+
+        expect(ids).toEqual(['cfg-legacy']);
+        expect(managedSubscriptionExecutionTarget.findMany).not.toHaveBeenCalled();
     });
 });

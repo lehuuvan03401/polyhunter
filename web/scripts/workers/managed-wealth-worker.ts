@@ -45,6 +45,7 @@ const SETTLEMENT_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_SETT
 const LIQUIDATION_RETRY_BASE_MS = Math.max(10_000, Number(process.env.MANAGED_LIQUIDATION_RETRY_BASE_MS || 120_000));
 const MANAGED_ALLOCATION_TARGET_COUNT = Math.max(1, Number(process.env.MANAGED_ALLOCATION_TARGET_COUNT || 3));
 const MANAGED_ALLOCATION_SNAPSHOT_ENABLED = process.env.MANAGED_ALLOCATION_SNAPSHOT_ENABLED !== 'false';
+const MANAGED_MULTI_TARGET_EXECUTION_ENABLED = process.env.MANAGED_MULTI_TARGET_EXECUTION_ENABLED !== 'false';
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -170,12 +171,14 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                 },
             })
             : null;
-        const existingAllocationTargets = extractSelectedTargetWeights(existingAllocation?.selectedWeights);
+        const existingAllocationTargets = MANAGED_MULTI_TARGET_EXECUTION_ENABLED
+            ? extractSelectedTargetWeights(existingAllocation?.selectedWeights)
+            : extractSelectedTargetWeights(existingAllocation?.selectedWeights).slice(0, 1);
 
         if (
             sub.copyConfigId &&
             activeExecutionTargets.length === 0 &&
-            existingAllocationTargets.length <= 1
+            (!MANAGED_MULTI_TARGET_EXECUTION_ENABLED || existingAllocationTargets.length <= 1)
         ) {
             await prisma.managedSubscriptionExecutionTarget.upsert({
                 where: {
@@ -270,7 +273,10 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
                     strategyProfile: sub.product.strategyProfile,
                     version: nextVersion,
                     seed,
-                    targetCount: Math.min(templateCandidates.length, MANAGED_ALLOCATION_TARGET_COUNT),
+                    targetCount: Math.min(
+                        templateCandidates.length,
+                        MANAGED_MULTI_TARGET_EXECUTION_ENABLED ? MANAGED_ALLOCATION_TARGET_COUNT : 1
+                    ),
                     reason: existingAllocation
                         ? 'REFRESH_PRODUCT_TEMPLATE_ALLOCATION'
                         : 'INITIAL_PRODUCT_TEMPLATE_ALLOCATION',

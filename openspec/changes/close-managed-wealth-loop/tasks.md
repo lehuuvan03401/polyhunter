@@ -30,4 +30,4 @@
 - [x] 6.1 Add unit tests for allocation determinism, scope-isolated accounting, and settlement idempotency.
 - [x] 6.2 Add integration tests for full managed lifecycle parity across settlement entrypoints.
 - [ ] 6.3 Add E2E coverage for one-click managed subscription through settlement and commission completion.
-- [ ] 6.4 Stage rollout with feature flags and rollback switches for worker and settlement service path.
+- [x] 6.4 Stage rollout with feature flags and rollback switches for worker and settlement service path.
