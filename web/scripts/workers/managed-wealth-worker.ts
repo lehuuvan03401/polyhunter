@@ -695,6 +695,36 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
             },
         });
 
+        // Write DRAWDOWN_ALERT risk event if drawdown exceeds configured threshold
+        // Use a 24h dedup window to avoid flooding the table on every cycle
+        const NAV_DRAWDOWN_ALERT_THRESHOLD = Math.min(1, Math.max(0, Number(
+            process.env.MANAGED_NAV_DRAWDOWN_ALERT_THRESHOLD || 0.25
+        )));
+        if (Number.isFinite(drawdown) && drawdown >= NAV_DRAWDOWN_ALERT_THRESHOLD) {
+            const dupeWindowStart = new Date(snapshotAt.getTime() - 24 * 60 * 60 * 1000);
+            const existingAlert = await prisma.managedRiskEvent.findFirst({
+                where: {
+                    subscriptionId: sub.id,
+                    metric: 'NAV_DRAWDOWN_ALERT',
+                    createdAt: { gte: dupeWindowStart },
+                },
+                select: { id: true },
+            });
+            if (!existingAlert) {
+                await prisma.managedRiskEvent.create({
+                    data: {
+                        subscriptionId: sub.id,
+                        severity: drawdown >= 0.5 ? 'ERROR' : 'WARN',
+                        metric: 'NAV_DRAWDOWN_ALERT',
+                        threshold: NAV_DRAWDOWN_ALERT_THRESHOLD,
+                        observedValue: drawdown,
+                        action: 'DELEVERAGE',
+                        description: `NAV drawdown ${(drawdown * 100).toFixed(2)}% exceeds threshold ${(NAV_DRAWDOWN_ALERT_THRESHOLD * 100).toFixed(2)}%`,
+                    },
+                });
+            }
+        }
+
         updated += 1;
     }
 
