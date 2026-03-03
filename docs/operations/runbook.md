@@ -150,7 +150,68 @@ cd frontend
 MW_VERIFY_BASE_URL=http://localhost:3000 npm run verify:managed-wealth:lifecycle
 ```
 
+### 6) 查询风险事件（管理员）
+
+实时查看过去 24h 的风险事件（需 `x-admin-wallet` 鉴权头）：
+
+```bash
+# 全部事件
+curl -s "http://localhost:3000/api/managed-risk-events?limit=100" \
+  -H "x-admin-wallet: <ADMIN_WALLET>" | jq '.stats'
+
+# 仅 ERROR 级别
+curl -s "http://localhost:3000/api/managed-risk-events?severity=ERROR&limit=50" \
+  -H "x-admin-wallet: <ADMIN_WALLET>" | jq '.events[].description'
+```
+
+前端路径：`/dashboard/admin/managed-wealth` → Risk Events 面板（支持按 severity 筛选）
+
+### 7) 取消 PENDING 认购（管理员）
+
+```bash
+curl -s -X POST "http://localhost:3000/api/managed-subscriptions/<SUB_ID>/cancel" \
+  -H "x-admin-wallet: <ADMIN_WALLET>" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"admin_override"}'
+```
+
+注意：仅 `PENDING` 状态的认购可以取消，取消后自动释放本金预留。
+
 ---
+
+## 托管理财 Worker 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MANAGED_WEALTH_LOOP_INTERVAL_MS` | 60000 | Worker 循环间隔（ms） |
+| `MANAGED_WEALTH_RUN_ONCE` | false | 单次执行模式（调试用） |
+| `MANAGED_WEALTH_MAP_BATCH_SIZE` | 100 | 每轮最多处理的 mapping 数量 |
+| `MANAGED_WEALTH_NAV_BATCH_SIZE` | 500 | 每轮最多刷新的 NAV 数量 |
+| `MANAGED_WEALTH_SETTLEMENT_BATCH_SIZE` | 300 | 每轮最多结算的认购数量 |
+| `MANAGED_WEALTH_FULL_REFRESH_INTERVAL` | 20 | 每 N cycle 做一次全量 mapping 扫描（对齐 Agent 配置变更）|
+| `MANAGED_NAV_DRAWDOWN_ALERT_THRESHOLD` | 0.25 | NAV 回撤超过此比例写入 DRAWDOWN_ALERT 风险事件（0.25 = 25%）|
+| `MANAGED_ALLOCATION_SNAPSHOT_ENABLED` | true | 是否启用分配快照 |
+| `MANAGED_MULTI_TARGET_EXECUTION_ENABLED` | false | 是否启用多目标执行 |
+| `MANAGED_ALLOCATION_TARGET_COUNT` | 3 | 多目标执行下的最大目标数 |
+| `MANAGED_LIQUIDATION_RETRY_BASE_MS` | 120000 | 清仓重试的基准退避间隔（ms）|
+| `MANAGED_LIQUIDATION_MAX_ATTEMPTS` | 50 | 清仓任务最大重试次数，超过后标记 FAILED |
+
+## 托管理财 API/认购环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PARTICIPATION_MANAGED_MIN_PRINCIPAL_USD` | 500 | 最低认购本金 (USD) |
+| `MANAGED_WITHDRAW_COOLDOWN_HOURS` | 6 | 赎回冷静期（小时）|
+| `MANAGED_EARLY_WITHDRAW_FEE_RATE` | 0.01 | 提前赎回费率（1%）|
+| `MANAGED_WITHDRAW_DRAWDOWN_ALERT_THRESHOLD` | 0.35 | 提前赎回时回撤预警阈值 |
+| `MANAGED_RATE_LIMIT_WINDOW_MS` | 300000 | 认购频率限制窗口（5分钟）|
+| `MANAGED_RATE_LIMIT_MAX_PER_WINDOW` | 3 | 频率限制窗口内最多创建认购数 |
+| `MANAGED_TRIAL_MIN_ACCOUNT_AGE_DAYS` | 1 | 账户最低年龄（天），小于此值不可获得试用 |
+| `PARTICIPATION_REQUIRE_MANAGED_ACTIVATION` | false | 策略门控：是否要求激活注册 |
+| `PARTICIPATION_REQUIRE_CUSTODY_AUTH` | false | 策略门控：是否要求托管授权 |
+
+---
+
 
 ## Copy Trading 执行环境变量（核心）
 
