@@ -64,6 +64,12 @@ function createJsonRequest(url: string, body: unknown) {
     });
 }
 
+function createGetRequest(url: string) {
+    return new NextRequest(url, {
+        method: 'GET',
+    });
+}
+
 function normalizeWallet(walletAddress: string) {
     return walletAddress.trim().toLowerCase();
 }
@@ -286,6 +292,7 @@ async function setupParticipationRoute(netDepositMcnEquivalent: number) {
     const route = await import('@/app/api/participation/account/route');
     return {
         state,
+        get: route.GET,
         post: route.POST,
     };
 }
@@ -501,5 +508,29 @@ describe('Participation account integration', () => {
 
         expect(activationRes.status).toBe(400);
         expect(body.code).toBe('ACTIVATION_MODE_REQUIRED');
+    });
+
+    it('returns rounded account snapshot and eligibility from GET endpoint', async () => {
+        const { get, post } = await setupParticipationRoute(500.123456789);
+
+        await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        const getRes = await get(
+            createGetRequest(`http://localhost/api/participation/account?wallet=${REFEREE_WALLET}`)
+        );
+        const body = await getRes.json();
+
+        expect(getRes.status).toBe(200);
+        expect(body.account.walletAddress).toBe(REFEREE_WALLET);
+        expect(body.netDeposits.netMcnEquivalent).toBe(500.12345679);
+        expect(body.netDeposits.netUsd).toBe(500.12345679);
+        expect(body.eligibility.freeQualified).toBe(true);
+        expect(body.eligibility.managedQualified).toBe(true);
+        expect(body.eligibility.thresholds.MANAGED).toBe(500);
     });
 });
