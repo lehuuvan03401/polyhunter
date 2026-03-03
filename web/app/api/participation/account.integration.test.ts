@@ -458,4 +458,22 @@ describe('Participation account integration', () => {
         expect(body.account.status).toBe('ACTIVE');
         expect(body.account.preferredMode).toBe('MANAGED');
     });
+
+    it('returns rounded net deposit aggregates with 8-digit precision', async () => {
+        const { post } = await setupParticipationRoute(500.123456789);
+
+        const registerRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+        const body = await registerRes.json();
+
+        expect(registerRes.status).toBe(200);
+        expect(body.netDeposits.depositMcn).toBe(500.12345679);
+        expect(body.netDeposits.netMcnEquivalent).toBe(500.12345679);
+        expect(body.netDeposits.depositUsd).toBe(500.12345679);
+        expect(body.netDeposits.netUsd).toBe(500.12345679);
+    });
 });
