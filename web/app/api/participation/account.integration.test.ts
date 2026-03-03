@@ -434,4 +434,28 @@ describe('Participation account integration', () => {
         expect(body.currentNetMcnEquivalent).toBe(499.9999);
         expect(body.deficit).toBe(0.0001);
     });
+
+    it('allows managed activation when balance only differs by floating residue', async () => {
+        const { post } = await setupParticipationRoute(499.99999999);
+
+        await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        const activationRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'ACTIVATE',
+                mode: 'MANAGED',
+            })
+        );
+        const body = await activationRes.json();
+
+        expect(activationRes.status).toBe(200);
+        expect(body.account.status).toBe('ACTIVE');
+        expect(body.account.preferredMode).toBe('MANAGED');
+    });
 });
