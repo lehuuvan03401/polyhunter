@@ -46,12 +46,15 @@ const LIQUIDATION_RETRY_BASE_MS = Math.max(10_000, Number(process.env.MANAGED_LI
 const MANAGED_ALLOCATION_TARGET_COUNT = Math.max(1, Number(process.env.MANAGED_ALLOCATION_TARGET_COUNT || 3));
 const MANAGED_ALLOCATION_SNAPSHOT_ENABLED = process.env.MANAGED_ALLOCATION_SNAPSHOT_ENABLED !== 'false';
 const MANAGED_MULTI_TARGET_EXECUTION_ENABLED = process.env.MANAGED_MULTI_TARGET_EXECUTION_ENABLED !== 'false';
+/** Every N cycles, do a full-scan of ALL running subscriptions to reconcile agent changes. Default: every 20 cycles. */
+const FULL_REFRESH_INTERVAL = Math.max(1, Number(process.env.MANAGED_WEALTH_FULL_REFRESH_INTERVAL || 20));
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error'] });
 
 let running = false;
+let cycleCount = 0;
 
 async function getReserveBalance(tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>): Promise<number> {
     const rows = await tx.reserveFundLedger.findMany({
@@ -88,30 +91,34 @@ function extractSelectedTargetWeights(
     });
 }
 
-async function ensureExecutionMappings(now: Date): Promise<number> {
+async function ensureExecutionMappings(now: Date, forceFullRefresh = false): Promise<number> {
     const candidates = await prisma.managedSubscription.findMany({
         where: {
             status: { in: ['PENDING', 'RUNNING'] },
-            OR: [
-                { copyConfigId: null },
-                {
-                    executionTargets: {
-                        none: {
-                            isActive: true,
-                        },
-                    },
-                },
-                {
-                    allocations: {
-                        some: {
-                            status: 'ACTIVE',
-                            version: {
-                                gt: 1,
+            // On normal cycles only pick up subs that need new/updated mappings.
+            // On forceFullRefresh cycles scan ALL to reconcile any agent config changes.
+            ...(!forceFullRefresh ? {
+                OR: [
+                    { copyConfigId: null },
+                    {
+                        executionTargets: {
+                            none: {
+                                isActive: true,
                             },
                         },
                     },
-                },
-            ],
+                    {
+                        allocations: {
+                            some: {
+                                status: 'ACTIVE',
+                                version: {
+                                    gt: 1,
+                                },
+                            },
+                        },
+                    },
+                ],
+            } : {}),
             product: {
                 isActive: true,
                 status: 'ACTIVE',
@@ -131,6 +138,10 @@ async function ensureExecutionMappings(now: Date): Promise<number> {
         orderBy: { createdAt: 'asc' },
         take: MAP_BATCH_SIZE,
     });
+
+    if (forceFullRefresh && candidates.length > 0) {
+        console.log(`[ManagedWealthWorker] full-refresh scan: ${candidates.length} subscriptions`);
+    }
 
     let mapped = 0;
     for (const sub of candidates) {
@@ -980,7 +991,12 @@ async function runCycle(): Promise<void> {
     const now = new Date();
 
     try {
-        const mapped = await ensureExecutionMappings(now);
+        cycleCount += 1;
+        const isFullRefreshCycle = cycleCount % FULL_REFRESH_INTERVAL === 0;
+        const mapped = await ensureExecutionMappings(now, isFullRefreshCycle);
+        if (isFullRefreshCycle) {
+            console.log(`[ManagedWealthWorker] full-refresh cycle #${cycleCount}`);
+        }
         // Step 2: Handle any running/matured limits, transitions them to MATURED
         const matured = await markMaturedSubscriptions(now);
         // Step 3: Settles zero-balance MATURED/RUNNING/LIQUIDATING, or puts them iteratively into LIQUIDATING
