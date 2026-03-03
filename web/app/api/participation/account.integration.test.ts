@@ -533,4 +533,38 @@ describe('Participation account integration', () => {
         expect(body.eligibility.managedQualified).toBe(true);
         expect(body.eligibility.thresholds.MANAGED).toBe(500);
     });
+
+    it('rejects activation with negative net qualified balance and reports full deficit', async () => {
+        const { state, post } = await setupParticipationRoute(50);
+
+        state.ledgers.push({
+            walletAddress: REFEREE_WALLET,
+            direction: 'WITHDRAW',
+            usdAmount: 100,
+            mcnEquivalentAmount: 100,
+        });
+
+        await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        const activationRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'ACTIVATE',
+                mode: 'FREE',
+            })
+        );
+        const body = await activationRes.json();
+
+        expect(activationRes.status).toBe(409);
+        expect(body.code).toBe('INSUFFICIENT_QUALIFIED_FUNDING');
+        expect(body.mode).toBe('FREE');
+        expect(body.requiredThreshold).toBe(100);
+        expect(body.currentNetMcnEquivalent).toBe(-50);
+        expect(body.deficit).toBe(150);
+    });
 });
