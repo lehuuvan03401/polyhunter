@@ -21,6 +21,7 @@
     "verify:managed-membership:lifecycle": "npx tsx scripts/verify/managed-membership-lifecycle.ts",
     "partner:eliminate:monthly": "npx tsx scripts/services/partner-monthly-elimination.ts",
     "verify:partner:refund-sla": "npx tsx scripts/verify/partner-refund-sla.ts",
+    "verify:managed-wealth:ops-watchdog": "npx tsx scripts/verify/managed-wealth-ops-watchdog.ts",
     "participation:levels:daily": "npx tsx scripts/services/participation-levels-daily-snapshot.ts",
     "participation:promotion:daily": "npx tsx scripts/services/participation-promotion-daily-snapshot.ts",
     "cache:update": "tsx scripts/debug/update-leaderboard-cache.ts",

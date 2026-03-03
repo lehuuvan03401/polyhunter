@@ -222,7 +222,7 @@
 - [complete] 新增托管闭环健康检查接口：`GET /api/managed-settlement/health`（allocation status / liquidation backlog / settlement commission parity）
 - [complete] 新增管理后台 `Managed Ops` 页面：`/dashboard/admin/managed-wealth`，并接入 admin dashboard 快捷入口
 - [complete] 新增路由集成测试：`web/app/api/managed-settlement/health.integration.test.ts`
-- [pending] 接入告警通知与定时巡检脚本（将 health 指标接入现有运维看门狗）
+- [in_progress] 接入告警通知与定时巡检脚本（将 health 指标接入现有运维看门狗）
 
 ### Phase D 当前进度（结算-分润幂等收口）
 - [complete] 新增 `ManagedSettlementExecution` 模型与迁移，持久化结算后的分润处理状态
@@ -325,8 +325,8 @@
 - [x] 新增风险事件查询 API（#5）
 - [x] Worker 增加结构化 JSON 日志（#9）
 - [x] 认购创建增加频率限制 MANAGED_SUBSCRIPTION_RATE_LIMIT（#8）
-- [ ] Worker 增加定期全量执行映射刷新（#10 — 暂缓）
-- [ ] 管理后台风险事件面板（#10 — 需前端，暂缓）
+- [x] Worker 增加定期全量执行映射刷新（#10）
+- [x] 管理后台风险事件面板（#5 UI — 已实现）
 
 ## Phase 4 执行清单
 - [x] 试用历史检查：同一钉包历史上有试用则不再授予（#17）

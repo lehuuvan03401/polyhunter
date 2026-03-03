@@ -179,7 +179,52 @@ curl -s -X POST "http://localhost:3000/api/managed-subscriptions/<SUB_ID>/cancel
 
 ---
 
+### 8) 定时巡检看门狗（Ops Watchdog）
+
+定期运行健康检查，评估 5 个核心指标并在超阈值时以 exit 1 退出（适合接入 Slack/PagerDuty 告警）：
+
+```bash
+# 单次运行（默认阈值）
+cd web
+MW_OPS_BASE_URL=http://localhost:3000 \
+MW_OPS_ADMIN_WALLET=<ADMIN_WALLET> \
+npm run verify:managed-wealth:ops-watchdog
+```
+
+**可配置告警阈值（全部可选）：**
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MW_OPS_BASE_URL` | http://localhost:3000 | 应用地址 |
+| `MW_OPS_ADMIN_WALLET` | — | 鉴权钱包地址（也可用 `ADMIN_WALLETS` 首个）|
+| `MW_OPS_MAX_UNMAPPED` | 5 | 未映射认购超过此值触发告警 |
+| `MW_OPS_MAX_BACKLOG` | 10 | 清仓积压超过此值触发告警 |
+| `MW_OPS_MAX_PARITY_ISSUES` | 0 | 结算一致性问题超过此值触发告警 |
+| `MW_OPS_MAX_FAILED_TASKS` | 3 | FAILED 清仓任务超过此值触发告警 |
+| `MW_OPS_MAX_24H_ERRORS` | 5 | 24h ERROR 级风险事件超过此值触发告警 |
+
+**PM2 定时调度（每 5 分钟）：**
+
+```bash
+# ecosystem.config.cjs 中添加：
+{
+  name: 'managed-wealth-watchdog',
+  script: 'npx',
+  args: 'tsx scripts/verify/managed-wealth-ops-watchdog.ts',
+  cwd: '/path/to/web',
+  cron_restart: '*/5 * * * *',
+  autorestart: false,
+  env: {
+    MW_OPS_BASE_URL: 'http://localhost:3000',
+    MW_OPS_ADMIN_WALLET: '<ADMIN_WALLET>',
+  }
+}
+```
+
+---
+
 ## 托管理财 Worker 环境变量
+
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
