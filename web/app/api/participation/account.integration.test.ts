@@ -51,6 +51,33 @@ type ParticipationTestState = {
     managedSubscriptions: Map<string, ManagedSubscriptionRow>;
 };
 
+type WalletContextOptions = {
+    bodyWallet?: string;
+    queryWallet?: string;
+    requireHeader?: boolean;
+    requireSignature?: boolean;
+};
+
+type WalletContextResult =
+    | {
+        ok: true;
+        wallet: string;
+    }
+    | {
+        ok: false;
+        error: string;
+        status: number;
+    };
+
+type WalletContextResolver = (
+    request: NextRequest,
+    options: WalletContextOptions
+) => WalletContextResult;
+
+type SetupParticipationRouteOptions = {
+    walletContextResolver?: WalletContextResolver;
+};
+
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REFEREE_WALLET = '0x1111111111111111111111111111111111111111';
 const REFERRER_WALLET = '0x2222222222222222222222222222222222222222';
@@ -263,9 +290,32 @@ function createParticipationPrismaMock(state: ParticipationTestState) {
     return prismaMock;
 }
 
-async function setupParticipationRoute(netDepositMcnEquivalent: number) {
+async function setupParticipationRoute(
+    netDepositMcnEquivalent: number,
+    options: SetupParticipationRouteOptions = {}
+) {
     const state = createParticipationState(netDepositMcnEquivalent);
     const prismaMock = createParticipationPrismaMock(state);
+    const defaultWalletContextResolver: WalletContextResolver = (
+        _request: NextRequest,
+        walletOptions: WalletContextOptions
+    ) => {
+        const wallet = normalizeWallet(walletOptions.bodyWallet ?? walletOptions.queryWallet ?? '');
+        if (!wallet) {
+            return {
+                ok: false,
+                error: 'Wallet required',
+                status: 400,
+            };
+        }
+        return {
+            ok: true,
+            wallet,
+        };
+    };
+    const walletContextResolver = vi.fn(
+        options.walletContextResolver ?? defaultWalletContextResolver
+    );
 
     vi.resetModules();
     vi.doMock('@/lib/prisma', () => ({
@@ -273,20 +323,7 @@ async function setupParticipationRoute(netDepositMcnEquivalent: number) {
         isDatabaseEnabled: true,
     }));
     vi.doMock('@/lib/managed-wealth/request-wallet', () => ({
-        resolveWalletContext: (_request: NextRequest, options: { bodyWallet?: string; queryWallet?: string }) => {
-            const wallet = normalizeWallet(options.bodyWallet ?? options.queryWallet ?? '');
-            if (!wallet) {
-                return {
-                    ok: false,
-                    error: 'Wallet required',
-                    status: 400,
-                };
-            }
-            return {
-                ok: true,
-                wallet,
-            };
-        },
+        resolveWalletContext: walletContextResolver,
     }));
 
     const route = await import('@/app/api/participation/account/route');
@@ -294,6 +331,7 @@ async function setupParticipationRoute(netDepositMcnEquivalent: number) {
         state,
         get: route.GET,
         post: route.POST,
+        walletContextResolver,
     };
 }
 
@@ -532,6 +570,44 @@ describe('Participation account integration', () => {
         expect(body.eligibility.freeQualified).toBe(true);
         expect(body.eligibility.managedQualified).toBe(true);
         expect(body.eligibility.thresholds.MANAGED).toBe(500);
+    });
+
+    it('passes strict wallet-context requirements when loading account snapshot', async () => {
+        const { get, walletContextResolver } = await setupParticipationRoute(500);
+
+        const getRes = await get(
+            createGetRequest(`http://localhost/api/participation/account?wallet=${REFEREE_WALLET}`)
+        );
+
+        expect(getRes.status).toBe(200);
+        expect(walletContextResolver).toHaveBeenCalledTimes(1);
+        expect(walletContextResolver).toHaveBeenCalledWith(
+            expect.any(NextRequest),
+            expect.objectContaining({
+                queryWallet: REFEREE_WALLET,
+                requireHeader: true,
+                requireSignature: true,
+            })
+        );
+    });
+
+    it('surfaces wallet-context auth errors from GET endpoint', async () => {
+        const { get, walletContextResolver } = await setupParticipationRoute(500, {
+            walletContextResolver: () => ({
+                ok: false,
+                error: 'Missing wallet header x-wallet-address',
+                status: 401,
+            }),
+        });
+
+        const getRes = await get(
+            createGetRequest(`http://localhost/api/participation/account?wallet=${REFEREE_WALLET}`)
+        );
+        const body = await getRes.json();
+
+        expect(getRes.status).toBe(401);
+        expect(body.error).toBe('Missing wallet header x-wallet-address');
+        expect(walletContextResolver).toHaveBeenCalledTimes(1);
     });
 
     it('rejects activation with negative net qualified balance and reports full deficit', async () => {
