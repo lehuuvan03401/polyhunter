@@ -391,6 +391,9 @@ test.describe('Participation dashboard E2E', () => {
         await expect(page.getByRole('button', { name: 'Activate FREE Instead' })).toBeVisible();
         await page.getByRole('button', { name: 'Activate FREE Instead' }).click();
         await expect(page.getByText('Mode: FREE')).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Missing amount: 50.00 MCN')
+        ).toHaveCount(0);
         await expect(page.getByText('Mode not selected')).toHaveCount(0);
     });
 
