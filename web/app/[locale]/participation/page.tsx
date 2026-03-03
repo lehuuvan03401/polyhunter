@@ -370,7 +370,7 @@ export default function ParticipationPage() {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [authenticated, user?.wallet?.address, createWalletAuthHeaders]);
+    }, [authenticated, user?.wallet?.address, createWalletAuthHeaders, t]);
 
     useEffect(() => {
         void loadDashboard({ initialLoad: true });
