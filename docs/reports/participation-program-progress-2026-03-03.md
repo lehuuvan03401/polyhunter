@@ -1,9 +1,9 @@
 # Participation Program 工作与任务完成情况分析（2026-03-03）
 
 ## 1. 分析范围
-- 时间窗口：本轮加固提交（`be975d4` → `349df00`）
+- 时间窗口：本轮加固提交（`be975d4` → `467930d`）
 - 核心目标：提升 Participation Account 激活链路的可观测性、错误可诊断性、多语言一致性与回归测试覆盖
-- 本轮完成提交数：16（均已在 `codex/m1-participation-foundation`）
+- 本轮完成提交数：17（均已在 `codex/m1-participation-foundation`）
 
 ## 2. 任务完成总览
 
@@ -16,25 +16,29 @@
 | 账户快照 GET 合约覆盖 | 已完成 | 覆盖净额聚合、阈值资格、负净额缺口、精度边界等场景 |
 | 钱包上下文安全参数覆盖（GET/POST） | 已完成 | 断言 `requireHeader=true` + `requireSignature=true`；补齐鉴权失败透传用例 |
 | 钱包鉴权错误码标准化（`WALLET_*`） | 已完成 | `/api/participation/account` 的 GET/POST 鉴权失败统一返回稳定 `code` |
+| 钱包错误码扩展到全 Participation 钱包端点 | 已完成 | `levels/promotion/custody-auth/funding` 的钱包鉴权失败均返回稳定 `WALLET_*` |
 | 鉴权错误本地化用户反馈 | 已完成 | 前端将 `WALLET_*` 映射为本地化提示，避免透出后端英文原文 |
 | 多语言 E2E 回归 | 已完成 | zh-CN 与 zh-TW 激活失败本地化场景均已纳入 Playwright |
 | 鉴权错误码前端回归 | 已完成 | 新增 E2E 用例验证 `WALLET_SIGNATURE_EXPIRED` 被正确本地化 |
+| 钱包错误码映射单测 | 已完成 | 新增 `request-wallet.test.ts` 锁定错误文本到 `WALLET_*` 映射 |
 | 运维 runbook 错误排障更新 | 已完成 | 补充 account 接口激活错误码与钱包上下文鉴权失败排障手册 |
 
-本轮计划项完成率：**11/11（100%）**
+本轮计划项完成率：**13/13（100%）**
 
 ## 3. 验证结果
 - `npx vitest run app/api/participation/account.integration.test.ts`：**14/14 通过**
+- `npx vitest run lib/managed-wealth/request-wallet.test.ts app/api/participation/account.integration.test.ts app/api/participation/custody-auth.integration.test.ts`：**25/25 通过**
 - `npx playwright test --config=playwright.config.mjs e2e/participation-dashboard.spec.mjs`：**6/6 通过**
 
 ## 4. 关键产出清单（按能力）
 - API 契约与精度加固：`be975d4`, `ff649fc`, `d85d22a`, `29b9690`
 - 错误码与本地化闭环：`2353107`, `a143016`, `c997f78`, `915b8a1`, `0eba992`
 - 鉴权上下文测试与稳定错误码：`de4c59b`, `f2ee027`
+- 鉴权错误码全端点标准化：`467930d`
 - 前端鉴权错误本地化回归：`349df00`
-- 运维文档更新：`24d1eb5`, `3b0d300`, `f2ee027`
+- 运维文档更新：`24d1eb5`, `3b0d300`, `f2ee027`, `467930d`
 
 ## 5. 剩余风险与后续建议
 1. 当前 E2E 主要基于 API mock，未覆盖真实签名验签链路；建议增加一组真实签名集成测试（含过期签名与路径签名不匹配）。
-2. 目前稳定 `WALLET_*` 错误码仅在 `/api/participation/account` 落地；建议后续把 participation 其他钱包鉴权端点（如 levels/promotion/custody-auth）统一到同一错误码体系。
+2. 当前前端只对 account action（POST）路径做了 `WALLET_*` 本地化兜底；若后续要在 dashboard 初始加载（GET levels/promotion/custody）统一用户提示，建议在 `fetchJson` 层按 `code` 做统一转换。
 3. 可在监控层补一个 account 接口错误码分布面板（按 `status/code` 聚合），用于上线后快速定位激活失败主因。
