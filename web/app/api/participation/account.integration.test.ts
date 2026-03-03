@@ -370,8 +370,42 @@ describe('Participation account integration', () => {
         const body = await activationRes.json();
 
         expect(activationRes.status).toBe(409);
+        expect(body.mode).toBe('MANAGED');
         expect(body.requiredThreshold).toBe(500);
         expect(body.currentNetMcnEquivalent).toBe(120);
         expect(body.deficit).toBe(380);
+    });
+
+    it('allows free activation after managed activation is rejected for insufficient funding', async () => {
+        const { post } = await setupParticipationRoute(120);
+
+        await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        const managedActivationRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'ACTIVATE',
+                mode: 'MANAGED',
+            })
+        );
+        expect(managedActivationRes.status).toBe(409);
+
+        const freeActivationRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'ACTIVATE',
+                mode: 'FREE',
+            })
+        );
+        const freeBody = await freeActivationRes.json();
+
+        expect(freeActivationRes.status).toBe(200);
+        expect(freeBody.account.status).toBe('ACTIVE');
+        expect(freeBody.account.preferredMode).toBe('FREE');
     });
 });
