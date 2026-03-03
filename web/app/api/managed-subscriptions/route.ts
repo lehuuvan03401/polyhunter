@@ -410,6 +410,7 @@ export async function POST(request: NextRequest) {
                 status: true,
                 preferredMode: true,
                 isRegistrationComplete: true,
+                createdAt: true,
             },
         });
 
@@ -575,11 +576,19 @@ export async function POST(request: NextRequest) {
             const existingCount = await tx.managedSubscription.count({
                 where: { walletAddress: requestWallet },
             });
-            const { trialApplied, trialEndsAt } = resolveManagedSubscriptionTrial({
+            const priorTrialCount = await tx.managedSubscription.count({
+                where: { walletAddress: requestWallet, isTrial: true },
+            });
+            const { trialApplied, trialEndsAt, trialDeniedReason } = resolveManagedSubscriptionTrial({
                 existingSubscriptionCount: existingCount,
+                priorTrialCount,
                 termDurationDays: term.durationDays,
+                accountCreatedAt: account?.createdAt ?? now,
                 now,
             });
+            if (trialDeniedReason) {
+                console.log(`[managed-wealth] trial denied for ${requestWallet}: ${trialDeniedReason}`);
+            }
 
             const principalAvailability = await assertManagedPrincipalAvailability(
                 tx,
