@@ -217,6 +217,9 @@ async function postParticipationAccountAction(
         ) as ParticipationActionError;
 
         const code = typeof data?.code === 'string' ? data.code : undefined;
+        if (code) {
+            error.code = code;
+        }
         const requiredThreshold = Number(data?.requiredThreshold);
         const currentNetMcnEquivalent = Number(data?.currentNetMcnEquivalent);
         const deficit = Number(data?.deficit);
@@ -413,12 +416,17 @@ export default function ParticipationPage() {
             );
             await loadDashboard({ silent: true });
         } catch (actionError) {
-            const message = actionError instanceof Error
-                ? actionError.message
-                : t('toast.accountActionFailed');
-            const detail = actionError instanceof Error
-                ? (actionError as ParticipationActionError).activationFailureDetail
-                : undefined;
+            const parsedError = actionError instanceof Error
+                ? (actionError as ParticipationActionError)
+                : null;
+            const message = parsedError?.code === 'ACTIVATION_MODE_REQUIRED'
+                ? t('toast.activationModeRequired')
+                : parsedError?.code === 'REGISTRATION_REQUIRED'
+                    ? t('toast.registrationRequired')
+                    : parsedError?.code === INSUFFICIENT_QUALIFIED_FUNDING_CODE
+                        ? t('toast.insufficientQualifiedFunding')
+                        : parsedError?.message ?? t('toast.accountActionFailed');
+            const detail = parsedError?.activationFailureDetail;
 
             if (detail) {
                 setActivationFailureDetail(detail);
