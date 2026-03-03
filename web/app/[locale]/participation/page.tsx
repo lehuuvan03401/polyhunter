@@ -116,6 +116,8 @@ type WalletHeadersFactory = (params: {
 
 type ParticipationAccountAction = 'REGISTER' | 'ACTIVATE';
 type ParticipationMode = 'FREE' | 'MANAGED';
+const INSUFFICIENT_QUALIFIED_FUNDING_CODE = 'INSUFFICIENT_QUALIFIED_FUNDING';
+
 type ActivationFailureDetail = {
     mode: ParticipationMode;
     requiredThreshold: number;
@@ -124,6 +126,7 @@ type ActivationFailureDetail = {
 };
 
 type ParticipationActionError = Error & {
+    code?: string;
     activationFailureDetail?: ActivationFailureDetail;
 };
 
@@ -213,17 +216,20 @@ async function postParticipationAccountAction(
             data?.error || `Failed to ${action.toLowerCase()} participation`
         ) as ParticipationActionError;
 
+        const code = typeof data?.code === 'string' ? data.code : undefined;
         const requiredThreshold = Number(data?.requiredThreshold);
         const currentNetMcnEquivalent = Number(data?.currentNetMcnEquivalent);
         const deficit = Number(data?.deficit);
 
         if (
+            code === INSUFFICIENT_QUALIFIED_FUNDING_CODE &&
             action === 'ACTIVATE' &&
             mode &&
             Number.isFinite(requiredThreshold) &&
             Number.isFinite(currentNetMcnEquivalent) &&
             Number.isFinite(deficit)
         ) {
+            error.code = code;
             error.activationFailureDetail = {
                 mode,
                 requiredThreshold,
