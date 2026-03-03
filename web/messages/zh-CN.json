@@ -513,6 +513,7 @@
             "activationModeRequired": "激活时必须选择模式（FREE 或 MANAGED）",
             "registrationRequired": "激活前请先完成注册",
             "insufficientQualifiedFunding": "激活前需满足净有效资金门槛",
+            "walletContextInvalid": "钱包鉴权失败，请重新连接后重试",
             "custodyGranted": "托管授权已创建",
             "custodyGrantFailed": "创建托管授权失败",
             "custodyRevoked": "托管授权已撤销",

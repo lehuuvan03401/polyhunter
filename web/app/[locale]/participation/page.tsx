@@ -425,6 +425,8 @@ export default function ParticipationPage() {
                     ? t('toast.registrationRequired')
                     : parsedError?.code === INSUFFICIENT_QUALIFIED_FUNDING_CODE
                         ? t('toast.insufficientQualifiedFunding')
+                        : parsedError?.code?.startsWith('WALLET_')
+                            ? t('toast.walletContextInvalid')
                         : parsedError?.message ?? t('toast.accountActionFailed');
             const detail = parsedError?.activationFailureDetail;
 

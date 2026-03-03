@@ -513,6 +513,7 @@
             "activationModeRequired": "啟用時必須選擇模式（FREE 或 MANAGED）",
             "registrationRequired": "啟用前請先完成註冊",
             "insufficientQualifiedFunding": "啟用前需滿足淨有效資金門檻",
+            "walletContextInvalid": "錢包驗簽失敗，請重新連線後重試",
             "custodyGranted": "託管授權已建立",
             "custodyGrantFailed": "建立託管授權失敗",
             "custodyRevoked": "託管授權已撤銷",

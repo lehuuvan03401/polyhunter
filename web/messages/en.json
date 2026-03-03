@@ -513,6 +513,7 @@
             "activationModeRequired": "Activation requires mode (FREE or MANAGED)",
             "registrationRequired": "Registration must be completed before activation",
             "insufficientQualifiedFunding": "Qualified funding required before activation",
+            "walletContextInvalid": "Wallet authentication failed, please reconnect and retry",
             "custodyGranted": "Managed custody authorization granted",
             "custodyGrantFailed": "Failed to create managed custody authorization",
             "custodyRevoked": "Managed custody authorization revoked",

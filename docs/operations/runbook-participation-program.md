@@ -133,17 +133,20 @@ Actions:
 ### 5. Wallet-context authentication rejected (`/api/participation/account`)
 
 `GET` and `POST` participation account endpoints enforce wallet-context validation with header + signature checks.
+Non-2xx responses now include stable `code` fields for operational routing.
 
 Common non-2xx responses:
 
-- `401 Missing wallet header x-wallet-address`
-- `401 Missing wallet signature headers`
-- `401 Wallet signature expired`
-- `401 Invalid wallet signature`
-- `401 Invalid wallet signature format`
-- `400 Missing wallet address`
-- `400 Wallet mismatch between request header/query/body`
-- `400 Invalid wallet address in x-wallet-address header/query param/request body`
+- `401 WALLET_HEADER_REQUIRED` → `Missing wallet header x-wallet-address`
+- `401 WALLET_SIGNATURE_REQUIRED` → `Missing wallet signature headers`
+- `401 WALLET_SIGNATURE_EXPIRED` → `Wallet signature expired`
+- `401 WALLET_SIGNATURE_INVALID` → `Invalid wallet signature`
+- `401 WALLET_SIGNATURE_FORMAT_INVALID` → `Invalid wallet signature format`
+- `400 WALLET_SIGNATURE_TIMESTAMP_INVALID` → `Invalid wallet signature timestamp`
+- `400 WALLET_ADDRESS_REQUIRED` → `Missing wallet address`
+- `400 WALLET_ADDRESS_MISMATCH` → `Wallet mismatch between request header/query/body`
+- `400 WALLET_ADDRESS_INVALID` → `Invalid wallet address in x-wallet-address header/query param/request body`
+- fallback: `WALLET_CONTEXT_INVALID`
 
 Actions:
 1. Ensure header/query/body all reference the same lowercase wallet.

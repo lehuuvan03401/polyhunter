@@ -607,6 +607,7 @@ describe('Participation account integration', () => {
 
         expect(getRes.status).toBe(401);
         expect(body.error).toBe('Missing wallet header x-wallet-address');
+        expect(body.code).toBe('WALLET_HEADER_REQUIRED');
         expect(walletContextResolver).toHaveBeenCalledTimes(1);
     });
 
@@ -651,6 +652,27 @@ describe('Participation account integration', () => {
 
         expect(registerRes.status).toBe(401);
         expect(body.error).toBe('Missing wallet signature headers');
+        expect(body.code).toBe('WALLET_SIGNATURE_REQUIRED');
+        expect(walletContextResolver).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps invalid wallet format failure to a stable account error code', async () => {
+        const { get, walletContextResolver } = await setupParticipationRoute(500, {
+            walletContextResolver: () => ({
+                ok: false,
+                error: 'Invalid wallet address in query param',
+                status: 400,
+            }),
+        });
+
+        const getRes = await get(
+            createGetRequest(`http://localhost/api/participation/account?wallet=${REFEREE_WALLET}`)
+        );
+        const body = await getRes.json();
+
+        expect(getRes.status).toBe(400);
+        expect(body.error).toBe('Invalid wallet address in query param');
+        expect(body.code).toBe('WALLET_ADDRESS_INVALID');
         expect(walletContextResolver).toHaveBeenCalledTimes(1);
     });
 
