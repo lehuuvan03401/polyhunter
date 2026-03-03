@@ -305,7 +305,9 @@ describe('Participation account integration', () => {
                 mode: 'MANAGED',
             })
         );
+        const activateBeforeRegisterBody = await activateBeforeRegister.json();
         expect(activateBeforeRegister.status).toBe(409);
+        expect(activateBeforeRegisterBody.code).toBe('REGISTRATION_REQUIRED');
 
         const registerRes = await post(
             createJsonRequest('http://localhost/api/participation/account', {
@@ -477,5 +479,27 @@ describe('Participation account integration', () => {
         expect(body.netDeposits.netMcnEquivalent).toBe(500.12345679);
         expect(body.netDeposits.depositUsd).toBe(500.12345679);
         expect(body.netDeposits.netUsd).toBe(500.12345679);
+    });
+
+    it('returns explicit code when activation mode is missing', async () => {
+        const { post } = await setupParticipationRoute(700);
+
+        await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        const activationRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'ACTIVATE',
+            })
+        );
+        const body = await activationRes.json();
+
+        expect(activationRes.status).toBe(400);
+        expect(body.code).toBe('ACTIVATION_MODE_REQUIRED');
     });
 });
