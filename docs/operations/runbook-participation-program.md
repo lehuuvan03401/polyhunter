@@ -14,6 +14,8 @@ This runbook covers the daily operational cadence for participation level snapsh
 - `GET /api/participation/levels`: inspect current wallet progress and latest snapshot (wallet-scoped).
 - `POST /api/participation/promotion`: run promotion snapshot (admin only).
 - `GET /api/participation/promotion`: inspect current wallet promotion progress and latest snapshot (wallet-scoped).
+- `POST /api/participation/account`: register or activate participation account (wallet-scoped).
+- `GET /api/participation/account`: inspect participation account + net-deposit eligibility (wallet-scoped).
 
 ## Authentication
 
@@ -107,6 +109,26 @@ Actions:
 1. Re-run with explicit `PARTICIPATION_*_SNAPSHOT_DATE` for deterministic replay.
 2. Verify recent `ParticipationFundingRecord` / `NetDepositLedger` writes.
 3. Check referral tree integrity (`Referrer`, `TeamClosure`) before re-running.
+
+### 4. Participation activation rejected (`/api/participation/account`)
+
+The activation endpoint returns structured `code` values for non-2xx results:
+
+- `REGISTRATION_REQUIRED` (`409`): wallet attempted activation before `REGISTER`.
+- `ACTIVATION_MODE_REQUIRED` (`400`): activation request missed `mode`.
+- `INSUFFICIENT_QUALIFIED_FUNDING` (`409`): net qualified capital below threshold.
+
+When `INSUFFICIENT_QUALIFIED_FUNDING` is returned, response payload also includes:
+
+- `mode`
+- `requiredThreshold`
+- `currentNetMcnEquivalent`
+- `deficit`
+
+Actions:
+1. Confirm latest net-deposit ledger state for the wallet.
+2. Confirm threshold for target mode (`FREE >= 100`, `MANAGED >= 500`).
+3. Retry activation only after deficit is closed.
 
 ## Release Checklist
 
