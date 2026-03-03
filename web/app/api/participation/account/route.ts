@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
-import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
+import { getWalletContextErrorCode, resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import {
     PARTICIPATION_MINIMUMS,
     PARTICIPATION_MODES,
@@ -16,37 +16,6 @@ const accountActionSchema = z.object({
     action: z.enum(['REGISTER', 'ACTIVATE']),
     mode: z.enum(PARTICIPATION_MODES).optional(),
 });
-
-function resolveWalletContextErrorCode(error: string): string {
-    if (error === 'Missing wallet header x-wallet-address') {
-        return 'WALLET_HEADER_REQUIRED';
-    }
-    if (error === 'Missing wallet signature headers') {
-        return 'WALLET_SIGNATURE_REQUIRED';
-    }
-    if (error === 'Invalid wallet signature timestamp') {
-        return 'WALLET_SIGNATURE_TIMESTAMP_INVALID';
-    }
-    if (error === 'Wallet signature expired') {
-        return 'WALLET_SIGNATURE_EXPIRED';
-    }
-    if (error === 'Invalid wallet signature') {
-        return 'WALLET_SIGNATURE_INVALID';
-    }
-    if (error === 'Invalid wallet signature format') {
-        return 'WALLET_SIGNATURE_FORMAT_INVALID';
-    }
-    if (error === 'Missing wallet address') {
-        return 'WALLET_ADDRESS_REQUIRED';
-    }
-    if (error === 'Wallet mismatch between request header/query/body') {
-        return 'WALLET_ADDRESS_MISMATCH';
-    }
-    if (error.startsWith('Invalid wallet address in ')) {
-        return 'WALLET_ADDRESS_INVALID';
-    }
-    return 'WALLET_CONTEXT_INVALID';
-}
 
 function roundAmount(value: number): number {
     return Number(value.toFixed(8));
@@ -117,7 +86,7 @@ export async function GET(request: NextRequest) {
             return NextResponse.json(
                 {
                     error: walletContext.error,
-                    code: resolveWalletContextErrorCode(walletContext.error),
+                    code: getWalletContextErrorCode(walletContext.error),
                 },
                 { status: walletContext.status }
             );
@@ -164,7 +133,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 {
                     error: walletContext.error,
-                    code: resolveWalletContextErrorCode(walletContext.error),
+                    code: getWalletContextErrorCode(walletContext.error),
                 },
                 { status: walletContext.status }
             );

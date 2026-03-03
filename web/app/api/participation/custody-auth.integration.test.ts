@@ -14,6 +14,10 @@ type SetupOptions = {
     activeAuthorization?: Record<string, unknown> | null;
     recentAuthorizations?: Array<Record<string, unknown>>;
     revokeCount?: number;
+    walletContextResult?: (
+        | { ok: true; wallet: string }
+        | { ok: false; error: string; status: number }
+    );
 };
 
 async function setupCustodyAuthRoute(options: SetupOptions = {}) {
@@ -22,6 +26,10 @@ async function setupCustodyAuthRoute(options: SetupOptions = {}) {
         activeAuthorization = null,
         recentAuthorizations = [],
         revokeCount = 1,
+        walletContextResult = {
+            ok: true,
+            wallet: '0x1111111111111111111111111111111111111111',
+        },
     } = options;
 
     vi.resetModules();
@@ -64,12 +72,13 @@ async function setupCustodyAuthRoute(options: SetupOptions = {}) {
         prisma: prismaMock,
         isDatabaseEnabled: true,
     }));
-    vi.doMock('@/lib/managed-wealth/request-wallet', () => ({
-        resolveWalletContext: () => ({
-            ok: true,
-            wallet: '0x1111111111111111111111111111111111111111',
-        }),
-    }));
+    vi.doMock('@/lib/managed-wealth/request-wallet', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('@/lib/managed-wealth/request-wallet')>();
+        return {
+            ...actual,
+            resolveWalletContext: () => walletContextResult,
+        };
+    });
 
     const route = await import('@/app/api/participation/custody-auth/route');
     return {
@@ -194,6 +203,23 @@ describe('Custody auth integration', () => {
         expect(res.status).toBe(200);
         expect(body.activeAuthorization.id).toBe('auth-active');
         expect(body.recentAuthorizations).toHaveLength(2);
+    });
+
+    it('returns stable wallet-context code when auth headers are missing', async () => {
+        const { get } = await setupCustodyAuthRoute({
+            walletContextResult: {
+                ok: false,
+                error: 'Missing wallet signature headers',
+                status: 401,
+            },
+        });
+
+        const res = await get(new NextRequest('http://localhost/api/participation/custody-auth?wallet=0x1111111111111111111111111111111111111111'));
+        const body = await res.json();
+
+        expect(res.status).toBe(401);
+        expect(body.error).toBe('Missing wallet signature headers');
+        expect(body.code).toBe('WALLET_SIGNATURE_REQUIRED');
     });
 
     it('revokes active custody authorization', async () => {

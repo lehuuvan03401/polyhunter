@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
-import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
+import { getWalletContextErrorCode, resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import {
     PARTICIPATION_FUNDING_CHANNELS,
     PARTICIPATION_MINIMUMS,
@@ -76,7 +76,13 @@ export async function POST(request: NextRequest) {
             requireSignature: true,
         });
         if (!walletContext.ok) {
-            return NextResponse.json({ error: walletContext.error }, { status: walletContext.status });
+            return NextResponse.json(
+                {
+                    error: walletContext.error,
+                    code: getWalletContextErrorCode(walletContext.error),
+                },
+                { status: walletContext.status }
+            );
         }
 
         const walletAddress = walletContext.wallet;

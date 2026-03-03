@@ -130,9 +130,15 @@ Actions:
 2. Confirm threshold for target mode (`FREE >= 100`, `MANAGED >= 500`).
 3. Retry activation only after deficit is closed.
 
-### 5. Wallet-context authentication rejected (`/api/participation/account`)
+### 5. Wallet-context authentication rejected (wallet-scoped participation APIs)
 
-`GET` and `POST` participation account endpoints enforce wallet-context validation with header + signature checks.
+Wallet-scoped participation endpoints enforce wallet-context validation with header + signature checks:
+- `/api/participation/account`
+- `/api/participation/levels` (`GET`)
+- `/api/participation/promotion` (`GET`)
+- `/api/participation/custody-auth`
+- `/api/participation/funding`
+
 Non-2xx responses now include stable `code` fields for operational routing.
 
 Common non-2xx responses:

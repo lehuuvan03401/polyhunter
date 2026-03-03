@@ -322,9 +322,13 @@ async function setupParticipationRoute(
         prisma: prismaMock,
         isDatabaseEnabled: true,
     }));
-    vi.doMock('@/lib/managed-wealth/request-wallet', () => ({
-        resolveWalletContext: walletContextResolver,
-    }));
+    vi.doMock('@/lib/managed-wealth/request-wallet', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('@/lib/managed-wealth/request-wallet')>();
+        return {
+            ...actual,
+            resolveWalletContext: walletContextResolver,
+        };
+    });
 
     const route = await import('@/app/api/participation/account/route');
     return {

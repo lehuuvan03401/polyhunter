@@ -19,6 +19,37 @@ type ResolveWalletContextResult =
     | { ok: true; wallet: string }
     | { ok: false; status: number; error: string };
 
+export function getWalletContextErrorCode(error: string): string {
+    if (error === 'Missing wallet header x-wallet-address') {
+        return 'WALLET_HEADER_REQUIRED';
+    }
+    if (error === 'Missing wallet signature headers') {
+        return 'WALLET_SIGNATURE_REQUIRED';
+    }
+    if (error === 'Invalid wallet signature timestamp') {
+        return 'WALLET_SIGNATURE_TIMESTAMP_INVALID';
+    }
+    if (error === 'Wallet signature expired') {
+        return 'WALLET_SIGNATURE_EXPIRED';
+    }
+    if (error === 'Invalid wallet signature') {
+        return 'WALLET_SIGNATURE_INVALID';
+    }
+    if (error === 'Invalid wallet signature format') {
+        return 'WALLET_SIGNATURE_FORMAT_INVALID';
+    }
+    if (error === 'Missing wallet address') {
+        return 'WALLET_ADDRESS_REQUIRED';
+    }
+    if (error === 'Wallet mismatch between request header/query/body') {
+        return 'WALLET_ADDRESS_MISMATCH';
+    }
+    if (error.startsWith('Invalid wallet address in ')) {
+        return 'WALLET_ADDRESS_INVALID';
+    }
+    return 'WALLET_CONTEXT_INVALID';
+}
+
 function parseWallet(raw: string | null | undefined, source: string): { wallet: string | null; error?: string } {
     if (!raw) return { wallet: null };
     const normalized = raw.trim();

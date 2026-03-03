@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
-import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
+import { getWalletContextErrorCode, resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
 import { buildDoubleZonePromotionProgress } from '@/lib/participation-program/promotion';
 import { startOfUtcDay } from '@/lib/participation-program/levels';
 
@@ -41,7 +41,13 @@ export async function GET(request: NextRequest) {
             requireSignature: true,
         });
         if (!walletContext.ok) {
-            return NextResponse.json({ error: walletContext.error }, { status: walletContext.status });
+            return NextResponse.json(
+                {
+                    error: walletContext.error,
+                    code: getWalletContextErrorCode(walletContext.error),
+                },
+                { status: walletContext.status }
+            );
         }
 
         const walletAddress = walletContext.wallet;
