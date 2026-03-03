@@ -498,6 +498,62 @@ test.describe('Participation dashboard E2E', () => {
         ).toHaveCount(0);
     });
 
+    test('maps wallet-context error code to localized dashboard load feedback', async ({ page }) => {
+        await page.route('**/api/participation/account?**', async (route) => {
+            await route.fulfill({
+                status: 401,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    error: 'Missing wallet signature headers',
+                    code: 'WALLET_SIGNATURE_REQUIRED',
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/custody-auth?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    activeAuthorization: null,
+                    recentAuthorizations: [],
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/levels?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/promotion?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.goto('/en/participation');
+
+        await expect(page.getByRole('heading', { name: 'Participation Dashboard' })).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Wallet authentication failed, please reconnect and retry')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Missing wallet signature headers')
+        ).toHaveCount(0);
+    });
+
     test('renders localized participation dashboard in zh-CN locale', async ({ page }) => {
         const state = {
             account: null,

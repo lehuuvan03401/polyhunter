@@ -130,6 +130,18 @@ type ParticipationActionError = Error & {
     activationFailureDetail?: ActivationFailureDetail;
 };
 
+function createParticipationApiError(data: unknown, fallbackMessage: string): ParticipationActionError {
+    const payload = (data ?? {}) as { error?: unknown; code?: unknown };
+    const message = typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : fallbackMessage;
+    const error = new Error(message) as ParticipationActionError;
+    if (typeof payload.code === 'string') {
+        error.code = payload.code;
+    }
+    return error;
+}
+
 async function fetchJson<T>(path: string, headers: Record<string, string>): Promise<T> {
     const res = await fetch(path, {
         headers,
@@ -137,7 +149,7 @@ async function fetchJson<T>(path: string, headers: Record<string, string>): Prom
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data?.error || `Failed to load ${path}`);
+        throw createParticipationApiError(data, `Failed to load ${path}`);
     }
     return data as T;
 }
@@ -212,14 +224,11 @@ async function postParticipationAccountAction(
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        const error = new Error(
-            data?.error || `Failed to ${action.toLowerCase()} participation`
-        ) as ParticipationActionError;
-
-        const code = typeof data?.code === 'string' ? data.code : undefined;
-        if (code) {
-            error.code = code;
-        }
+        const error = createParticipationApiError(
+            data,
+            `Failed to ${action.toLowerCase()} participation`
+        );
+        const code = error.code;
         const requiredThreshold = Number(data?.requiredThreshold);
         const currentNetMcnEquivalent = Number(data?.currentNetMcnEquivalent);
         const deficit = Number(data?.deficit);
@@ -370,9 +379,12 @@ export default function ParticipationPage() {
             );
             setDashboard(data);
         } catch (fetchError) {
-            const message = fetchError instanceof Error
-                ? fetchError.message
-                : t('errors.loadDashboardFailed');
+            const parsedError = fetchError instanceof Error
+                ? (fetchError as ParticipationActionError)
+                : null;
+            const message = parsedError?.code?.startsWith('WALLET_')
+                ? t('toast.walletContextInvalid')
+                : parsedError?.message ?? t('errors.loadDashboardFailed');
             setError(message);
             toast.error(message);
         } finally {
