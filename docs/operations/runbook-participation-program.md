@@ -130,9 +130,31 @@ Actions:
 2. Confirm threshold for target mode (`FREE >= 100`, `MANAGED >= 500`).
 3. Retry activation only after deficit is closed.
 
+### 5. Wallet-context authentication rejected (`/api/participation/account`)
+
+`GET` and `POST` participation account endpoints enforce wallet-context validation with header + signature checks.
+
+Common non-2xx responses:
+
+- `401 Missing wallet header x-wallet-address`
+- `401 Missing wallet signature headers`
+- `401 Wallet signature expired`
+- `401 Invalid wallet signature`
+- `401 Invalid wallet signature format`
+- `400 Missing wallet address`
+- `400 Wallet mismatch between request header/query/body`
+- `400 Invalid wallet address in x-wallet-address header/query param/request body`
+
+Actions:
+1. Ensure header/query/body all reference the same lowercase wallet.
+2. Re-sign with a fresh timestamp inside `MANAGED_WALLET_AUTH_WINDOW_MS`.
+3. For `GET`, use session-style signature message; for `POST`, use request-style path-aware signature message.
+4. If E2E mode is intentionally enabled, verify `NEXT_PUBLIC_E2E_MOCK_AUTH=true` in the target environment.
+
 ## Release Checklist
 
 - [ ] `npm run participation:levels:daily` succeeds in staging.
 - [ ] `npm run participation:promotion:daily` succeeds in staging.
 - [ ] Dry-run mode returns expected `processed` counts for a sample date.
+- [ ] `/api/participation/account` auth/activation contract tests pass (`vitest` + `playwright`).
 - [ ] Runbook ownership for daily snapshot monitoring is assigned.
