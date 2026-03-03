@@ -610,6 +610,50 @@ describe('Participation account integration', () => {
         expect(walletContextResolver).toHaveBeenCalledTimes(1);
     });
 
+    it('passes strict wallet-context requirements when mutating participation account', async () => {
+        const { post, walletContextResolver } = await setupParticipationRoute(500);
+
+        const registerRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        expect(registerRes.status).toBe(200);
+        expect(walletContextResolver).toHaveBeenCalledTimes(1);
+        expect(walletContextResolver).toHaveBeenCalledWith(
+            expect.any(NextRequest),
+            expect.objectContaining({
+                bodyWallet: REFEREE_WALLET,
+                requireHeader: true,
+                requireSignature: true,
+            })
+        );
+    });
+
+    it('surfaces wallet-context auth errors from POST endpoint', async () => {
+        const { post, walletContextResolver } = await setupParticipationRoute(500, {
+            walletContextResolver: () => ({
+                ok: false,
+                error: 'Missing wallet signature headers',
+                status: 401,
+            }),
+        });
+
+        const registerRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+        const body = await registerRes.json();
+
+        expect(registerRes.status).toBe(401);
+        expect(body.error).toBe('Missing wallet signature headers');
+        expect(walletContextResolver).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects activation with negative net qualified balance and reports full deficit', async () => {
         const { state, post } = await setupParticipationRoute(50);
 
