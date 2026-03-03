@@ -398,6 +398,106 @@ test.describe('Participation dashboard E2E', () => {
         await expect(page.getByText('Mode not selected')).toHaveCount(0);
     });
 
+    test('maps wallet-context error code to localized activation feedback', async ({ page }) => {
+        const state = {
+            account: {
+                status: 'PENDING',
+                preferredMode: null,
+                isRegistrationComplete: true,
+                registrationCompletedAt: '2026-03-01T00:00:00.000Z',
+                activatedAt: null,
+            },
+        };
+
+        await page.route('**/api/participation/account?**', async (route) => {
+            const request = route.request();
+            expect(request.headers()['x-wallet-address']).toBe(MOCK_WALLET);
+
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    account: state.account,
+                    netDeposits: {
+                        depositUsd: 200,
+                        withdrawUsd: 0,
+                        netUsd: 200,
+                        depositMcn: 200,
+                        withdrawMcn: 0,
+                        netMcnEquivalent: 200,
+                    },
+                    eligibility: {
+                        freeQualified: true,
+                        managedQualified: false,
+                        thresholds: {
+                            FREE: 100,
+                            MANAGED: 500,
+                        },
+                    },
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/account', async (route) => {
+            if (route.request().method() !== 'POST') {
+                await route.continue();
+                return;
+            }
+
+            await route.fulfill({
+                status: 401,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    error: 'Wallet signature expired',
+                    code: 'WALLET_SIGNATURE_EXPIRED',
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/custody-auth?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    activeAuthorization: null,
+                    recentAuthorizations: [],
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/levels?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/promotion?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.goto('/en/participation');
+
+        await page.getByRole('button', { name: 'Activate FREE Mode' }).click();
+        await expect(
+            page.getByRole('main').getByText('Wallet authentication failed, please reconnect and retry')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('main').getByText('Wallet signature expired')
+        ).toHaveCount(0);
+    });
+
     test('renders localized participation dashboard in zh-CN locale', async ({ page }) => {
         const state = {
             account: null,
