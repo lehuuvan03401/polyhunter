@@ -48,7 +48,12 @@ async function setupRouteWithInsufficientPrincipal() {
                     status: 'ACTIVE',
                     preferredMode: 'MANAGED',
                     isRegistrationComplete: true,
+                    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
                 }),
+            },
+            // Top-level count mock for rate-limiting check (runs before transaction)
+            managedSubscription: {
+                count: vi.fn().mockResolvedValue(0),
             },
             managedProduct: {
                 findFirst: vi.fn().mockResolvedValue({
@@ -87,6 +92,7 @@ async function setupRouteWithInsufficientPrincipal() {
         },
         isDatabaseEnabled: true,
     }));
+
 
     vi.doMock('@/lib/managed-wealth/request-wallet', () => ({
         resolveWalletContext: () => ({

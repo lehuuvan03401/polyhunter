@@ -19,7 +19,12 @@ async function setupRouteWithFreeModeAccount() {
                     status: 'ACTIVE',
                     preferredMode: 'FREE',
                     isRegistrationComplete: true,
+                    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
                 }),
+            },
+            managedSubscription: {
+                // Rate-limiting check: return 0 to avoid triggering rate limit before mode check
+                count: vi.fn().mockResolvedValue(0),
             },
         },
         isDatabaseEnabled: true,
