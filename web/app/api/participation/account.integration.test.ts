@@ -370,6 +370,7 @@ describe('Participation account integration', () => {
         const body = await activationRes.json();
 
         expect(activationRes.status).toBe(409);
+        expect(body.code).toBe('INSUFFICIENT_QUALIFIED_FUNDING');
         expect(body.mode).toBe('MANAGED');
         expect(body.requiredThreshold).toBe(500);
         expect(body.currentNetMcnEquivalent).toBe(120);
@@ -429,6 +430,7 @@ describe('Participation account integration', () => {
         const body = await activationRes.json();
 
         expect(activationRes.status).toBe(409);
+        expect(body.code).toBe('INSUFFICIENT_QUALIFIED_FUNDING');
         expect(body.mode).toBe('MANAGED');
         expect(body.requiredThreshold).toBe(500);
         expect(body.currentNetMcnEquivalent).toBe(499.9999);

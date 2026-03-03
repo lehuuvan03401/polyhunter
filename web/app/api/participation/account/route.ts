@@ -184,6 +184,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 {
                     error: 'Qualified funding required before activation',
+                    code: 'INSUFFICIENT_QUALIFIED_FUNDING',
                     mode: parsed.data.mode,
                     requiredThreshold,
                     currentNetMcnEquivalent,

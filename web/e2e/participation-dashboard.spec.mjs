@@ -287,6 +287,7 @@ test.describe('Participation dashboard E2E', () => {
                     contentType: 'application/json',
                     body: JSON.stringify({
                         error: 'Qualified funding required before activation',
+                        code: 'INSUFFICIENT_QUALIFIED_FUNDING',
                         mode: 'MANAGED',
                         requiredThreshold: 500,
                         currentNetMcnEquivalent: 450,
