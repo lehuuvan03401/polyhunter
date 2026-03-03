@@ -358,6 +358,27 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Rate limiting: prevent subscription spam (#8)
+        const RATE_LIMIT_MAX = resolveNumberEnv('MANAGED_SUBSCRIPTION_RATE_LIMIT', 3, 1, 100);
+        const RATE_WINDOW_HOURS = resolveNumberEnv('MANAGED_SUBSCRIPTION_RATE_WINDOW_HOURS', 1, 0.1, 24);
+        const rateWindowStart = new Date(Date.now() - RATE_WINDOW_HOURS * 60 * 60 * 1000);
+        const recentCount = await prisma.managedSubscription.count({
+            where: {
+                walletAddress: requestWallet,
+                createdAt: { gte: rateWindowStart },
+            },
+        });
+        if (recentCount >= RATE_LIMIT_MAX) {
+            return NextResponse.json(
+                {
+                    error: 'Too many subscription requests. Please try again later.',
+                    code: 'RATE_LIMIT_EXCEEDED',
+                    retryAfterHours: RATE_WINDOW_HOURS,
+                },
+                { status: 429 }
+            );
+        }
+
         if (principal < MANAGED_MIN_PRINCIPAL_USD) {
             return NextResponse.json(
                 {

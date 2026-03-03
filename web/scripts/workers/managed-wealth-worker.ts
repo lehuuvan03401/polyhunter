@@ -954,6 +954,21 @@ async function liquidateSubscriptions(now: Date): Promise<number> {
     return taskUpdates;
 }
 
+/**
+ * Proactively expire any ACTIVE memberships whose endsAt has passed.
+ * This ensures memberships are marked EXPIRED even if the user never visits
+ * the dashboard (the GET endpoint also does this, but only on access).
+ */
+async function expireManagedMemberships(now: Date): Promise<number> {
+    const result = await prisma.$executeRaw`
+        UPDATE "ManagedMembership"
+        SET "status" = 'EXPIRED', "updatedAt" = ${now}
+        WHERE "status" = 'ACTIVE'
+          AND "endsAt" <= ${now}
+    `;
+    return typeof result === 'number' ? result : 0;
+}
+
 async function runCycle(): Promise<void> {
     if (running) {
         console.warn('[ManagedWealthWorker] Previous cycle still running, skip this tick.');
@@ -977,10 +992,24 @@ async function runCycle(): Promise<void> {
 
         const pausedOrResumed = await enforceGuaranteedPause();
 
+        // Step 7: Expire outdated memberships (#13 — proactive, not only on GET)
+        const expiredMemberships = await expireManagedMemberships(now);
+
         const durationMs = Date.now() - started;
-        console.log(
-            `[ManagedWealthWorker] cycle done in ${durationMs}ms | mapped=${mapped} matured=${matured} settled=${settled} liquidated=${liquidated} nav=${navUpdated} statusChanges=${pausedOrResumed}`
-        );
+
+        // Structured JSON log for monitoring (#9)
+        console.log(JSON.stringify({
+            event: 'managed_wealth_cycle',
+            durationMs,
+            mapped,
+            matured,
+            settled,
+            liquidated,
+            navUpdated,
+            statusChanges: pausedOrResumed,
+            expiredMemberships,
+            ts: now.toISOString(),
+        }));
     } catch (error) {
         console.error('[ManagedWealthWorker] cycle failed:', error);
     } finally {
