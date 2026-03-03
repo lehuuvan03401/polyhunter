@@ -408,4 +408,30 @@ describe('Participation account integration', () => {
         expect(freeBody.account.status).toBe('ACTIVE');
         expect(freeBody.account.preferredMode).toBe('FREE');
     });
+
+    it('returns rounded managed deficit for decimal edge cases', async () => {
+        const { post } = await setupParticipationRoute(499.9999);
+
+        await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'REGISTER',
+            })
+        );
+
+        const activationRes = await post(
+            createJsonRequest('http://localhost/api/participation/account', {
+                walletAddress: REFEREE_WALLET,
+                action: 'ACTIVATE',
+                mode: 'MANAGED',
+            })
+        );
+        const body = await activationRes.json();
+
+        expect(activationRes.status).toBe(409);
+        expect(body.mode).toBe('MANAGED');
+        expect(body.requiredThreshold).toBe(500);
+        expect(body.currentNetMcnEquivalent).toBe(499.9999);
+        expect(body.deficit).toBe(0.0001);
+    });
 });

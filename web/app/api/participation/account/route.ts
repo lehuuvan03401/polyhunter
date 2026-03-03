@@ -17,6 +17,10 @@ const accountActionSchema = z.object({
     mode: z.enum(PARTICIPATION_MODES).optional(),
 });
 
+function roundAmount(value: number): number {
+    return Number(value.toFixed(8));
+}
+
 async function getWalletNetDeposits(walletAddress: string) {
     const [depositAgg, withdrawAgg] = await Promise.all([
         prisma.netDepositLedger.aggregate({
@@ -40,13 +44,16 @@ async function getWalletNetDeposits(walletAddress: string) {
     const depositMcn = Number(depositAgg._sum.mcnEquivalentAmount ?? 0);
     const withdrawMcn = Number(withdrawAgg._sum.mcnEquivalentAmount ?? 0);
 
+    const netUsd = roundAmount(depositUsd - withdrawUsd);
+    const netMcnEquivalent = roundAmount(depositMcn - withdrawMcn);
+
     return {
-        depositUsd,
-        withdrawUsd,
-        netUsd: depositUsd - withdrawUsd,
-        depositMcn,
-        withdrawMcn,
-        netMcnEquivalent: depositMcn - withdrawMcn,
+        depositUsd: roundAmount(depositUsd),
+        withdrawUsd: roundAmount(withdrawUsd),
+        netUsd,
+        depositMcn: roundAmount(depositMcn),
+        withdrawMcn: roundAmount(withdrawMcn),
+        netMcnEquivalent,
     };
 }
 
@@ -172,14 +179,15 @@ export async function POST(request: NextRequest) {
 
         const netDeposits = await getWalletNetDeposits(walletAddress);
         const requiredThreshold = getRequiredThreshold(parsed.data.mode);
-        if (netDeposits.netMcnEquivalent < requiredThreshold) {
+        const currentNetMcnEquivalent = roundAmount(netDeposits.netMcnEquivalent);
+        if (currentNetMcnEquivalent + 1e-8 < requiredThreshold) {
             return NextResponse.json(
                 {
                     error: 'Qualified funding required before activation',
                     mode: parsed.data.mode,
                     requiredThreshold,
-                    currentNetMcnEquivalent: netDeposits.netMcnEquivalent,
-                    deficit: requiredThreshold - netDeposits.netMcnEquivalent,
+                    currentNetMcnEquivalent,
+                    deficit: roundAmount(requiredThreshold - currentNetMcnEquivalent),
                 },
                 { status: 409 }
             );
