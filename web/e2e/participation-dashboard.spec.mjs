@@ -472,4 +472,120 @@ test.describe('Participation dashboard E2E', () => {
         await expect(page.getByText('建议下一步')).toBeVisible();
         await expect(page.getByRole('button', { name: '完成注册' })).toBeVisible();
     });
+
+    test('shows localized activation error by code in zh-CN locale', async ({ page }) => {
+        const state = {
+            account: {
+                status: 'PENDING',
+                preferredMode: null,
+                isRegistrationComplete: true,
+                registrationCompletedAt: '2026-03-01T00:00:00.000Z',
+                activatedAt: null,
+            },
+        };
+
+        await page.route('**/api/participation/account?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    account: state.account,
+                    netDeposits: {
+                        depositUsd: 450,
+                        withdrawUsd: 0,
+                        netUsd: 450,
+                        depositMcn: 450,
+                        withdrawMcn: 0,
+                        netMcnEquivalent: 450,
+                    },
+                    eligibility: {
+                        freeQualified: true,
+                        managedQualified: true,
+                        thresholds: {
+                            FREE: 100,
+                            MANAGED: 500,
+                        },
+                    },
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/account', async (route) => {
+            if (route.request().method() !== 'POST') {
+                await route.continue();
+                return;
+            }
+
+            const payload = route.request().postDataJSON();
+            if (payload.action === 'ACTIVATE' && payload.mode === 'MANAGED') {
+                await route.fulfill({
+                    status: 409,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        error: 'Qualified funding required before activation',
+                        code: 'INSUFFICIENT_QUALIFIED_FUNDING',
+                        mode: 'MANAGED',
+                        requiredThreshold: 500,
+                        currentNetMcnEquivalent: 450,
+                        deficit: 50,
+                    }),
+                });
+                return;
+            }
+
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    account: {
+                        ...state.account,
+                        status: 'ACTIVE',
+                        preferredMode: payload.mode,
+                        activatedAt: '2026-03-02T00:00:00.000Z',
+                    },
+                    message: 'ok',
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/custody-auth?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    activeAuthorization: null,
+                    recentAuthorizations: [],
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/levels?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.route('**/api/participation/promotion?**', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    progress: null,
+                    latestSnapshot: null,
+                }),
+            });
+        });
+
+        await page.goto('/zh-CN/participation');
+
+        await page.getByRole('button', { name: '激活 MANAGED 模式' }).click();
+        await expect(page.getByRole('main').getByText('激活前需满足净有效资金门槛')).toBeVisible();
+        await expect(page.getByRole('main').getByText('仍需补足：50.00 MCN')).toBeVisible();
+        await expect(page.getByRole('button', { name: '改为激活 FREE' })).toBeVisible();
+    });
 });
