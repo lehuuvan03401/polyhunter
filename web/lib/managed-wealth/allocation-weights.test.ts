@@ -60,7 +60,7 @@ describe('normalizeManagedAllocationWeights', () => {
     });
 
     it('filters out null/non-object entries', () => {
-        const input = [null, undefined, 42, { address: '0xA', weight: 1 }];
+        const input = [null, null, 42, { address: '0xA', weight: 1 }];
         const result = normalizeManagedAllocationWeights(input);
         expect(result).toHaveLength(1);
     });

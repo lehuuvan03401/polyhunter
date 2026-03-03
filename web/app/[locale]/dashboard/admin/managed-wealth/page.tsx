@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, RefreshCw, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
 type ManagedOpsHealthResponse = {
@@ -114,6 +114,31 @@ type ManagedLiquidationTasksResponse = {
     tasks: ManagedLiquidationTask[];
 };
 
+type RiskEvent = {
+    id: string;
+    subscriptionId: string;
+    severity: string;
+    metric: string;
+    threshold: number | null;
+    observedValue: number | null;
+    action: string;
+    description: string | null;
+    createdAt: string;
+    subscription: {
+        id: string;
+        walletAddress: string;
+        status: string;
+        principal: number;
+        product: { name: string } | null;
+    } | null;
+};
+
+type RiskEventsResponse = {
+    events: RiskEvent[];
+    stats: Record<string, number>;
+    total: number;
+};
+
 const QUERY = 'windowDays=7&liquidationLimit=200&parityLimit=500';
 const TASK_QUERY = 'statuses=PENDING,RETRYING,BLOCKED,FAILED&limit=100';
 
@@ -124,9 +149,12 @@ export default function AdminManagedWealthOpsPage() {
 
     const [loading, setLoading] = useState(false);
     const [taskLoading, setTaskLoading] = useState(false);
+    const [riskLoading, setRiskLoading] = useState(false);
     const [taskActionId, setTaskActionId] = useState<string | null>(null);
     const [data, setData] = useState<ManagedOpsHealthResponse | null>(null);
     const [tasksData, setTasksData] = useState<ManagedLiquidationTasksResponse | null>(null);
+    const [riskData, setRiskData] = useState<RiskEventsResponse | null>(null);
+    const [riskSeverityFilter, setRiskSeverityFilter] = useState<string>('');
 
     const adminHeaders = useMemo(() => ({
         'x-admin-wallet': adminWallet,
@@ -171,7 +199,7 @@ export default function AdminManagedWealthOpsPage() {
     }, [adminHeaders, adminWallet]);
 
     const refreshAll = useCallback(async () => {
-        await Promise.all([fetchHealth(), fetchTasks()]);
+        await Promise.all([fetchHealth(), fetchTasks(), fetchRiskEvents()]);
     }, [fetchHealth, fetchTasks]);
 
     const mutateTask = useCallback(async (
@@ -213,6 +241,29 @@ export default function AdminManagedWealthOpsPage() {
         }
     }, [adminHeaders, adminWallet, fetchHealth, fetchTasks]);
 
+    const fetchRiskEvents = useCallback(async () => {
+        if (!adminWallet) return;
+        setRiskLoading(true);
+        try {
+            const res = await fetch(`/api/managed-risk-events?limit=100`, {
+                headers: adminHeaders,
+            });
+            const body = await res.json() as RiskEventsResponse & { error?: string };
+            if (!res.ok) {
+                throw new Error(body.error || 'Failed to fetch risk events');
+            }
+            setRiskData(body);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to fetch risk events');
+        } finally {
+            setRiskLoading(false);
+        }
+    }, [adminHeaders, adminWallet]);
+
+    const filteredRiskEvents = riskData?.events.filter(
+        (e) => !riskSeverityFilter || e.severity === riskSeverityFilter
+    ) ?? [];
+
     if (!ready || !authenticated) {
         return (
             <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -222,7 +273,7 @@ export default function AdminManagedWealthOpsPage() {
     }
 
     const hasAlerts = Boolean(
-            data
+        data
         && (
             data.allocation.unmappedCount > 0
             || data.liquidation.backlogCount > 0
@@ -271,7 +322,7 @@ export default function AdminManagedWealthOpsPage() {
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <StatCard
                         title="Mapped Execution"
                         value={data ? `${data.allocation.mappedCount}` : '--'}
@@ -294,6 +345,12 @@ export default function AdminManagedWealthOpsPage() {
                         value={data ? `${data.settlementCommissionParity.missingCount + data.settlementCommissionParity.feeMismatchCount}` : '--'}
                         subtitle={data ? `Window ${data.settlementCommissionParity.windowDays}d` : 'Load data'}
                         danger={Boolean(data && (data.settlementCommissionParity.missingCount + data.settlementCommissionParity.feeMismatchCount) > 0)}
+                    />
+                    <StatCard
+                        title="Risk Events (24h)"
+                        value={riskData ? `${(riskData.stats.ERROR ?? 0) + (riskData.stats.WARN ?? 0)}` : '--'}
+                        subtitle={riskData ? `${riskData.stats.ERROR ?? 0} ERROR / ${riskData.stats.WARN ?? 0} WARN` : 'Load data'}
+                        danger={Boolean(riskData && (riskData.stats.ERROR ?? 0) > 0)}
                     />
                 </div>
 
@@ -480,9 +537,96 @@ export default function AdminManagedWealthOpsPage() {
                     )}
                 </section>
 
-                {(data || tasksData) && (
+                <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2">
+                            <ShieldAlert className="w-4 h-4 text-amber-400" />
+                            <h2 className="text-white font-semibold">Risk Events</h2>
+                            {riskData && (
+                                <span className="px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 text-xs">
+                                    {riskData.total} total
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <select
+                                value={riskSeverityFilter}
+                                onChange={(e) => setRiskSeverityFilter(e.target.value)}
+                                className="px-2 py-1 rounded-md bg-gray-800 text-gray-200 text-xs border border-gray-700"
+                            >
+                                <option value="">All severities</option>
+                                <option value="ERROR">ERROR</option>
+                                <option value="WARN">WARN</option>
+                                <option value="INFO">INFO</option>
+                            </select>
+                            <button
+                                onClick={fetchRiskEvents}
+                                disabled={riskLoading}
+                                className="px-3 py-1 rounded-md bg-gray-800 text-gray-200 text-xs hover:bg-gray-700 disabled:opacity-60"
+                            >
+                                {riskLoading ? 'Loading...' : 'Refresh'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 24h severity stats */}
+                    {riskData && (
+                        <div className="grid grid-cols-3 gap-3 mb-4">
+                            <MetricLine label="24h ERROR" value={String(riskData.stats.ERROR ?? 0)} danger={(riskData.stats.ERROR ?? 0) > 0} />
+                            <MetricLine label="24h WARN" value={String(riskData.stats.WARN ?? 0)} danger={(riskData.stats.WARN ?? 0) > 0} />
+                            <MetricLine label="24h INFO" value={String(riskData.stats.INFO ?? 0)} />
+                        </div>
+                    )}
+
+                    {!riskData || riskData.events.length === 0 ? (
+                        <p className="text-sm text-gray-400">{riskData ? 'No risk events found.' : 'Load data to see risk events.'}</p>
+                    ) : filteredRiskEvents.length === 0 ? (
+                        <p className="text-sm text-gray-400">No events match the selected filter.</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="text-left text-gray-400 border-b border-gray-800">
+                                    <tr>
+                                        <th className="py-2">Severity</th>
+                                        <th className="py-2">Metric</th>
+                                        <th className="py-2">Subscription</th>
+                                        <th className="py-2">Product</th>
+                                        <th className="py-2">Value / Threshold</th>
+                                        <th className="py-2">Action</th>
+                                        <th className="py-2">Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-gray-200">
+                                    {filteredRiskEvents.map((event) => (
+                                        <tr key={event.id} className="border-b border-gray-800/70 align-top">
+                                            <td className="py-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${event.severity === 'ERROR' ? 'bg-red-900/40 text-red-300' :
+                                                        event.severity === 'WARN' ? 'bg-amber-900/40 text-amber-300' :
+                                                            'bg-gray-800 text-gray-300'
+                                                    }`}>
+                                                    {event.severity}
+                                                </span>
+                                            </td>
+                                            <td className="py-2 font-mono text-xs">{event.metric}</td>
+                                            <td className="py-2 font-mono text-xs">{event.subscriptionId.slice(0, 8)}…</td>
+                                            <td className="py-2 text-xs text-gray-400">{event.subscription?.product?.name ?? '--'}</td>
+                                            <td className="py-2 text-xs">
+                                                {event.observedValue != null ? event.observedValue.toFixed(4) : '--'}
+                                                {event.threshold != null && <span className="text-gray-500">&nbsp;/&nbsp;{event.threshold.toFixed(4)}</span>}
+                                            </td>
+                                            <td className="py-2 text-xs text-gray-400">{event.action}</td>
+                                            <td className="py-2 text-xs text-gray-500">{new Date(event.createdAt).toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </section>
+
+                {(data || tasksData || riskData) && (
                     <p className="text-xs text-gray-500">
-                        Last updated: {new Date((data?.generatedAt || tasksData?.generatedAt) as string).toLocaleString()}
+                        Last updated: {new Date((data?.generatedAt || tasksData?.generatedAt || new Date().toISOString()) as string).toLocaleString()}
                     </p>
                 )}
             </div>

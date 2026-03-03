@@ -156,7 +156,10 @@ export async function POST(request: NextRequest) {
 
         if (!parsed.data.mode) {
             return NextResponse.json(
-                { error: 'Activation requires mode (FREE or MANAGED)' },
+                {
+                    error: 'Activation requires mode (FREE or MANAGED)',
+                    code: 'ACTIVATION_MODE_REQUIRED',
+                },
                 { status: 400 }
             );
         }
@@ -172,7 +175,10 @@ export async function POST(request: NextRequest) {
 
         if (!existing || !existing.isRegistrationComplete) {
             return NextResponse.json(
-                { error: 'Registration must be completed before activation' },
+                {
+                    error: 'Registration must be completed before activation',
+                    code: 'REGISTRATION_REQUIRED',
+                },
                 { status: 409 }
             );
         }
