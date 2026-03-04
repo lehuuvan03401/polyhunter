@@ -44,11 +44,23 @@ type PartnerRefundRow = {
     errorMessage: string | null;
 };
 
+type PartnerEliminationTaskRow = {
+    id: string;
+    monthKey: string;
+    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+    startedAt: Date | null;
+    completedAt: Date | null;
+    errorLog: string | null;
+    processedSeats: number;
+    totalSeats: number;
+};
+
 type PartnerState = {
     seats: Map<string, PartnerSeatRow>;
     monthlyRanks: Map<string, PartnerMonthlyRankRow>;
     eliminations: Map<string, PartnerEliminationRow>;
     refunds: Map<string, PartnerRefundRow>;
+    eliminationTasks: Map<string, PartnerEliminationTaskRow>;
     scores: Map<string, number>;
 };
 
@@ -113,6 +125,7 @@ function createPartnerState(): PartnerState {
         monthlyRanks: new Map(),
         eliminations: new Map(),
         refunds: new Map(),
+        eliminationTasks: new Map(),
         scores: new Map([
             ['seat-1', 1200],
             ['seat-2', 400],
@@ -234,11 +247,37 @@ function createPartnerPrismaMock(state: PartnerState) {
         },
     };
 
+    const partnerEliminationTask = {
+        findUnique: async ({ where }: { where: { monthKey: string } }) => {
+            return Array.from(state.eliminationTasks.values()).find(t => t.monthKey === where.monthKey) ?? null;
+        },
+        create: async ({ data }: { data: Omit<PartnerEliminationTaskRow, 'id' | 'processedSeats' | 'totalSeats' | 'completedAt' | 'errorLog'> }) => {
+            const task: PartnerEliminationTaskRow = {
+                id: `task-${data.monthKey}`,
+                processedSeats: 0,
+                totalSeats: 0,
+                completedAt: null,
+                errorLog: null,
+                ...data,
+            };
+            state.eliminationTasks.set(task.id, task);
+            return task;
+        },
+        update: async ({ where, data }: { where: { id: string }, data: Partial<PartnerEliminationTaskRow> }) => {
+            const existing = state.eliminationTasks.get(where.id);
+            if (!existing) throw new Error('TASK_NOT_FOUND');
+            const next = { ...existing, ...data };
+            state.eliminationTasks.set(where.id, next);
+            return next;
+        }
+    };
+
     const prismaMock = {
         partnerSeat,
         partnerMonthlyRank,
         partnerElimination,
         partnerRefund,
+        partnerEliminationTask,
         $transaction: async (callback: (tx: any) => Promise<any>) => callback(prismaMock),
     };
 

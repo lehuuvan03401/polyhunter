@@ -101,6 +101,7 @@ export type PartnerSeatForRanking = {
 export type RankedPartnerSeat = PartnerSeatForRanking & {
     rank: number;
     scoreNetDepositUsd: number;
+    scoreActiveManagedUsd: number;
 };
 
 export async function buildPartnerSeatRanking(
@@ -116,18 +117,46 @@ export async function buildPartnerSeatRanking(
         seats.map((seat) => seat.walletAddress)
     );
 
+    // Get active managed equity for tie-breaking
+    const activeManagedMap = new Map<string, number>();
+    const activeSubscriptions = await prisma.managedSubscription.findMany({
+        where: {
+            walletAddress: { in: Array.from(scoreMap.keys()) },
+            status: { in: ['RUNNING', 'PENDING'] }
+        },
+        select: {
+            walletAddress: true,
+            currentEquity: true,
+            principal: true
+        }
+    });
+
+    for (const sub of activeSubscriptions) {
+        const wallet = sub.walletAddress.toLowerCase();
+        const current = activeManagedMap.get(wallet) || 0;
+        const val = sub.currentEquity ?? sub.principal;
+        activeManagedMap.set(wallet, current + val);
+    }
+
     return seats
         .map((seat) => ({
             ...seat,
             scoreNetDepositUsd: Number(scoreMap.get(seat.walletAddress.toLowerCase()) ?? 0),
+            scoreActiveManagedUsd: Number(activeManagedMap.get(seat.walletAddress.toLowerCase()) ?? 0),
         }))
         .sort((a, b) => {
             if (b.scoreNetDepositUsd !== a.scoreNetDepositUsd) {
                 return b.scoreNetDepositUsd - a.scoreNetDepositUsd;
             }
+            // Tie-breaker 1: Active managed equity (higher is better)
+            if (b.scoreActiveManagedUsd !== a.scoreActiveManagedUsd) {
+                return b.scoreActiveManagedUsd - a.scoreActiveManagedUsd;
+            }
+            // Tie-breaker 2: Platform loyalty / seniority (earlier joined is better)
             if (a.joinedAt.getTime() !== b.joinedAt.getTime()) {
                 return a.joinedAt.getTime() - b.joinedAt.getTime();
             }
+            // Tie-breaker 3: Deterministic fallback
             return a.walletAddress.localeCompare(b.walletAddress);
         })
         .map((seat, index) => ({

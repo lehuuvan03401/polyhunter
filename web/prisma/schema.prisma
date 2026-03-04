@@ -49,11 +49,11 @@ model Referrer {
   descendants TeamClosure[] @relation("AncestorRelation")
 
   // Performance Metrics
-  maxDepth              Int                    @default(0) // Deepest level of the team
-  sunLineCount          Int                    @default(0) // Number of qualified sun lines
-  teamVolume            Float                  @default(0) // Total volume of the subtree
-  commissionLogs        CommissionLog[]
-  commissionLogArchives CommissionLogArchive[]
+  maxDepth                  Int                        @default(0) // Deepest level of the team
+  sunLineCount              Int                        @default(0) // Number of qualified sun lines
+  teamVolume                Float                      @default(0) // Total volume of the subtree
+  commissionLogs            CommissionLog[]
+  commissionLogArchives     CommissionLogArchive[]
   sameLevelBonusSettlements SameLevelBonusSettlement[]
 }
 
@@ -581,42 +581,42 @@ model ManagedSubscriptionAllocation {
 }
 
 model ManagedSubscription {
-  id                   String                    @id @default(cuid())
-  walletAddress        String
-  productId            String
-  product              ManagedProduct            @relation(fields: [productId], references: [id], onDelete: Cascade)
-  termId               String
-  term                 ManagedTerm               @relation(fields: [termId], references: [id], onDelete: Restrict)
-  status               ManagedSubscriptionStatus @default(PENDING)
-  principal            Float
-  acceptedTermsAt      DateTime                  @default(now())
-  disclosurePolicy     ManagedDisclosurePolicy   @default(TRANSPARENT)
-  disclosureDelayHours Int                       @default(0)
-  highWaterMark        Float                     @default(0)
-  currentEquity        Float?
-  copyConfigId         String?
-  copyConfig           CopyTradingConfig?        @relation(fields: [copyConfigId], references: [id], onDelete: SetNull)
+  id                     String                       @id @default(cuid())
+  walletAddress          String
+  productId              String
+  product                ManagedProduct               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  termId                 String
+  term                   ManagedTerm                  @relation(fields: [termId], references: [id], onDelete: Restrict)
+  status                 ManagedSubscriptionStatus    @default(PENDING)
+  principal              Float
+  acceptedTermsAt        DateTime                     @default(now())
+  disclosurePolicy       ManagedDisclosurePolicy      @default(TRANSPARENT)
+  disclosureDelayHours   Int                          @default(0)
+  highWaterMark          Float                        @default(0)
+  currentEquity          Float?
+  copyConfigId           String?
+  copyConfig             CopyTradingConfig?           @relation(fields: [copyConfigId], references: [id], onDelete: SetNull)
   custodyAuthorizationId String?
-  custodyAuthorization ManagedCustodyAuthorization? @relation(fields: [custodyAuthorizationId], references: [id], onDelete: SetNull)
-  startAt              DateTime?
-  endAt                DateTime?
-  maturedAt            DateTime?
-  settledAt            DateTime?
-  isTrial              Boolean                   @default(false)
-  trialEndsAt          DateTime?
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
+  custodyAuthorization   ManagedCustodyAuthorization? @relation(fields: [custodyAuthorizationId], references: [id], onDelete: SetNull)
+  startAt                DateTime?
+  endAt                  DateTime?
+  maturedAt              DateTime?
+  settledAt              DateTime?
+  isTrial                Boolean                      @default(false)
+  trialEndsAt            DateTime?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
 
-  navSnapshots       ManagedNavSnapshot[]
-  allocations        ManagedSubscriptionAllocation[]
-  executionTargets   ManagedSubscriptionExecutionTarget[]
-  settlement         ManagedSettlement?
-  settlementExecutions ManagedSettlementExecution[]
+  navSnapshots          ManagedNavSnapshot[]
+  allocations           ManagedSubscriptionAllocation[]
+  executionTargets      ManagedSubscriptionExecutionTarget[]
+  settlement            ManagedSettlement?
+  settlementExecutions  ManagedSettlementExecution[]
   principalReservations ManagedPrincipalReservationLedger[]
-  liquidationTasks   ManagedLiquidationTask[]
-  reserveFundEntries ReserveFundLedger[]
-  riskEvents         ManagedRiskEvent[]
-  scopedPositions    ManagedSubscriptionPosition[]
+  liquidationTasks      ManagedLiquidationTask[]
+  reserveFundEntries    ReserveFundLedger[]
+  riskEvents            ManagedRiskEvent[]
+  scopedPositions       ManagedSubscriptionPosition[]
 
   @@index([walletAddress, status])
   @@index([status, endAt])
@@ -685,10 +685,10 @@ model ManagedNavSnapshot {
 }
 
 model ManagedSettlement {
-  id                 String                  @id @default(cuid())
-  subscriptionId     String                  @unique
-  subscription       ManagedSubscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  status             ManagedSettlementStatus @default(PENDING)
+  id                 String                      @id @default(cuid())
+  subscriptionId     String                      @unique
+  subscription       ManagedSubscription         @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status             ManagedSettlementStatus     @default(PENDING)
   principal          Float
   finalEquity        Float
   grossPnl           Float
@@ -697,12 +697,12 @@ model ManagedSettlement {
   performanceFeeRate Float
   performanceFee     Float
   guaranteedPayout   Float?
-  reserveTopup       Float                   @default(0)
+  reserveTopup       Float                       @default(0)
   finalPayout        Float
   settledAt          DateTime?
   errorMessage       String?
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
   execution          ManagedSettlementExecution?
 
   @@index([status, createdAt])
@@ -710,21 +710,21 @@ model ManagedSettlement {
 }
 
 model ManagedSettlementExecution {
-  id                    String                  @id @default(cuid())
-  settlementId          String                  @unique
-  settlement            ManagedSettlement       @relation(fields: [settlementId], references: [id], onDelete: Cascade)
-  subscriptionId        String
-  subscription          ManagedSubscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  walletAddress         String
-  grossPnl              Float
-  profitFeeTradeId      String                  @unique
-  profitFeeScope        String
-  commissionStatus      ManagedCommissionStatus @default(PENDING)
-  commissionSettledAt   DateTime?
+  id                      String                  @id @default(cuid())
+  settlementId            String                  @unique
+  settlement              ManagedSettlement       @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  subscriptionId          String
+  subscription            ManagedSubscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  walletAddress           String
+  grossPnl                Float
+  profitFeeTradeId        String                  @unique
+  profitFeeScope          String
+  commissionStatus        ManagedCommissionStatus @default(PENDING)
+  commissionSettledAt     DateTime?
   commissionSkippedReason String?
-  commissionError       String?
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
+  commissionError         String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
 
   @@index([commissionStatus, createdAt])
   @@index([subscriptionId, commissionStatus])
@@ -732,18 +732,18 @@ model ManagedSettlementExecution {
 }
 
 model ManagedPrincipalReservationLedger {
-  id                    String                             @id @default(cuid())
-  walletAddress         String
-  subscriptionId        String?
-  subscription          ManagedSubscription?               @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  entryType             ManagedPrincipalReservationEntryType
-  amount                Float
-  idempotencyKey        String                             @unique
+  id                      String                               @id @default(cuid())
+  walletAddress           String
+  subscriptionId          String?
+  subscription            ManagedSubscription?                 @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  entryType               ManagedPrincipalReservationEntryType
+  amount                  Float
+  idempotencyKey          String                               @unique
   managedQualifiedBalance Float?
-  reservedBalanceAfter  Float?
-  availableBalanceAfter Float?
-  note                  String?
-  createdAt             DateTime                           @default(now())
+  reservedBalanceAfter    Float?
+  availableBalanceAfter   Float?
+  note                    String?
+  createdAt               DateTime                             @default(now())
 
   @@index([walletAddress, createdAt])
   @@index([walletAddress, entryType, createdAt])
@@ -751,9 +751,9 @@ model ManagedPrincipalReservationLedger {
 }
 
 model ManagedLiquidationTask {
-  id              String                      @id @default(cuid())
+  id              String                       @id @default(cuid())
   subscriptionId  String
-  subscription    ManagedSubscription         @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription    ManagedSubscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   walletAddress   String
   copyConfigId    String?
   tokenId         String
@@ -762,13 +762,13 @@ model ManagedLiquidationTask {
   indicativePrice Float?
   notionalUsd     Float?
   status          ManagedLiquidationTaskStatus @default(PENDING)
-  attemptCount    Int                         @default(0)
+  attemptCount    Int                          @default(0)
   lastAttemptAt   DateTime?
   nextRetryAt     DateTime?
   errorCode       String?
   errorMessage    String?
-  createdAt       DateTime                    @default(now())
-  updatedAt       DateTime                    @updatedAt
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
 
   @@unique([subscriptionId, tokenId])
   @@index([status, nextRetryAt])
@@ -826,21 +826,21 @@ model ManagedMembership {
 }
 
 model ParticipationAccount {
-  id                     String                     @id @default(cuid())
-  walletAddress          String                     @unique
-  status                 ParticipationAccountStatus @default(PENDING)
-  preferredMode          ParticipationMode?
-  isRegistrationComplete Boolean                    @default(false)
+  id                      String                     @id @default(cuid())
+  walletAddress           String                     @unique
+  status                  ParticipationAccountStatus @default(PENDING)
+  preferredMode           ParticipationMode?
+  isRegistrationComplete  Boolean                    @default(false)
   registrationCompletedAt DateTime?
-  activatedAt            DateTime?
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  activatedAt             DateTime?
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
 
-  fundingRecords   ParticipationFundingRecord[]
-  netDepositEntries NetDepositLedger[]
-  levelSnapshots   DailyLevelSnapshot[]
+  fundingRecords        ParticipationFundingRecord[]
+  netDepositEntries     NetDepositLedger[]
+  levelSnapshots        DailyLevelSnapshot[]
   custodyAuthorizations ManagedCustodyAuthorization[]
-  doubleZoneSnapshots DoubleZoneSnapshot[]
+  doubleZoneSnapshots   DoubleZoneSnapshot[]
 
   @@index([status])
   @@index([preferredMode, status])
@@ -891,16 +891,16 @@ model NetDepositLedger {
 }
 
 model DailyLevelSnapshot {
-  id               String               @id @default(cuid())
-  accountId        String
-  account          ParticipationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  walletAddress    String
-  snapshotDate     DateTime
-  selfNetDepositUsd Float               @default(0)
-  teamNetDepositUsd Float               @default(0)
-  level            String               @default("NONE")
-  dividendRate     Float                @default(0)
-  createdAt        DateTime             @default(now())
+  id                String               @id @default(cuid())
+  accountId         String
+  account           ParticipationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  walletAddress     String
+  snapshotDate      DateTime
+  selfNetDepositUsd Float                @default(0)
+  teamNetDepositUsd Float                @default(0)
+  level             String               @default("NONE")
+  dividendRate      Float                @default(0)
+  createdAt         DateTime             @default(now())
 
   @@unique([walletAddress, snapshotDate])
   @@index([accountId, snapshotDate])
@@ -908,21 +908,21 @@ model DailyLevelSnapshot {
 }
 
 model DoubleZoneSnapshot {
-  id                   String               @id @default(cuid())
-  accountId            String
-  account              ParticipationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  walletAddress        String
-  snapshotDate         DateTime
-  leftLegWallet        String?
-  rightLegWallet       String?
-  leftNetDepositUsd    Float                @default(0)
-  rightNetDepositUsd   Float                @default(0)
-  weakZoneNetDepositUsd Float               @default(0)
-  strongZoneNetDepositUsd Float             @default(0)
-  promotionLevel       String               @default("NONE")
-  nextLevel            String?
-  nextLevelGapUsd      Float                @default(0)
-  createdAt            DateTime             @default(now())
+  id                      String               @id @default(cuid())
+  accountId               String
+  account                 ParticipationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  walletAddress           String
+  snapshotDate            DateTime
+  leftLegWallet           String?
+  rightLegWallet          String?
+  leftNetDepositUsd       Float                @default(0)
+  rightNetDepositUsd      Float                @default(0)
+  weakZoneNetDepositUsd   Float                @default(0)
+  strongZoneNetDepositUsd Float                @default(0)
+  promotionLevel          String               @default("NONE")
+  nextLevel               String?
+  nextLevelGapUsd         Float                @default(0)
+  createdAt               DateTime             @default(now())
 
   @@unique([walletAddress, snapshotDate])
   @@index([accountId, snapshotDate])
@@ -960,30 +960,32 @@ model PartnerSeat {
 }
 
 model PartnerMonthlyRank {
-  id                String      @id @default(cuid())
-  seatId            String
-  seat              PartnerSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
-  monthKey          String
-  rank              Int
-  scoreNetDepositUsd Float
-  snapshotAt        DateTime    @default(now())
-  createdAt         DateTime    @default(now())
+  id                    String      @id @default(cuid())
+  seatId                String
+  seat                  PartnerSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  monthKey              String
+  rank                  Int
+  scoreNetDepositUsd    Float
+  scoreActiveManagedUsd Float       @default(0)
+  snapshotAt            DateTime    @default(now())
+  createdAt             DateTime    @default(now())
 
   @@unique([seatId, monthKey])
   @@index([monthKey, rank])
 }
 
 model PartnerElimination {
-  id                String      @id @default(cuid())
-  seatId            String
-  seat              PartnerSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
-  monthKey          String
-  rankAtElimination Int
-  scoreNetDepositUsd Float
-  reason            String?
-  eliminatedAt      DateTime    @default(now())
-  refundDeadlineAt  DateTime
-  createdAt         DateTime    @default(now())
+  id                    String      @id @default(cuid())
+  seatId                String
+  seat                  PartnerSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  monthKey              String
+  rankAtElimination     Int
+  scoreNetDepositUsd    Float
+  scoreActiveManagedUsd Float       @default(0)
+  reason                String?
+  eliminatedAt          DateTime    @default(now())
+  refundDeadlineAt      DateTime
+  createdAt             DateTime    @default(now())
 
   refund PartnerRefund?
 
@@ -993,26 +995,53 @@ model PartnerElimination {
 }
 
 model PartnerRefund {
-  id           String            @id @default(cuid())
-  seatId       String
-  seat         PartnerSeat       @relation(fields: [seatId], references: [id], onDelete: Cascade)
-  eliminationId String           @unique
-  elimination  PartnerElimination @relation(fields: [eliminationId], references: [id], onDelete: Cascade)
-  status       PartnerRefundStatus @default(PENDING)
-  amountUsd    Float
-  requestedAt  DateTime          @default(now())
-  completedAt  DateTime?
-  txHash       String?
-  errorMessage String?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id            String              @id @default(cuid())
+  seatId        String
+  seat          PartnerSeat         @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  eliminationId String              @unique
+  elimination   PartnerElimination  @relation(fields: [eliminationId], references: [id], onDelete: Cascade)
+  status        PartnerRefundStatus @default(PENDING)
+  amountUsd     Float
+  requestedAt   DateTime            @default(now())
+  completedAt   DateTime?
+  txHash        String?
+  errorMessage  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@index([status, requestedAt])
   @@index([seatId, status])
 }
 
+model PartnerQueue {
+  id                  String   @id @default(cuid())
+  walletAddress       String   @unique
+  commitmentAmountUsd Float
+  status              String   @default("PENDING") // 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED'
+  joinedAt            DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status, commitmentAmountUsd, joinedAt])
+}
+
+model PartnerEliminationTask {
+  id             String    @id @default(cuid())
+  monthKey       String    @unique
+  status         String    @default("PENDING") // 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorLog       String?
+  processedSeats Int       @default(0)
+  totalSeats     Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, monthKey])
+}
+
 model ManagedReturnMatrix {
-  id              String                   @id @default(cuid())
+  id              String                     @id @default(cuid())
   principalBand   ManagedReturnPrincipalBand
   minPrincipalUsd Float
   maxPrincipalUsd Float
@@ -1020,10 +1049,10 @@ model ManagedReturnMatrix {
   strategyProfile StrategyProfile
   returnMin       Float
   returnMax       Float
-  returnUnit      String                   @default("PERCENT")
-  isActive        Boolean                  @default(true)
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  returnUnit      String                     @default("PERCENT")
+  isActive        Boolean                    @default(true)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
 
   @@unique([principalBand, termDays, strategyProfile])
   @@index([isActive, principalBand, termDays])
@@ -1031,21 +1060,21 @@ model ManagedReturnMatrix {
 }
 
 model ManagedCustodyAuthorization {
-  id               String                           @id @default(cuid())
+  id               String                            @id @default(cuid())
   accountId        String?
-  account          ParticipationAccount?            @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  account          ParticipationAccount?             @relation(fields: [accountId], references: [id], onDelete: SetNull)
   walletAddress    String
-  mode             ParticipationMode                @default(MANAGED)
+  mode             ParticipationMode                 @default(MANAGED)
   status           ManagedCustodyAuthorizationStatus @default(ACTIVE)
   consentStatement String
   requestPath      String
   requestMethod    String
   signature        String
   scope            Json?
-  grantedAt        DateTime                         @default(now())
+  grantedAt        DateTime                          @default(now())
   revokedAt        DateTime?
-  createdAt        DateTime                         @default(now())
-  updatedAt        DateTime                         @updatedAt
+  createdAt        DateTime                          @default(now())
+  updatedAt        DateTime                          @updatedAt
 
   managedSubscriptions ManagedSubscription[]
 

@@ -99,6 +99,7 @@ export async function GET(request: NextRequest) {
                 seatStatus: row.seat.status,
                 rank: row.rank,
                 scoreNetDepositUsd: row.scoreNetDepositUsd,
+                scoreActiveManagedUsd: (row as any).scoreActiveManagedUsd || 0, // Fallback for old records
                 joinedAt: row.seat.joinedAt,
                 seatFeeUsd: row.seat.seatFeeUsd,
                 elimination: eliminationMap.get(row.seatId) ?? null,
@@ -170,19 +171,31 @@ export async function POST(request: NextRequest) {
         const monthKey = parsed.data.monthKey ?? toMonthKey(new Date());
         parseMonthKey(monthKey);
 
-        const existingCycleCount = await prisma.partnerElimination.count({
-            where: { monthKey },
+        let task = await prisma.partnerEliminationTask.findUnique({
+            where: { monthKey }
         });
-        if (existingCycleCount > 0) {
-            return NextResponse.json(
-                {
-                    error: 'Cycle already executed for this month',
-                    code: 'CYCLE_ALREADY_EXECUTED',
+
+        if (task) {
+            if (task.status === 'COMPLETED') {
+                return NextResponse.json(
+                    {
+                        error: 'Cycle already executed for this month',
+                        code: 'CYCLE_ALREADY_EXECUTED',
+                        monthKey,
+                    },
+                    { status: 409 }
+                );
+            } else if (task.status === 'PROCESSING') {
+                return NextResponse.json({
+                    error: 'Cycle is currently processing',
+                    code: 'CYCLE_PROCESSING',
                     monthKey,
-                    eliminationCount: existingCycleCount,
-                },
-                { status: 409 }
-            );
+                }, { status: 429 });
+            }
+        } else {
+            task = await prisma.partnerEliminationTask.create({
+                data: { monthKey, status: 'PROCESSING', startedAt: new Date() }
+            });
         }
 
         const activeSeats = await prisma.partnerSeat.findMany({
@@ -196,6 +209,12 @@ export async function POST(request: NextRequest) {
         });
 
         if (activeSeats.length === 0) {
+            if (!parsed.data.dryRun) {
+                await prisma.partnerEliminationTask.update({
+                    where: { id: task!.id },
+                    data: { status: 'COMPLETED', completedAt: new Date(), totalSeats: 0 }
+                });
+            }
             return NextResponse.json({
                 monthKey,
                 dryRun: parsed.data.dryRun,
@@ -234,95 +253,116 @@ export async function POST(request: NextRequest) {
             });
         }
 
+        // Mark processing started
+        await prisma.partnerEliminationTask.update({
+            where: { id: task!.id },
+            data: { status: 'PROCESSING', totalSeats: ranked.length }
+        });
+
         const now = new Date();
         const refundDeadline = computeRefundDeadline(now);
+        let processed = 0;
+        let eliminated = 0;
 
-        const result = await prisma.$transaction(async (tx) => {
-            for (const seat of ranked) {
-                await tx.partnerMonthlyRank.upsert({
-                    where: {
-                        seatId_monthKey: {
+        try {
+            for (let i = task!.processedSeats; i < ranked.length; i++) {
+                const seat = ranked[i];
+                const isEliminated = eliminationCandidates.some(c => c.id === seat.id);
+
+                await prisma.$transaction(async (tx) => {
+                    // 1. Record rank
+                    await tx.partnerMonthlyRank.upsert({
+                        where: { seatId_monthKey: { seatId: seat.id, monthKey } },
+                        update: {
+                            rank: seat.rank,
+                            scoreNetDepositUsd: seat.scoreNetDepositUsd,
+                            scoreActiveManagedUsd: seat.scoreActiveManagedUsd,
+                            snapshotAt: now,
+                        },
+                        create: {
                             seatId: seat.id,
                             monthKey,
+                            rank: seat.rank,
+                            scoreNetDepositUsd: seat.scoreNetDepositUsd,
+                            scoreActiveManagedUsd: seat.scoreActiveManagedUsd,
+                            snapshotAt: now,
                         },
-                    },
-                    update: {
-                        rank: seat.rank,
-                        scoreNetDepositUsd: seat.scoreNetDepositUsd,
-                        snapshotAt: now,
-                    },
-                    create: {
-                        seatId: seat.id,
-                        monthKey,
-                        rank: seat.rank,
-                        scoreNetDepositUsd: seat.scoreNetDepositUsd,
-                        snapshotAt: now,
-                    },
+                    });
+
+                    // 2. Perform elimination if applicable
+                    if (isEliminated) {
+                        const elimination = await tx.partnerElimination.upsert({
+                            where: { seatId_monthKey: { seatId: seat.id, monthKey } },
+                            update: {
+                                rankAtElimination: seat.rank,
+                                scoreNetDepositUsd: seat.scoreNetDepositUsd,
+                                scoreActiveManagedUsd: seat.scoreActiveManagedUsd,
+                                reason: parsed.data.reason,
+                                eliminatedAt: now,
+                                refundDeadlineAt: refundDeadline,
+                            },
+                            create: {
+                                seatId: seat.id,
+                                monthKey,
+                                rankAtElimination: seat.rank,
+                                scoreNetDepositUsd: seat.scoreNetDepositUsd,
+                                scoreActiveManagedUsd: seat.scoreActiveManagedUsd,
+                                reason: parsed.data.reason,
+                                eliminatedAt: now,
+                                refundDeadlineAt: refundDeadline,
+                            },
+                        });
+
+                        await tx.partnerRefund.upsert({
+                            where: { eliminationId: elimination.id },
+                            update: { amountUsd: seat.seatFeeUsd, status: 'PENDING' },
+                            create: {
+                                seatId: seat.id,
+                                eliminationId: elimination.id,
+                                amountUsd: seat.seatFeeUsd,
+                                status: 'PENDING',
+                            },
+                        });
+
+                        await tx.partnerSeat.update({
+                            where: { id: seat.id },
+                            data: {
+                                status: 'ELIMINATED',
+                                backendAccess: false,
+                                eliminatedAt: now,
+                            },
+                        });
+                        eliminated++;
+                    }
+
+                    // 3. Update task progress
+                    processed++;
+                    await tx.partnerEliminationTask.update({
+                        where: { id: task!.id },
+                        data: { processedSeats: task!.processedSeats + processed }
+                    });
                 });
             }
 
-            let eliminated = 0;
-            for (const candidate of eliminationCandidates) {
-                const elimination = await tx.partnerElimination.upsert({
-                    where: {
-                        seatId_monthKey: {
-                            seatId: candidate.id,
-                            monthKey,
-                        },
-                    },
-                    update: {
-                        rankAtElimination: candidate.rank,
-                        scoreNetDepositUsd: candidate.scoreNetDepositUsd,
-                        reason: parsed.data.reason,
-                        eliminatedAt: now,
-                        refundDeadlineAt: refundDeadline,
-                    },
-                    create: {
-                        seatId: candidate.id,
-                        monthKey,
-                        rankAtElimination: candidate.rank,
-                        scoreNetDepositUsd: candidate.scoreNetDepositUsd,
-                        reason: parsed.data.reason,
-                        eliminatedAt: now,
-                        refundDeadlineAt: refundDeadline,
-                    },
-                });
+            await prisma.partnerEliminationTask.update({
+                where: { id: task!.id },
+                data: { status: 'COMPLETED', completedAt: new Date() }
+            });
 
-                await tx.partnerRefund.upsert({
-                    where: { eliminationId: elimination.id },
-                    update: {
-                        amountUsd: candidate.seatFeeUsd,
-                        status: 'PENDING',
-                    },
-                    create: {
-                        seatId: candidate.id,
-                        eliminationId: elimination.id,
-                        amountUsd: candidate.seatFeeUsd,
-                        status: 'PENDING',
-                    },
-                });
-
-                await tx.partnerSeat.update({
-                    where: { id: candidate.id },
-                    data: {
-                        status: 'ELIMINATED',
-                        backendAccess: false,
-                        eliminatedAt: now,
-                    },
-                });
-
-                eliminated += 1;
-            }
-
-            return { eliminated };
-        });
+        } catch (err: any) {
+            await prisma.partnerEliminationTask.update({
+                where: { id: task!.id },
+                data: { status: 'FAILED', errorLog: err.message || 'Unknown error' }
+            });
+            throw err;
+        }
 
         return NextResponse.json({
             monthKey,
             dryRun: false,
             activeSeatCount: ranked.length,
             eliminateCount,
-            eliminated: result.eliminated,
+            eliminated,
             refundDeadline,
         });
     } catch (error) {

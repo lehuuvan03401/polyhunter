@@ -4,6 +4,20 @@ import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
+const ADMIN_WALLETS = (process.env.ADMIN_WALLETS || '')
+    .split(',')
+    .map((w) => w.toLowerCase().trim())
+    .filter(Boolean);
+
+function isAdminRequest(request: NextRequest): boolean {
+    const adminWallet = request.headers.get('x-admin-wallet');
+    if (process.env.NODE_ENV === 'development' && ADMIN_WALLETS.length === 0) {
+        return true; // Allow all in dev when ADMIN_WALLETS not configured
+    }
+    if (!adminWallet) return false;
+    return ADMIN_WALLETS.includes(adminWallet.toLowerCase());
+}
+
 const querySchema = z.object({
     severity: z.enum(['INFO', 'WARN', 'ERROR', 'CRITICAL']).optional(),
     metric: z.string().optional(),
@@ -15,8 +29,7 @@ const querySchema = z.object({
  * GET /api/managed-risk-events
  *
  * Query risk events logged by the managed-wealth system.
- * Intended for admin/ops monitoring. No wallet auth required
- * (should be protected by admin middleware in production).
+ * Requires admin authentication via x-admin-wallet header.
  */
 export async function GET(request: NextRequest) {
     try {
@@ -25,6 +38,10 @@ export async function GET(request: NextRequest) {
                 { events: [], message: 'Database not configured' },
                 { status: 503 }
             );
+        }
+
+        if (!isAdminRequest(request)) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         const { searchParams } = new URL(request.url);

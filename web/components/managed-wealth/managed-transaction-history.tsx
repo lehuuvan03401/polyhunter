@@ -54,38 +54,56 @@ export function ManagedTransactionHistory({ walletAddress }: ManagedTransactionH
     const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [transactions, setTransactions] = useState<TransactionEvent[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+    const fetchPage = async (cursor?: string): Promise<{ transactions: TransactionEvent[]; nextCursor: string | null }> => {
+        const params = new URLSearchParams({ wallet: walletAddress, limit: '20' });
+        if (cursor) params.set('cursor', cursor);
+        const path = `/api/managed-subscriptions/transactions?${params.toString()}`;
+        const walletHeaders = await createWalletAuthHeaders({
+            walletAddress,
+            method: 'GET',
+            pathWithQuery: path,
+        });
+        const res = await fetch(path, { headers: walletHeaders });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Failed to fetch transactions');
+        return {
+            transactions: data.transactions ?? [],
+            nextCursor: data.nextCursor ?? null,
+        };
+    };
 
     useEffect(() => {
-        const fetchTransactions = async () => {
-            if (!walletAddress) {
-                setLoading(false);
-                return;
-            }
-            setLoading(true);
-            try {
-                const path = `/api/managed-subscriptions/transactions?wallet=${walletAddress}`;
-                const walletHeaders = await createWalletAuthHeaders({
-                    walletAddress,
-                    method: 'GET',
-                    pathWithQuery: path,
-                });
-                const res = await fetch(path, {
-                    headers: walletHeaders,
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    setTransactions(data.transactions || []);
-                }
-            } catch (error) {
-                console.error('Failed to fetch transactions:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchTransactions();
+        if (!walletAddress) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        fetchPage()
+            .then(({ transactions, nextCursor }) => {
+                setTransactions(transactions);
+                setNextCursor(nextCursor);
+            })
+            .catch((err) => console.error('Failed to fetch transactions:', err))
+            .finally(() => setLoading(false));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [walletAddress]);
+
+    const handleLoadMore = async () => {
+        if (!nextCursor || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const { transactions: more, nextCursor: newCursor } = await fetchPage(nextCursor);
+            setTransactions((prev) => [...prev, ...more]);
+            setNextCursor(newCursor);
+        } catch (err) {
+            console.error('Failed to load more transactions:', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    };
 
     if (loading) {
         return (
