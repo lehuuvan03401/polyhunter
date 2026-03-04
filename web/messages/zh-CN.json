@@ -1306,7 +1306,8 @@
             "title": "团队级差（太阳线）",
             "subtitle": "从您与下线之间的等级差中赚取额外收益",
             "explanation": "当您网络中的低等级成员进行交易时，您赚取您的等级费率与他们的等级费率之间的<strong className=\"text-white\">差额</strong>。这奖励建立深层团队！",
-            "formula": "团队级差 = 费用 × (您的费率 - 他们的费率)",
+            "formula": "级差奖 = 交易手续费 × (你的费率 - 下级的费率)",
+            "formulaLabel": "公式：",
             "example": {
                 "title": "示例：",
                 "you": "您是 <strong className=\"text-purple-400\">精英 (3%)</strong>",
@@ -1622,5 +1623,44 @@
             "nonCustodial": "非托管",
             "minReq": "每笔订单至少需 5 股或 $1"
         }
+    },
+    "PartnerRules": {
+        "title": "官方推广与合伙人规则",
+        "subtitle": "关于邀请奖励、团队分红与全球合伙人治理的正式外部政策。",
+        "cards": {
+            "referral": {
+                "title": "直接邀请奖励",
+                "value": "订阅期 +1 天",
+                "note": "当直接受邀者首次完成有效参与时触发（一次性）。"
+            },
+            "performance": {
+                "title": "业绩计算基准",
+                "value": "净入金 = 充值 - 提现",
+                "note": "达标门槛：FREE >= {free}U, MANAGED >= {managed}U"
+            },
+            "profitFee": {
+                "title": "盈利分留政策",
+                "value": "提取已实现利润的 {rate}%",
+                "note": "无利润即无费用。"
+            }
+        },
+        "table": {
+            "level": "等级",
+            "threshold": "团队净入金门槛",
+            "dividend": "团队利润分红比率"
+        },
+        "sameLevel": {
+            "title": "平级奖结算",
+            "generation": "第 {gen} 代平级：{rate}%",
+            "promotionPath": "晋升路径遵循“一推二”双轨制晋升至 V9 级别。"
+        },
+        "partnerPlan": {
+            "title": "全球合伙人计划",
+            "seatCap": "席位上限：全球 {seats} 席（硬顶）。",
+            "elimination": "末位淘汰：每月淘汰末位的 {count} 席。",
+            "refundSla": "退款保障：淘汰后 {days} 天内完成 SLA 退款。",
+            "privileges": "合伙人权益：享受相当于 {level} 级别的权益 + 专属后台访问权。"
+        },
+        "settlementNote": "所有计价为 USDT 的政策条款，均通过等值的 MCN 充提渠道进行结算。"
     }
 }

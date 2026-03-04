@@ -1306,6 +1306,7 @@
             "subtitle": "Earn extra from the tier difference between you and your downline",
             "explanation": "When a lower-tier member in your network trades, you earn the <strong className=\"text-white\">difference</strong> between your tier rate and their tier rate. This rewards building a deep team!",
             "formula": "Sun Line = Fee × (Your Rate - Their Rate)",
+            "formulaLabel": "Formula:",
             "example": {
                 "title": "Example:",
                 "you": "You are <strong className=\"text-purple-400\">ELITE (3%)</strong>",
@@ -1621,5 +1622,44 @@
             "nonCustodial": "Non-custodial",
             "minReq": "Min 5 shares and/or $1 per order required"
         }
+    },
+    "PartnerRules": {
+        "title": "Official Affiliate & Partner Rules",
+        "subtitle": "Formal external policy for referral incentives, team dividends, and global partner governance.",
+        "cards": {
+            "referral": {
+                "title": "Direct Referral Reward",
+                "value": "+1 day subscription extension",
+                "note": "Triggered once when a direct referral completes first qualified participation."
+            },
+            "performance": {
+                "title": "Performance Basis",
+                "value": "Net deposit = deposit - withdraw",
+                "note": "Entry thresholds: FREE >= {free}U, MANAGED >= {managed}U"
+            },
+            "profitFee": {
+                "title": "Profit Fee Policy",
+                "value": "{rate}% on realized profit",
+                "note": "No profit means zero fee."
+            }
+        },
+        "table": {
+            "level": "Level",
+            "threshold": "Team Net Deposit Threshold",
+            "dividend": "Team Profit Dividend"
+        },
+        "sameLevel": {
+            "title": "Same-level bonus settlement",
+            "generation": "Generation {gen}: {rate}%",
+            "promotionPath": "Promotion path follows one-push-two double-zone progression up to V9."
+        },
+        "partnerPlan": {
+            "title": "Global partner plan",
+            "seatCap": "Seat cap: {seats} global seats (hard cap).",
+            "elimination": "Monthly elimination: bottom {count} seats.",
+            "refundSla": "Refund SLA: within {days} days after elimination.",
+            "privileges": "Partner privileges: {level}-equivalent rights + dedicated backend access."
+        },
+        "settlementNote": "All USDT-denominated policy items are settled via MCN-equivalent in/out channels."
     }
 }

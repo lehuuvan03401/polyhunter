@@ -47,7 +47,7 @@ import { TeamTreeView } from '@/components/affiliate/team-tree-view';
 import { TeamSummaryView } from '@/components/affiliate/team-summary-view';
 import { WithdrawDialog } from '@/components/affiliate/withdraw-dialog';
 import { ParticipationDashboardTab } from '@/components/participation/participation-dashboard-tab';
-import { AffiliateExternalRulesSection } from '@/components/participation/affiliate-external-rules-section';
+import { AffiliateRulesTab } from '@/components/participation/affiliate-rules-tab';
 
 type AffiliateTab = 'dashboard' | 'account' | 'rules';
 
@@ -517,7 +517,7 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                 )}
 
                 {activeTab === 'rules' && (
-                    <AffiliateExternalRulesSection />
+                    <AffiliateRulesTab currentTier={stats?.tier ?? 'ORDINARY'} />
                 )}
 
                 {activeTab === 'dashboard' && (
