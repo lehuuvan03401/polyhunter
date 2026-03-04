@@ -11,9 +11,16 @@ export const revalidate = 0;
 
 const RESPONSE_TTL_MS = 20000;
 const responseCache = createTTLCache<any>();
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 200;
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
+    const requestedLimit = parseInt(searchParams.get('limit') || `${DEFAULT_LIMIT}`, 10);
+    const limit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(requestedLimit, MAX_LIMIT))
+        : DEFAULT_LIMIT;
+    const cursor = searchParams.get('cursor') || undefined;
     const walletCheck = resolveCopyTradingWalletContext(request, {
         queryWallet: searchParams.get('wallet'),
     });
@@ -23,7 +30,7 @@ export async function GET(request: NextRequest) {
     const walletAddress = walletCheck.wallet;
 
     try {
-        const cacheKey = `trade-history:${walletAddress.toLowerCase()}`;
+        const cacheKey = `trade-history:${walletAddress.toLowerCase()}:limit=${limit}:cursor=${cursor || 'none'}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
             const history = await prisma.copyTrade.findMany({
                 where: {
@@ -32,10 +39,12 @@ export async function GET(request: NextRequest) {
                     },
                     status: 'EXECUTED'
                 },
-                orderBy: {
-                    detectedAt: 'desc'
-                },
-                take: 100
+                orderBy: [
+                    { detectedAt: 'desc' },
+                    { id: 'desc' },
+                ],
+                ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+                take: limit
             });
 
             // Map to standard format matching getWalletActivity

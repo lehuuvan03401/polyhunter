@@ -29,6 +29,8 @@ interface OrderStatusInfo {
 
 const RESPONSE_TTL_MS = 20000;
 const responseCache = createTTLCache<any>();
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
 
 /**
  * GET /api/copy-trading/orders
@@ -39,6 +41,11 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const tradeId = searchParams.get('tradeId');
         const status = searchParams.get('status');
+        const requestedLimit = parseInt(searchParams.get('limit') || `${DEFAULT_LIMIT}`, 10);
+        const limit = Number.isFinite(requestedLimit)
+            ? Math.max(1, Math.min(requestedLimit, MAX_LIMIT))
+            : DEFAULT_LIMIT;
+        const cursor = searchParams.get('cursor') || undefined;
         const walletCheck = resolveCopyTradingWalletContext(request, {
             queryWallet: searchParams.get('wallet'),
         });
@@ -47,7 +54,7 @@ export async function GET(request: NextRequest) {
         }
         const walletAddress = walletCheck.wallet;
 
-        const cacheKey = `orders:${walletAddress.toLowerCase()}:${tradeId || 'all'}:${status || 'all'}`;
+        const cacheKey = `orders:${walletAddress.toLowerCase()}:${tradeId || 'all'}:${status || 'all'}:limit=${limit}:cursor=${cursor || 'none'}`;
         const responsePayload = await responseCache.getOrSet(cacheKey, RESPONSE_TTL_MS, async () => {
             // 读取接口使用短 TTL 缓存，避免频繁刷新页面时对 DB 造成压力。
             // Build query
@@ -101,7 +108,12 @@ export async function GET(request: NextRequest) {
                         },
                     },
                 },
-                orderBy: { detectedAt: 'desc' },
+                orderBy: [
+                    { detectedAt: 'desc' },
+                    { id: 'desc' },
+                ],
+                ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+                take: limit + 1,
             });
 
             // Type alias for trade items
@@ -129,7 +141,11 @@ export async function GET(request: NextRequest) {
             };
 
             // Transform trades to orders
-            const tradeOrders: OrderItem[] = trades.map((trade: TradeType) => ({
+            const hasMore = trades.length > limit;
+            const pageTrades = hasMore ? trades.slice(0, limit) : trades;
+            const nextCursor = hasMore ? pageTrades[pageTrades.length - 1]?.id || null : null;
+
+            const tradeOrders: OrderItem[] = pageTrades.map((trade: TradeType) => ({
                 tradeId: trade.id,
                 orderId: trade.txHash,
                 status: mapTradeStatusToOrderStatus(trade.status),
@@ -174,7 +190,15 @@ export async function GET(request: NextRequest) {
                 failed: orders.filter((o: OrderItem) => o.status === 'REJECTED').length,
             };
 
-            return { orders, stats };
+            return {
+                orders,
+                stats,
+                pagination: {
+                    limit,
+                    nextCursor,
+                    hasMore,
+                },
+            };
         });
 
         return NextResponse.json(responsePayload);
