@@ -41,6 +41,24 @@ describe('copy-trading runtime config', () => {
         expect(() => mod.getCopyTradingChainId()).toThrow(/Conflicting chain id/);
     });
 
+    it('requires an explicit chain id in production', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        delete process.env.CHAIN_ID;
+        delete process.env.NEXT_PUBLIC_CHAIN_ID;
+
+        const mod = await loadRuntimeConfig();
+        expect(() => mod.getCopyTradingChainId()).toThrow(/CHAIN_ID or NEXT_PUBLIC_CHAIN_ID is required/);
+    });
+
+    it('requires an explicit dry-run flag in production', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        delete process.env.DRY_RUN;
+        delete process.env.COPY_TRADING_DRY_RUN;
+
+        const mod = await loadRuntimeConfig();
+        expect(() => mod.isCopyTradingDryRunEnabled()).toThrow(/COPY_TRADING_DRY_RUN or DRY_RUN is required/);
+    });
+
     it('rejects placeholder cron secret and validates bearer header', async () => {
         vi.stubEnv('NODE_ENV', 'development');
         vi.stubEnv('CRON_SECRET', 'super-secret');

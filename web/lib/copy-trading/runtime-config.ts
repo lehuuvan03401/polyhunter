@@ -60,7 +60,11 @@ export function getCopyTradingChainId(): number {
     if (chainId !== null) return chainId;
     if (publicChainId !== null) return publicChainId;
 
-    return process.env.NODE_ENV === 'production' ? 137 : 31337;
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('[CopyTradingConfig] CHAIN_ID or NEXT_PUBLIC_CHAIN_ID is required in production');
+    }
+
+    return 31337;
 }
 
 export function isCopyTradingDryRunEnabled(): boolean {
@@ -71,6 +75,10 @@ export function isCopyTradingDryRunEnabled(): boolean {
         ['DRY_RUN', dryRun],
         ['COPY_TRADING_DRY_RUN', copyDryRun],
     ]);
+
+    if (copyDryRun === null && dryRun === null && process.env.NODE_ENV === 'production') {
+        throw new Error('[CopyTradingConfig] COPY_TRADING_DRY_RUN or DRY_RUN is required in production');
+    }
 
     return copyDryRun ?? dryRun ?? false;
 }
