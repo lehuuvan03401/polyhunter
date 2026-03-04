@@ -1264,7 +1264,40 @@
             "ELITE": "Elite",
             "PARTNER": "Partner",
             "SUPER": "Super Partner",
-            "SUPER_PARTNER": "Super Partner"
+            "SUPER_PARTNER": "Super Partner",
+            "headers": {
+                "level": "V-Level",
+                "weakZone": "Weak Zone Deposit (USD)",
+                "dividendRate": "Team Dividend Rate"
+            }
+        },
+        "successStories": {
+            "title": "Success Stories",
+            "subtitle": "See what our top partners are earning",
+            "alex": {
+                "name": "Alex M.",
+                "role": "Super Partner",
+                "earnings": "$12,450",
+                "period": "last month",
+                "quote": "I started sharing my link in a few discord groups. Now I'm earning more from commissions than my actual trading."
+            },
+            "sarah": {
+                "name": "Sarah K.",
+                "role": "Elite Affiliate",
+                "earnings": "$4,200",
+                "period": "this week",
+                "quote": "The 5-generation system is a game changer. My network keeps growing automatically as my referrals invite their friends."
+            },
+            "dave": {
+                "name": "CryptoDave",
+                "role": "VIP Member",
+                "earnings": "$850",
+                "period": "passive income",
+                "quote": "I just posted my link on Twitter and forgot about it. Woke up to free USDC in my wallet. Easiest money ever."
+            },
+            "labels": {
+                "totalEarned": "Total Earned"
+            }
         }
     },
     "AffiliateRules": {

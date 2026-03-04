@@ -1265,7 +1265,40 @@
             "ELITE": "精英会员",
             "PARTNER": "合伙人",
             "SUPER": "超级合伙人",
-            "SUPER_PARTNER": "超级合伙人"
+            "SUPER_PARTNER": "超级合伙人",
+            "headers": {
+                "level": "V-等级",
+                "weakZone": "团队弱区净入金 (USD)",
+                "dividendRate": "团队分红比例"
+            }
+        },
+        "successStories": {
+            "title": "成功案例",
+            "subtitle": "看看我们的顶级合伙人赚了多少",
+            "alex": {
+                "name": "Alex M.",
+                "role": "高级合伙人",
+                "earnings": "$12,450",
+                "period": "上个月",
+                "quote": "我只是在几个 Discord 群里分享了我的链接，现在我赚的佣金比我自己交易赚的还多。"
+            },
+            "sarah": {
+                "name": "Sarah K.",
+                "role": "精英合伙人",
+                "earnings": "$4,200",
+                "period": "本周",
+                "quote": "无限代的平级奖真是个游戏规则改变者。随着我的下级邀请他们的朋友，我的网络自动在增长。"
+            },
+            "dave": {
+                "name": "CryptoDave",
+                "role": "VIP 会员",
+                "earnings": "$850",
+                "period": "被动收入",
+                "quote": "我只是在推特上发了我的链接就没管了，一觉醒来钱包里就多了白嫖的 USDC，这钱赚得也太容易了。"
+            },
+            "labels": {
+                "totalEarned": "累计收入"
+            }
         }
     },
     "AffiliateRules": {
