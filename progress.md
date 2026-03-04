@@ -556,3 +556,6 @@
 - 已执行验证：
   - `cd web && npx vitest run app/api/partners/refunds/execute/route.test.ts app/api/partners/partner-workflow.integration.test.ts lib/participation-program/partner-program.test.ts lib/participation-program/partner-ops-automation.test.ts app/api/partners/config.integration.test.ts app/api/partners/queue/route.test.ts` -> `6 files / 34 tests` 全通过。
   - `cd web && npx tsc --noEmit` -> 通过。
+- 已新增 PR 交付文档：
+  - `docs/reports/2026-03-04-partner-hardening-pr.md`
+  - 包含：可直接粘贴的 PR 描述、影响范围、兼容性说明、验证命令、上线前验收清单。
