@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
 import { resolveWalletContext } from '@/lib/managed-wealth/request-wallet';
+import {
+    isCopyTradingSignatureRequired,
+} from '@/lib/copy-trading/runtime-config';
 
 type ResolveCopyTradingWalletOptions = {
     queryWallet?: string | null;
@@ -8,8 +11,7 @@ type ResolveCopyTradingWalletOptions = {
 };
 
 function shouldRequireSignature(): boolean {
-    return process.env.COPY_TRADING_REQUIRE_SIGNATURE === 'true'
-        || process.env.MANAGED_WEALTH_REQUIRE_SIGNATURE === 'true';
+    return isCopyTradingSignatureRequired();
 }
 
 export function resolveCopyTradingWalletContext(

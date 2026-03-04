@@ -1,24 +1,25 @@
 import crypto from 'crypto';
+import { assertCopyTradingEncryptionKeyConfigured } from '@/lib/copy-trading/runtime-config';
 
 const ALGORITHM = 'aes-256-cbc';
-// Fallback key if env var is missing (Use with caution in dev only)
-// In prod, ensure ENCRYPTION_KEY is set and 32 bytes hex.
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '0000000000000000000000000000000000000000000000000000000000000000';
 const IV_LENGTH = 16;
 
 export class EncryptionService {
+    private static getKeyBuffer(): Buffer {
+        const keyHex = assertCopyTradingEncryptionKeyConfigured();
+        const keyBuffer = Buffer.from(keyHex, 'hex');
+        if (keyBuffer.length !== 32) {
+            throw new Error("Invalid ENCRYPTION_KEY length. Must be 32 bytes (64 hex chars).");
+        }
+        return keyBuffer;
+    }
 
     /**
      * Encrypts text using AES-256-CBC
      */
     static encrypt(text: string): { encryptedData: string; iv: string } {
         const iv = crypto.randomBytes(IV_LENGTH);
-        const keyBuffer = Buffer.from(ENCRYPTION_KEY, 'hex');
-
-        // Ensure key length is correct (32 bytes for AES-256)
-        if (keyBuffer.length !== 32) {
-            throw new Error("Invalid ENCRYPTION_KEY length. Must be 32 bytes (64 hex chars).");
-        }
+        const keyBuffer = EncryptionService.getKeyBuffer();
 
         const cipher = crypto.createCipheriv(ALGORITHM, keyBuffer, iv);
         let encrypted = cipher.update(text);
@@ -36,12 +37,7 @@ export class EncryptionService {
     static decrypt(encryptedData: string, ivHex: string): string {
         const iv = Buffer.from(ivHex, 'hex');
         const encryptedText = Buffer.from(encryptedData, 'hex');
-        const keyBuffer = Buffer.from(ENCRYPTION_KEY, 'hex');
-
-        // Ensure key length is correct
-        if (keyBuffer.length !== 32) {
-            throw new Error("Invalid ENCRYPTION_KEY length. Must be 32 bytes (64 hex chars).");
-        }
+        const keyBuffer = EncryptionService.getKeyBuffer();
 
         const decipher = crypto.createDecipheriv(ALGORITHM, keyBuffer, iv);
         let decrypted = decipher.update(encryptedText);

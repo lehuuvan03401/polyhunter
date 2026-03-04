@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, normalizeAddress, errorResponse, TIER_RATES, TIER_THRESHOLDS } from '../utils';
-import { AffiliateTier } from '@prisma/client';
+import { prisma, normalizeAddress, errorResponse } from '../utils';
+import { buildDoubleZonePromotionProgress } from '@/lib/participation-program/promotion';
+import { PARTICIPATION_LEVEL_RULES } from '@/lib/participation-program/levels';
 
 export async function GET(request: NextRequest) {
     try {
@@ -25,25 +26,12 @@ export async function GET(request: NextRequest) {
             return errorResponse('Wallet not registered as affiliate', 404);
         }
 
-        // Calculate next tier
-        const currentTier = referrer.tier as AffiliateTier;
-        const tiers = [
-            AffiliateTier.ORDINARY,
-            AffiliateTier.VIP,
-            AffiliateTier.ELITE,
-            AffiliateTier.PARTNER,
-            AffiliateTier.SUPER_PARTNER
-        ] as const;
-        const currentIndex = tiers.indexOf(currentTier);
-        const nextTier = currentIndex < 4 ? tiers[currentIndex + 1] : null;
+        // Get actual double zone progression
+        const [progress] = await buildDoubleZonePromotionProgress(prisma, [normalized]);
 
-        // Use Team Differential Rate for "commissionRate" display, or Zero Line?
-        // Frontend displays "Zero Line" and "Team Diff" separately now, inferred from Tier.
-        // But for backward compat or generic display:
-
-        const volumeToNextTier = nextTier
-            ? Math.max(0, TIER_THRESHOLDS[nextTier] - referrer.totalVolume)
-            : 0;
+        // Find current dividend rate for current V-Level
+        const currentRule = PARTICIPATION_LEVEL_RULES.find(r => r.level === progress.promotionLevel);
+        const dividendRate = currentRule ? currentRule.dividendRate : 0;
 
         // Calculate real Team Size (Closure)
         const teamSize = await prisma.teamClosure.count({
@@ -60,27 +48,42 @@ export async function GET(request: NextRequest) {
             _sum: { amount: true }
         });
 
-        const zeroLineEarnings = earnings.find(e => e.type === 'ZERO_LINE')?._sum.amount || 0;
-        const sunLineEarnings = earnings.find(e => e.type === 'SUN_LINE')?._sum.amount || 0;
+        const sameLevelEarnings = earnings.find(e => e.type === 'SAME_LEVEL')?._sum?.amount || 0;
+        const teamDividendEarnings = earnings.find(e => e.type === 'TEAM_DIVIDEND')?._sum?.amount || 0;
+
+        // Also map old ZERO_LINE/SUN_LINE if they exist for backward compat during migration
+        const zeroLineEarnings = earnings.find(e => e.type === ('ZERO_LINE' as any))?._sum?.amount || 0;
+        const sunLineEarnings = earnings.find(e => e.type === ('SUN_LINE' as any))?._sum?.amount || 0;
 
         return NextResponse.json({
             walletAddress: referrer.walletAddress,
             referralCode: referrer.referralCode,
-            tier: referrer.tier,
-            commissionRate: TIER_RATES[currentTier],
+
+            // DoubleZone V1-V9 Fields
+            level: progress.promotionLevel,
+            commissionRate: dividendRate,
+            weakZoneUsd: progress.weakZoneNetDepositUsd,
+            strongZoneUsd: progress.strongZoneNetDepositUsd,
+            leftUsd: progress.leftNetDepositUsd,
+            rightUsd: progress.rightNetDepositUsd,
+            nextLevel: progress.nextLevel,
+            nextLevelThresholdUsd: progress.nextLevelThresholdUsd,
+            volumeToNextTier: progress.nextLevelGapUsd,
+            legBreakdown: progress.legBreakdown,
+            directLegCount: progress.directLegCount,
+
+            // General Affiliate Fields
             totalVolumeGenerated: referrer.totalVolume,
-            totalReferrals: referrer._count.referrals, // Directs
-            teamSize, // Total Downline
+            totalReferrals: referrer._count.referrals,
+            teamSize,
             earningsBreakdown: {
-                zeroLine: zeroLineEarnings,
-                sunLine: sunLineEarnings
+                sameLevel: Number(sameLevelEarnings) + Number(zeroLineEarnings),
+                teamDividend: Number(teamDividendEarnings) + Number(sunLineEarnings)
             },
-            sunLineCount: referrer.sunLineCount,
+            sunLineCount: referrer.sunLineCount, // Deprecated conceptually but kept for API structure
             maxDepth: referrer.maxDepth,
             totalEarned: referrer.totalEarned,
             pendingPayout: referrer.pendingPayout,
-            volumeToNextTier,
-            nextTier,
         });
     } catch (error) {
         console.error('Stats error:', error);

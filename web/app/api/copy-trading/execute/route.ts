@@ -6,11 +6,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 import { createTTLCache } from '@/lib/server-cache';
 import { getSpeedProfile } from '@/config/speed-profile';
 import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import { getCopyTradingChainId } from '@/lib/copy-trading/runtime-config';
 
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
@@ -19,7 +21,7 @@ const WORKER_KEYS = (process.env.COPY_TRADING_WORKER_KEYS || '')
     .map((key) => key.trim())
     .filter(Boolean);
 const WORKER_INDEX = parseInt(process.env.COPY_TRADING_WORKER_INDEX || '0', 10);
-const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
+const CHAIN_ID = getCopyTradingChainId();
 const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .split(',')
     .map((url) => url.trim())
@@ -32,6 +34,10 @@ const PENDING_TRADES_TTL_MS = 20000;
 const pendingTradesCache = createTTLCache<any>();
 const speedProfile = getSpeedProfile();
 const EXPIRY_CHECK_INTERVAL_MS = 60000;
+const PENDING_TRADES_DEFAULT_LIMIT = 50;
+const PENDING_TRADES_MAX_LIMIT = 200;
+const CLAIM_STALE_MS = Math.max(60_000, parseInt(process.env.COPY_TRADING_EXECUTE_CLAIM_STALE_MS || '300000', 10));
+const CLAIM_OWNER_PREFIX = 'api-execute';
 let lastExpiryCheckAt = 0;
 
 // Imports for Proxy Execution
@@ -201,6 +207,30 @@ function evaluateOrderbookGuardrails(params: {
     return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
 }
 
+type ClaimedTrade = Awaited<ReturnType<typeof prisma.copyTrade.findUnique>>;
+
+async function finalizeClaimedTrade(
+    tradeId: string,
+    claimOwner: string,
+    data: Record<string, unknown>
+): Promise<void> {
+    await prisma.copyTrade.updateMany({
+        where: {
+            id: tradeId,
+            lockedBy: claimOwner,
+        },
+        data: {
+            ...data,
+            lockedAt: null,
+            lockedBy: null,
+        },
+    });
+}
+
+async function releaseClaimWithoutStatusChange(tradeId: string, claimOwner: string): Promise<void> {
+    await finalizeClaimedTrade(tradeId, claimOwner, {});
+}
+
 /**
  * Transfer USDC from Proxy to Bot wallet
  * Bot must be a whitelisted Executor worker
@@ -282,6 +312,7 @@ async function transferToProxy(
  * }
  */
 export async function POST(request: NextRequest) {
+    let claimed: { tradeId: string; claimOwner: string } | null = null;
     try {
         const body = await request.json();
         const {
@@ -311,6 +342,13 @@ export async function POST(request: NextRequest) {
         }
         const normalizedWallet = walletCheck.wallet;
 
+        if (!executeOnServer && status === 'executed' && !txHash) {
+            return NextResponse.json(
+                { error: 'txHash is required when marking trade as executed manually' },
+                { status: 400 }
+            );
+        }
+
         // 先校验交易归属，避免跨钱包越权执行。
         const trade = await prisma.copyTrade.findFirst({
             where: {
@@ -331,10 +369,59 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (trade.status !== 'PENDING') {
+        const claimOwner = `${CLAIM_OWNER_PREFIX}:${randomUUID()}`;
+        const staleBefore = new Date(Date.now() - CLAIM_STALE_MS);
+        const claimResult = await prisma.copyTrade.updateMany({
+            where: {
+                id: trade.id,
+                status: 'PENDING',
+                OR: [
+                    { lockedAt: null },
+                    { lockedAt: { lt: staleBefore } },
+                ],
+            },
+            data: {
+                lockedAt: new Date(),
+                lockedBy: claimOwner,
+            },
+        });
+
+        if (claimResult.count === 0) {
+            const latest = await prisma.copyTrade.findUnique({
+                where: { id: trade.id },
+                select: { status: true, lockedAt: true, lockedBy: true },
+            });
             return NextResponse.json(
-                { error: 'Trade is not in pending status', currentStatus: trade.status },
-                { status: 400 }
+                {
+                    error: 'Trade is already claimed or not pending',
+                    currentStatus: latest?.status ?? trade.status,
+                    lockedAt: latest?.lockedAt ?? null,
+                },
+                { status: 409 }
+            );
+        }
+        claimed = { tradeId: trade.id, claimOwner };
+
+        const claimedTrade = await prisma.copyTrade.findUnique({
+            where: { id: trade.id },
+            include: { config: true },
+        });
+        if (!claimedTrade || claimedTrade.lockedBy !== claimOwner) {
+            return NextResponse.json(
+                { error: 'Trade claim lost' },
+                { status: 409 }
+            );
+        }
+
+        if (claimedTrade.expiresAt && claimedTrade.expiresAt <= new Date()) {
+            await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                status: 'EXPIRED',
+                errorMessage: 'Trade confirmation expired',
+            });
+            claimed = null;
+            return NextResponse.json(
+                { error: 'Trade expired' },
+                { status: 410 }
             );
         }
 
@@ -351,11 +438,13 @@ export async function POST(request: NextRequest) {
             const guardrail = await GuardrailService.checkExecutionGuardrails(normalizedWallet, 0, {
                 source: 'api',
                 workerAddress,
-                tradeId: trade.id,
-                tokenId: trade.tokenId || undefined,
-                marketSlug: trade.marketSlug || undefined,
+                tradeId: claimedTrade.id,
+                tokenId: claimedTrade.tokenId || undefined,
+                marketSlug: claimedTrade.marketSlug || undefined,
             });
             if (guardrail.reason === 'REAL_TRADING_DISABLED' || guardrail.reason === 'EMERGENCY_PAUSE' || guardrail.reason === 'DRY_RUN') {
+                await releaseClaimWithoutStatusChange(claimedTrade.id, claimOwner);
+                claimed = null;
                 return NextResponse.json({
                     success: false,
                     requiresManualExecution: true,
@@ -363,31 +452,38 @@ export async function POST(request: NextRequest) {
                         ? 'Dry-run mode enabled; execution skipped.'
                         : 'Real trading disabled by guardrails.',
                     trade: {
-                        id: trade.id,
-                        tokenId: trade.tokenId,
-                        side: trade.originalSide,
-                        size: trade.copySize,
-                        price: trade.originalPrice,
+                        id: claimedTrade.id,
+                        tokenId: claimedTrade.tokenId,
+                        side: claimedTrade.originalSide,
+                        size: claimedTrade.copySize,
+                        price: claimedTrade.originalPrice,
                     },
                 }, { status: 403 });
             }
 
             if (!workerSelection) {
+                await releaseClaimWithoutStatusChange(claimedTrade.id, claimOwner);
+                claimed = null;
                 return NextResponse.json({
                     success: false,
                     requiresManualExecution: true,
                     message: 'Server-side trading not configured. Execute manually via wallet.',
                     trade: {
-                        id: trade.id,
-                        tokenId: trade.tokenId,
-                        side: trade.originalSide,
-                        size: trade.copySize,
-                        price: trade.originalPrice,
+                        id: claimedTrade.id,
+                        tokenId: claimedTrade.tokenId,
+                        side: claimedTrade.originalSide,
+                        size: claimedTrade.copySize,
+                        price: claimedTrade.originalPrice,
                     },
                 });
             }
 
-            if (!trade.tokenId) {
+            if (!claimedTrade.tokenId) {
+                await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                    status: 'FAILED',
+                    errorMessage: 'Trade has no tokenId - cannot execute on CLOB',
+                });
+                claimed = null;
                 return NextResponse.json({
                     success: false,
                     error: 'Trade has no tokenId - cannot execute on CLOB',
@@ -395,21 +491,19 @@ export async function POST(request: NextRequest) {
             }
 
             // 再按真实交易金额做一次完整 guardrail 校验（额度、频率等）。
-            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(normalizedWallet, trade.copySize, {
+            const serverGuardrail = await GuardrailService.checkExecutionGuardrails(normalizedWallet, claimedTrade.copySize, {
                 source: 'api',
                 workerAddress,
-                tradeId: trade.id,
-                tokenId: trade.tokenId || undefined,
-                marketSlug: trade.marketSlug || undefined,
+                tradeId: claimedTrade.id,
+                tokenId: claimedTrade.tokenId || undefined,
+                marketSlug: claimedTrade.marketSlug || undefined,
             });
             if (!serverGuardrail.allowed) {
-                await prisma.copyTrade.update({
-                    where: { id: trade.id },
-                    data: {
-                        status: 'SKIPPED',
-                        errorMessage: serverGuardrail.reason || 'GUARDRAIL_BLOCKED',
-                    },
+                await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                    status: 'SKIPPED',
+                    errorMessage: serverGuardrail.reason || 'GUARDRAIL_BLOCKED',
                 });
+                claimed = null;
 
                 return NextResponse.json({
                     success: false,
@@ -436,12 +530,12 @@ export async function POST(request: NextRequest) {
                 });
                 await tradingService.initialize();
 
-                const orderbook = await tradingService.getOrderBook(trade.tokenId);
+                const orderbook = await tradingService.getOrderBook(claimedTrade.tokenId);
                 // 在实际下单前追加盘口质量守卫，避免在极端盘口状态下成交。
                 const orderbookGuard = evaluateOrderbookGuardrails({
                     orderbook,
-                    side: trade.originalSide as 'BUY' | 'SELL',
-                    notionalUsd: trade.copySize,
+                    side: claimedTrade.originalSide as 'BUY' | 'SELL',
+                    notionalUsd: claimedTrade.copySize,
                     maxSpreadBps: speedProfile.maxSpreadBps,
                     minDepthUsd: speedProfile.minDepthUsd,
                     minDepthRatio: speedProfile.minDepthRatio,
@@ -453,17 +547,15 @@ export async function POST(request: NextRequest) {
                         reason: `ORDERBOOK_${orderbookGuard.reason}`,
                         source: 'api',
                         walletAddress: normalizedWallet,
-                        amount: trade.copySize,
-                        tokenId: trade.tokenId || undefined,
-                        tradeId: trade.id,
+                        amount: claimedTrade.copySize,
+                        tokenId: claimedTrade.tokenId || undefined,
+                        tradeId: claimedTrade.id,
                     });
-                    await prisma.copyTrade.update({
-                        where: { id: trade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: `ORDERBOOK_${orderbookGuard.reason}`,
-                        },
+                    await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                        status: 'SKIPPED',
+                        errorMessage: `ORDERBOOK_${orderbookGuard.reason}`,
                     });
+                    claimed = null;
 
                     return NextResponse.json({
                         success: false,
@@ -480,6 +572,11 @@ export async function POST(request: NextRequest) {
 
                 const proxyAddress = await executionService.resolveProxyAddress(normalizedWallet);
                 if (!proxyAddress) {
+                    await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                        status: 'FAILED',
+                        errorMessage: 'No proxy wallet found for user',
+                    });
+                    claimed = null;
                     return NextResponse.json({
                         success: false,
                         error: 'No proxy wallet found for user',
@@ -489,25 +586,23 @@ export async function POST(request: NextRequest) {
                 const allowanceCheck = executionService.checkProxyAllowance
                     ? await executionService.checkProxyAllowance({
                     proxyAddress,
-                    side: trade.originalSide as 'BUY' | 'SELL',
-                    tokenId: trade.tokenId,
-                    amount: trade.copySize,
+                    side: claimedTrade.originalSide as 'BUY' | 'SELL',
+                    tokenId: claimedTrade.tokenId,
+                    amount: claimedTrade.copySize,
                     signer,
                 })
                     : await checkProxyAllowanceFallback({
                         proxyAddress,
-                        side: trade.originalSide as 'BUY' | 'SELL',
-                        amount: trade.copySize,
+                        side: claimedTrade.originalSide as 'BUY' | 'SELL',
+                        amount: claimedTrade.copySize,
                         signer,
                     });
                 if (!allowanceCheck.allowed) {
-                    await prisma.copyTrade.update({
-                        where: { id: trade.id },
-                        data: {
-                            status: 'SKIPPED',
-                            errorMessage: allowanceCheck.reason || 'ALLOWANCE_MISSING',
-                        },
+                    await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                        status: 'SKIPPED',
+                        errorMessage: allowanceCheck.reason || 'ALLOWANCE_MISSING',
                     });
+                    claimed = null;
 
                     return NextResponse.json({
                         success: false,
@@ -519,15 +614,15 @@ export async function POST(request: NextRequest) {
                 // 执行后按“是否已完成结算”写入 EXECUTED / SETTLEMENT_PENDING，
                 // 避免把尚未资产归集完成的交易误记为最终成功。
                 const result = await executionService.executeOrderWithProxy({
-                    tradeId: trade.id,
+                    tradeId: claimedTrade.id,
                     walletAddress: normalizedWallet,
-                    tokenId: trade.tokenId,
-                    side: trade.originalSide as 'BUY' | 'SELL',
-                    amount: trade.copySize, // In USDC
-                    price: trade.originalPrice,
-                    slippage: trade.config.slippageType === 'FIXED' ? (trade.config.maxSlippage / 100) : undefined,
-                    maxSlippage: trade.config.maxSlippage,
-                    slippageMode: trade.config.slippageType as 'FIXED' | 'AUTO',
+                    tokenId: claimedTrade.tokenId,
+                    side: claimedTrade.originalSide as 'BUY' | 'SELL',
+                    amount: claimedTrade.copySize, // In USDC
+                    price: claimedTrade.originalPrice,
+                    slippage: claimedTrade.config.slippageType === 'FIXED' ? (claimedTrade.config.maxSlippage / 100) : undefined,
+                    maxSlippage: claimedTrade.config.maxSlippage,
+                    slippageMode: claimedTrade.config.slippageType as 'FIXED' | 'AUTO',
                     orderType: orderMode as 'market' | 'limit',
                     deferSettlement: ASYNC_SETTLEMENT,
                 });
@@ -536,22 +631,20 @@ export async function POST(request: NextRequest) {
                 if (result.success) {
                     const isSettled = result.settlementDeferred
                         ? false
-                        : (trade.originalSide === 'BUY'
+                        : (claimedTrade.originalSide === 'BUY'
                             ? Boolean(result.tokenPushTxHash)
                             : Boolean(result.returnTransferTxHash));
-                    const status = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
-
-                    const updatedTrade = await prisma.copyTrade.update({
-                        where: { id: trade.id },
-                        data: {
-                            status,
-                            executedAt: new Date(),
-                            txHash: result.transactionHashes?.[0] || result.orderId,
-                            usedBotFloat: (result as any).usedBotFloat ?? false,
-                            executedBy: workerAddress,
-                            errorMessage: isSettled ? null : 'Settlement Pending',
-                        },
+                    const finalStatus = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
+                    await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                        status: finalStatus,
+                        executedAt: new Date(),
+                        txHash: result.transactionHashes?.[0] || result.orderId || null,
+                        usedBotFloat: (result as any).usedBotFloat ?? false,
+                        executedBy: workerAddress,
+                        errorMessage: isSettled ? null : 'Settlement Pending',
                     });
+                    claimed = null;
+                    const updatedTrade = await prisma.copyTrade.findUnique({ where: { id: claimedTrade.id } });
 
                     return NextResponse.json({
                         success: true,
@@ -562,16 +655,14 @@ export async function POST(request: NextRequest) {
                         trade: updatedTrade,
                         useProxyFunds: result.useProxyFunds,
                         settlementDeferred: result.settlementDeferred ?? false,
-                        settlementStatus: status,
+                        settlementStatus: finalStatus,
                     });
                 } else {
-                    await prisma.copyTrade.update({
-                        where: { id: trade.id },
-                        data: {
-                            status: 'FAILED',
-                            errorMessage: result.error,
-                        },
+                    await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                        status: 'FAILED',
+                        errorMessage: result.error || 'Order execution failed',
                     });
+                    claimed = null;
 
                     return NextResponse.json({
                         success: false,
@@ -582,6 +673,11 @@ export async function POST(request: NextRequest) {
 
             } catch (serviceError: any) {
                 console.error('[Execute] Service error:', serviceError);
+                await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+                    status: 'FAILED',
+                    errorMessage: serviceError?.message ? `Execution service failed: ${serviceError.message}` : 'Execution service failed',
+                });
+                claimed = null;
                 return NextResponse.json({
                     success: false,
                     error: `Execution service failed: ${serviceError.message}`,
@@ -590,32 +686,41 @@ export async function POST(request: NextRequest) {
         }
 
         // === MANUAL EXECUTION (Frontend already executed) ===
-        if (status === 'executed' && !txHash) {
-            return NextResponse.json(
-                { error: 'txHash is required when marking trade as executed manually' },
-                { status: 400 }
-            );
-        }
-
         const executionStatus = status === 'executed' ? 'EXECUTED' :
             status === 'failed' ? 'FAILED' :
                 status === 'skipped' ? 'SKIPPED' : 'FAILED';
 
-        const updatedTrade = await prisma.copyTrade.update({
-            where: { id: tradeId },
-            data: {
-                status: executionStatus,
-                txHash: txHash || null,
-                errorMessage: errorMessage || null,
-                executedAt: executionStatus === 'EXECUTED' ? new Date() : null,
-            },
+        await finalizeClaimedTrade(claimedTrade.id, claimOwner, {
+            status: executionStatus,
+            txHash: txHash || null,
+            errorMessage: errorMessage || null,
+            executedAt: executionStatus === 'EXECUTED' ? new Date() : null,
         });
+        claimed = null;
+        const updatedTrade = await prisma.copyTrade.findUnique({ where: { id: claimedTrade.id } });
 
         return NextResponse.json({
             success: true,
             trade: updatedTrade
         });
     } catch (error) {
+        if (claimed) {
+            await prisma.copyTrade.updateMany({
+                where: {
+                    id: claimed.tradeId,
+                    lockedBy: claimed.claimOwner,
+                    status: 'PENDING',
+                },
+                data: {
+                    status: 'FAILED',
+                    errorMessage: 'EXECUTE_ROUTE_EXCEPTION',
+                    lockedAt: null,
+                    lockedBy: null,
+                },
+            }).catch((unlockError) => {
+                console.error('[Execute] Failed to close claimed trade after exception:', unlockError);
+            });
+        }
         console.error('Error executing copy trade:', error);
         return NextResponse.json(
             { error: 'Failed to execute trade', message: String(error) },
@@ -645,8 +750,13 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
         }
         const walletAddress = walletCheck.wallet;
+        const requestedLimit = Number.parseInt(searchParams.get('limit') || `${PENDING_TRADES_DEFAULT_LIMIT}`, 10);
+        const limit = Number.isFinite(requestedLimit)
+            ? Math.max(1, Math.min(requestedLimit, PENDING_TRADES_MAX_LIMIT))
+            : PENDING_TRADES_DEFAULT_LIMIT;
+        const cursor = searchParams.get('cursor') || undefined;
 
-        const cacheKey = `pending:${walletAddress.toLowerCase()}`;
+        const cacheKey = `pending:${walletAddress.toLowerCase()}:limit=${limit}:cursor=${cursor || 'none'}`;
         const responsePayload = await pendingTradesCache.getOrSet(cacheKey, PENDING_TRADES_TTL_MS, async () => {
             // 仅返回未过期的 PENDING，避免前端看到已失效确认单。
             const pendingTrades = await prisma.copyTrade.findMany({
@@ -669,8 +779,17 @@ export async function GET(request: NextRequest) {
                         },
                     },
                 },
-                orderBy: { detectedAt: 'desc' },
+                orderBy: [
+                    { detectedAt: 'desc' },
+                    { id: 'desc' },
+                ],
+                ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+                take: limit + 1,
             });
+
+            const hasMore = pendingTrades.length > limit;
+            const pageItems = hasMore ? pendingTrades.slice(0, limit) : pendingTrades;
+            const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id || null : null;
 
             const now = Date.now();
             if (now - lastExpiryCheckAt > EXPIRY_CHECK_INTERVAL_MS) {
@@ -689,7 +808,14 @@ export async function GET(request: NextRequest) {
                 });
             }
 
-            return { pendingTrades };
+            return {
+                pendingTrades: pageItems,
+                pagination: {
+                    limit,
+                    nextCursor,
+                    hasMore,
+                },
+            };
         });
         return NextResponse.json(responsePayload);
     } catch (error) {

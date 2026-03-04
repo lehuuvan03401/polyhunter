@@ -41,13 +41,27 @@ import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink, type Payout } from '@/lib/affiliate-api';
+import { affiliateApi, type AffiliateStats, generateReferralLink, type Payout } from '@/lib/affiliate-api';
 import { GenerationSummaryBar } from '@/components/affiliate/generation-summary-bar';
 import { TeamTreeView } from '@/components/affiliate/team-tree-view';
 import { TeamSummaryView } from '@/components/affiliate/team-summary-view';
 import { WithdrawDialog } from '@/components/affiliate/withdraw-dialog';
 import { ParticipationDashboardTab } from '@/components/participation/participation-dashboard-tab';
 import { AffiliateRulesTab } from '@/components/participation/affiliate-rules-tab';
+import { PARTICIPATION_LEVEL_RULES, type ParticipationLevel } from '@/lib/participation-program/levels';
+
+const LEVEL_UI_CONFIG: Record<ParticipationLevel, any> = {
+    NONE: { icon: Users, color: 'text-gray-400', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
+    V1: { icon: Star, color: 'text-blue-300', bg: 'bg-blue-400/10', border: 'border-blue-400/30' },
+    V2: { icon: Star, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+    V3: { icon: Shield, color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/30' },
+    V4: { icon: Trophy, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30' },
+    V5: { icon: Trophy, color: 'text-fuchsia-400', bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/30' },
+    V6: { icon: Zap, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+    V7: { icon: Crown, color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
+    V8: { icon: Sparkles, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
+    V9: { icon: Rocket, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30' },
+};
 
 type AffiliateTab = 'dashboard' | 'account' | 'rules';
 
@@ -310,13 +324,7 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
             { num: 3, title: t('guest.howItWorks.steps.3.title'), desc: t('guest.howItWorks.steps.3.desc') },
         ];
 
-        const TIERS = [
-            { name: "ORDINARY", title: t('tiers.ORDINARY'), color: 'text-muted-foreground', directs: 0, team: 0, zero: 1, diff: 1, icon: <UserCircle className="h-4 w-4" /> },
-            { name: "VIP", title: t('tiers.VIP'), color: 'text-white', directs: 3, team: 10, zero: 2, diff: 2, icon: <Star className="h-4 w-4 text-white" /> },
-            { name: "ELITE", title: t('tiers.ELITE'), color: 'text-yellow-500/70', directs: 10, team: 100, zero: 3, diff: 3, icon: <Zap className="h-4 w-4 text-yellow-500/70" /> },
-            { name: "PARTNER", title: t('tiers.PARTNER'), color: 'text-yellow-500', directs: 30, team: 500, zero: 5, diff: 5, icon: <Shield className="h-4 w-4 text-yellow-500" /> },
-            { name: "SUPER", title: t('tiers.SUPER'), color: 'text-yellow-400 font-bold', directs: 50, team: 1000, zero: 8, diff: 8, icon: <Crown className="h-4 w-4 text-yellow-500" /> },
-        ];
+
 
         const ZERO_LINE_RATES = [
             { gen: 1, rate: 25, label: t('guest.zeroLine.generations.1') },
@@ -413,25 +421,29 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                             <table className="w-full text-sm bg-[#1a1b1e] rounded-xl border border-white/10">
                                 <thead>
                                     <tr className="border-b border-white/10">
-                                        <th className="text-left py-4 px-6 font-medium text-muted-foreground">{t('guest.tiers.headers.tier')}</th>
-                                        <th className="text-center py-4 px-4 font-medium text-muted-foreground">{t('guest.tiers.headers.directs')}</th>
-                                        <th className="text-center py-4 px-4 font-medium text-muted-foreground">{t('guest.tiers.headers.team')}</th>
-                                        <th className="text-center py-4 px-4 font-medium text-green-400">{t('guest.tiers.headers.zero')}</th>
-                                        <th className="text-center py-4 px-4 font-medium text-yellow-400">{t('guest.tiers.headers.diff')}</th>
+                                        <th className="text-left py-4 px-6 font-medium text-muted-foreground">V-Level</th>
+                                        <th className="text-center py-4 px-4 font-medium text-muted-foreground">Weak Zone Deposit (USD)</th>
+                                        <th className="text-center py-4 px-4 font-medium text-yellow-400">Team Dividend Rate</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {TIERS.map((tierIter, i) => (
-                                        <tr key={i} className="border-b border-white/5 hover:bg-white/5">
-                                            <td className={`py-4 px-6 font-bold ${tierIter.color} flex items-center gap-2`}>
-                                                {tierIter.icon} {tierIter.title}
-                                            </td>
-                                            <td className="text-center py-4 px-4 font-mono">{tierIter.directs}</td>
-                                            <td className="text-center py-4 px-4 font-mono">{tierIter.team}</td>
-                                            <td className="text-center py-4 px-4 font-mono text-green-400">{tierIter.zero}%</td>
-                                            <td className="text-center py-4 px-4 font-mono text-yellow-400">{tierIter.diff}%</td>
-                                        </tr>
-                                    ))}
+                                    {PARTICIPATION_LEVEL_RULES.map((rule, i) => {
+                                        const ui = LEVEL_UI_CONFIG[rule.level as keyof typeof LEVEL_UI_CONFIG];
+                                        if (!ui) return null;
+                                        return (
+                                            <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                                                <td className={`py-4 px-6 font-bold ${ui.color} flex items-center gap-2`}>
+                                                    <ui.icon className="h-4 w-4" /> {rule.level}
+                                                </td>
+                                                <td className="text-center py-4 px-4 font-mono text-white">
+                                                    ${rule.minNetDepositUsd.toLocaleString()}
+                                                </td>
+                                                <td className="text-center py-4 px-4 font-mono text-yellow-400">
+                                                    {(rule.dividendRate * 100).toFixed(0)}%
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -491,11 +503,7 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
         );
     }
 
-    const tierInfo = stats ? TIER_INFO[stats.tier] : TIER_INFO.ORDINARY;
     const referralLink = stats?.referralCode ? generateReferralLink(stats.referralCode) : '';
-    const progressPercent = stats?.nextTier
-        ? Math.min(100, ((stats.totalReferrals) / (tierInfo.minTeam || 1)) * 100)
-        : 100;
 
     return (
         <div className="min-h-screen bg-background pt-24 pb-20">
@@ -517,35 +525,35 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                 )}
 
                 {activeTab === 'rules' && (
-                    <AffiliateRulesTab currentTier={stats?.tier ?? 'ORDINARY'} />
+                    <AffiliateRulesTab currentLevel={(stats?.level as ParticipationLevel) || 'NONE'} />
                 )}
 
                 {activeTab === 'dashboard' && (
                     <>
-                        {/* 1. Tier Status Card */}
-                        <div className="bg-[#1a1b1e] border border-yellow-500/20 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 bg-yellow-500/5 blur-[80px] rounded-full pointer-events-none" />
+                        {/* 1. Level Status Card */}
+                        <div className="bg-[#1a1b1e] border border-blue-500/20 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none" />
 
                             <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
                                 <div className="flex items-center gap-4">
-                                    <div className="h-16 w-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center text-yellow-500 shadow-lg border border-yellow-500/20">
-                                        {stats?.tier === 'SUPER_PARTNER' ? <Crown className="h-8 w-8" /> :
-                                            stats?.tier === 'PARTNER' ? <Shield className="h-8 w-8" /> :
-                                                stats?.tier === 'ELITE' ? <Zap className="h-8 w-8" /> :
-                                                    stats?.tier === 'VIP' ? <Star className="h-8 w-8" /> : <UserCircle className="h-8 w-8" />}
+                                    <div className={cn("h-16 w-16 rounded-2xl flex items-center justify-center shadow-lg border", LEVEL_UI_CONFIG[(stats?.level as ParticipationLevel) || 'NONE'].bg, LEVEL_UI_CONFIG[(stats?.level as ParticipationLevel) || 'NONE'].border, LEVEL_UI_CONFIG[(stats?.level as ParticipationLevel) || 'NONE'].color)}>
+                                        {(() => {
+                                            const Icon = LEVEL_UI_CONFIG[(stats?.level as ParticipationLevel) || 'NONE'].icon;
+                                            return <Icon className="h-8 w-8" />;
+                                        })()}
                                     </div>
                                     <div>
-                                        <div className="text-sm text-yellow-500 font-medium mb-1">{t('dashboard.currentRank')}</div>
-                                        <h2 className={cn("text-3xl font-bold mb-1", tierInfo.color)}>{t(`tiers.${stats?.tier || 'ORDINARY'}`)}</h2>
+                                        <div className="text-sm text-blue-400 font-medium mb-1">{t('dashboard.currentRank')}</div>
+                                        <h2 className={cn("text-3xl font-bold mb-1", LEVEL_UI_CONFIG[(stats?.level as ParticipationLevel) || 'NONE'].color)}>{stats?.level || 'NONE'}</h2>
                                         <div className="inline-flex items-center gap-2">
                                             <span className="px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-sm font-bold">
-                                                {t('dashboard.direct')}: 25%
+                                                Weak Zone: ${(stats?.weakZoneUsd || 0).toLocaleString()}
                                             </span>
                                             <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-sm font-bold">
-                                                {t('dashboard.teamDiff')}: {((stats?.tier === 'ORDINARY' ? 0.01 : stats?.tier === 'VIP' ? 0.02 : stats?.tier === 'ELITE' ? 0.03 : stats?.tier === 'PARTNER' ? 0.05 : 0.08) * 100).toFixed(0)}%
+                                                Dividend: {((stats?.commissionRate || 0) * 100).toFixed(0)}%
                                             </span>
                                             <Link
-                                                href="/affiliate/rules"
+                                                href="/affiliate?tab=rules"
                                                 className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white text-sm transition-colors flex items-center gap-1"
                                                 title={t('dashboard.learnMoreTitle')}
                                             >
@@ -557,23 +565,23 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                                 </div>
 
                                 <div className="w-full md:w-1/2">
-                                    {stats?.nextTier ? (
+                                    {stats?.nextLevel ? (
                                         <>
                                             <div className="flex justify-between text-xs mb-2">
-                                                <span className="text-muted-foreground">{t('dashboard.nextRank')}: <span className="text-white font-bold">{t(`tiers.${stats.nextTier}`)}</span></span>
+                                                <span className="text-muted-foreground">{t('dashboard.nextRank') || 'Next Level'}: <span className="text-white font-bold">{stats.nextLevel}</span></span>
                                                 <span className="text-white font-medium">
-                                                    {stats.totalReferrals} / {tierInfo.minTeam} {t('dashboard.teamMembers')}
+                                                    ${(stats.weakZoneUsd || 0).toLocaleString()} / ${(stats.nextLevelThresholdUsd || 0).toLocaleString()} Weak Zone
                                                 </span>
                                             </div>
                                             <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mb-1">
-                                                <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (stats.totalReferrals / (tierInfo.minTeam || 1)) * 100)}%` }} />
+                                                <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, ((stats.weakZoneUsd || 0) / (stats.nextLevelThresholdUsd || 1)) * 100)}%` }} />
                                             </div>
                                             <div className="text-[10px] text-muted-foreground text-right">
-                                                {t('dashboard.goal')}: {(tierInfo.minTeam)} {t('dashboard.activeMembers')}
+                                                Required: ${(stats.nextLevelThresholdUsd || 0).toLocaleString()} Weak Zone Net Deposit
                                             </div>
                                         </>
                                     ) : (
-                                        <div className="text-center text-yellow-400 font-medium border border-yellow-500/20 rounded-lg p-3 bg-yellow-500/5">
+                                        <div className="text-center text-blue-400 font-medium border border-blue-500/20 rounded-lg p-3 bg-blue-500/5">
                                             {t('dashboard.topRankAchieved')}
                                         </div>
                                     )}
@@ -584,16 +592,13 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                         {/* 2. Stats Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                             {[
-                                { label: t('dashboard.stats.directReferrals'), value: `${stats?.totalReferrals || 0}`, sub: t('dashboard.stats.zeroLine'), icon: Users, color: "text-green-500", bg: "bg-green-500/10" },
-                                { label: t('dashboard.stats.teamSize'), value: `${stats?.teamSize || 0}`, sub: t('dashboard.stats.totalNetwork'), icon: Wallet, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-                                { label: t('dashboard.stats.sunLines'), value: `${stats?.sunLineCount || 0}`, sub: t('dashboard.stats.strongLegs'), icon: Trophy, color: "text-yellow-500", bg: "bg-yellow-500/10" },
+                                { label: 'Direct Legs', value: `${stats?.directLegCount || 0}`, sub: 'Active Trading Legs', icon: Users, color: "text-green-500", bg: "bg-green-500/10" },
+                                { label: 'Left Zone USD', value: `$${(stats?.leftUsd || 0).toLocaleString()}`, sub: 'Total Net Deposit', icon: GitBranch, color: "text-blue-500", bg: "bg-blue-500/10" },
+                                { label: 'Right Zone USD', value: `$${(stats?.rightUsd || 0).toLocaleString()}`, sub: 'Total Net Deposit', icon: GitBranch, color: "text-purple-500", bg: "bg-purple-500/10" },
                                 {
                                     label: t('dashboard.stats.totalEarnings'),
-                                    value: `$${(stats?.totalEarned || 0).toFixed(2)}`,
-                                    sub: t('dashboard.stats.earningsBreakdown', {
-                                        zero: (stats?.earningsBreakdown?.zeroLine || 0).toFixed(2),
-                                        sun: (stats?.earningsBreakdown?.sunLine || 0).toFixed(2)
-                                    }),
+                                    value: `$${(stats?.totalEarned || 0).toLocaleString()}`,
+                                    sub: `Same-Level: $${(stats?.earningsBreakdown?.sameLevel || 0).toFixed(2)} | Diff: $${(stats?.earningsBreakdown?.teamDividend || 0).toFixed(2)}`,
                                     icon: Calendar,
                                     color: "text-green-500",
                                     bg: "bg-green-500/10",
@@ -1045,12 +1050,12 @@ interface GenerationData {
 interface TreeMember {
     address: string;
     referralCode?: string;
-    tier: string;
+    level: string;
     volume: number;
     teamSize: number;
     depth: number;
-    zeroLineEarned?: number;
-    sunLineEarned?: number;
+    sameLevelEarned?: number;
+    teamDividendEarned?: number;
     children: TreeMember[];
 }
 

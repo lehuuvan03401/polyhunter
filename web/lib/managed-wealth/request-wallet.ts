@@ -5,6 +5,7 @@ import {
     buildManagedWalletSessionMessage,
     MANAGED_WALLET_AUTH_WINDOW_MS,
 } from '@/lib/managed-wealth/wallet-auth-message';
+import { isCopyTradingMockAuthBypassEnabled } from '@/lib/copy-trading/runtime-config';
 
 const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
@@ -95,7 +96,7 @@ export function resolveWalletContext(
     const shouldRequireSignature = options.requireSignature !== undefined
         ? options.requireSignature
         : process.env.MANAGED_WEALTH_REQUIRE_SIGNATURE === 'true';
-    const bypassSignature = process.env.NEXT_PUBLIC_E2E_MOCK_AUTH === 'true';
+    const bypassSignature = isCopyTradingMockAuthBypassEnabled();
 
     if (shouldRequireSignature && !bypassSignature) {
         const signature = request.headers.get('x-wallet-signature');

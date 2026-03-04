@@ -11,21 +11,35 @@ const API_BASE_URL = '';
 export interface AffiliateStats {
     walletAddress: string;
     referralCode: string;
-    tier: 'ORDINARY' | 'VIP' | 'ELITE' | 'PARTNER' | 'SUPER_PARTNER';
+
+    // DoubleZone V1-V9 Fields
+    level: string;
     commissionRate: number;
+    weakZoneUsd: number;
+    strongZoneUsd: number;
+    leftUsd: number;
+    rightUsd: number;
+    nextLevel: string | null;
+    nextLevelThresholdUsd: number | null;
+    volumeToNextTier: number;
+    legBreakdown: Array<{
+        walletAddress: string;
+        netDepositUsd: number;
+    }>;
+    directLegCount: number;
+
+    // General Affiliate Fields
     totalVolumeGenerated: number;
     totalReferrals: number;
-    totalEarned: number;
-    pendingPayout: number;
-    volumeToNextTier: number;
-    nextTier: string | null;
-    sunLineCount: number;
-    maxDepth: number;
     teamSize: number;
     earningsBreakdown: {
-        zeroLine: number;
-        sunLine: number;
+        sameLevel: number;
+        teamDividend: number;
     };
+    sunLineCount: number;
+    maxDepth: number;
+    totalEarned: number;
+    pendingPayout: number;
 }
 
 export interface Referral {
@@ -173,11 +187,4 @@ export function generateReferralLink(referralCode: string): string {
     return `${baseUrl}?ref=${referralCode}`;
 }
 
-// Tier display helpers
-export const TIER_INFO = {
-    ORDINARY: { name: 'Ordinary Member', color: 'text-gray-400', minDirect: 0, minTeam: 0, nextTier: 'VIP' },
-    VIP: { name: 'VIP Member', color: 'text-blue-400', minDirect: 3, minTeam: 10, nextTier: 'ELITE' },
-    ELITE: { name: 'Elite Agent', color: 'text-purple-400', minDirect: 10, minTeam: 100, nextTier: 'PARTNER' },
-    PARTNER: { name: 'Partner', color: 'text-yellow-400', minDirect: 30, minTeam: 500, nextTier: 'SUPER_PARTNER' },
-    SUPER_PARTNER: { name: 'Super Partner', color: 'text-red-500', minDirect: 50, minTeam: 1000, nextTier: null },
-};
+// UI components should now import LEVEL_UI_CONFIG from @/components/participation/affiliate-rules-tab or similar

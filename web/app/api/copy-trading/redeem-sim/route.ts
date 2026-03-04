@@ -1,17 +1,30 @@
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import { isCopyTradingSimulationMutationEnabled } from '@/lib/copy-trading/runtime-config';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
     try {
+        if (!isCopyTradingSimulationMutationEnabled()) {
+            return NextResponse.json({ error: 'Simulation redemption is disabled' }, { status: 403 });
+        }
+
         const body = await request.json();
         const { walletAddress: rawWallet, tokenId: rawToken, conditionId, outcome, marketSlug } = body;
+        const walletCheck = resolveCopyTradingWalletContext(request, {
+            bodyWallet: rawWallet,
+            requireHeader: true,
+        });
+        if (!walletCheck.ok) {
+            return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
+        }
 
         if (!rawWallet || !rawToken) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
         // Normalize keys for DB (DB stores lowercase)
-        const walletAddress = rawWallet.toLowerCase();
+        const walletAddress = walletCheck.wallet;
         const tokenId = rawToken.toLowerCase();
 
         console.log(`[MockRedeem] Request for ${walletAddress} on token ${tokenId}`);

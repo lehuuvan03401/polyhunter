@@ -7,12 +7,12 @@ import { cn } from '@/lib/utils';
 interface TreeMember {
     address: string;
     referralCode?: string;
-    tier: string;
+    level: string;
     volume: number;
     teamSize: number;
     depth: number;
-    zeroLineEarned?: number;
-    sunLineEarned?: number;
+    sameLevelEarned?: number;
+    teamDividendEarned?: number;
     children: TreeMember[];
 }
 
@@ -21,20 +21,11 @@ interface TeamTreeViewProps {
     className?: string;
 }
 
-const TIER_STYLES: Record<string, string> = {
-    'ORDINARY': 'text-muted-foreground border-white/10',
-    'VIP': 'text-white bg-white/5 border-white/20',
-    'ELITE': 'text-yellow-200 bg-yellow-500/5 border-yellow-500/10',
-    'PARTNER': 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
-    'SUPER_PARTNER': 'text-yellow-500 bg-yellow-500/20 border-yellow-500/30',
-};
-
 function TreeNode({ member, depth = 0 }: { member: TreeMember; depth?: number }) {
     const [isExpanded, setIsExpanded] = useState(depth < 2); // Auto-expand first 2 levels
     const hasChildren = member.children && member.children.length > 0;
 
-    const tierStyle = TIER_STYLES[member.tier] || TIER_STYLES['ORDINARY'];
-    const hasCommission = (member.zeroLineEarned || 0) > 0 || (member.sunLineEarned || 0) > 0;
+    const hasCommission = (member.sameLevelEarned || 0) > 0 || (member.teamDividendEarned || 0) > 0;
 
     return (
         <div className="select-none">
@@ -72,8 +63,8 @@ function TreeNode({ member, depth = 0 }: { member: TreeMember; depth?: number })
                         <span className="font-mono text-sm text-white/80 truncate">
                             {member.referralCode || `${member.address?.slice(0, 6)}...${member.address?.slice(-4)}`}
                         </span>
-                        <span className={cn("text-xs px-1.5 py-0.5 rounded border", tierStyle)}>
-                            {member.tier}
+                        <span className="text-xs px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 bg-blue-500/10">
+                            {member.level}
                         </span>
                     </div>
                 </div>
@@ -81,18 +72,18 @@ function TreeNode({ member, depth = 0 }: { member: TreeMember; depth?: number })
                 {/* Commission Breakdown */}
                 {hasCommission && (
                     <div className="flex items-center gap-3">
-                        {/* Zero Line (Direct Commission) */}
-                        {(member.zeroLineEarned || 0) > 0 && (
-                            <div className="flex items-center gap-1 text-green-400" title="Zero Line (Direct)">
+                        {/* Same Level (Direct Commission) */}
+                        {(member.sameLevelEarned || 0) > 0 && (
+                            <div className="flex items-center gap-1 text-green-400" title="Same-Level Bonus">
                                 <Zap className="h-3 w-3" />
-                                <span className="text-xs font-mono">${member.zeroLineEarned?.toFixed(2)}</span>
+                                <span className="text-xs font-mono">${member.sameLevelEarned?.toFixed(2)}</span>
                             </div>
                         )}
-                        {/* Sun Line (Team Differential) */}
-                        {(member.sunLineEarned || 0) > 0 && (
-                            <div className="flex items-center gap-1 text-yellow-400" title="Sun Line (Team Diff)">
+                        {/* Team Dividend */}
+                        {(member.teamDividendEarned || 0) > 0 && (
+                            <div className="flex items-center gap-1 text-yellow-400" title="Team Dividend">
                                 <Sun className="h-3 w-3" />
-                                <span className="text-xs font-mono">${member.sunLineEarned?.toFixed(2)}</span>
+                                <span className="text-xs font-mono">${member.teamDividendEarned?.toFixed(2)}</span>
                             </div>
                         )}
                     </div>

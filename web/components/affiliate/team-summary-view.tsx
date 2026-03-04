@@ -7,12 +7,12 @@ import { Users } from 'lucide-react';
 interface TreeMember {
     address: string;
     referralCode?: string;
-    tier: string;
+    level: string;
     volume: number;
     teamSize: number;
     depth: number;
-    zeroLineEarned?: number;
-    sunLineEarned?: number;
+    sameLevelEarned?: number;
+    teamDividendEarned?: number;
     children: TreeMember[];
 }
 
@@ -72,12 +72,9 @@ export function TeamSummaryView({ directReferrals, className }: TeamSummaryViewP
                                     </div>
                                 </td>
                                 <td className="py-2.5">
-                                    <span className={cn("text-xs px-1.5 py-0.5 rounded border",
-                                        ref.tier === 'ORDINARY' ? 'text-gray-400 border-gray-400/30' :
-                                            ref.tier === 'VIP' ? 'text-blue-400 bg-blue-400/10 border-blue-400/30' :
-                                                ref.tier === 'ELITE' ? 'text-purple-400 bg-purple-400/10 border-purple-400/30' :
-                                                    'text-yellow-400 bg-yellow-400/10 border-yellow-400/30'
-                                    )}>{ref.tier}</span>
+                                    <span className={cn("text-xs px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 bg-blue-500/10")}>
+                                        {ref.level}
+                                    </span>
                                 </td>
                                 <td className="py-2.5 text-right font-mono text-white/60">
                                     ${(ref.volume || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}

@@ -1271,22 +1271,21 @@
         "title": "Affiliate Program Rules",
         "backToDashboard": "Back to Dashboard",
         "tierSystem": {
-            "title": "Tier System",
-            "subtitle": "Progress through 5 ranks to unlock higher commission rates",
+            "title": "Tier System (V1 - V9)",
+            "subtitle": "Progress through 9 levels based on your Weak Zone Net Deposit.",
             "yourRank": "YOUR RANK",
             "table": {
-                "tier": "Tier",
-                "directs": "Direct Referrals",
-                "team": "Team Size",
-                "diff": "Team Diff %"
+                "tier": "Level",
+                "threshold": "Weak Zone Min. Deposit",
+                "dividendRate": "Dividend Rate"
             }
         },
-        "zeroLine": {
-            "title": "Zero Line (Direct Bonus)",
-            "subtitle": "Earn from your team's trades up to 5 generations deep",
-            "explanation": "When anyone in your team executes a trade, a 0.1% platform fee is collected. You earn a percentage of this fee based on their generation:",
+        "sameLevel": {
+            "title": "Same-Level Bonus",
+            "subtitle": "Earn a direct rebate percentage when your downline reaches your exact V-Level",
+            "explanation": "When a member in your team catches up to the same V-Level as you, the Team Dividend differential mathematically becomes zero. However, you will still earn a Same-Level Bonus directly from their realized profits based on their organizational distance from you:",
             "generations": {
-                "1": "Direct Referral",
+                "1": "1st Generation (Direct)",
                 "2": "2nd Generation",
                 "3": "3rd Generation",
                 "4": "4th Generation",
@@ -1294,41 +1293,39 @@
             },
             "example": {
                 "title": "Example Calculation",
-                "volume": "Trade Volume:",
-                "fee": "Platform Fee (0.1%):",
-                "gen1": "Your Gen 1 Commission (25%):",
-                "gen2": "Your Gen 2 Commission (10%):",
-                "gen3": "Your Gen 3 Commission (5%):"
+                "dividend": "Downline's Realized Profit:",
+                "gen1": "Your Gen 1 Bonus (4%):",
+                "gen2": "Your Gen 2 Bonus (1%):"
             }
         },
-        "sunLine": {
-            "title": "Sun Line (Team Differential)",
-            "subtitle": "Earn extra from the tier difference between you and your downline",
-            "explanation": "When a lower-tier member in your network trades, you earn the <strong className=\"text-white\">difference</strong> between your tier rate and their tier rate. This rewards building a deep team!",
-            "formula": "Sun Line = Fee × (Your Rate - Their Rate)",
+        "teamDividend": {
+            "title": "Team Dividend (Differential)",
+            "subtitle": "Earn the difference between your level's dividend rate and your downline's rate",
+            "explanation": "When a lower-tier member in your network generates realized profit from copy-trading, you earn the <strong className=\"text-white\">difference</strong> between your V-Level dividend rate and their V-Level dividend rate. Build a deep team to maximize earnings!",
+            "formula": "Bonus = Realized Profit Captured × (Your Rate - Their Rate)",
             "formulaLabel": "Formula:",
             "example": {
                 "title": "Example:",
-                "you": "You are <strong className=\"text-purple-400\">ELITE (3%)</strong>",
-                "downline": "Downline member is <strong className=\"text-blue-400\">VIP (2%)</strong>",
-                "fee": "Platform Fee:",
-                "diff": "Differential:",
-                "bonus": "Your Sun Line Bonus:"
+                "you": "You are <strong className=\"text-purple-400\">V4 (45%)</strong>",
+                "downline": "Downline member is <strong className=\"text-blue-400\">V3 (40%)</strong>",
+                "profitSystemFee": "System Profit Captured:",
+                "diff": "Dividend Differential:",
+                "bonus": "Your Differential Bonus:"
             }
         },
         "faq": {
             "title": "Frequently Asked Questions",
-            "subtitle": "Common questions about the affiliate program",
-            "q1": "How do I upgrade my tier?",
-            "a1": "Your tier upgrades automatically when you meet the requirements. You need a certain number of direct referrals AND total team members. For example, to reach VIP you need 3 direct referrals and 10 total team members.",
+            "subtitle": "Common questions about the participation program",
+            "q1": "How do I upgrade my V-Level?",
+            "a1": "Your level upgrades automatically when your Weak Zone Net Deposit meets the required threshold. The system calculates the net deposit (deposit minus withdrawal) of your left and right team zones. The zone with the smaller total is your \"Weak Zone\".",
             "q2": "When do I receive my commissions?",
-            "a2": "Commissions are credited instantly when your team members execute trades. They are added to your \"Pending Payout\" balance and can be withdrawn at any time.",
-            "q3": "What is a \"Sun Line\" / Strong Leg?",
-            "a3": "A Sun Line (Strong Leg) is a direct referral who has built their own active team. Having multiple Sun Lines indicates a healthy, distributed network and is key to maximizing Team Differential earnings.",
+            "a2": "Commissions derived from realized copy-trading profits are credited when trades are settled. They are added to your balance dynamically.",
+            "q3": "What happens if a downline member overtakes my level?",
+            "a3": "If a member in your downline achieves a higher V-Level than you, the differential for that specific leg becomes zero, and you will not earn team dividends from their volume until you level up.",
             "q4": "How do I withdraw my earnings?",
-            "a4": "Go to your Affiliate Dashboard, click the \"Withdraw\" button next to Total Earnings, sign the transaction with your wallet, and your USDC will be sent to your wallet address.",
-            "q5": "What is the difference between Zero Line and Sun Line?",
-            "a5": "Zero Line is your direct commission from team trades (25% Gen1, 10% Gen2, etc.). Sun Line (Team Differential) is the bonus you earn from the difference between your tier rate and lower-tier members in your downline."
+            "a4": "Go to your Dashboard, click the \"Withdraw\" button, sign the transaction with your wallet, and your earnings will be sent to your connected wallet address.",
+            "q5": "What is the difference between Team Dividend and Same-Level Bonus?",
+            "a5": "Team Dividend is the differential earned when your V-Level rate is higher than a downline's rate. Same-Level Bonus is a safeguard that pays you a smaller direct percentage (e.g. 4% on Gen 1) when a downline catches up to your exact V-Level, overriding the zero differential."
         },
         "returnToDashboard": "Return to Dashboard"
     },

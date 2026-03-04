@@ -5,12 +5,12 @@ import { prisma, errorResponse, normalizeAddress } from '../utils';
 interface TreeMember {
     address: string;
     referralCode?: string;
-    tier: string;
+    level: string;
     volume: number;
     teamSize: number;
     depth: number;
-    zeroLineEarned: number;  // Commission from this member's direct trades
-    sunLineEarned: number;   // Commission from this member's team (differential)
+    sameLevelEarned: number;
+    teamDividendEarned: number;
     children: TreeMember[];
 }
 
@@ -145,12 +145,12 @@ export async function GET(request: Request) {
                     return {
                         address: child.descendant.walletAddress,
                         referralCode: child.descendant.referralCode,
-                        tier: child.descendant.tier,
+                        level: child.descendant.tier || 'NONE', // Mapped from DB, DB still stores tier basically, or update logic to DoubleZone! Wait, DB tier column is AffiliateTier enum. For now map DB tier to level
                         volume: child.descendant.totalVolume,
                         teamSize,
                         depth: currentDepth,
-                        zeroLineEarned: zeroLine,
-                        sunLineEarned: sunLine,
+                        sameLevelEarned: zeroLine,
+                        teamDividendEarned: sunLine,
                         children: subChildren
                     };
                 }));
@@ -173,12 +173,12 @@ export async function GET(request: Request) {
                 return {
                     address: dr.descendant.walletAddress,
                     referralCode: dr.descendant.referralCode,
-                    tier: dr.descendant.tier,
+                    level: dr.descendant.tier || 'NONE',
                     volume: dr.descendant.totalVolume,
                     teamSize,
                     depth: 1,
-                    zeroLineEarned: zeroLine,
-                    sunLineEarned: sunLine,
+                    sameLevelEarned: zeroLine,
+                    teamDividendEarned: sunLine,
                     children
                 };
             }));

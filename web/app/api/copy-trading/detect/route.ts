@@ -10,8 +10,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
+import { verifyCopyTradingCronAuthorizationHeader } from '@/lib/copy-trading/runtime-config';
 
 // Time window to look for new trades (in seconds)
 const DETECTION_WINDOW_SECONDS = 120; // 2 minutes
@@ -66,8 +68,29 @@ function normalizeTradeSizing(
     return { tradeShares, tradeNotional };
 }
 
-// Secret for cron job authentication
-const CRON_SECRET = process.env.CRON_SECRET || 'dev-cron-secret';
+function normalizeHash(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null;
+    const value = raw.trim().toLowerCase();
+    if (!value) return null;
+    return value;
+}
+
+function buildOriginalSignalId(params: {
+    txHash: string | null;
+    tokenId: string | null;
+    side: string | null;
+    traderAddress: string;
+    timestamp: number;
+}): string {
+    if (params.txHash) {
+        const tokenPart = params.tokenId || 'unknown-token';
+        const sidePart = params.side || 'UNKNOWN';
+        return `${params.txHash}:${tokenPart}:${sidePart}`;
+    }
+
+    const ts = Number.isFinite(params.timestamp) ? Math.floor(params.timestamp) : 0;
+    return `local:${params.traderAddress.toLowerCase()}:${params.tokenId || 'unknown-token'}:${params.side || 'UNKNOWN'}:${ts}`;
+}
 
 /**
  * POST /api/copy-trading/detect
@@ -77,15 +100,23 @@ const CRON_SECRET = process.env.CRON_SECRET || 'dev-cron-secret';
  */
 export async function POST(request: NextRequest) {
     try {
-        // Verify cron secret (optional in dev)
-        if (process.env.NODE_ENV === 'production') {
-            const authHeader = request.headers.get('Authorization');
-            if (!authHeader || authHeader !== `Bearer ${CRON_SECRET}`) {
-                return NextResponse.json(
-                    { error: 'Unauthorized' },
-                    { status: 401 }
-                );
-            }
+        // Fail-closed cron authentication in all environments.
+        // Local/dev execution should set CRON_SECRET explicitly.
+        const authHeader = request.headers.get('Authorization');
+        let authorized = false;
+        try {
+            authorized = verifyCopyTradingCronAuthorizationHeader(authHeader);
+        } catch (configError: any) {
+            return NextResponse.json(
+                { error: configError?.message || 'Copy trading cron auth misconfigured' },
+                { status: 500 }
+            );
+        }
+        if (!authorized) {
+            return NextResponse.json(
+                { error: 'Unauthorized' },
+                { status: 401 }
+            );
         }
 
         // 只扫描激活配置，停用策略不会进入检测链路。
@@ -148,20 +179,24 @@ export async function POST(request: NextRequest) {
                     }
 
                     for (const config of configsForTrader) {
+                        const tradeHash = normalizeHash((trade as any).transactionHash ?? (trade as any).txHash ?? null);
+                        const originalTxHash = buildOriginalSignalId({
+                            txHash: tradeHash,
+                            tokenId: trade.asset || null,
+                            side: trade.side || null,
+                            traderAddress,
+                            timestamp: trade.timestamp,
+                        });
                         const { tradeShares, tradeNotional } = normalizeTradeSizing(config, trade.size, trade.price);
 
-                        // 幂等去重：用（config+trader+时间容差+方向+仓位）近似识别同一 leader 成交。
-                        const existing = await prisma.copyTrade.findFirst({
+                        const existing = await prisma.copyTrade.findUnique({
                             where: {
-                                configId: config.id,
-                                originalTrader: traderAddress,
-                                detectedAt: {
-                                    gte: new Date(tradeTimeMs - 5000), // 5s tolerance
-                                    lte: new Date(tradeTimeMs + 5000),
+                                configId_originalTxHash: {
+                                    configId: config.id,
+                                    originalTxHash,
                                 },
-                                originalSide: trade.side,
-                                originalSize: tradeShares,
                             },
+                            select: { id: true },
                         });
 
                         if (existing) continue; // Already processed
@@ -199,23 +234,31 @@ export async function POST(request: NextRequest) {
                         if (copySize <= 0) continue;
 
                         // 检测阶段只写 PENDING，不直接执行，执行由 worker/API 分支负责。
-                        await prisma.copyTrade.create({
-                            data: {
-                                configId: config.id,
-                                originalTrader: traderAddress,
-                                originalSide: copySide, // Use potentially flipped side for COUNTER
-                                leaderSide: trade.side,
-                                originalSize: tradeShares,
-                                originalPrice: trade.price,
-                                marketSlug: trade.slug || null,
-                                conditionId: trade.conditionId || null,
-                                tokenId: trade.asset || null,
-                                outcome: trade.outcome || null,
-                                copySize,
-                                status: 'PENDING',
-                                expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
-                            },
-                        });
+                        try {
+                            await prisma.copyTrade.create({
+                                data: {
+                                    configId: config.id,
+                                    originalTrader: traderAddress,
+                                    originalSide: copySide, // Use potentially flipped side for COUNTER
+                                    leaderSide: trade.side,
+                                    originalSize: tradeShares,
+                                    originalPrice: trade.price,
+                                    originalTxHash,
+                                    marketSlug: trade.slug || null,
+                                    conditionId: trade.conditionId || null,
+                                    tokenId: trade.asset || null,
+                                    outcome: trade.outcome || null,
+                                    copySize,
+                                    status: 'PENDING',
+                                    expiresAt: new Date(Date.now() + PENDING_EXPIRY_MINUTES * 60 * 1000),
+                                },
+                            });
+                        } catch (createError: any) {
+                            if (createError instanceof Prisma.PrismaClientKnownRequestError && createError.code === 'P2002') {
+                                continue;
+                            }
+                            throw createError;
+                        }
 
                         totalCreated++;
                     }
