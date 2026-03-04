@@ -13,13 +13,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { polyClient } from '@/lib/polymarket';
-import { verifyCopyTradingCronAuthorizationHeader } from '@/lib/copy-trading/runtime-config';
+import {
+    getCopyTradingCronSecret,
+    verifyCopyTradingCronAuthorizationHeader,
+} from '@/lib/copy-trading/runtime-config';
 
 // Time window to look for new trades (in seconds)
 const DETECTION_WINDOW_SECONDS = 120; // 2 minutes
 
 // Expiry time for pending trades (user has this long to confirm)
 const PENDING_EXPIRY_MINUTES = 10;
+void getCopyTradingCronSecret();
 
 /**
  * Calculate copy size based on config and original trade
@@ -103,15 +107,7 @@ export async function POST(request: NextRequest) {
         // Fail-closed cron authentication in all environments.
         // Local/dev execution should set CRON_SECRET explicitly.
         const authHeader = request.headers.get('Authorization');
-        let authorized = false;
-        try {
-            authorized = verifyCopyTradingCronAuthorizationHeader(authHeader);
-        } catch (configError: any) {
-            return NextResponse.json(
-                { error: configError?.message || 'Copy trading cron auth misconfigured' },
-                { status: 500 }
-            );
-        }
+        const authorized = verifyCopyTradingCronAuthorizationHeader(authHeader);
         if (!authorized) {
             return NextResponse.json(
                 { error: 'Unauthorized' },

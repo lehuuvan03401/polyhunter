@@ -39,6 +39,7 @@ import { DataApiClient, type Activity as DataActivity } from '../../../sdk/src/c
 import { PrismaDebtLogger, PrismaDebtRepository } from '../services/debt-adapters';
 import { AffiliateEngine } from '../../lib/services/affiliate-engine';
 import { PositionService } from '../../lib/services/position-service';
+import { getCopyTradingChainId, isCopyTradingDryRunEnabled } from '../../lib/copy-trading/runtime-config';
 import { RealtimeServiceV2, ActivityTrade, Subscription } from '../../../sdk/src/services/realtime-service-v2';
 import { TxMonitor, TrackedTx } from '../../../sdk/src/core/tx-monitor';
 import { normalizeTradeSizingFromShares } from '../../../sdk/src/utils/trade-sizing.js';
@@ -48,8 +49,8 @@ import { normalizeTradeSizingFromShares } from '../../../sdk/src/utils/trade-siz
 // 网络与执行开关
 // =========================
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "31337");
-const DRY_RUN = process.env.DRY_RUN === 'true';
+const CHAIN_ID = getCopyTradingChainId();
+const DRY_RUN = isCopyTradingDryRunEnabled();
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
 
@@ -80,6 +81,10 @@ const MARKET_META_TTL_MS = parseInt(process.env.SUPERVISOR_MARKET_META_TTL_MS ||
 // DEDUP_TTL_MS 控制“同一事件哈希”去重窗口，避免多信号源重复下单。
 const DEDUP_TTL_MS = parseInt(process.env.SUPERVISOR_DEDUP_TTL_MS || '60000', 10);
 const FILTER_MARKET_STATS_TTL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_FILTER_MARKET_STATS_TTL_MS || '15000', 10));
+const SUPERVISOR_PRICE_CACHE_MAX = Math.max(100, parseInt(process.env.SUPERVISOR_PRICE_CACHE_MAX || '2000', 10));
+const SUPERVISOR_META_CACHE_MAX = Math.max(100, parseInt(process.env.SUPERVISOR_META_CACHE_MAX || '5000', 10));
+const SUPERVISOR_PREFLIGHT_CACHE_MAX = Math.max(100, parseInt(process.env.SUPERVISOR_PREFLIGHT_CACHE_MAX || '5000', 10));
+const SUPERVISOR_FILTER_CACHE_MAX = Math.max(100, parseInt(process.env.SUPERVISOR_FILTER_CACHE_MAX || '3000', 10));
 const FILTER_ORDERBOOK_DEPTH_LEVELS = Math.max(1, parseInt(process.env.SUPERVISOR_FILTER_ORDERBOOK_DEPTH_LEVELS || '20', 10));
 const EOA_SERVICE_TTL_MS = Math.max(60_000, parseInt(process.env.SUPERVISOR_EOA_SERVICE_TTL_MS || '300000', 10));
 const EOA_SERVICE_SWEEP_INTERVAL_MS = Math.max(15_000, parseInt(process.env.SUPERVISOR_EOA_SERVICE_SWEEP_INTERVAL_MS || '60000', 10));
@@ -1813,6 +1818,50 @@ const MEMPOOL_PRICE_FALLBACK_MAX_AGE_MS = Math.max(
 const PREFLIGHT_CACHE_TTL_MS = 2000;
 const marketMetaCache = new Map<string, { data: { marketSlug: string; conditionId: string; outcome: string }; fetchedAt: number }>();
 
+function evictTimedMapEntries<T extends Record<string, unknown>>(
+    store: Map<string, T>,
+    params: { maxEntries: number; now?: number; timeKey: keyof T; ttlMs: number }
+): void {
+    const now = params.now ?? Date.now();
+
+    for (const [key, entry] of store.entries()) {
+        const timeValue = Number(entry[params.timeKey]);
+        if (!Number.isFinite(timeValue) || now - timeValue > params.ttlMs) {
+            store.delete(key);
+        }
+    }
+
+    while (store.size > params.maxEntries) {
+        const oldestKey = store.keys().next().value;
+        if (!oldestKey) break;
+        store.delete(oldestKey);
+    }
+}
+
+function setPriceCacheEntry(key: string, price: number, timestamp = Date.now()): void {
+    priceCache.set(key, { price, timestamp });
+    evictTimedMapEntries(priceCache, {
+        maxEntries: SUPERVISOR_PRICE_CACHE_MAX,
+        now: timestamp,
+        timeKey: 'timestamp',
+        ttlMs: MEMPOOL_PRICE_FALLBACK_MAX_AGE_MS,
+    });
+}
+
+function setMarketMetaCacheEntry(
+    key: string,
+    data: { marketSlug: string; conditionId: string; outcome: string },
+    fetchedAt = Date.now()
+): void {
+    marketMetaCache.set(key, { data, fetchedAt });
+    evictTimedMapEntries(marketMetaCache, {
+        maxEntries: SUPERVISOR_META_CACHE_MAX,
+        now: fetchedAt,
+        timeKey: 'fetchedAt',
+        ttlMs: MARKET_META_TTL_MS,
+    });
+}
+
 const MARKET_CAPS = new Map<string, number>();
 if (MARKET_CAPS_RAW) {
     MARKET_CAPS_RAW.split(',')
@@ -1848,7 +1897,7 @@ async function getCachedPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<nu
         const ob = await masterTradingService.getOrderBook(tokenId);
         const price = extractSidePrice(ob, side);
         if (!price) throw new Error('NO_SIDE_PRICE');
-        priceCache.set(cacheKey, { price, timestamp: Date.now() });
+        setPriceCacheEntry(cacheKey, price, Date.now());
         console.log(`[Supervisor] 💰 Price fetched for ${tokenId} (${side}): $${price.toFixed(4)}`);
         return price;
     } catch (e: any) {
@@ -1870,7 +1919,7 @@ async function getStrictMempoolPrice(tokenId: string, side: 'BUY' | 'SELL'): Pro
         const ob = await masterTradingService.getOrderBook(tokenId);
         const price = extractSidePrice(ob, side);
         if (!price) throw new Error('NO_SIDE_PRICE');
-        priceCache.set(cacheKey, { price, timestamp: now });
+        setPriceCacheEntry(cacheKey, price, now);
         return price;
     } catch (e: any) {
         if (cached && now - cached.timestamp <= MEMPOOL_PRICE_FALLBACK_MAX_AGE_MS) {
@@ -1889,6 +1938,16 @@ const POSITION_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh every 5 minute
 
 const preflightCache = new Map<string, { value: any; fetchedAt: number }>();
 const preflightInFlight = new Map<string, Promise<any>>();
+
+function setPreflightCacheEntry(key: string, value: any, fetchedAt = Date.now()): void {
+    preflightCache.set(key, { value, fetchedAt });
+    evictTimedMapEntries(preflightCache, {
+        maxEntries: SUPERVISOR_PREFLIGHT_CACHE_MAX,
+        now: fetchedAt,
+        timeKey: 'fetchedAt',
+        ttlMs: PREFLIGHT_CACHE_TTL_MS,
+    });
+}
 
 function buildPreflightKey(parts: Array<string | number | null | undefined>): string {
     return parts
@@ -1913,7 +1972,7 @@ async function getPreflightCached<T>(key: string, fetcher: () => Promise<T>): Pr
         try {
             const value = await fetcher();
             if (value !== undefined && value !== null) {
-                preflightCache.set(key, { value, fetchedAt: Date.now() });
+                setPreflightCacheEntry(key, value, Date.now());
             }
             return value;
         } finally {
@@ -1946,9 +2005,11 @@ class MemoryCounterStore implements CounterStore {
         this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
     }
     async incrBy(key: string, value: number, ttlMs: number): Promise<number> {
-        const current = await this.get(key);
-        const next = (current ?? 0) + value;
-        await this.set(key, next, ttlMs);
+        const now = Date.now();
+        const existing = this.store.get(key);
+        const current = existing && existing.expiresAt > now ? existing.value : 0;
+        const next = current + value;
+        this.store.set(key, { value: next, expiresAt: now + ttlMs });
         return next;
     }
 }
@@ -2498,6 +2559,16 @@ interface FilterMarketMetrics {
 const filterMetricsCache = new Map<string, { metrics: FilterMarketMetrics; fetchedAt: number }>();
 const filterMetricsInFlight = new Map<string, Promise<FilterMarketMetrics | null>>();
 
+function setFilterMetricsCacheEntry(key: string, metrics: FilterMarketMetrics, fetchedAt = Date.now()): void {
+    filterMetricsCache.set(key, { metrics, fetchedAt });
+    evictTimedMapEntries(filterMetricsCache, {
+        maxEntries: SUPERVISOR_FILTER_CACHE_MAX,
+        now: fetchedAt,
+        timeKey: 'fetchedAt',
+        ttlMs: FILTER_MARKET_STATS_TTL_MS,
+    });
+}
+
 function buildFilterMetricsKey(tokenId: string, side: 'BUY' | 'SELL'): string {
     return `${tokenId}:${side}`;
 }
@@ -2569,7 +2640,7 @@ async function getFilterMarketMetrics(tokenId: string, side: 'BUY' | 'SELL'): Pr
                 return null;
             }
 
-            filterMetricsCache.set(key, { metrics, fetchedAt: Date.now() });
+            setFilterMetricsCacheEntry(key, metrics, Date.now());
             return metrics;
         } finally {
             filterMetricsInFlight.delete(key);
@@ -3441,7 +3512,7 @@ async function getMarketSlugForGuardrail(tokenId: string): Promise<string | unde
             conditionId: meta.conditionId || '0x0',
             outcome: meta.outcome || 'Yes',
         };
-        marketMetaCache.set(tokenId, { data: normalized, fetchedAt: now });
+        setMarketMetaCacheEntry(tokenId, normalized, now);
         if (normalized.marketSlug && !normalized.marketSlug.includes('unknown')) {
             return normalized.marketSlug.toLowerCase();
         }

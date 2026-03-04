@@ -692,299 +692,297 @@ export class TradeOrchestrator {
 
         console.log(`[Orchestrator] 🚀 Dispatching Execution -> Tx: ${copyTrade.id}`);
 
-        // 9. Execute On-Chain
-        let result: {
-            success: boolean;
-            orderId?: string;
-            error?: string;
-            usedBotFloat?: boolean;
-            transactionHashes?: string[];
-            executedAmount?: number;
-            scaledDown?: boolean;
-            tokenPushTxHash?: string;
-            returnTransferTxHash?: string;
-            settlementDeferred?: boolean;
-            filledShares?: number;
-            actualSellProceedsUsdc?: number;
-            sellProceedsSource?: 'trade_ids' | 'order_snapshot' | 'fallback' | 'none';
-        } = { success: false };
-        let execPrice = marketPrice;
-        let simSlippageBps = 0;
-        let simLatencyMs = 0;
-        let simFeePaid = 0;
+        try {
+            // 9. Execute On-Chain
+            let result: {
+                success: boolean;
+                orderId?: string;
+                error?: string;
+                usedBotFloat?: boolean;
+                transactionHashes?: string[];
+                executedAmount?: number;
+                scaledDown?: boolean;
+                tokenPushTxHash?: string;
+                returnTransferTxHash?: string;
+                settlementDeferred?: boolean;
+                filledShares?: number;
+                actualSellProceedsUsdc?: number;
+                sellProceedsSource?: 'trade_ids' | 'order_snapshot' | 'fallback' | 'none';
+            } = { success: false };
+            let execPrice = marketPrice;
+            let simSlippageBps = 0;
+            let simLatencyMs = 0;
+            let simFeePaid = 0;
 
-        if (this.isSimulation) {
-            console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
-            // Default simulation accounting to the leader's observed execution price.
-            // Set SIM_USE_CLOB_VWAP=true only when you explicitly want CLOB VWAP-based fills.
-            const useClobVwapForSimulation = process.env.SIM_USE_CLOB_VWAP === 'true';
+            if (this.isSimulation) {
+                console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
+                const useClobVwapForSimulation = process.env.SIM_USE_CLOB_VWAP === 'true';
 
-            // --- Step 2: FOK Scale-Down Simulation ---
-            // Real Polymarket uses Fill-Or-Kill. We simulate the same scale-down logic
-            // as real execution: try 100%, then 75%, then 50% for SELLs (or if allowed).
-            let simulateScale = 1.0;
-            const simScaleFactors = (copySide === 'SELL' || config.allowPartialFill) ? [1.0, 0.75, 0.5] : [1.0];
-            let simPrice = await this.getSimulationPrice({
-                tokenId,
-                side: copySide as 'BUY' | 'SELL',
-                copySizeUsdc,
-                leaderPrice,
-            });
-
-            let simSuccess = false;
-            for (const scale of simScaleFactors) {
-                simulateScale = scale;
-                const attemptUsdc = copySizeUsdc * scale;
-
-                simPrice = await this.getSimulationPrice({
+                let simulateScale = 1.0;
+                const simScaleFactors = (copySide === 'SELL' || config.allowPartialFill) ? [1.0, 0.75, 0.5] : [1.0];
+                let simPrice = await this.getSimulationPrice({
                     tokenId,
                     side: copySide as 'BUY' | 'SELL',
-                    copySizeUsdc: attemptUsdc, // use scaled amount for depth check
+                    copySizeUsdc,
                     leaderPrice,
                 });
 
-                if (!simPrice.fromClob || simPrice.fillRatio >= 0.95) {
-                    simSuccess = true;
-                    if (scale < 1.0) {
-                        console.log(`[Orchestrator] ⚠️ SIM_FOK_SCALED_DOWN: executed ${copySide} at ${(scale * 100).toFixed(0)}% scale -> $${attemptUsdc.toFixed(2)}`);
+                let simSuccess = false;
+                for (const scale of simScaleFactors) {
+                    simulateScale = scale;
+                    const attemptUsdc = copySizeUsdc * scale;
+
+                    simPrice = await this.getSimulationPrice({
+                        tokenId,
+                        side: copySide as 'BUY' | 'SELL',
+                        copySizeUsdc: attemptUsdc,
+                        leaderPrice,
+                    });
+
+                    if (!simPrice.fromClob || simPrice.fillRatio >= 0.95) {
+                        simSuccess = true;
+                        if (scale < 1.0) {
+                            console.log(`[Orchestrator] ⚠️ SIM_FOK_SCALED_DOWN: executed ${copySide} at ${(scale * 100).toFixed(0)}% scale -> $${attemptUsdc.toFixed(2)}`);
+                        }
+                        break;
+                    } else {
+                        console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED at ${(scale * 100).toFixed(0)}% scale: depth $${simPrice.depthUsdc.toFixed(2)} < order $${attemptUsdc.toFixed(2)} (fill: ${(simPrice.fillRatio * 100).toFixed(0)}%)`);
                     }
-                    break;
-                } else {
-                    console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED at ${(scale * 100).toFixed(0)}% scale: depth $${simPrice.depthUsdc.toFixed(2)} < order $${attemptUsdc.toFixed(2)} (fill: ${(simPrice.fillRatio * 100).toFixed(0)}%)`);
                 }
-            }
 
-            if (!simSuccess) {
-                // Update DB record to FAILED
-                await this.prisma.copyTrade.update({
-                    where: { id: copyTrade.id },
-                    data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED_ALL_SCALES (final fill ${(simPrice.fillRatio * 100).toFixed(0)}%)` }
-                });
-                return { executed: false, reason: 'SIM_FOK_REJECTED' };
-            }
-
-            // Adjust the actual copy size if we scaled down
-            if (simulateScale < 1.0) {
-                copySizeUsdc = copySizeUsdc * simulateScale;
-                result.scaledDown = true;
-            }
-
-            const safeLeaderPrice = leaderPrice > 0 ? leaderPrice : simPrice.execPrice;
-            execPrice = useClobVwapForSimulation ? simPrice.execPrice : safeLeaderPrice;
-            simSlippageBps = useClobVwapForSimulation ? simPrice.slippageBps : 0;
-
-            // --- Step 3: Execution Delay Simulation ---
-            // Real chain submission takes 1-4 seconds. During this time, the price may drift.
-            const execDelayMs = 1000 + Math.random() * 3000; // 1-4 seconds
-
-            // --- Step 4: Post-Delay FOK Check ---
-            // In real trading, you submit a LIMIT order at ~initialVWAP + slippage tolerance.
-            // If the market moves beyond your tolerance during the 1-4s submission window,
-            // the order is REJECTED (FOK failure) — you do NOT get filled at the drifted price.
-            // The execution price remains the initial VWAP (the price your order was submitted at).
-            const postDelayPrice = await this.getSimulationPrice({
-                tokenId,
-                side: copySide as 'BUY' | 'SELL',
-                copySizeUsdc,
-                leaderPrice,
-            });
-
-            if (postDelayPrice.fromClob) {
-                // Post-delay depth check: depth may have decreased during delay
-                // Even if we scaled down initially, check if the scaled amount can still be filled
-                if (postDelayPrice.fillRatio < 0.95) {
-                    console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (post-delay depth): fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%`);
+                if (!simSuccess) {
                     await this.prisma.copyTrade.update({
                         where: { id: copyTrade.id },
-                        data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED_POST_DELAY (fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%)` }
+                        data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED_ALL_SCALES (final fill ${(simPrice.fillRatio * 100).toFixed(0)}%)` }
                     });
                     return { executed: false, reason: 'SIM_FOK_REJECTED' };
                 }
 
-                if (useClobVwapForSimulation) {
-                    // Check if price drifted beyond slippage tolerance
-                    const slippageTolerance = (config.maxSlippage ?? 2.0) / 100; // e.g. 2% → 0.02
-                    const priceDrift = Math.abs(postDelayPrice.execPrice - execPrice) / execPrice;
+                if (simulateScale < 1.0) {
+                    copySizeUsdc = copySizeUsdc * simulateScale;
+                    result.scaledDown = true;
+                }
 
-                    if (priceDrift > slippageTolerance) {
-                        console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (price drift ${(priceDrift * 100).toFixed(1)}% > ${(slippageTolerance * 100).toFixed(1)}% tolerance): $${execPrice.toFixed(4)} → $${postDelayPrice.execPrice.toFixed(4)}`);
+                const safeLeaderPrice = leaderPrice > 0 ? leaderPrice : simPrice.execPrice;
+                execPrice = useClobVwapForSimulation ? simPrice.execPrice : safeLeaderPrice;
+                simSlippageBps = useClobVwapForSimulation ? simPrice.slippageBps : 0;
+
+                const execDelayMs = 1000 + Math.random() * 3000;
+
+                const postDelayPrice = await this.getSimulationPrice({
+                    tokenId,
+                    side: copySide as 'BUY' | 'SELL',
+                    copySizeUsdc,
+                    leaderPrice,
+                });
+
+                if (postDelayPrice.fromClob) {
+                    if (postDelayPrice.fillRatio < 0.95) {
+                        console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (post-delay depth): fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%`);
                         await this.prisma.copyTrade.update({
                             where: { id: copyTrade.id },
-                            data: { status: 'FAILED' as any, errorMessage: `SIM_PRICE_DRIFT_${(priceDrift * 100).toFixed(0)}PCT` }
+                            data: { status: 'FAILED' as any, errorMessage: `SIM_FOK_REJECTED_POST_DELAY (fill ${(postDelayPrice.fillRatio * 100).toFixed(0)}%)` }
                         });
                         return { executed: false, reason: 'SIM_FOK_REJECTED' };
                     }
 
-                    // Within tolerance: apply a small realistic price impact (half of drift)
-                    // since some movement is expected but you wouldn't get the full adverse move
-                    if (copySide === 'BUY' && postDelayPrice.execPrice > execPrice) {
-                        execPrice += (postDelayPrice.execPrice - execPrice) * 0.3; // 30% of adverse move
-                    } else if (copySide === 'SELL' && postDelayPrice.execPrice < execPrice) {
-                        execPrice -= (execPrice - postDelayPrice.execPrice) * 0.3;
+                    if (useClobVwapForSimulation) {
+                        const slippageTolerance = (config.maxSlippage ?? 2.0) / 100;
+                        const priceDrift = Math.abs(postDelayPrice.execPrice - execPrice) / execPrice;
+
+                        if (priceDrift > slippageTolerance) {
+                            console.log(`[Orchestrator] ❌ SIM_FOK_REJECTED (price drift ${(priceDrift * 100).toFixed(1)}% > ${(slippageTolerance * 100).toFixed(1)}% tolerance): $${execPrice.toFixed(4)} → $${postDelayPrice.execPrice.toFixed(4)}`);
+                            await this.prisma.copyTrade.update({
+                                where: { id: copyTrade.id },
+                                data: { status: 'FAILED' as any, errorMessage: `SIM_PRICE_DRIFT_${(priceDrift * 100).toFixed(0)}PCT` }
+                            });
+                            return { executed: false, reason: 'SIM_FOK_REJECTED' };
+                        }
+
+                        if (copySide === 'BUY' && postDelayPrice.execPrice > execPrice) {
+                            execPrice += (postDelayPrice.execPrice - execPrice) * 0.3;
+                        } else if (copySide === 'SELL' && postDelayPrice.execPrice < execPrice) {
+                            execPrice -= (execPrice - postDelayPrice.execPrice) * 0.3;
+                        }
+                    }
+                }
+
+                simFeePaid = copySizeUsdc * POLYMARKET_TAKER_FEE_RATE;
+
+                if (trade.timestamp) {
+                    const leaderTs = trade.timestamp > 1e10
+                        ? trade.timestamp
+                        : trade.timestamp * 1000;
+                    simLatencyMs = Math.max(0, Date.now() - leaderTs) + execDelayMs;
+                } else {
+                    simLatencyMs = execDelayMs;
+                }
+
+                result = {
+                    success: true,
+                    transactionHashes: [`sim-${Date.now()}`],
+                    usedBotFloat: false
+                };
+            } else if (config.executionMode === 'EOA' && eoaTradingService) {
+                const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
+                execPrice = copySide === 'BUY'
+                    ? marketPrice * (1 + fixedSlippage)
+                    : marketPrice * (1 - fixedSlippage);
+                const orderAmount = copySide === 'BUY'
+                    ? copySizeUsdc
+                    : (execPrice > 0 ? copySizeUsdc / execPrice : 0);
+
+                const orderResult = await eoaTradingService.createMarketOrder({
+                    tokenId,
+                    side: copySide as 'BUY' | 'SELL',
+                    amount: orderAmount,
+                    price: execPrice,
+                    orderType: 'FOK',
+                });
+
+                result = {
+                    success: orderResult.success,
+                    orderId: orderResult.orderId,
+                    error: orderResult.errorMsg,
+                    settlementDeferred: false,
+                };
+            } else {
+                const proxyResult = await this.executionService.executeOrderWithProxy({
+                    tradeId: copyTrade.id,
+                    walletAddress: config.walletAddress.toLowerCase(),
+                    side: copySide as 'BUY' | 'SELL',
+                    tokenId: tokenId,
+                    amount: copySizeUsdc,
+                    price: useLimitFallback ? limitPrice : marketPrice,
+                    slippage: maxDeviation,
+                    slippageMode: 'AUTO',
+                    overrides: overrides,
+                    deferReimbursement: false,
+                    deferSettlement: this.deferSettlement,
+                    allowPartialFill: true
+                });
+                result = proxyResult as any;
+
+                if (result.success && result.executedAmount && result.scaledDown) {
+                    copySizeUsdc = result.executedAmount;
+                }
+
+                if (result.success && copySide === 'SELL' && result.actualSellProceedsUsdc && result.actualSellProceedsUsdc > 0) {
+                    copySizeUsdc = result.actualSellProceedsUsdc;
+                    if (result.filledShares && result.filledShares > 0) {
+                        execPrice = result.actualSellProceedsUsdc / result.filledShares;
                     }
                 }
             }
 
-            // Taker fee: 0.1% of collateral spent
-            simFeePaid = copySizeUsdc * POLYMARKET_TAKER_FEE_RATE;
+            let finalStatus = 'EXECUTED';
+            let errorMessage = null;
 
-            // Total simulated latency: detection + execution delay
-            if (trade.timestamp) {
-                const leaderTs = trade.timestamp > 1e10  // ms vs s
-                    ? trade.timestamp
-                    : trade.timestamp * 1000;
-                simLatencyMs = Math.max(0, Date.now() - leaderTs) + execDelayMs;
+            if (!result.success) {
+                finalStatus = 'FAILED';
+                errorMessage = result.error || 'Execution failed';
             } else {
-                simLatencyMs = execDelayMs;
+                const isProxyMode = !this.isSimulation && config.executionMode !== 'EOA';
+                if (isProxyMode) {
+                    const settlementDeferred = Boolean(result.settlementDeferred);
+                    const settlementConfirmed = copySide === 'BUY'
+                        ? Boolean(result.tokenPushTxHash)
+                        : Boolean(result.returnTransferTxHash);
+                    if (settlementDeferred || !settlementConfirmed) {
+                        finalStatus = 'SETTLEMENT_PENDING';
+                        errorMessage = 'Settlement Pending';
+                    }
+                }
             }
 
-            result = {
-                success: true,
-                transactionHashes: [`sim-${Date.now()}`],
-                usedBotFloat: false
-            };
-        } else if (config.executionMode === 'EOA' && eoaTradingService) {
-            const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
-            const execPrice = copySide === 'BUY'
-                ? marketPrice * (1 + fixedSlippage)
-                : marketPrice * (1 - fixedSlippage);
-            const orderAmount = copySide === 'BUY'
-                ? copySizeUsdc
-                : (execPrice > 0 ? copySizeUsdc / execPrice : 0);
-
-            const orderResult = await eoaTradingService.createMarketOrder({
-                tokenId,
-                side: copySide as 'BUY' | 'SELL',
-                amount: orderAmount,
-                price: execPrice,
-                orderType: 'FOK',
+            const executionRef = result.transactionHashes?.[0] || result.orderId;
+            await this.prisma.copyTrade.update({
+                where: { id: copyTrade.id },
+                data: {
+                    status: finalStatus as any,
+                    executedAt: new Date(),
+                    txHash: executionRef || undefined,
+                    errorMessage: errorMessage,
+                    usedBotFloat: result.usedBotFloat,
+                    copySize: copySizeUsdc,
+                    copyPrice: execPrice
+                }
             });
 
-            result = {
-                success: orderResult.success,
-                orderId: orderResult.orderId,
-                error: orderResult.errorMsg,
-                settlementDeferred: false,
-            };
-        } else {
-            const proxyResult = await this.executionService.executeOrderWithProxy({
-                tradeId: copyTrade.id,
-                walletAddress: config.walletAddress.toLowerCase(),
-                side: copySide as 'BUY' | 'SELL',
-                tokenId: tokenId,
-                amount: copySizeUsdc,
-                price: useLimitFallback ? limitPrice : marketPrice,
-                slippage: maxDeviation,
-                slippageMode: 'AUTO',
-                overrides: overrides,
-                deferReimbursement: false,
-                deferSettlement: this.deferSettlement,
-                allowPartialFill: true // Enable robust FOK scaling
-            });
-            result = proxyResult as any;
-
-            // Update real amount if scaled down
-            if (result.success && result.executedAmount) {
-                // If the execution returned a scaled-down amount, use that as the copySize Usdc
-                if (result.scaledDown) {
-                    copySizeUsdc = result.executedAmount;
+            if (result.success) {
+                if (executionRef) {
+                    console.log(`[Orchestrator] ✅ Trade Executed: ${executionRef}`);
                 }
-            }
 
-            // SELL accounting should use actual fill notional when available.
-            if (result.success && copySide === 'SELL' && result.actualSellProceedsUsdc && result.actualSellProceedsUsdc > 0) {
-                copySizeUsdc = result.actualSellProceedsUsdc;
-                if (result.filledShares && result.filledShares > 0) {
-                    execPrice = result.actualSellProceedsUsdc / result.filledShares;
+                const resolvedBuyShares = execPrice > 0 ? (copySizeUsdc / execPrice) : 0;
+                const resolvedSellShares = (copySide === 'SELL' && result.filledShares && result.filledShares > 0)
+                    ? result.filledShares
+                    : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
+                const shares = copySide === 'BUY' ? resolvedBuyShares : -resolvedSellShares;
+                const totalCostInsert = copySide === 'BUY' ? copySizeUsdc : 0;
+                await this.prisma.$executeRaw`
+                    INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "totalCost", "avgEntryPrice", "updatedAt")
+                    VALUES (gen_random_uuid(), ${config.walletAddress.toLowerCase()}, ${tokenId}, ${shares}, ${totalCostInsert}, ${execPrice}, CURRENT_TIMESTAMP)
+                    ON CONFLICT ("walletAddress", "tokenId") 
+                    DO UPDATE SET 
+                        "balance" = GREATEST("UserPosition"."balance" + EXCLUDED."balance", 0),
+                        "totalCost" = "UserPosition"."totalCost" + EXCLUDED."totalCost",
+                        "avgEntryPrice" = CASE WHEN ("UserPosition"."balance" + EXCLUDED."balance") > 0 THEN ("UserPosition"."totalCost" + EXCLUDED."totalCost") / ("UserPosition"."balance" + EXCLUDED."balance") ELSE 0 END,
+                        "updatedAt" = CURRENT_TIMESTAMP
+                `;
+
+                if (managedSubscriptionId) {
+                    await this.upsertManagedScopedPosition({
+                        subscriptionId: managedSubscriptionId,
+                        walletAddress: config.walletAddress.toLowerCase(),
+                        tokenId,
+                        side: copySide as 'BUY' | 'SELL',
+                        shares: copySide === 'BUY' ? resolvedBuyShares : resolvedSellShares,
+                        notionalUsdc: copySizeUsdc,
+                        execPrice,
+                    });
                 }
-            }
-        }
 
-        // 10. Process Update
-        let finalStatus = 'EXECUTED';
-        let errorMessage = null;
-
-        if (!result.success) {
-            finalStatus = 'FAILED';
-            errorMessage = result.error || 'Execution failed';
-        } else {
-            const isProxyMode = !this.isSimulation && config.executionMode !== 'EOA';
-            if (isProxyMode) {
-                const settlementDeferred = Boolean(result.settlementDeferred);
-                const settlementConfirmed = copySide === 'BUY'
-                    ? Boolean(result.tokenPushTxHash)
-                    : Boolean(result.returnTransferTxHash);
-                if (settlementDeferred || !settlementConfirmed) {
-                    finalStatus = 'SETTLEMENT_PENDING';
-                    errorMessage = 'Settlement Pending';
-                }
-            }
-        }
-
-        await this.prisma.copyTrade.update({
-            where: { id: copyTrade.id },
-            data: {
-                status: finalStatus as any,
-                executedAt: new Date(),
-                txHash: result.transactionHashes?.[0] || result.orderId || undefined,
-                errorMessage: errorMessage,
-                usedBotFloat: result.usedBotFloat,
-                copySize: copySizeUsdc, // Ensure DB accurately reflects the possibly scaled-down size
-                copyPrice: execPrice
-            }
-        });
-
-        if (result.success && result.transactionHashes && result.transactionHashes.length > 0) {
-            console.log(`[Orchestrator] ✅ Trade Executed: ${result.transactionHashes[0]}`);
-
-            // DB Record position — BUY 按 USDC/价格折算 shares；SELL 优先使用成交回执里的 filledShares。
-            const resolvedBuyShares = execPrice > 0 ? (copySizeUsdc / execPrice) : 0;
-            const resolvedSellShares = (copySide === 'SELL' && result.filledShares && result.filledShares > 0)
-                ? result.filledShares
-                : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
-            const shares = copySide === 'BUY' ? resolvedBuyShares : -resolvedSellShares;
-            const totalCostInsert = copySide === 'BUY' ? copySizeUsdc : 0;
-            await this.prisma.$executeRaw`
-                INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "totalCost", "avgEntryPrice", "updatedAt")
-                VALUES (gen_random_uuid(), ${config.walletAddress.toLowerCase()}, ${tokenId}, ${shares}, ${totalCostInsert}, ${execPrice}, CURRENT_TIMESTAMP)
-                ON CONFLICT ("walletAddress", "tokenId") 
-                DO UPDATE SET 
-                    "balance" = GREATEST("UserPosition"."balance" + EXCLUDED."balance", 0),
-                    "totalCost" = "UserPosition"."totalCost" + EXCLUDED."totalCost",
-                    "avgEntryPrice" = CASE WHEN ("UserPosition"."balance" + EXCLUDED."balance") > 0 THEN ("UserPosition"."totalCost" + EXCLUDED."totalCost") / ("UserPosition"."balance" + EXCLUDED."balance") ELSE 0 END,
-                    "updatedAt" = CURRENT_TIMESTAMP
-            `;
-
-            if (managedSubscriptionId) {
-                await this.upsertManagedScopedPosition({
-                    subscriptionId: managedSubscriptionId,
-                    walletAddress: config.walletAddress.toLowerCase(),
-                    tokenId,
-                    side: copySide as 'BUY' | 'SELL',
-                    shares: copySide === 'BUY' ? resolvedBuyShares : resolvedSellShares,
-                    notionalUsdc: copySizeUsdc,
+                return {
+                    executed: true,
+                    copySizeUsdc,
+                    copyShares: Math.abs(shares),
                     execPrice,
-                });
+                    leaderPrice,
+                    slippageBps: simSlippageBps,
+                    latencyMs: simLatencyMs,
+                    feePaid: simFeePaid,
+                    side: copySide,
+                    tokenId: tokenId,
+                    txHash: executionRef
+                };
             }
 
             return {
-                executed: true,
-                copySizeUsdc,
-                copyShares: Math.abs(shares),
-                execPrice,
-                leaderPrice,
-                slippageBps: simSlippageBps,
-                latencyMs: simLatencyMs,
-                feePaid: simFeePaid,
-                side: copySide,
-                tokenId: tokenId,
-                txHash: result.transactionHashes[0] || result.orderId
+                executed: false,
+                reason: errorMessage || 'UNKNOWN_FAILURE'
+            };
+        } catch (error: any) {
+            try {
+                await this.prisma.copyTrade.updateMany({
+                    where: {
+                        id: copyTrade.id,
+                        status: 'PENDING' as any,
+                    },
+                    data: {
+                        status: 'FAILED' as any,
+                        errorMessage: error?.message || 'ORCHESTRATOR_EXECUTION_EXCEPTION',
+                    },
+                });
+            } catch (persistError) {
+                console.error('[Orchestrator] Failed to persist execution exception state:', persistError);
+            }
+
+            console.error('[Orchestrator] Execution exception:', error);
+            return {
+                executed: false,
+                reason: error?.message || 'ORCHESTRATOR_EXECUTION_EXCEPTION'
             };
         }
-
-        return {
-            executed: false,
-            reason: errorMessage || 'UNKNOWN_FAILURE'
-        };
     }
 }

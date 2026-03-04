@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 import { createTTLCache } from '@/lib/server-cache';
@@ -207,12 +208,10 @@ function evaluateOrderbookGuardrails(params: {
     return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
 }
 
-type ClaimedTrade = Awaited<ReturnType<typeof prisma.copyTrade.findUnique>>;
-
 async function finalizeClaimedTrade(
     tradeId: string,
     claimOwner: string,
-    data: Record<string, unknown>
+    data: Prisma.CopyTradeUpdateManyMutationInput
 ): Promise<void> {
     await prisma.copyTrade.updateMany({
         where: {
@@ -225,10 +224,15 @@ async function finalizeClaimedTrade(
             lockedBy: null,
         },
     });
+    invalidatePendingTradesCache();
 }
 
 async function releaseClaimWithoutStatusChange(tradeId: string, claimOwner: string): Promise<void> {
     await finalizeClaimedTrade(tradeId, claimOwner, {});
+}
+
+function invalidatePendingTradesCache(): void {
+    pendingTradesCache.clear();
 }
 
 /**
@@ -323,7 +327,6 @@ export async function POST(request: NextRequest) {
             errorMessage,
             executeOnServer = false,
             orderMode = 'limit',
-            slippage = 0.02,
         } = body;
 
         const walletCheck = resolveCopyTradingWalletContext(request, {
@@ -766,9 +769,19 @@ export async function GET(request: NextRequest) {
                         isActive: true,
                     },
                     status: 'PENDING',
-                    OR: [
-                        { expiresAt: null },
-                        { expiresAt: { gt: new Date() } },
+                    AND: [
+                        {
+                            OR: [
+                                { lockedAt: null },
+                                { lockedAt: { lt: new Date(Date.now() - CLAIM_STALE_MS) } },
+                            ],
+                        },
+                        {
+                            OR: [
+                                { expiresAt: null },
+                                { expiresAt: { gt: new Date() } },
+                            ],
+                        },
                     ],
                 },
                 include: {

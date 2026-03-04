@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
 
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
+
 /**
  * GET /api/copy-trading/trades
  * Get copy trade history for a wallet
@@ -16,7 +19,11 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status'); // Optional filter
-        const limit = parseInt(searchParams.get('limit') || '50');
+        const requestedLimit = parseInt(searchParams.get('limit') || `${DEFAULT_LIMIT}`, 10);
+        const limit = Number.isFinite(requestedLimit)
+            ? Math.max(1, Math.min(requestedLimit, MAX_LIMIT))
+            : DEFAULT_LIMIT;
+        const cursor = searchParams.get('cursor') || undefined;
         const walletCheck = resolveCopyTradingWalletContext(request, {
             queryWallet: searchParams.get('wallet'),
         });
@@ -47,9 +54,17 @@ export async function GET(request: NextRequest) {
                     },
                 },
             },
-            orderBy: { detectedAt: 'desc' },
-            take: limit,
+            orderBy: [
+                { detectedAt: 'desc' },
+                { id: 'desc' },
+            ],
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            take: limit + 1,
         });
+
+        const hasMore = trades.length > limit;
+        const pageItems = hasMore ? trades.slice(0, limit) : trades;
+        const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id || null : null;
 
         // Get stats
         const stats = await prisma.copyTrade.groupBy({
@@ -68,7 +83,12 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({
-            trades,
+            trades: pageItems,
+            pagination: {
+                limit,
+                nextCursor,
+                hasMore,
+            },
             stats: {
                 pending: statsMap['PENDING'] || 0,
                 executed: statsMap['EXECUTED'] || 0,
