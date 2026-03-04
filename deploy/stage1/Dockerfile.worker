@@ -3,12 +3,15 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 COPY package*.json ./
+COPY sdk/package.json ./sdk/package.json
+COPY web/package.json ./web/package.json
+COPY contracts/package.json ./contracts/package.json
 RUN npm ci
 
-COPY src ./src
-COPY scripts ./scripts
-COPY tsconfig.json ./
-COPY vitest.config.ts ./
-COPY vitest.integration.config.ts ./
+COPY sdk ./sdk
+COPY web ./web
+COPY contracts ./contracts
 
-CMD ["npm", "run", "copy-worker"]
+WORKDIR /app/web
+
+CMD ["npx", "tsx", "scripts/workers/copy-trading-worker.ts"]

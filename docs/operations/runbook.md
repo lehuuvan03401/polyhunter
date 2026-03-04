@@ -32,9 +32,9 @@ npx hardhat run scripts/setup-local-fork.ts --network localhost
 配置跟单关系，并启动监控服务。
 
 bash
-cd frontend
+cd web
 # 1. 写入数据库配置 (Master 跟单 0x7099...Trader)
-npx tsx scripts/seed-test-config.ts
+npx tsx scripts/db/seed-test-config.ts
 
 # 2. 启动 Supervisor (企业版)
 # ✅ 特性已激活: 
@@ -45,7 +45,7 @@ npx tsx scripts/seed-test-config.ts
 # 当检测到 Localhost (ChainID 31337) 时，TradingService 会自动进入 "Mock Mode"：
 # 跳过真实 CLOB 鉴权，模拟下单成功，避免 401/404 错误。
 
-npx tsx scripts/copy-trading-supervisor.ts
+npx tsx scripts/workers/copy-trading-supervisor.ts
 
 您应该看到 Supervisor 启动并显示 Fleet: 20/20 ready，且能够看到 [TaskQueue] 日志。
 
@@ -53,11 +53,11 @@ npx tsx scripts/copy-trading-supervisor.ts
 模拟那个被跟单的大户 (0x7099...) 发起交易。
 
 bash
-cd frontend
+cd web
 # 模拟普通转账
-npx tsx scripts/impersonate-mainnet-trade.ts
+npx tsx scripts/debug/impersonate-mainnet-trade.ts
 # 或者模拟批量转账 (测试 Mempool Detector)
-# npx tsx scripts/impersonate-batch-trade.ts (如果已创建)
+# 暂无批量版脚本；如后续新增，请放在 scripts/debug/ 下
 
 👀 预期结果 (Success Criteria):
 
@@ -95,7 +95,7 @@ curl -s http://localhost:3000/api/reserve-fund/summary | jq
 当前 MVP 暂无管理端写入 API，运维可通过 SQL 插入 `ReserveFundLedger`：
 
 ```bash
-cd frontend
+cd web
 psql "$DATABASE_URL" <<'SQL'
 INSERT INTO "ReserveFundLedger" ("id", "entryType", "amount", "balanceAfter", "note", "createdAt")
 VALUES (md5(random()::text || clock_timestamp()::text), 'DEPOSIT', 10000, NULL, 'OPS_TOPUP_2026-02-14', NOW());
@@ -114,7 +114,7 @@ SQL
 当 `coverageRatio < requiredCoverageRatio` 或风险事件触发时，立即暂停保底产品：
 
 ```bash
-cd frontend
+cd web
 psql "$DATABASE_URL" <<'SQL'
 UPDATE "ManagedProduct"
 SET "status" = 'PAUSED', "updatedAt" = NOW()
@@ -129,7 +129,7 @@ SQL
 准备金补足后恢复：
 
 ```bash
-cd frontend
+cd web
 psql "$DATABASE_URL" <<'SQL'
 UPDATE "ManagedProduct"
 SET "status" = 'ACTIVE', "updatedAt" = NOW()
@@ -146,7 +146,7 @@ SQL
 在本地可执行托管理财全链路验证脚本：
 
 ```bash
-cd frontend
+cd web
 MW_VERIFY_BASE_URL=http://localhost:3000 npm run verify:managed-wealth:lifecycle
 ```
 
@@ -283,7 +283,7 @@ npm run verify:managed-wealth:ops-watchdog
 
 建议在启动 worker 前运行就绪检查：
 ```
-npx tsx scripts/verify/copy-trading-readiness.ts
+cd sdk && npx tsx scripts/verify/copy-trading-readiness.ts
 ```
 
 若启用 `COPY_TRADING_ASYNC_SETTLEMENT=true`，订单会先执行、结算（push/reimburse）进入异步队列：

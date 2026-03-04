@@ -12,12 +12,12 @@ const getEnvFile = () => {
   return '.env.local';
 };
 
-const envPath = path.resolve(__dirname, '../../frontend', getEnvFile());
+const envPath = path.resolve(__dirname, '../../web', getEnvFile());
 dotenv.config({ path: envPath });
 
 const command = process.argv[2];
 if (!command || !['seed', 'cleanup'].includes(command)) {
-  console.error('Usage: npx tsx scripts/verify/seed-copytrade-locks.ts <seed|cleanup>');
+  console.error('Usage: cd sdk && npx tsx scripts/verify/seed-copytrade-locks.ts <seed|cleanup>');
   process.exit(1);
 }
 
@@ -34,7 +34,7 @@ async function createPrismaClient() {
     ({ PrismaClient } = await import('@prisma/client'));
   } catch (error) {
     const fallbackClient = pathToFileURL(
-      path.resolve(__root, 'frontend/node_modules/@prisma/client/index.js')
+      path.resolve(__root, 'web/node_modules/@prisma/client/index.js')
     ).href;
     ({ PrismaClient } = await import(fallbackClient));
   }
@@ -53,10 +53,10 @@ async function createPrismaClient() {
     PrismaPg = adapterModule.PrismaPg ?? adapterModule.default?.PrismaPg ?? adapterModule.default;
   } catch (adapterError) {
     const fallbackPg = pathToFileURL(
-      path.resolve(__root, 'frontend/node_modules/pg/lib/index.js')
+      path.resolve(__root, 'web/node_modules/pg/lib/index.js')
     ).href;
     const fallbackAdapter = pathToFileURL(
-      path.resolve(__root, 'frontend/node_modules/@prisma/adapter-pg/dist/index.js')
+      path.resolve(__root, 'web/node_modules/@prisma/adapter-pg/dist/index.js')
     ).href;
     const pgModule: any = await import(fallbackPg);
     const adapterModule: any = await import(fallbackAdapter);

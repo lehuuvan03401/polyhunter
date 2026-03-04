@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **状态**: 功能已上线并验证 (2026-02)  
-> **核心脚本**: `web/scripts/copy-trading-supervisor.ts`  
+> **核心脚本**: `web/scripts/workers/copy-trading-supervisor.ts`  
 > **架构**: 并行钱包舰队 (Parallel Wallet Fleet) - 无 Nonce 阻塞
 
 ## 1. 概览 (Overview)
@@ -23,14 +23,14 @@ TRADING_MNEMONIC="your twelve word phrase here ..."
 ## 3. 如何运行 (生产环境)
 
 ```bash
-cd Horus/frontend
+cd Horus/web
 # 导出环境变量并运行
-export $(grep -v '^#' .env | xargs) && npx tsx scripts/copy-trading-supervisor.ts
+export $(grep -v '^#' .env | xargs) && npx tsx scripts/workers/copy-trading-supervisor.ts
 ```
 
 > [!TIP]
 > **守护进程模式**: 使用 PM2 后台运行
-> `pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor`
+> `pm2 start "npx tsx scripts/workers/copy-trading-supervisor.ts" --name poly-supervisor`
 
 ## 4. 架构组件 (Architecture Components)
 

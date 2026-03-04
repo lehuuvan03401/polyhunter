@@ -8,7 +8,7 @@
  * - Executor: Executes copies in parallel using distinct wallets to avoid Nonce blocking.
  * 
  * Usage:
- * export $(grep -v '^#' .env | xargs) && npx tsx scripts/copy-trading-supervisor.ts
+ * cd web && export $(grep -v '^#' .env.local | xargs) && npx tsx scripts/workers/copy-trading-supervisor.ts
  */
 
 import 'dotenv/config';

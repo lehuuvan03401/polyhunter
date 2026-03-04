@@ -24,8 +24,8 @@ NEXT_PUBLIC_EXECUTOR_ADDRESS=...
 二、运行 setup‑real‑trading（配置授权）
 进入 web/：
 
-cd frontend
-npx tsx scripts/setup-real-trading.ts
+cd web
+npx tsx scripts/env/setup-real-trading.ts
 这个脚本会：
 
 检查钱包与 Proxy 地址
@@ -87,4 +87,3 @@ Proxy 模式现在已升级为 **"Smart Buffer"** 混合模式。
 使用高质量 RPC（Alchemy/QuickNode/Ankr 专线）
 开启 mempool provider
 把 maxSlippage 设置合理（0.5% 或更小）
-

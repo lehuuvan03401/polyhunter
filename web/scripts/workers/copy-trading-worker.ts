@@ -4,7 +4,7 @@
  * 
  * Listens to Real-time Blockchain Events to trigger Copy Trades immediately.
  * 
- * Usage: npx ts-node scripts/copy-trading-worker.ts
+ * Usage: cd web && npx tsx scripts/workers/copy-trading-worker.ts
  */
 
 import '../env/env-setup'; // Load Env FIRST
@@ -327,7 +327,7 @@ async function startListener() {
         await tradingService.initialize();
     } catch (error) {
         console.error('[Worker] ❌ TradingService initialization failed (CLOB auth).', error);
-        console.error('[Worker] ➜ Set POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE in frontend/.env or ensure the wallet can create CLOB API keys.');
+        console.error('[Worker] ➜ Set POLY_API_KEY / POLY_API_SECRET / POLY_API_PASSPHRASE in web/.env.local (or injected env) or ensure the wallet can create CLOB API keys.');
         if (!DRY_RUN) {
             process.exit(1);
         }

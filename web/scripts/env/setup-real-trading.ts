@@ -250,7 +250,7 @@ async function main() {
     console.log(`To start trading, run:`);
     console.log(`export TRADING_PRIVATE_KEY=${process.env.TRADING_PRIVATE_KEY}`);
     console.log(`export COPY_TRADING_DRY_RUN=true  # Optional: dry-run mode, no real orders`);
-    console.log(`npx tsx scripts/copy-trading-worker.ts`);
+    console.log(`cd web && npx tsx scripts/workers/copy-trading-worker.ts`);
 
     process.exit(0);
 }

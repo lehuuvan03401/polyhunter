@@ -10,7 +10,7 @@ This runbook covers deploying the supervisor capacity controls (worker pool sizi
 ## 2) Apply Prisma migration
 From the app host (or CI deploy step):
 ```
-cd frontend
+cd web
 npx prisma migrate deploy
 ```
 

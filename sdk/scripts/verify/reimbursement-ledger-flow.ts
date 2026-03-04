@@ -9,10 +9,10 @@ async function main(): Promise<void> {
         throw new Error('DATABASE_URL not set or invalid.');
     }
 
-    const prismaModule: any = await import('../../frontend/lib/prisma.ts');
+    const prismaModule: any = await import('../../web/lib/prisma.ts');
     const prisma = prismaModule.prisma ?? prismaModule.default?.prisma;
     if (!prisma) {
-        throw new Error('Failed to load Prisma client from frontend/lib/prisma.');
+        throw new Error('Failed to load Prisma client from web/lib/prisma.');
     }
 
     const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
@@ -135,7 +135,7 @@ main()
         process.exit(1);
     })
     .finally(async () => {
-        const prismaModule: any = await import('../../frontend/lib/prisma.ts');
+        const prismaModule: any = await import('../../web/lib/prisma.ts');
         const prismaClient = prismaModule.prisma ?? prismaModule.default?.prisma;
         await prismaClient?.$disconnect().catch(() => null);
     });

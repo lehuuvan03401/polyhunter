@@ -14,14 +14,16 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/sop-supervisor-capacity-controls.md`
 4. Supervisor monitoring deployment:
    - `docs/operations/deploy-supervisor-monitoring.md`
-5. Supervisor DLQ operations:
+5. Copy-trading go-live checklist:
+   - `docs/operations/copy-trading-go-live-checklist.md`
+6. Supervisor DLQ operations:
    - `docs/operations/sop-supervisor-dlq.md`
-6. Global partner monthly operations:
+7. Global partner monthly operations:
    - `docs/operations/runbook-partner-program.md`
    - automation scripts:
      - `web/scripts/services/partner-monthly-elimination.ts`
      - `web/scripts/verify/partner-refund-sla.ts`
-7. Participation daily snapshot operations:
+8. Participation daily snapshot operations:
    - `docs/operations/runbook-participation-program.md`
    - automation scripts:
      - `web/scripts/services/participation-levels-daily-snapshot.ts`
@@ -29,16 +31,16 @@ Operational entrypoint for deployment, verification, and runbook workflows.
 
 ## Copy-Trading Verification
 
-- Readiness: `scripts/verify/copy-trading-readiness.ts`
-- Execution path verification: `scripts/verify/copy-trading-execution-paths.ts`
-- Async settlement: `scripts/verify/async-settlement-flow.ts`
-- Reimbursement ledger: `scripts/verify/reimbursement-ledger-flow.ts`
+- Readiness: `cd sdk && npx tsx scripts/verify/copy-trading-readiness.ts`
+- Execution path verification: `cd sdk && npx tsx scripts/verify/copy-trading-execution-paths.ts`
+- Async settlement: `cd sdk && npx tsx scripts/verify/async-settlement-flow.ts`
+- Reimbursement ledger: `cd sdk && npx tsx scripts/verify/reimbursement-ledger-flow.ts`
 - Lock claim flow: `docs/operations/copy-trade-lock-claim-verification.md`
 
 ## Runtime Scripts
 
-- Worker (root): `scripts/copy-trading-worker.ts`
-- Supervisor (frontend): `web/scripts/copy-trading-supervisor.ts`
+- Worker: `cd web && npx tsx scripts/workers/copy-trading-worker.ts`
+- Supervisor: `cd web && npx tsx scripts/workers/copy-trading-supervisor.ts`
 
 ## Safety Checklist
 

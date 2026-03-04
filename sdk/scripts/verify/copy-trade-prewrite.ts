@@ -17,7 +17,7 @@ async function main() {
     } catch (error) {
         try {
             const fallbackClient = pathToFileURL(
-                path.resolve(__dirname, '../../frontend/node_modules/@prisma/client/index.js')
+                path.resolve(__dirname, '../../web/node_modules/@prisma/client/index.js')
             ).href;
             ({ PrismaClient } = await import(fallbackClient));
         } catch (fallbackError) {
@@ -40,10 +40,10 @@ async function main() {
                 PrismaPg = adapterModule.PrismaPg ?? adapterModule.default?.PrismaPg ?? adapterModule.default;
             } catch (adapterError) {
                 const fallbackPg = pathToFileURL(
-                    path.resolve(__dirname, '../../frontend/node_modules/pg/lib/index.js')
+                    path.resolve(__dirname, '../../web/node_modules/pg/lib/index.js')
                 ).href;
                 const fallbackAdapter = pathToFileURL(
-                    path.resolve(__dirname, '../../frontend/node_modules/@prisma/adapter-pg/dist/index.js')
+                    path.resolve(__dirname, '../../web/node_modules/@prisma/adapter-pg/dist/index.js')
                 ).href;
                 const pgModule: any = await import(fallbackPg);
                 const adapterModule: any = await import(fallbackAdapter);

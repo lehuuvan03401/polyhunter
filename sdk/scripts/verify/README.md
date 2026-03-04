@@ -4,7 +4,7 @@
 Runs a non-interactive readiness check for real-money copy trading execution.
 
 ```bash
-npx tsx scripts/verify/copy-trading-readiness.ts
+cd sdk && npx tsx scripts/verify/copy-trading-readiness.ts
 ```
 
 Environment prerequisites:
@@ -32,11 +32,12 @@ Validates prewrite-before-execute idempotency and stale PENDING expiry handling.
 
 Read-only mode (default):
 ```bash
-npx tsx scripts/verify/copy-trade-prewrite.ts
+cd sdk && npx tsx scripts/verify/copy-trade-prewrite.ts
 ```
 
 Write verification (creates + cleans up test rows):
 ```bash
+cd sdk
 VERIFY_CONFIG_ID=<copy_trading_config_id> \
 VERIFY_PREWRITE_WRITE=true \
 DATABASE_URL=<db_url> \
@@ -47,6 +48,7 @@ npx tsx scripts/verify/copy-trade-prewrite.ts
 Verifies EOA (direct) and Proxy execution paths using the same execution services as the worker.
 
 ```bash
+cd sdk
 CHAIN_ID=1337 \
 VERIFY_TOKEN_ID=mock-token-exec-path-1234567890 \
 VERIFY_EOA_PRIVATE_KEY=<user_key> \
@@ -64,6 +66,7 @@ Notes:
 Creates two ledger entries and performs a single batched reimbursement on a local fork.
 
 ```bash
+cd sdk
 DATABASE_URL=<db_url> \
 TRADING_PRIVATE_KEY=<worker_key> \
 NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545 \

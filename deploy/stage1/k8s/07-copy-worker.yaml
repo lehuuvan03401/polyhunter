@@ -25,7 +25,7 @@ spec:
               ordinal="${HOSTNAME##*-}"
               export COPY_TRADING_WORKER_INDEX="$ordinal"
               echo "Starting copy worker index=$COPY_TRADING_WORKER_INDEX"
-              npm run copy-worker
+              npm run copy-worker:speed
           envFrom:
             - configMapRef:
                 name: polyhunter-config

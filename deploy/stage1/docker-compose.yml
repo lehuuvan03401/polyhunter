@@ -77,6 +77,32 @@ services:
       REDIS_URL: redis://redis:6379
       SUPERVISOR_REDIS_URL: redis://redis:6379
       KAFKA_BROKERS: redpanda:9092
+    command: ["npx", "tsx", "scripts/workers/copy-trading-worker.ts"]
+    depends_on:
+      frontend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  copy-supervisor:
+    build:
+      context: ../..
+      dockerfile: deploy/stage1/Dockerfile.worker
+    container_name: polyhunter-copy-supervisor
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      SUPERVISOR_REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: redpanda:9092
+      SUPERVISOR_METRICS_SERVER_ENABLED: "true"
+      SUPERVISOR_METRICS_HOST: 0.0.0.0
+      SUPERVISOR_METRICS_PORT: "9464"
+    command: ["npx", "tsx", "scripts/workers/copy-trading-supervisor.ts"]
+    ports:
+      - "9464:9464"
     depends_on:
       frontend:
         condition: service_started

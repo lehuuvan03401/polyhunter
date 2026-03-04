@@ -10,17 +10,17 @@ Verify that `lockedAt/lockedBy` prevents multiple workers from processing the sa
 ## Steps
 1. Seed test rows (SETTLEMENT_PENDING + FAILED):
    ```bash
-   DATABASE_URL=... npx tsx scripts/verify/seed-copytrade-locks.ts seed
+   cd sdk && DATABASE_URL=... npx tsx scripts/verify/seed-copytrade-locks.ts seed
    ```
 2. Option A: Start two workers (dry-run is OK):
    ```bash
-   DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 COPY_TRADING_DRY_RUN=true npx tsx scripts/copy-trading-worker.ts
-   DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 COPY_TRADING_DRY_RUN=true npx tsx scripts/copy-trading-worker.ts
+   cd web && DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 COPY_TRADING_DRY_RUN=true npx tsx scripts/workers/copy-trading-worker.ts
+   cd web && DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 COPY_TRADING_DRY_RUN=true npx tsx scripts/workers/copy-trading-worker.ts
    ```
 3. Option B (if execution service is unavailable): Run two claim scripts in parallel:
    ```bash
-   DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 LOCK_HOLD_MS=8000 npx tsx scripts/verify/claim-copytrade-locks.ts
-   DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 LOCK_HOLD_MS=8000 npx tsx scripts/verify/claim-copytrade-locks.ts
+   cd sdk && DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 LOCK_HOLD_MS=8000 npx tsx scripts/verify/claim-copytrade-locks.ts
+   cd sdk && DATABASE_URL=... COPY_TRADING_LOCK_TTL_MS=60000 LOCK_HOLD_MS=8000 npx tsx scripts/verify/claim-copytrade-locks.ts
    ```
 4. Observe logs:
    - Each trade should be processed once per lock window.
@@ -30,7 +30,7 @@ Verify that `lockedAt/lockedBy` prevents multiple workers from processing the sa
    ```
 6. Cleanup seeded rows:
    ```bash
-   DATABASE_URL=... npx tsx scripts/verify/seed-copytrade-locks.ts cleanup
+   cd sdk && DATABASE_URL=... npx tsx scripts/verify/seed-copytrade-locks.ts cleanup
    ```
 
 ## Pass Criteria

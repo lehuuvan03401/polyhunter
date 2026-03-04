@@ -199,7 +199,7 @@
 
 上线前强烈建议先执行一遍控制台层的就绪检查脚本排除所有低级故障：
 ```bash
-npx tsx scripts/verify/copy-trading-readiness.ts
+cd sdk && npx tsx scripts/verify/copy-trading-readiness.ts
 ```
 ---
 ## 7. 部署流程 (Deployment Process)
@@ -225,14 +225,14 @@ npx hardhat run scripts/deploy-executor.ts --network polygon
 确保 PostgreSQL 数据库已启动并可连接。
 
 ```bash
-cd ../frontend
+cd ../web
 
 # 1. 安装依赖
 npm install
 
 # 2. 同步数据库结构
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 ```
 
 ### 第三步：启动 Supervisor (核心大脑)
@@ -244,7 +244,7 @@ npm install -g pm2
 
 # 启动 Supervisor
 # --max-memory-restart 2G 防止内存泄漏导致崩盘
-pm2 start "npx tsx scripts/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
+pm2 start "npx tsx scripts/workers/copy-trading-supervisor.ts" --name poly-supervisor --max-memory-restart 2G
 
 # 设置开机自启
 pm2 save
@@ -348,7 +348,7 @@ pm2 monit
 ```
 
 ### 扩容 (Scaling)
-修改 `web/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
+调整环境变量 `SUPERVISOR_WORKER_POOL_SIZE`（默认 20），然后重启 Supervisor。
 *注意: 增加 Worker 数量意味着需要更多的 Gas 储备。*
 
 ### 版本管理
@@ -505,7 +505,7 @@ pm2 monit
 ```
 
 ### 扩容 (Scaling)
-若需支持更多并发用户，修改 `web/scripts/copy-trading-supervisor.ts` 中的 `poolSize` (默认 20)，然后重启 Supervisor。
+若需支持更多并发用户，调整 `SUPERVISOR_WORKER_POOL_SIZE`（默认 20），然后重启 Supervisor。
 *注意: 增加 Worker 数量意味着需要更多的 Gas 储备。*
 
 ### 数据库操作

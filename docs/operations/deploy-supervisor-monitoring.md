@@ -11,6 +11,13 @@ This guide provides production-ready templates and rollout steps for supervisor 
 
 ## 1) Enable metrics endpoint on supervisor
 
+Metrics are exposed only by the supervisor runtime, not the standalone worker. The canonical process entrypoint is:
+
+```bash
+cd web
+npx tsx scripts/workers/copy-trading-supervisor.ts
+```
+
 Set these env vars for each supervisor instance:
 
 - `SUPERVISOR_METRICS_SERVER_ENABLED=true`
@@ -43,6 +50,13 @@ curl -s http://<supervisor-host>:9464/metrics | head
 ```
 
 Prometheus target status should be `UP`.
+At minimum, confirm these metrics are present before rollout:
+
+- `copy_supervisor_execution_total`
+- `copy_supervisor_queue_depth`
+- `copy_supervisor_queue_lag_p95_ms`
+- `copy_supervisor_alerts_total`
+- `copy_supervisor_settlement_recovery_runs_total`
 
 ## 3) Import Grafana dashboard
 

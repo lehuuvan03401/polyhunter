@@ -19,8 +19,8 @@ COPY_TRADING_DRY_RUN=false
 MAX_SLIPPAGE=0.5
 
 2) setup-real-trading.ts 执行前检查
-cd frontend
-npx tsx scripts/setup-real-trading.ts
+cd web
+npx tsx scripts/env/setup-real-trading.ts
 确认：
 
 Proxy/EOA 地址正确

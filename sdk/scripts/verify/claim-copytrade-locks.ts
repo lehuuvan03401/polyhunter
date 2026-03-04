@@ -13,7 +13,7 @@ const getEnvFile = () => {
   return '.env.local';
 };
 
-const envPath = path.resolve(__dirname, '../../frontend', getEnvFile());
+const envPath = path.resolve(__dirname, '../../web', getEnvFile());
 dotenv.config({ path: envPath });
 
 const lockTtlMs = parseInt(process.env.COPY_TRADING_LOCK_TTL_MS || '300000', 10);
