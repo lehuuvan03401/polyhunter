@@ -278,7 +278,12 @@
             },
             "composition": {
                 "title": "策略组合",
-                "weight": "权重"
+                "weight": "权重",
+                "reserve": "USDC 储备金",
+                "reserveDesc": "保留在代理合约中用于维持流动性和回撤缓冲的稳定币资产。",
+                "traderAddress": "底层交易员地址",
+                "copyAddress": "复制地址",
+                "addressCopied": "地址已复制！"
             },
             "allocationSnapshots": {
                 "title": "最近分配快照",
@@ -344,16 +349,23 @@
                 "history": "历史记录"
             },
             "membership": {
-                "title": "服务订阅（月/季）",
+                "title": "服务会员",
                 "desc": "可使用 USDC 或 MCN 开通；MCN 支付享 50% 折扣。",
                 "monthly": "月订阅",
                 "quarterly": "季订阅",
+                "semiAnnual": "半年订阅",
+                "annual": "年订阅",
                 "activeUntil": "当前订阅有效期至：",
                 "activePlan": "当前方案",
                 "expiringSoon": "即将到期（剩余约 {days} 天）",
                 "viewHistory": "查看订阅历史",
                 "noActive": "当前无生效中的服务订阅。",
-                "purchaseSuccess": "订阅开通成功。"
+                "purchaseSuccess": "订阅开通成功。",
+                "termCap": "最长期限: {days}天",
+                "activeSubLimit": "最多订阅: {count}个",
+                "membershipRequired": "需要有效会员才能创建订阅。",
+                "termExceedsCap": "所选期限超过您的会员等级限制，请升级。",
+                "limitReached": "您的会员等级的活跃订阅数已达上限。"
             }
         },
         "MembershipHistory": {

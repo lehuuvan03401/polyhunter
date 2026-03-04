@@ -293,6 +293,8 @@ enum ManagedRiskAction {
 enum ManagedMembershipPlanType {
   MONTHLY
   QUARTERLY
+  SEMI_ANNUAL
+  ANNUAL
 }
 
 enum ManagedMembershipStatus {

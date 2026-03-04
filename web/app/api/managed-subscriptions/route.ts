@@ -12,6 +12,11 @@ import { applyOneTimeReferralSubscriptionBonus } from '@/lib/participation-progr
 import { resolveManagedSubscriptionTrial } from '@/lib/managed-wealth/subscription-trial';
 import { resolveManagedPolicyGate } from '@/lib/participation-program/policy-gates';
 import {
+    getMembershipTermCap,
+    getMembershipActiveSubLimit,
+    type ManagedMembershipPlanType,
+} from '@/lib/managed-wealth/membership-plans';
+import {
     assertManagedPrincipalAvailability,
     ManagedPrincipalAvailabilityError,
     reserveManagedPrincipal,
@@ -472,6 +477,51 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // ── Membership prerequisite gate ──────────────────────────────
+        const now = new Date();
+        const activeMembership = await prisma.managedMembership.findFirst({
+            where: {
+                walletAddress: requestWallet,
+                status: 'ACTIVE',
+                endsAt: { gt: now },
+            },
+            orderBy: { endsAt: 'desc' },
+            select: { id: true, planType: true, endsAt: true },
+        });
+
+        if (!activeMembership) {
+            return NextResponse.json(
+                {
+                    error: 'Active membership required to create subscriptions',
+                    code: 'MEMBERSHIP_REQUIRED',
+                },
+                { status: 409 }
+            );
+        }
+
+        // Check concurrent active subscription limit for membership tier
+        const activeSubCount = await prisma.managedSubscription.count({
+            where: {
+                walletAddress: requestWallet,
+                status: { in: ['PENDING', 'RUNNING'] },
+            },
+        });
+        const maxActiveSubs = getMembershipActiveSubLimit(
+            activeMembership.planType as ManagedMembershipPlanType
+        );
+        if (activeSubCount >= maxActiveSubs) {
+            return NextResponse.json(
+                {
+                    error: 'Active subscription limit reached for membership tier',
+                    code: 'SUBSCRIPTION_LIMIT_REACHED',
+                    currentCount: activeSubCount,
+                    maxAllowed: maxActiveSubs,
+                    membershipPlanType: activeMembership.planType,
+                },
+                { status: 409 }
+            );
+        }
+
         let activeAuthorization: {
             id: string;
             grantedAt: Date;
@@ -549,6 +599,23 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Check membership tier term cap
+        const termCap = getMembershipTermCap(
+            activeMembership.planType as ManagedMembershipPlanType
+        );
+        if (term.durationDays > termCap) {
+            return NextResponse.json(
+                {
+                    error: 'Subscription term exceeds membership tier limit',
+                    code: 'TERM_EXCEEDS_MEMBERSHIP_CAP',
+                    maxTermDays: termCap,
+                    requestedTermDays: term.durationDays,
+                    membershipPlanType: activeMembership.planType,
+                },
+                { status: 409 }
+            );
+        }
+
         if (copyConfigId) {
             const copyConfig = await prisma.copyTradingConfig.findFirst({
                 where: {
@@ -566,7 +633,6 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        const now = new Date();
         const endAt = new Date(now.getTime() + term.durationDays * 24 * 60 * 60 * 1000);
 
         const subscription = await prisma.$transaction(async (tx) => {

@@ -277,8 +277,13 @@
                 "disclaimer": "Past performance is not indicative of future results"
             },
             "composition": {
-                "title": "Strategy Composition",
-                "weight": "Weight"
+                "title": "Strategy Portfolio",
+                "weight": "Weight",
+                "reserve": "USDC Reserve",
+                "reserveDesc": "Stablecoin assets held in the proxy contract to maintain liquidity and provide a drawdown buffer.",
+                "traderAddress": "Underlying Trader Address",
+                "copyAddress": "Copy Address",
+                "addressCopied": "Address copied!"
             },
             "allocationSnapshots": {
                 "title": "Recent Allocation Snapshots",
@@ -344,16 +349,23 @@
                 "history": "History"
             },
             "membership": {
-                "title": "Service Membership (Monthly/Quarterly)",
+                "title": "Service Membership",
                 "desc": "Pay with USDC or MCN. MCN payments get a 50% discount.",
                 "monthly": "Monthly",
                 "quarterly": "Quarterly",
+                "semiAnnual": "Semi-Annual",
+                "annual": "Annual",
                 "activeUntil": "Active membership until:",
                 "activePlan": "Current plan",
                 "expiringSoon": "Expiring soon (about {days} day(s) left)",
                 "viewHistory": "View membership history",
                 "noActive": "No active service membership.",
-                "purchaseSuccess": "Membership activated successfully."
+                "purchaseSuccess": "Membership activated successfully.",
+                "termCap": "Max term: {days}d",
+                "activeSubLimit": "Max subs: {count}",
+                "membershipRequired": "Active membership required to create subscriptions.",
+                "termExceedsCap": "Selected term exceeds your membership tier limit. Please upgrade.",
+                "limitReached": "Active subscription limit reached for your membership tier."
             }
         },
         "MembershipHistory": {

@@ -29,10 +29,12 @@ export default function MyManagedWealthPage() {
     const [membershipLoading, setMembershipLoading] = useState(false);
     const [membershipPaymentToken, setMembershipPaymentToken] = useState<'USDC' | 'MCN'>('USDC');
     const [membershipPlans, setMembershipPlans] = useState<Array<{
-        planType: 'MONTHLY' | 'QUARTERLY';
+        planType: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL';
         label: string;
         durationDays: number;
         basePriceUsd: number;
+        maxSubscriptionTermDays: number;
+        maxActiveSubscriptions: number;
         prices: {
             USDC: number;
             MCN: number;
@@ -41,7 +43,7 @@ export default function MyManagedWealthPage() {
     }>>([]);
     const [activeMembership, setActiveMembership] = useState<{
         id: string;
-        planType: 'MONTHLY' | 'QUARTERLY';
+        planType: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL';
         paymentToken: 'USDC' | 'MCN';
         finalPriceUsd: number;
         startsAt: string;
@@ -53,8 +55,14 @@ export default function MyManagedWealthPage() {
         remainingHours: number;
         remainingDays: number;
     } | null>(null);
-    const planTypeLabel = (planType: 'MONTHLY' | 'QUARTERLY') =>
-        planType === 'MONTHLY' ? t('membership.monthly') : t('membership.quarterly');
+    const planTypeLabel = (planType: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL') => {
+        switch (planType) {
+            case 'MONTHLY': return t('membership.monthly');
+            case 'QUARTERLY': return t('membership.quarterly');
+            case 'SEMI_ANNUAL': return t('membership.semiAnnual');
+            case 'ANNUAL': return t('membership.annual');
+        }
+    };
 
     useEffect(() => {
         const fetchSubscriptions = async () => {
@@ -134,7 +142,7 @@ export default function MyManagedWealthPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authenticated, user?.wallet?.address]);
 
-    const createMembership = async (planType: 'MONTHLY' | 'QUARTERLY') => {
+    const createMembership = async (planType: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL') => {
         if (!user?.wallet?.address) {
             toast.error(t('errors.fetchFailed'));
             return;
@@ -322,7 +330,7 @@ export default function MyManagedWealthPage() {
                         )}
                     </div>
 
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         {membershipPlans.map((plan) => (
                             <button
                                 key={plan.planType}
@@ -335,6 +343,14 @@ export default function MyManagedWealthPage() {
                                 <div className="text-xs text-zinc-400 mt-1">{plan.durationDays}d</div>
                                 <div className="text-sm text-emerald-300 mt-2">
                                     ${membershipPaymentToken === 'MCN' ? plan.prices.MCN : plan.prices.USDC}
+                                </div>
+                                <div className="mt-2 flex flex-col gap-0.5">
+                                    <span className="text-[10px] text-zinc-500">
+                                        {t('membership.termCap', { days: plan.maxSubscriptionTermDays })}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500">
+                                        {t('membership.activeSubLimit', { count: plan.maxActiveSubscriptions })}
+                                    </span>
                                 </div>
                             </button>
                         ))}

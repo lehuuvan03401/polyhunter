@@ -8,14 +8,16 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
     const plans = Object.entries(MANAGED_MEMBERSHIP_PLANS).map(([planType, plan]) => {
-        const usdc = calculateManagedMembershipPrice(planType as 'MONTHLY' | 'QUARTERLY', 'USDC');
-        const mcn = calculateManagedMembershipPrice(planType as 'MONTHLY' | 'QUARTERLY', 'MCN');
+        const usdc = calculateManagedMembershipPrice(planType as 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL', 'USDC');
+        const mcn = calculateManagedMembershipPrice(planType as 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL', 'MCN');
 
         return {
             planType,
             label: plan.label,
             durationDays: plan.durationDays,
             basePriceUsd: plan.basePriceUsd,
+            maxSubscriptionTermDays: plan.maxSubscriptionTermDays,
+            maxActiveSubscriptions: plan.maxActiveSubscriptions,
             prices: {
                 USDC: usdc.finalPriceUsd,
                 MCN: mcn.finalPriceUsd,
@@ -29,8 +31,9 @@ export async function GET() {
         rules: {
             onlyProfitFee: true,
             notes: [
-                'Membership is currently an off-chain service entitlement record.',
-                'One active membership per wallet is allowed.',
+                'Membership is required to create managed subscriptions.',
+                'Each tier limits the maximum subscription term and concurrent active subscriptions.',
+                'One active membership per wallet is allowed. Renewal starts after current expiry.',
             ],
         },
     });

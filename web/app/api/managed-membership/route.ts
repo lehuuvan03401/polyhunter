@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 
 const createMembershipSchema = z.object({
     walletAddress: z.string().min(3),
-    planType: z.enum(['MONTHLY', 'QUARTERLY']),
+    planType: z.enum(['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL']),
     paymentToken: z.enum(['USDC', 'MCN']).optional().default('USDC'),
 });
 const membershipStatusSchema = z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']);
@@ -192,8 +192,24 @@ export async function POST(request: NextRequest) {
             `;
 
             const activeMembership = activeRows[0];
+
+            // Allow renewal: new membership starts after current one expires
+            const startsAt = activeMembership ? activeMembership.endsAt : now;
+            const endsAt = new Date(startsAt.getTime() + price.durationDays * 24 * 60 * 60 * 1000);
+
+            // Block if there's already a pending renewal (active + queued)
             if (activeMembership) {
-                throw new Error(`ACTIVE_MEMBERSHIP_EXISTS:${activeMembership.endsAt.toISOString()}`);
+                const pendingRenewalRows = await tx.$queryRaw<ManagedMembershipRow[]>`
+                    SELECT "id"
+                    FROM "ManagedMembership"
+                    WHERE "walletAddress" = ${walletContext.wallet}
+                      AND "status" = 'ACTIVE'
+                      AND "startsAt" > ${now}
+                    LIMIT 1
+                `;
+                if (pendingRenewalRows.length > 0) {
+                    throw new Error(`PENDING_RENEWAL_EXISTS:${activeMembership.endsAt.toISOString()}`);
+                }
             }
 
             // Verify user has sufficient qualified balance to cover membership cost
@@ -208,7 +224,6 @@ export async function POST(request: NextRequest) {
             }
 
             const id = randomUUID();
-            const endsAt = new Date(now.getTime() + price.durationDays * 24 * 60 * 60 * 1000);
 
             const insertedRows = await tx.$queryRaw<ManagedMembershipRow[]>`
                 INSERT INTO "ManagedMembership" (
@@ -234,7 +249,7 @@ export async function POST(request: NextRequest) {
                   ${price.basePriceUsd},
                   ${price.discountRate},
                   ${price.finalPriceUsd},
-                  ${now},
+                  ${startsAt},
                   ${endsAt},
                   ${now},
                   ${now},
@@ -276,6 +291,14 @@ export async function POST(request: NextRequest) {
             const activeUntil = error.message.slice('ACTIVE_MEMBERSHIP_EXISTS:'.length);
             return NextResponse.json(
                 { error: 'Active membership already exists', activeUntil },
+                { status: 409 }
+            );
+        }
+
+        if (error instanceof Error && error.message.startsWith('PENDING_RENEWAL_EXISTS:')) {
+            const activeUntil = error.message.slice('PENDING_RENEWAL_EXISTS:'.length);
+            return NextResponse.json(
+                { error: 'A renewal is already queued for this membership', activeUntil, code: 'PENDING_RENEWAL_EXISTS' },
                 { status: 409 }
             );
         }

@@ -12,7 +12,7 @@ type MembershipStatus = 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
 
 type MembershipRow = {
     id: string;
-    planType: 'MONTHLY' | 'QUARTERLY';
+    planType: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL';
     status: MembershipStatus;
     paymentToken: 'USDC' | 'MCN';
     basePriceUsd: number;
@@ -33,8 +33,14 @@ export default function ManagedMembershipHistoryPage() {
     const [statusFilter, setStatusFilter] = useState<'ALL' | MembershipStatus>('ALL');
     const [memberships, setMemberships] = useState<MembershipRow[]>([]);
 
-    const planTypeLabel = (planType: 'MONTHLY' | 'QUARTERLY') =>
-        planType === 'MONTHLY' ? tDashboard('membership.monthly') : tDashboard('membership.quarterly');
+    const planTypeLabel = (planType: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL') => {
+        switch (planType) {
+            case 'MONTHLY': return tDashboard('membership.monthly');
+            case 'QUARTERLY': return tDashboard('membership.quarterly');
+            case 'SEMI_ANNUAL': return tDashboard('membership.semiAnnual');
+            case 'ANNUAL': return tDashboard('membership.annual');
+        }
+    };
 
     useEffect(() => {
         const fetchHistory = async () => {
