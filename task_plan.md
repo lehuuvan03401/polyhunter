@@ -351,7 +351,7 @@
   - [x] 方案设计：明确 Tie-breaker 指标优先级。
   - [x] 核心改造：重构 `eliminate` 方法中的排序聚合查询，引入有效 managed 资产规模、历史累计总金额等决胜指标。
   - [x] 新增接口：合伙人申购排队（Queue）模型及防秒杀限流。
-- [ ] Phase B：高可用调度层重构（M7）
+- [x] Phase B：高可用调度层重构（M7）
   - [x] Schema 变更：新增 `PartnerEliminationTask` 任务状态表，用于实现断点续传。
   - [x] 调度重构：将现有的纯 API trigger 改造为异步队列，提高大单重算时的可用性。
 - [x] Phase C：资金退改自动化（M8）
