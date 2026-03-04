@@ -31,7 +31,7 @@ export function UserMenu() {
     const handleLogout = async () => {
         setIsLoggingOut(true);
         setIsOpen(false);
-        
+
         try {
             await logout();
             toast.success('Logged out successfully');
@@ -90,7 +90,7 @@ export function UserMenu() {
                     </div>
 
                     <div className="p-1">
-                        <Link href="/participation" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                        <Link href="/affiliate?tab=account" className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
                             <Shield className="w-4 h-4" />
                             Participation
                         </Link>

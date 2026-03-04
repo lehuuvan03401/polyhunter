@@ -1,0 +1,966 @@
+'use client';
+
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Link } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
+import {
+    AlertCircle,
+    BarChart3,
+    CheckCircle2,
+    GitBranch,
+    Loader2,
+    RefreshCw,
+    Shield,
+    Sparkles,
+    Wallet,
+} from 'lucide-react';
+import { toast } from 'sonner';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type ParticipationAccountResponse = {
+    account: {
+        status: 'PENDING' | 'ACTIVE' | 'SUSPENDED';
+        preferredMode: 'FREE' | 'MANAGED' | null;
+        isRegistrationComplete: boolean;
+        registrationCompletedAt: string | null;
+        activatedAt: string | null;
+    } | null;
+    netDeposits: {
+        depositUsd: number;
+        withdrawUsd: number;
+        netUsd: number;
+        depositMcn: number;
+        withdrawMcn: number;
+        netMcnEquivalent: number;
+    };
+    eligibility: {
+        freeQualified: boolean;
+        managedQualified: boolean;
+        thresholds: {
+            FREE: number;
+            MANAGED: number;
+        };
+    };
+};
+
+type ParticipationLevelsResponse = {
+    progress: {
+        level: string;
+        dividendRate: number;
+        teamNetDepositUsd: number;
+        selfNetDepositUsd: number;
+        directTeamWalletCount: number;
+        nextLevel: string | null;
+        nextLevelThresholdUsd: number | null;
+        remainingToNextUsd: number;
+    } | null;
+    latestSnapshot: {
+        snapshotDate: string;
+        level: string;
+        dividendRate: number;
+    } | null;
+};
+
+type ParticipationPromotionResponse = {
+    progress: {
+        promotionLevel: string;
+        directLegCount: number;
+        leftNetDepositUsd: number;
+        rightNetDepositUsd: number;
+        weakZoneNetDepositUsd: number;
+        strongZoneNetDepositUsd: number;
+        nextLevel: string | null;
+        nextLevelThresholdUsd: number | null;
+        nextLevelGapUsd: number;
+    } | null;
+    latestSnapshot: {
+        snapshotDate: string;
+        promotionLevel: string;
+        nextLevel: string | null;
+    } | null;
+};
+
+type ParticipationCustodyAuthResponse = {
+    activeAuthorization: {
+        id: string;
+        mode: 'MANAGED';
+        status: 'ACTIVE' | 'REVOKED';
+        grantedAt: string;
+        revokedAt: string | null;
+        createdAt: string;
+    } | null;
+    recentAuthorizations: Array<{
+        id: string;
+        mode: 'MANAGED';
+        status: 'ACTIVE' | 'REVOKED';
+        grantedAt: string;
+        revokedAt: string | null;
+        createdAt: string;
+    }>;
+};
+
+type ParticipationDashboardData = {
+    account: ParticipationAccountResponse;
+    levels: ParticipationLevelsResponse;
+    promotion: ParticipationPromotionResponse;
+    custodyAuth: ParticipationCustodyAuthResponse;
+};
+
+type WalletHeadersFactory = (params: {
+    walletAddress: string;
+    method: string;
+    pathWithQuery: string;
+}) => Promise<Record<string, string>>;
+
+type ParticipationAccountAction = 'REGISTER' | 'ACTIVATE';
+type ParticipationMode = 'FREE' | 'MANAGED';
+const INSUFFICIENT_QUALIFIED_FUNDING_CODE = 'INSUFFICIENT_QUALIFIED_FUNDING';
+
+type ActivationFailureDetail = {
+    mode: ParticipationMode;
+    requiredThreshold: number;
+    currentNetMcnEquivalent: number;
+    deficit: number;
+};
+
+type ParticipationActionError = Error & {
+    code?: string;
+    activationFailureDetail?: ActivationFailureDetail;
+};
+
+// ─── API helpers ─────────────────────────────────────────────────────────────
+
+function createParticipationApiError(data: unknown, fallbackMessage: string): ParticipationActionError {
+    const payload = (data ?? {}) as { error?: unknown; code?: unknown };
+    const message = typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : fallbackMessage;
+    const error = new Error(message) as ParticipationActionError;
+    if (typeof payload.code === 'string') {
+        error.code = payload.code;
+    }
+    return error;
+}
+
+async function fetchJson<T>(path: string, headers: Record<string, string>): Promise<T> {
+    const res = await fetch(path, {
+        headers,
+        cache: 'no-store',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw createParticipationApiError(data, `Failed to load ${path}`);
+    }
+    return data as T;
+}
+
+async function loadParticipationDashboard(
+    walletAddress: string,
+    createWalletAuthHeaders: WalletHeadersFactory
+): Promise<ParticipationDashboardData> {
+    const accountPath = `/api/participation/account?wallet=${encodeURIComponent(walletAddress)}`;
+    const levelsPath = `/api/participation/levels?wallet=${encodeURIComponent(walletAddress)}`;
+    const promotionPath = `/api/participation/promotion?wallet=${encodeURIComponent(walletAddress)}`;
+    const custodyAuthPath = `/api/participation/custody-auth?wallet=${encodeURIComponent(walletAddress)}`;
+
+    const [accountHeaders, levelsHeaders, promotionHeaders, custodyAuthHeaders] = await Promise.all([
+        createWalletAuthHeaders({
+            walletAddress,
+            method: 'GET',
+            pathWithQuery: accountPath,
+        }),
+        createWalletAuthHeaders({
+            walletAddress,
+            method: 'GET',
+            pathWithQuery: levelsPath,
+        }),
+        createWalletAuthHeaders({
+            walletAddress,
+            method: 'GET',
+            pathWithQuery: promotionPath,
+        }),
+        createWalletAuthHeaders({
+            walletAddress,
+            method: 'GET',
+            pathWithQuery: custodyAuthPath,
+        }),
+    ]);
+
+    const [account, levels, promotion, custodyAuth] = await Promise.all([
+        fetchJson<ParticipationAccountResponse>(accountPath, accountHeaders),
+        fetchJson<ParticipationLevelsResponse>(levelsPath, levelsHeaders),
+        fetchJson<ParticipationPromotionResponse>(promotionPath, promotionHeaders),
+        fetchJson<ParticipationCustodyAuthResponse>(custodyAuthPath, custodyAuthHeaders),
+    ]);
+
+    return { account, levels, promotion, custodyAuth };
+}
+
+async function postParticipationAccountAction(
+    walletAddress: string,
+    action: ParticipationAccountAction,
+    createWalletAuthHeaders: WalletHeadersFactory,
+    mode?: ParticipationMode
+) {
+    const path = '/api/participation/account';
+    const walletHeaders = await createWalletAuthHeaders({
+        walletAddress,
+        method: 'POST',
+        pathWithQuery: path,
+    });
+
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...walletHeaders,
+        },
+        body: JSON.stringify({
+            walletAddress,
+            action,
+            ...(mode ? { mode } : {}),
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const error = createParticipationApiError(
+            data,
+            `Failed to ${action.toLowerCase()} participation`
+        );
+        const code = error.code;
+        const requiredThreshold = Number(data?.requiredThreshold);
+        const currentNetMcnEquivalent = Number(data?.currentNetMcnEquivalent);
+        const deficit = Number(data?.deficit);
+
+        if (
+            code === INSUFFICIENT_QUALIFIED_FUNDING_CODE &&
+            action === 'ACTIVATE' &&
+            mode &&
+            Number.isFinite(requiredThreshold) &&
+            Number.isFinite(currentNetMcnEquivalent) &&
+            Number.isFinite(deficit)
+        ) {
+            error.code = code;
+            error.activationFailureDetail = {
+                mode,
+                requiredThreshold,
+                currentNetMcnEquivalent,
+                deficit,
+            };
+        }
+
+        throw error;
+    }
+
+    return data as { message?: string };
+}
+
+async function createManagedCustodyAuthorization(
+    walletAddress: string,
+    createWalletAuthHeaders: WalletHeadersFactory
+) {
+    const path = '/api/participation/custody-auth';
+    const walletHeaders = await createWalletAuthHeaders({
+        walletAddress,
+        method: 'POST',
+        pathWithQuery: path,
+    });
+
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...walletHeaders,
+        },
+        body: JSON.stringify({
+            walletAddress,
+            mode: 'MANAGED',
+            consentStatement: 'I authorize Catalyst managed custody execution for managed strategy.',
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.error || 'Failed to authorize managed custody');
+    }
+
+    return data as { authorization?: { id: string } };
+}
+
+async function revokeManagedCustodyAuthorization(
+    walletAddress: string,
+    createWalletAuthHeaders: WalletHeadersFactory,
+    authorizationId?: string
+) {
+    const path = '/api/participation/custody-auth';
+    const walletHeaders = await createWalletAuthHeaders({
+        walletAddress,
+        method: 'DELETE',
+        pathWithQuery: path,
+    });
+
+    const res = await fetch(path, {
+        method: 'DELETE',
+        headers: {
+            'content-type': 'application/json',
+            ...walletHeaders,
+        },
+        body: JSON.stringify({
+            walletAddress,
+            ...(authorizationId ? { authorizationId } : {}),
+            reason: 'User revoked authorization from participation dashboard',
+        }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data?.error || 'Failed to revoke managed custody authorization');
+    }
+
+    return data as { revoked?: number };
+}
+
+// ─── Format helpers ──────────────────────────────────────────────────────────
+
+function formatUsd(value: number): string {
+    return `$${value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
+}
+
+function formatMcn(value: number): string {
+    return `${value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })} MCN`;
+}
+
+function formatDate(value: string | null | undefined): string {
+    if (!value) return '--';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '--';
+    return parsed.toLocaleString();
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function StatusCard({
+    icon,
+    title,
+    value,
+    note,
+}: {
+    icon: ReactNode;
+    title: string;
+    value: string;
+    note: string;
+}) {
+    return (
+        <div className="rounded-2xl border border-white/10 bg-[#0F1115] p-5">
+            <div className="flex items-center justify-between">
+                <span className="text-sm text-zinc-400">{title}</span>
+                {icon}
+            </div>
+            <div className="mt-4 text-2xl font-semibold text-white">{value}</div>
+            <div className="mt-2 text-sm text-zinc-500">{note}</div>
+        </div>
+    );
+}
+
+function Panel({
+    title,
+    subtitle,
+    children,
+}: {
+    title: string;
+    subtitle: string;
+    children: ReactNode;
+}) {
+    return (
+        <section className="rounded-3xl border border-white/10 bg-[#0A0B0E]/80 p-6">
+            <h2 className="text-lg font-semibold text-white">{title}</h2>
+            <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>
+            <div className="mt-5 space-y-3">{children}</div>
+        </section>
+    );
+}
+
+function MetricRow({
+    label,
+    value,
+    positive,
+}: {
+    label: string;
+    value: string;
+    positive?: boolean;
+}) {
+    return (
+        <div className="flex items-center justify-between rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-3">
+            <span className="text-sm text-zinc-400">{label}</span>
+            <span className={`text-sm font-medium ${positive ? 'text-emerald-300' : 'text-white'}`}>
+                {value}
+            </span>
+        </div>
+    );
+}
+
+function ActionItem({
+    done,
+    text,
+}: {
+    done: boolean;
+    text: string;
+}) {
+    return (
+        <div className="flex items-start gap-3 rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-3">
+            <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${done ? 'text-emerald-300' : 'text-zinc-600'}`} />
+            <span className={`${done ? 'text-zinc-400 line-through' : 'text-zinc-200'} text-sm`}>
+                {text}
+            </span>
+        </div>
+    );
+}
+
+function ActionButton({
+    children,
+    onClick,
+    disabled,
+    loading,
+    variant = 'primary',
+}: {
+    children: ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+    variant?: 'primary' | 'secondary';
+}) {
+    const baseClassName = variant === 'secondary'
+        ? 'rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors'
+        : 'rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors';
+
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className={`${baseClassName} inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {children}
+        </button>
+    );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
+export function ParticipationDashboardTab({
+    walletAddress,
+    createWalletAuthHeaders,
+}: {
+    walletAddress: string;
+    createWalletAuthHeaders: WalletHeadersFactory;
+}) {
+    const t = useTranslations('ParticipationDashboard');
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [dashboard, setDashboard] = useState<ParticipationDashboardData | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [activationFailureDetail, setActivationFailureDetail] = useState<ActivationFailureDetail | null>(null);
+
+    const loadDashboard = useCallback(async (options?: { initialLoad?: boolean; silent?: boolean }) => {
+        const initialLoad = options?.initialLoad === true;
+        const silent = options?.silent === true;
+
+        if (initialLoad) {
+            setLoading(true);
+        } else if (!silent) {
+            setRefreshing(true);
+        }
+        setError(null);
+
+        try {
+            const data = await loadParticipationDashboard(
+                walletAddress,
+                createWalletAuthHeaders
+            );
+            setDashboard(data);
+        } catch (fetchError) {
+            const parsedError = fetchError instanceof Error
+                ? (fetchError as ParticipationActionError)
+                : null;
+            const message = parsedError?.code?.startsWith('WALLET_')
+                ? t('toast.walletContextInvalid')
+                : parsedError?.message ?? t('errors.loadDashboardFailed');
+            setError(message);
+            toast.error(message);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, [walletAddress, createWalletAuthHeaders, t]);
+
+    useEffect(() => {
+        void loadDashboard({ initialLoad: true });
+    }, [loadDashboard]);
+
+    const handleRefresh = async () => {
+        if (refreshing) return;
+        await loadDashboard();
+    };
+
+    const handleAccountAction = async (
+        action: ParticipationAccountAction,
+        mode?: ParticipationMode
+    ) => {
+        if (actionLoading) return;
+
+        const actionKey = mode ? `${action}:${mode}` : action;
+        setActionLoading(actionKey);
+        setError(null);
+        setActivationFailureDetail(null);
+
+        try {
+            const result = await postParticipationAccountAction(
+                walletAddress,
+                action,
+                createWalletAuthHeaders,
+                mode
+            );
+            toast.success(
+                result.message ??
+                (action === 'REGISTER'
+                    ? t('toast.registrationCompleted')
+                    : t('toast.activated', { mode: mode ?? 'MANAGED' }))
+            );
+            await loadDashboard({ silent: true });
+        } catch (actionError) {
+            const parsedError = actionError instanceof Error
+                ? (actionError as ParticipationActionError)
+                : null;
+            const message = parsedError?.code === 'ACTIVATION_MODE_REQUIRED'
+                ? t('toast.activationModeRequired')
+                : parsedError?.code === 'REGISTRATION_REQUIRED'
+                    ? t('toast.registrationRequired')
+                    : parsedError?.code === INSUFFICIENT_QUALIFIED_FUNDING_CODE
+                        ? t('toast.insufficientQualifiedFunding')
+                        : parsedError?.code?.startsWith('WALLET_')
+                            ? t('toast.walletContextInvalid')
+                            : parsedError?.message ?? t('toast.accountActionFailed');
+            const detail = parsedError?.activationFailureDetail;
+
+            if (detail) {
+                setActivationFailureDetail(detail);
+            }
+            setError(message);
+            toast.error(message);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleCreateCustodyAuthorization = async () => {
+        if (actionLoading) return;
+        setActionLoading('CUSTODY:GRANT');
+        setError(null);
+
+        try {
+            await createManagedCustodyAuthorization(
+                walletAddress,
+                createWalletAuthHeaders
+            );
+            toast.success(t('toast.custodyGranted'));
+            await loadDashboard({ silent: true });
+        } catch (actionError) {
+            const message = actionError instanceof Error
+                ? actionError.message
+                : t('toast.custodyGrantFailed');
+            setError(message);
+            toast.error(message);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleRevokeCustodyAuthorization = async () => {
+        if (actionLoading || !activeCustodyAuthorization?.id) return;
+        setActionLoading('CUSTODY:REVOKE');
+        setError(null);
+
+        try {
+            await revokeManagedCustodyAuthorization(
+                walletAddress,
+                createWalletAuthHeaders,
+                activeCustodyAuthorization.id
+            );
+            toast.success(t('toast.custodyRevoked'));
+            await loadDashboard({ silent: true });
+        } catch (actionError) {
+            const message = actionError instanceof Error
+                ? actionError.message
+                : t('toast.custodyRevokeFailed');
+            setError(message);
+            toast.error(message);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            </div>
+        );
+    }
+
+    const account = dashboard?.account.account;
+    const netDeposits = dashboard?.account.netDeposits;
+    const eligibility = dashboard?.account.eligibility;
+    const levelProgress = dashboard?.levels.progress;
+    const promotionProgress = dashboard?.promotion.progress;
+    const activeCustodyAuthorization = dashboard?.custodyAuth.activeAuthorization ?? null;
+    const recentAuthorizations = dashboard?.custodyAuth.recentAuthorizations ?? [];
+    const latestRevokedAuthorization = recentAuthorizations.find((item) => item.status === 'REVOKED');
+    const isRegistered = Boolean(account?.isRegistrationComplete);
+    const isActive = account?.status === 'ACTIVE';
+    const isFreeActive = isActive && account?.preferredMode === 'FREE';
+    const isManagedActive = isActive && account?.preferredMode === 'MANAGED';
+    const canActivateFree = isRegistered && Boolean(eligibility?.freeQualified) && !isFreeActive;
+    const canActivateManaged = isRegistered && Boolean(eligibility?.managedQualified) && !isManagedActive;
+    const hasActiveCustodyAuthorization = Boolean(activeCustodyAuthorization);
+    const canAuthorizeCustody = isManagedActive && !hasActiveCustodyAuthorization;
+    const accountStatus = account
+        ? account.status === 'ACTIVE'
+            ? t('status.active')
+            : account.status === 'PENDING'
+                ? t('status.pending')
+                : t('status.suspended')
+        : t('status.notRegistered');
+    const accountModeNote = account?.preferredMode
+        ? t('status.mode', { mode: account.preferredMode })
+        : t('status.modeNotSelected');
+    const netQualifiedNote = netDeposits
+        ? t('status.netUsdEquivalent', { amount: formatUsd(netDeposits.netUsd) })
+        : t('status.noFundingYet');
+    const currentLevel = levelProgress?.level ?? t('status.none');
+    const currentLevelNote = levelProgress
+        ? t('status.dividend', { percent: (levelProgress.dividendRate * 100).toFixed(0) })
+        : t('status.noLevelSnapshot');
+    const promotionLevel = promotionProgress?.promotionLevel ?? t('status.none');
+    const promotionLevelNote = promotionProgress
+        ? t('status.directLegs', { count: promotionProgress.directLegCount })
+        : t('status.noPromotionSnapshot');
+    const managedActivationProgress = activationFailureDetail
+        ? Math.max(
+            0,
+            Math.min(
+                100,
+                (activationFailureDetail.currentNetMcnEquivalent / Math.max(1, activationFailureDetail.requiredThreshold)) * 100
+            )
+        )
+        : null;
+
+    return (
+        <div>
+            <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="rounded-2xl bg-blue-500/10 p-3">
+                        <Sparkles className="h-6 w-6 text-blue-300" />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-white">{t('hero.title')}</h2>
+                        <p className="mt-1 text-zinc-400">
+                            {t('hero.subtitle')}
+                        </p>
+                    </div>
+                </div>
+
+                <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10 disabled:opacity-60"
+                >
+                    {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {t('hero.refresh')}
+                </button>
+            </div>
+
+            {error ? (
+                <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                    <div className="flex items-start gap-2">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="min-w-0">
+                            <div>{error}</div>
+                            {activationFailureDetail ? (
+                                <div className="mt-2 space-y-1 text-xs text-amber-100/90">
+                                    <div>{t('errors.activationMode', { mode: activationFailureDetail.mode })}</div>
+                                    <div>{t('errors.requiredThreshold', { amount: formatMcn(activationFailureDetail.requiredThreshold) })}</div>
+                                    <div>{t('errors.currentNetQualified', { amount: formatMcn(activationFailureDetail.currentNetMcnEquivalent) })}</div>
+                                    <div>{t('errors.deficit', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
+                                    {managedActivationProgress !== null ? (
+                                        <div className="mt-2">
+                                            <div className="mb-1 flex items-center justify-between text-[11px] text-amber-100/80">
+                                                <span>{t('errors.thresholdProgressLabel')}</span>
+                                                <span>{managedActivationProgress.toFixed(1)}%</span>
+                                            </div>
+                                            <div
+                                                role="progressbar"
+                                                aria-label={t('errors.thresholdProgressLabel')}
+                                                aria-valuemin={0}
+                                                aria-valuemax={100}
+                                                aria-valuenow={Number(managedActivationProgress.toFixed(1))}
+                                                className="h-1.5 w-full overflow-hidden rounded bg-amber-300/20"
+                                            >
+                                                <div
+                                                    className="h-full rounded bg-amber-200/80 transition-all"
+                                                    style={{ width: `${managedActivationProgress.toFixed(1)}%` }}
+                                                />
+                                            </div>
+                                            <div className="mt-1">{t('errors.shortfallProgress', { percent: managedActivationProgress.toFixed(1) })}</div>
+                                        </div>
+                                    ) : null}
+                                    <div>{t('errors.recommendedAction', { amount: formatMcn(activationFailureDetail.deficit) })}</div>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <Link
+                                            href="/managed-wealth"
+                                            className="rounded-lg bg-amber-400/20 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-400/30 transition-colors"
+                                        >
+                                            {t('errors.goToFunding')}
+                                        </Link>
+                                        <Link
+                                            href="/affiliate/rules"
+                                            className="rounded-lg border border-amber-200/40 bg-transparent px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-300/10 transition-colors"
+                                        >
+                                            {t('errors.reviewRules')}
+                                        </Link>
+                                        {activationFailureDetail.mode === 'MANAGED' && canActivateFree ? (
+                                            <ActionButton
+                                                onClick={() => void handleAccountAction('ACTIVATE', 'FREE')}
+                                                disabled={Boolean(actionLoading)}
+                                                loading={actionLoading === 'ACTIVATE:FREE'}
+                                                variant="secondary"
+                                            >
+                                                {t('errors.activateFreeInstead')}
+                                            </ActionButton>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <StatusCard
+                    icon={<Shield className="h-5 w-5 text-blue-300" />}
+                    title={t('cards.accountStatus')}
+                    value={accountStatus}
+                    note={accountModeNote}
+                />
+                <StatusCard
+                    icon={<Wallet className="h-5 w-5 text-emerald-300" />}
+                    title={t('cards.netQualifiedCapital')}
+                    value={netDeposits ? `${netDeposits.netMcnEquivalent.toFixed(2)} MCN` : '--'}
+                    note={netQualifiedNote}
+                />
+                <StatusCard
+                    icon={<BarChart3 className="h-5 w-5 text-violet-300" />}
+                    title={t('cards.currentLevel')}
+                    value={currentLevel}
+                    note={currentLevelNote}
+                />
+                <StatusCard
+                    icon={<GitBranch className="h-5 w-5 text-amber-300" />}
+                    title={t('cards.promotionProgress')}
+                    value={promotionLevel}
+                    note={promotionLevelNote}
+                />
+            </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                <Panel title={t('activation.panelTitle')} subtitle={t('activation.panelSubtitle')}>
+                    <MetricRow
+                        label={t('activation.registration')}
+                        value={account?.isRegistrationComplete ? t('activation.complete') : t('activation.pending')}
+                    />
+                    <MetricRow
+                        label={t('activation.activatedAt')}
+                        value={formatDate(account?.activatedAt)}
+                    />
+                    <MetricRow
+                        label={t('activation.registeredAt')}
+                        value={formatDate(account?.registrationCompletedAt)}
+                    />
+                    <MetricRow
+                        label={`FREE >= ${eligibility?.thresholds.FREE ?? 100}U`}
+                        value={eligibility?.freeQualified ? t('activation.qualified') : t('activation.notYet')}
+                        positive={Boolean(eligibility?.freeQualified)}
+                    />
+                    <MetricRow
+                        label={`MANAGED >= ${eligibility?.thresholds.MANAGED ?? 500}U`}
+                        value={eligibility?.managedQualified ? t('activation.qualified') : t('activation.notYet')}
+                        positive={Boolean(eligibility?.managedQualified)}
+                    />
+                </Panel>
+
+                <Panel title={t('level.panelTitle')} subtitle={t('level.panelSubtitle')}>
+                    <MetricRow
+                        label={t('level.selfNetDeposit')}
+                        value={levelProgress ? formatUsd(levelProgress.selfNetDepositUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('level.teamNetDeposit')}
+                        value={levelProgress ? formatUsd(levelProgress.teamNetDepositUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('level.directTeamWallets')}
+                        value={levelProgress ? String(levelProgress.directTeamWalletCount) : '--'}
+                    />
+                    <MetricRow
+                        label={t('level.nextLevel')}
+                        value={levelProgress?.nextLevel ?? t('level.max')}
+                    />
+                    <MetricRow
+                        label={t('level.gapToNext')}
+                        value={levelProgress ? formatUsd(levelProgress.remainingToNextUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('level.latestSnapshot')}
+                        value={formatDate(dashboard?.levels.latestSnapshot?.snapshotDate)}
+                    />
+                </Panel>
+
+                <Panel title={t('promotion.panelTitle')} subtitle={t('promotion.panelSubtitle')}>
+                    <MetricRow
+                        label={t('promotion.leftZone')}
+                        value={promotionProgress ? formatUsd(promotionProgress.leftNetDepositUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('promotion.rightZone')}
+                        value={promotionProgress ? formatUsd(promotionProgress.rightNetDepositUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('promotion.weakZone')}
+                        value={promotionProgress ? formatUsd(promotionProgress.weakZoneNetDepositUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('promotion.strongZone')}
+                        value={promotionProgress ? formatUsd(promotionProgress.strongZoneNetDepositUsd) : '--'}
+                    />
+                    <MetricRow
+                        label={t('promotion.nextLevel')}
+                        value={promotionProgress?.nextLevel ?? t('promotion.max')}
+                    />
+                    <MetricRow
+                        label={t('promotion.gapToNext')}
+                        value={promotionProgress ? formatUsd(promotionProgress.nextLevelGapUsd) : '--'}
+                    />
+                </Panel>
+
+                <Panel title={t('custody.panelTitle')} subtitle={t('custody.panelSubtitle')}>
+                    <MetricRow
+                        label={t('custody.authorizationStatus')}
+                        value={hasActiveCustodyAuthorization ? t('custody.active') : t('custody.notAuthorized')}
+                        positive={hasActiveCustodyAuthorization}
+                    />
+                    <MetricRow
+                        label={t('custody.authorizedAt')}
+                        value={formatDate(activeCustodyAuthorization?.grantedAt)}
+                    />
+                    <MetricRow
+                        label={t('custody.lastRevokedAt')}
+                        value={formatDate(latestRevokedAuthorization?.revokedAt)}
+                    />
+                    <MetricRow
+                        label={t('custody.managedRequirement')}
+                        value={isManagedActive ? t('custody.requirementSatisfied') : t('custody.activateManagedFirst')}
+                        positive={isManagedActive}
+                    />
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        {!hasActiveCustodyAuthorization ? (
+                            <ActionButton
+                                onClick={() => void handleCreateCustodyAuthorization()}
+                                disabled={!canAuthorizeCustody || Boolean(actionLoading)}
+                                loading={actionLoading === 'CUSTODY:GRANT'}
+                            >
+                                {t('actions.authorizeManagedCustody')}
+                            </ActionButton>
+                        ) : (
+                            <ActionButton
+                                onClick={() => void handleRevokeCustodyAuthorization()}
+                                disabled={Boolean(actionLoading)}
+                                loading={actionLoading === 'CUSTODY:REVOKE'}
+                                variant="secondary"
+                            >
+                                {t('actions.revokeAuthorization')}
+                            </ActionButton>
+                        )}
+                    </div>
+                </Panel>
+
+                <Panel title={t('actions.panelTitle')} subtitle={t('actions.panelSubtitle')}>
+                    <ActionItem
+                        done={isRegistered}
+                        text={t('actions.checkRegistration')}
+                    />
+                    <ActionItem
+                        done={Boolean(eligibility?.freeQualified)}
+                        text={t('actions.checkFreeThreshold')}
+                    />
+                    <ActionItem
+                        done={Boolean(eligibility?.managedQualified)}
+                        text={t('actions.checkManagedThreshold')}
+                    />
+                    <ActionItem
+                        done={Boolean(isManagedActive)}
+                        text={t('actions.checkManagedMode')}
+                    />
+                    <ActionItem
+                        done={hasActiveCustodyAuthorization}
+                        text={t('actions.checkCustodyAuthorization')}
+                    />
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        {!isRegistered ? (
+                            <ActionButton
+                                onClick={() => void handleAccountAction('REGISTER')}
+                                disabled={Boolean(actionLoading)}
+                                loading={actionLoading === 'REGISTER'}
+                            >
+                                {t('actions.completeRegistration')}
+                            </ActionButton>
+                        ) : null}
+                        {!isFreeActive ? (
+                            <ActionButton
+                                onClick={() => void handleAccountAction('ACTIVATE', 'FREE')}
+                                disabled={!canActivateFree || Boolean(actionLoading)}
+                                loading={actionLoading === 'ACTIVATE:FREE'}
+                                variant="secondary"
+                            >
+                                {t('actions.activateFree')}
+                            </ActionButton>
+                        ) : null}
+                        {!isManagedActive ? (
+                            <ActionButton
+                                onClick={() => void handleAccountAction('ACTIVATE', 'MANAGED')}
+                                disabled={!canActivateManaged || Boolean(actionLoading)}
+                                loading={actionLoading === 'ACTIVATE:MANAGED'}
+                            >
+                                {t('actions.activateManaged')}
+                            </ActionButton>
+                        ) : null}
+                        <Link href="/managed-wealth" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors">
+                            {t('actions.openManagedWealth')}
+                        </Link>
+                        <Link href="/affiliate/rules" className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors">
+                            {t('actions.viewPolicyRules')}
+                        </Link>
+                    </div>
+                </Panel>
+            </div>
+        </div>
+    );
+}

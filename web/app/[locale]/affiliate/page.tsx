@@ -33,65 +33,28 @@ const TESTIMONIALS = [
     }
 ];
 
-// ... render return ...
 
-{/* Commission Rates (Existing) */ }
-{/* ... */ }
 
-{/* Success Stories Section (New) */ }
-<section className="py-20 border-t border-white/5 bg-gradient-to-b from-transparent to-yellow-500/5">
-    <div className="container max-w-6xl mx-auto px-4">
-        <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Success Stories</h2>
-            <p className="text-muted-foreground">See what our top partners are earning</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {TESTIMONIALS.map((t, i) => (
-                <div key={i} className="bg-card/40 backdrop-blur-md border border-white/5 hover:border-yellow-500/30 p-8 rounded-2xl relative group transition-all duration-300 hover:-translate-y-1">
-                    <div className="absolute top-6 right-6 text-yellow-500/10 group-hover:text-yellow-500/20 transition-colors">
-                        <Quote className="h-10 w-10" />
-                    </div>
-
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="h-12 w-12 rounded-full bg-yellow-500/10 flex items-center justify-center text-2xl border border-yellow-500/20">
-                            {t.avatar}
-                        </div>
-                        <div>
-                            <div className="font-bold text-white">{t.name}</div>
-                            <div className="text-xs text-yellow-500 font-medium uppercase tracking-wide">{t.role}</div>
-                        </div>
-                    </div>
-
-                    <p className="text-muted-foreground mb-6 leading-relaxed relative z-10">
-                        "{t.quote}"
-                    </p>
-
-                    <div className="pt-6 border-t border-white/5 flex items-center justify-between">
-                        <div className="text-sm text-muted-foreground">Total Earned</div>
-                        <div className="text-green-500 font-bold font-mono text-lg">
-                            {t.earnings} <span className="text-xs text-muted-foreground font-normal ml-1">/ {t.period}</span>
-                        </div>
-                    </div>
-                </div>
-            ))}
-        </div>
-    </div>
-</section>
-
-{/* CTA (Existing) */ }
 import { cn } from '@/lib/utils';
 import { usePrivyLogin } from '@/lib/privy-login';
+import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { affiliateApi, type AffiliateStats, TIER_INFO, generateReferralLink, type Payout } from '@/lib/affiliate-api';
 import { GenerationSummaryBar } from '@/components/affiliate/generation-summary-bar';
 import { TeamTreeView } from '@/components/affiliate/team-tree-view';
 import { TeamSummaryView } from '@/components/affiliate/team-summary-view';
 import { WithdrawDialog } from '@/components/affiliate/withdraw-dialog';
+import { ParticipationDashboardTab } from '@/components/participation/participation-dashboard-tab';
+import { AffiliateExternalRulesSection } from '@/components/participation/affiliate-external-rules-section';
+
+type AffiliateTab = 'dashboard' | 'account' | 'rules';
 
 export default function AffiliatePage() {
     const { authenticated, user, ready } = usePrivyLogin();
+    const searchParams = useSearchParams();
+    const tabParam = searchParams.get('tab') as AffiliateTab | null;
 
     if (!ready) {
         return (
@@ -102,15 +65,48 @@ export default function AffiliatePage() {
     }
 
     if (authenticated && user?.wallet?.address) {
-        return <AuthenticatedView walletAddress={user.wallet.address} />;
+        return <AuthenticatedView walletAddress={user.wallet.address} initialTab={tabParam ?? 'dashboard'} />;
     }
 
     return <GuestView />;
 }
 
-// --- Authenticated Dashboard View ---
-function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
+// ─── Tab Navigation Bar ─────────────────────────────────────────────────────
+function TabBar({ activeTab, onTabChange }: { activeTab: AffiliateTab; onTabChange: (tab: AffiliateTab) => void }) {
     const t = useTranslations('Affiliate');
+    const tabs: { key: AffiliateTab; label: string; icon: React.ReactNode }[] = [
+        { key: 'dashboard', label: t('tabs.dashboard'), icon: <LayoutDashboard className="h-4 w-4" /> },
+        { key: 'account', label: t('tabs.account'), icon: <Shield className="h-4 w-4" /> },
+        { key: 'rules', label: t('tabs.rules'), icon: <HelpCircle className="h-4 w-4" /> },
+    ];
+
+    return (
+        <div className="mb-8 flex items-center gap-1 rounded-2xl bg-[#1a1b1e] border border-[#2c2d33] p-1.5">
+            {tabs.map((tab) => (
+                <button
+                    key={tab.key}
+                    onClick={() => onTabChange(tab.key)}
+                    className={cn(
+                        'flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all',
+                        activeTab === tab.key
+                            ? 'bg-yellow-500/15 text-yellow-500 shadow-sm border border-yellow-500/20'
+                            : 'text-muted-foreground hover:text-white hover:bg-white/5 border border-transparent'
+                    )}
+                >
+                    {tab.icon}
+                    {tab.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// --- Authenticated Dashboard View ---
+function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: string; initialTab: AffiliateTab }) {
+    const t = useTranslations('Affiliate');
+    const router = useRouter();
+    const { createWalletAuthHeaders } = useManagedWalletAuth();
+    const [activeTab, setActiveTab] = useState<AffiliateTab>(initialTab);
     const [stats, setStats] = useState<AffiliateStats | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isRegistering, setIsRegistering] = useState(false);
@@ -120,6 +116,12 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [simVolume, setSimVolume] = useState('1000');
     const [isSimulating, setIsSimulating] = useState(false);
+
+    const handleTabChange = useCallback((tab: AffiliateTab) => {
+        setActiveTab(tab);
+        const url = tab === 'dashboard' ? '/affiliate' : `/affiliate?tab=${tab}`;
+        router.replace(url, { scroll: false });
+    }, [router]);
 
     useEffect(() => {
         async function loadStats() {
@@ -505,253 +507,266 @@ function AuthenticatedView({ walletAddress }: { walletAddress: string }) {
                     </p>
                 </div>
 
-                {/* 1. Tier Status Card */}
-                <div className="bg-[#1a1b1e] border border-yellow-500/20 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 bg-yellow-500/5 blur-[80px] rounded-full pointer-events-none" />
+                <TabBar activeTab={activeTab} onTabChange={handleTabChange} />
 
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-                        <div className="flex items-center gap-4">
-                            <div className="h-16 w-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center text-yellow-500 shadow-lg border border-yellow-500/20">
-                                {stats?.tier === 'SUPER_PARTNER' ? <Crown className="h-8 w-8" /> :
-                                    stats?.tier === 'PARTNER' ? <Shield className="h-8 w-8" /> :
-                                        stats?.tier === 'ELITE' ? <Zap className="h-8 w-8" /> :
-                                            stats?.tier === 'VIP' ? <Star className="h-8 w-8" /> : <UserCircle className="h-8 w-8" />}
-                            </div>
-                            <div>
-                                <div className="text-sm text-yellow-500 font-medium mb-1">{t('dashboard.currentRank')}</div>
-                                <h2 className={cn("text-3xl font-bold mb-1", tierInfo.color)}>{t(`tiers.${stats?.tier || 'ORDINARY'}`)}</h2>
-                                <div className="inline-flex items-center gap-2">
-                                    <span className="px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-sm font-bold">
-                                        {t('dashboard.direct')}: 25%
-                                    </span>
-                                    <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-sm font-bold">
-                                        {t('dashboard.teamDiff')}: {((stats?.tier === 'ORDINARY' ? 0.01 : stats?.tier === 'VIP' ? 0.02 : stats?.tier === 'ELITE' ? 0.03 : stats?.tier === 'PARTNER' ? 0.05 : 0.08) * 100).toFixed(0)}%
-                                    </span>
-                                    <Link
-                                        href="/affiliate/rules"
-                                        className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white text-sm transition-colors flex items-center gap-1"
-                                        title={t('dashboard.learnMoreTitle')}
-                                    >
-                                        <HelpCircle className="h-3 w-3" />
-                                        <span>{t('dashboard.learnMore')}</span>
-                                    </Link>
+                {activeTab === 'account' && (
+                    <ParticipationDashboardTab
+                        walletAddress={walletAddress}
+                        createWalletAuthHeaders={createWalletAuthHeaders}
+                    />
+                )}
+
+                {activeTab === 'rules' && (
+                    <AffiliateExternalRulesSection />
+                )}
+
+                {activeTab === 'dashboard' && (
+                    <>
+                        {/* 1. Tier Status Card */}
+                        <div className="bg-[#1a1b1e] border border-yellow-500/20 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 bg-yellow-500/5 blur-[80px] rounded-full pointer-events-none" />
+
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                                <div className="flex items-center gap-4">
+                                    <div className="h-16 w-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center text-yellow-500 shadow-lg border border-yellow-500/20">
+                                        {stats?.tier === 'SUPER_PARTNER' ? <Crown className="h-8 w-8" /> :
+                                            stats?.tier === 'PARTNER' ? <Shield className="h-8 w-8" /> :
+                                                stats?.tier === 'ELITE' ? <Zap className="h-8 w-8" /> :
+                                                    stats?.tier === 'VIP' ? <Star className="h-8 w-8" /> : <UserCircle className="h-8 w-8" />}
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-yellow-500 font-medium mb-1">{t('dashboard.currentRank')}</div>
+                                        <h2 className={cn("text-3xl font-bold mb-1", tierInfo.color)}>{t(`tiers.${stats?.tier || 'ORDINARY'}`)}</h2>
+                                        <div className="inline-flex items-center gap-2">
+                                            <span className="px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-sm font-bold">
+                                                {t('dashboard.direct')}: 25%
+                                            </span>
+                                            <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 text-sm font-bold">
+                                                {t('dashboard.teamDiff')}: {((stats?.tier === 'ORDINARY' ? 0.01 : stats?.tier === 'VIP' ? 0.02 : stats?.tier === 'ELITE' ? 0.03 : stats?.tier === 'PARTNER' ? 0.05 : 0.08) * 100).toFixed(0)}%
+                                            </span>
+                                            <Link
+                                                href="/affiliate/rules"
+                                                className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white text-sm transition-colors flex items-center gap-1"
+                                                title={t('dashboard.learnMoreTitle')}
+                                            >
+                                                <HelpCircle className="h-3 w-3" />
+                                                <span>{t('dashboard.learnMore')}</span>
+                                            </Link>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="w-full md:w-1/2">
+                                    {stats?.nextTier ? (
+                                        <>
+                                            <div className="flex justify-between text-xs mb-2">
+                                                <span className="text-muted-foreground">{t('dashboard.nextRank')}: <span className="text-white font-bold">{t(`tiers.${stats.nextTier}`)}</span></span>
+                                                <span className="text-white font-medium">
+                                                    {stats.totalReferrals} / {tierInfo.minTeam} {t('dashboard.teamMembers')}
+                                                </span>
+                                            </div>
+                                            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mb-1">
+                                                <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (stats.totalReferrals / (tierInfo.minTeam || 1)) * 100)}%` }} />
+                                            </div>
+                                            <div className="text-[10px] text-muted-foreground text-right">
+                                                {t('dashboard.goal')}: {(tierInfo.minTeam)} {t('dashboard.activeMembers')}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-center text-yellow-400 font-medium border border-yellow-500/20 rounded-lg p-3 bg-yellow-500/5">
+                                            {t('dashboard.topRankAchieved')}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="w-full md:w-1/2">
-                            {stats?.nextTier ? (
-                                <>
-                                    <div className="flex justify-between text-xs mb-2">
-                                        <span className="text-muted-foreground">{t('dashboard.nextRank')}: <span className="text-white font-bold">{t(`tiers.${stats.nextTier}`)}</span></span>
-                                        <span className="text-white font-medium">
-                                            {stats.totalReferrals} / {tierInfo.minTeam} {t('dashboard.teamMembers')}
-                                        </span>
+                        {/* 2. Stats Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                            {[
+                                { label: t('dashboard.stats.directReferrals'), value: `${stats?.totalReferrals || 0}`, sub: t('dashboard.stats.zeroLine'), icon: Users, color: "text-green-500", bg: "bg-green-500/10" },
+                                { label: t('dashboard.stats.teamSize'), value: `${stats?.teamSize || 0}`, sub: t('dashboard.stats.totalNetwork'), icon: Wallet, color: "text-yellow-500", bg: "bg-yellow-500/10" },
+                                { label: t('dashboard.stats.sunLines'), value: `${stats?.sunLineCount || 0}`, sub: t('dashboard.stats.strongLegs'), icon: Trophy, color: "text-yellow-500", bg: "bg-yellow-500/10" },
+                                {
+                                    label: t('dashboard.stats.totalEarnings'),
+                                    value: `$${(stats?.totalEarned || 0).toFixed(2)}`,
+                                    sub: t('dashboard.stats.earningsBreakdown', {
+                                        zero: (stats?.earningsBreakdown?.zeroLine || 0).toFixed(2),
+                                        sun: (stats?.earningsBreakdown?.sunLine || 0).toFixed(2)
+                                    }),
+                                    icon: Calendar,
+                                    color: "text-green-500",
+                                    bg: "bg-green-500/10",
+                                    action: (
+                                        <div className="flex items-center justify-between w-full">
+                                            <div className="text-xs font-medium text-green-500">
+                                                {t('dashboard.stats.available')}: ${(stats?.pendingPayout || 0).toFixed(2)}
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleWithdrawClick(); }}
+                                                className="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg font-bold transition-colors"
+                                                title={t('dashboard.stats.withdraw')}
+                                            >
+                                                {t('dashboard.stats.withdraw')}
+                                            </button>
+                                        </div>
+                                    )
+                                },
+                            ].map((stat, i) => (
+                                <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl flex flex-col relative overflow-hidden group hover:border-white/10 transition-colors">
+                                    <div className="p-6">
+                                        <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
+                                            <stat.icon className="h-5 w-5" />
+                                        </div>
+                                        <div className="mb-2">
+                                            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</div>
+                                            <div className="text-2xl font-bold text-white">{stat.value}</div>
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground">
+                                            {stat.label === t('dashboard.stats.totalEarnings') && "$"}
+                                            {stat.sub}
+                                        </div>
                                     </div>
-                                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mb-1">
-                                        <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (stats.totalReferrals / (tierInfo.minTeam || 1)) * 100)}%` }} />
-                                    </div>
-                                    <div className="text-[10px] text-muted-foreground text-right">
-                                        {t('dashboard.goal')}: {(tierInfo.minTeam)} {t('dashboard.activeMembers')}
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="text-center text-yellow-400 font-medium border border-yellow-500/20 rounded-lg p-3 bg-yellow-500/5">
-                                    {t('dashboard.topRankAchieved')}
+                                    {'action' in stat && (
+                                        <div className="mt-auto border-t border-white/5 bg-white/5 px-6 py-3">
+                                            {stat.action}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            ))}
                         </div>
-                    </div>
-                </div>
 
-                {/* 2. Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    {[
-                        { label: t('dashboard.stats.directReferrals'), value: `${stats?.totalReferrals || 0}`, sub: t('dashboard.stats.zeroLine'), icon: Users, color: "text-green-500", bg: "bg-green-500/10" },
-                        { label: t('dashboard.stats.teamSize'), value: `${stats?.teamSize || 0}`, sub: t('dashboard.stats.totalNetwork'), icon: Wallet, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-                        { label: t('dashboard.stats.sunLines'), value: `${stats?.sunLineCount || 0}`, sub: t('dashboard.stats.strongLegs'), icon: Trophy, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-                        {
-                            label: t('dashboard.stats.totalEarnings'),
-                            value: `$${(stats?.totalEarned || 0).toFixed(2)}`,
-                            sub: t('dashboard.stats.earningsBreakdown', {
-                                zero: (stats?.earningsBreakdown?.zeroLine || 0).toFixed(2),
-                                sun: (stats?.earningsBreakdown?.sunLine || 0).toFixed(2)
-                            }),
-                            icon: Calendar,
-                            color: "text-green-500",
-                            bg: "bg-green-500/10",
-                            action: (
-                                <div className="flex items-center justify-between w-full">
-                                    <div className="text-xs font-medium text-green-500">
-                                        {t('dashboard.stats.available')}: ${(stats?.pendingPayout || 0).toFixed(2)}
-                                    </div>
+                        {/* 3. Referral Link */}
+                        <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
+                            <div className="flex items-center gap-2 mb-4">
+                                <div className="h-6 w-6 rounded bg-blue-500/20 flex items-center justify-center text-blue-500">
+                                    <LinkIcon className="h-3.5 w-3.5" />
+                                </div>
+                                <h3 className="font-bold text-white">{t('dashboard.referralLink.label')}</h3>
+                            </div>
+                            <div className="flex flex-col md:flex-row gap-4 items-center">
+                                <p className="text-sm text-muted-foreground md:w-1/3">
+                                    {t('dashboard.referralLink.desc')}
+                                </p>
+                                <div className="flex-1 flex gap-2">
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={referralLink}
+                                        className="flex-1 bg-[#25262b] border border-[#2c2d33] rounded-lg px-4 py-2 text-sm text-white font-mono"
+                                    />
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleWithdrawClick(); }}
-                                        className="text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg font-bold transition-colors"
-                                        title={t('dashboard.stats.withdraw')}
+                                        onClick={handleCopyLink}
+                                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                                     >
-                                        {t('dashboard.stats.withdraw')}
+                                        <Copy className="h-4 w-4" /> {t('common.copy')}
                                     </button>
                                 </div>
-                            )
-                        },
-                    ].map((stat, i) => (
-                        <div key={i} className="bg-[#1a1b1e] border border-[#2c2d33] rounded-xl flex flex-col relative overflow-hidden group hover:border-white/10 transition-colors">
-                            <div className="p-6">
-                                <div className={`absolute right-4 top-4 h-10 w-10 rounded-lg ${stat.bg} flex items-center justify-center ${stat.color}`}>
-                                    <stat.icon className="h-5 w-5" />
-                                </div>
-                                <div className="mb-2">
-                                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</div>
-                                    <div className="text-2xl font-bold text-white">{stat.value}</div>
-                                </div>
-                                <div className="text-[10px] text-muted-foreground">
-                                    {stat.label === t('dashboard.stats.totalEarnings') && "$"}
-                                    {stat.sub}
-                                </div>
                             </div>
-                            {'action' in stat && (
-                                <div className="mt-auto border-t border-white/5 bg-white/5 px-6 py-3">
-                                    {stat.action}
+                        </div>
+
+                        {/* 4. Team Network - IMPROVED */}
+                        <TeamNetworkSection walletAddress={walletAddress} />
+
+
+                        {/* 5. Payout History */}
+                        <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
+                            <h3 className="font-bold text-white flex items-center gap-2 mb-6">
+                                <Calendar className="h-4 w-4 text-green-500" />
+                                {t('dashboard.payoutHistory.title')}
+                            </h3>
+
+                            {payouts.length === 0 ? (
+                                <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border border-dashed border-white/10">
+                                    {t('dashboard.payoutHistory.empty')}
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-muted-foreground border-b border-white/5 uppercase text-xs">
+                                            <tr>
+                                                <th className="py-2 pl-2">{t('dashboard.payoutHistory.headers.status')}</th>
+                                                <th className="py-2">{t('dashboard.payoutHistory.headers.amount')}</th>
+                                                <th className="py-2">{t('dashboard.payoutHistory.headers.date')}</th>
+                                                <th className="py-2 text-right pr-2">{t('dashboard.payoutHistory.headers.txHash')}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {payouts.map((p) => (
+                                                <tr key={p.id} className="hover:bg-white/5 transition-colors">
+                                                    <td className="py-3 pl-2">
+                                                        <span className={cn(
+                                                            "text-xs px-2 py-0.5 rounded-full font-bold",
+                                                            p.status === 'COMPLETED' ? "bg-green-500/10 text-green-500" :
+                                                                p.status === 'PENDING' ? "bg-yellow-500/10 text-yellow-500" :
+                                                                    p.status === 'PROCESSING' ? "bg-blue-500/10 text-blue-500" :
+                                                                        "bg-red-500/10 text-red-500"
+                                                        )}>
+                                                            {p.status === 'COMPLETED' ? t('dashboard.payoutHistory.status.paid') :
+                                                                p.status === 'PENDING' ? t('dashboard.payoutHistory.status.pending') :
+                                                                    p.status === 'PROCESSING' ? t('dashboard.payoutHistory.status.processing') :
+                                                                        t('dashboard.payoutHistory.status.rejected')}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 font-mono text-white">
+                                                        ${p.amount.toFixed(2)}
+                                                    </td>
+                                                    <td className="py-3 text-muted-foreground">
+                                                        {new Date(p.createdAt).toLocaleDateString()}
+                                                    </td>
+                                                    <td className="py-3 text-right pr-2 font-mono text-xs text-blue-400">
+                                                        {p.txHash ? (
+                                                            <a href={`https://polygonscan.com/tx/${p.txHash}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                                                {p.txHash.slice(0, 6)}...{p.txHash.slice(-4)}
+                                                            </a>
+                                                        ) : '-'}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             )}
                         </div>
-                    ))}
-                </div>
 
-                {/* 3. Referral Link */}
-                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
-                    <div className="flex items-center gap-2 mb-4">
-                        <div className="h-6 w-6 rounded bg-blue-500/20 flex items-center justify-center text-blue-500">
-                            <LinkIcon className="h-3.5 w-3.5" />
+                        {/* Withdraw Dialog - Keeping as is, assuming inputs/buttons there might also need translation if exposed directly, but it's a sub-component */}
+                        <WithdrawDialog
+                            isOpen={isWithdrawOpen}
+                            onClose={() => setIsWithdrawOpen(false)}
+                            pendingAmount={stats?.pendingPayout || 0}
+                            onConfirm={onConfirmWithdraw}
+                        />
+
+                        {/* 6. Developer Tools (Simulation) */}
+                        <div className="rounded-xl border border-dashed border-yellow-500/30 bg-yellow-500/5 p-6">
+                            <div className="flex items-center gap-2 mb-4 text-yellow-500">
+                                <Info className="h-4 w-4" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">{t('dashboard.simulator.title')}</h3>
+                            </div>
+                            <div className="flex flex-col md:flex-row gap-4 items-end">
+                                <div className="flex-1 space-y-2">
+                                    <label className="text-xs text-muted-foreground">{t('dashboard.simulator.label')}</label>
+                                    <input
+                                        type="number"
+                                        value={simVolume}
+                                        onChange={(e) => setSimVolume(e.target.value)}
+                                        className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-4 py-2 text-white"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleSimulate}
+                                    disabled={isSimulating}
+                                    className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors h-10"
+                                >
+                                    {isSimulating ? t('dashboard.simulator.processing') : t('dashboard.simulator.button')}
+                                </button>
+                            </div>
                         </div>
-                        <h3 className="font-bold text-white">{t('dashboard.referralLink.label')}</h3>
-                    </div>
-                    <div className="flex flex-col md:flex-row gap-4 items-center">
-                        <p className="text-sm text-muted-foreground md:w-1/3">
-                            {t('dashboard.referralLink.desc')}
-                        </p>
-                        <div className="flex-1 flex gap-2">
-                            <input
-                                type="text"
-                                readOnly
-                                value={referralLink}
-                                className="flex-1 bg-[#25262b] border border-[#2c2d33] rounded-lg px-4 py-2 text-sm text-white font-mono"
-                            />
-                            <button
-                                onClick={handleCopyLink}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                            >
-                                <Copy className="h-4 w-4" /> {t('common.copy')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
-                {/* 4. Team Network - IMPROVED */}
-                <TeamNetworkSection walletAddress={walletAddress} />
-
-
-                {/* 5. Payout History */}
-                <div className="bg-[#1a1b1e] border border-[#2c2d33] rounded-2xl p-6 mb-8">
-                    <h3 className="font-bold text-white flex items-center gap-2 mb-6">
-                        <Calendar className="h-4 w-4 text-green-500" />
-                        {t('dashboard.payoutHistory.title')}
-                    </h3>
-
-                    {payouts.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border border-dashed border-white/10">
-                            {t('dashboard.payoutHistory.empty')}
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="text-muted-foreground border-b border-white/5 uppercase text-xs">
-                                    <tr>
-                                        <th className="py-2 pl-2">{t('dashboard.payoutHistory.headers.status')}</th>
-                                        <th className="py-2">{t('dashboard.payoutHistory.headers.amount')}</th>
-                                        <th className="py-2">{t('dashboard.payoutHistory.headers.date')}</th>
-                                        <th className="py-2 text-right pr-2">{t('dashboard.payoutHistory.headers.txHash')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {payouts.map((p) => (
-                                        <tr key={p.id} className="hover:bg-white/5 transition-colors">
-                                            <td className="py-3 pl-2">
-                                                <span className={cn(
-                                                    "text-xs px-2 py-0.5 rounded-full font-bold",
-                                                    p.status === 'COMPLETED' ? "bg-green-500/10 text-green-500" :
-                                                        p.status === 'PENDING' ? "bg-yellow-500/10 text-yellow-500" :
-                                                            p.status === 'PROCESSING' ? "bg-blue-500/10 text-blue-500" :
-                                                                "bg-red-500/10 text-red-500"
-                                                )}>
-                                                    {p.status === 'COMPLETED' ? t('dashboard.payoutHistory.status.paid') :
-                                                        p.status === 'PENDING' ? t('dashboard.payoutHistory.status.pending') :
-                                                            p.status === 'PROCESSING' ? t('dashboard.payoutHistory.status.processing') :
-                                                                t('dashboard.payoutHistory.status.rejected')}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 font-mono text-white">
-                                                ${p.amount.toFixed(2)}
-                                            </td>
-                                            <td className="py-3 text-muted-foreground">
-                                                {new Date(p.createdAt).toLocaleDateString()}
-                                            </td>
-                                            <td className="py-3 text-right pr-2 font-mono text-xs text-blue-400">
-                                                {p.txHash ? (
-                                                    <a href={`https://polygonscan.com/tx/${p.txHash}`} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                                                        {p.txHash.slice(0, 6)}...{p.txHash.slice(-4)}
-                                                    </a>
-                                                ) : '-'}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-
-                {/* Withdraw Dialog - Keeping as is, assuming inputs/buttons there might also need translation if exposed directly, but it's a sub-component */}
-                <WithdrawDialog
-                    isOpen={isWithdrawOpen}
-                    onClose={() => setIsWithdrawOpen(false)}
-                    pendingAmount={stats?.pendingPayout || 0}
-                    onConfirm={onConfirmWithdraw}
-                />
-
-                {/* 6. Developer Tools (Simulation) */}
-                <div className="rounded-xl border border-dashed border-yellow-500/30 bg-yellow-500/5 p-6">
-                    <div className="flex items-center gap-2 mb-4 text-yellow-500">
-                        <Info className="h-4 w-4" />
-                        <h3 className="font-bold text-sm uppercase tracking-wider">{t('dashboard.simulator.title')}</h3>
-                    </div>
-                    <div className="flex flex-col md:flex-row gap-4 items-end">
-                        <div className="flex-1 space-y-2">
-                            <label className="text-xs text-muted-foreground">{t('dashboard.simulator.label')}</label>
-                            <input
-                                type="number"
-                                value={simVolume}
-                                onChange={(e) => setSimVolume(e.target.value)}
-                                className="w-full bg-[#1a1b1e] border border-[#2c2d33] rounded-lg px-4 py-2 text-white"
-                            />
-                        </div>
-                        <button
-                            onClick={handleSimulate}
-                            disabled={isSimulating}
-                            className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors h-10"
-                        >
-                            {isSimulating ? t('dashboard.simulator.processing') : t('dashboard.simulator.button')}
-                        </button>
-                    </div>
-                </div>
+                    </>
+                )}
 
             </div>
-
-            {/* Legacy Guest View Tiers Ladder Section - Updated for new Ranks */}
-            <section className="py-16 hidden">
-                {/* We can hide or update the guest view section later if needed or if user logs out */}
-            </section>
         </div>
     );
 }

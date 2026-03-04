@@ -1198,6 +1198,11 @@
                 "processing": "Processing..."
             }
         },
+        "tabs": {
+            "dashboard": "Team Dashboard",
+            "account": "Participation Account",
+            "rules": "Rules & Policy"
+        },
         "common": {
             "copy": "Copy"
         },

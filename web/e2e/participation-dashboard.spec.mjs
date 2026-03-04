@@ -205,7 +205,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/en/participation');
+        await page.goto('/en/affiliate?tab=account');
 
         await expect(page.getByRole('heading', { name: 'Participation Dashboard' })).toBeVisible();
         await expect(page.getByText('NOT_REGISTERED')).toBeVisible();
@@ -359,7 +359,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/en/participation');
+        await page.goto('/en/affiliate?tab=account');
 
         await expect(page.getByRole('button', { name: 'Activate MANAGED Mode' })).toBeVisible();
         await page.getByRole('button', { name: 'Activate MANAGED Mode' }).click();
@@ -487,7 +487,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/en/participation');
+        await page.goto('/en/affiliate?tab=account');
 
         await page.getByRole('button', { name: 'Activate FREE Mode' }).click();
         await expect(
@@ -543,7 +543,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/en/participation');
+        await page.goto('/en/affiliate?tab=account');
 
         await expect(page.getByRole('heading', { name: 'Participation Dashboard' })).toBeVisible();
         await expect(
@@ -621,7 +621,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/zh-CN/participation');
+        await page.goto('/zh-CN/affiliate?tab=account');
 
         await expect(page.getByRole('heading', { name: '参与体系看板' })).toBeVisible();
         await expect(page.getByText('账户状态')).toBeVisible();
@@ -737,7 +737,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/zh-CN/participation');
+        await page.goto('/zh-CN/affiliate?tab=account');
 
         await page.getByRole('button', { name: '激活 MANAGED 模式' }).click();
         await expect(page.getByRole('main').getByText('激活前需满足净有效资金门槛')).toBeVisible();
@@ -853,7 +853,7 @@ test.describe('Participation dashboard E2E', () => {
             });
         });
 
-        await page.goto('/zh-TW/participation');
+        await page.goto('/zh-TW/affiliate?tab=account');
 
         await page.getByRole('button', { name: '啟用 MANAGED 模式' }).click();
         await expect(page.getByRole('main').getByText('啟用前需滿足淨有效資金門檻')).toBeVisible();

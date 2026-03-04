@@ -1198,6 +1198,11 @@
                 "processing": "處理中..."
             }
         },
+        "tabs": {
+            "dashboard": "團隊面板",
+            "account": "參與帳戶",
+            "rules": "規則與政策"
+        },
         "common": {
             "copy": "複製"
         },
