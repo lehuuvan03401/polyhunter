@@ -49,20 +49,36 @@ Horus/
 │   ├── app/                    # App Router 页面
 │   │   ├── [locale]/           # 国际化路由
 │   │   └── api/                # API 路由
+│   │       ├── admin/          # 管理后台 API
 │   │       ├── affiliate/      # 联盟推广 API
-│   │       ├── copy-trading/  # 复制交易 API
-│   │       ├── managed-*      # 全托理财/会员管理 API
+│   │       ├── agents/         # AI 代理 API
+│   │       ├── copy-trading/   # 复制交易 API
+│   │       ├── home/           # 首页 API
+│   │       ├── managed-*       # 全托理财/会员管理 API
+│   │       │   ├── managed-liquidation/   # 清算 API
+│   │       │   ├── managed-membership/    # 会员管理 API
+│   │       │   ├── managed-products/      # 产品管理 API
+│   │       │   ├── managed-risk-events/   # 风险事件 API
+│   │       │   ├── managed-settlement/    # 结算 API
+│   │       │   ├── managed-subscriptions/ # 订阅 API
+│   │       ├── markets/        # 市场数据 API
 │   │       ├── participation/  # 参与项目 API
-│   │       ├── reserve-fund/  # 储备金 API
-│   │       └── ...
+│   │       ├── partners/       # 合作伙伴 API
+│   │       ├── proxy/          # 代理 API
+│   │       ├── reserve-fund/   # 储备金 API
+│   │       └── traders/        # 交易者 API
 │   ├── components/             # React 组件
+│   │   ├── agents/             # AI 代理组件
+│   │   ├── managed-wealth/     # 全托理财组件
+│   │   ├── participation/      # 参与项目组件
+│   │   └── ...
 │   ├── lib/                    # 工具库和服务
-│   │   ├── managed-wealth/      # 全托理财核心逻辑
+│   │   ├── managed-wealth/     # 全托理财核心逻辑
 │   │   ├── participation-program/ # 参与项目核心逻辑
 │   │   ├── copy-trading/       # 复制交易核心
 │   │   └── ...
 │   ├── prisma/                 # Prisma 数据库模型
-│   ├── scripts/                 # 实用脚本
+│   ├── scripts/                # 实用脚本
 │   │   ├── workers/            # 后台工作器
 │   │   │   ├── copy-trading-supervisor.ts
 │   │   │   ├── copy-trading-worker.ts
@@ -79,6 +95,8 @@ Horus/
 ├── openspec/                   # OpenSpec 规范管理
 │   ├── specs/                  # 当前规范
 │   └── changes/                # 变更提案
+├── deploy/                     # 部署配置
+│   └── stage1/                 # 阶段一部署（Docker/K8s）
 └── docs/                       # 文档
 ```
 
@@ -202,7 +220,7 @@ Horus/
 
 ### 8. 复制交易系统
 - 复制交易工作器
-- 复制交易监控器
+- 复制交易监控器（Supervisor）
 - 预写执行机制
 - 智能路由（EOA/代理模式）
 - 性能优化（Redis/缓存/队列）
@@ -212,6 +230,22 @@ Horus/
 ### 9. 储备金系统 (Reserve Fund)
 - 资金管理
 - 状态追踪
+
+### 10. AI 代理系统 (Agents)
+- AI 代理组件和 API
+- 代理集成
+
+### 11. 会员管理系统 (Managed Membership)
+- 会员等级管理
+- 会员权益
+
+### 12. 产品管理系统 (Managed Products)
+- 产品配置
+- 风险管理
+
+### 13. 风险事件系统 (Managed Risk Events)
+- 风险事件追踪
+- 风险预警
 
 ## 开发约定
 
@@ -290,7 +324,9 @@ npm run seed:managed-wealth              # 种子数据
 npm run test:managed-wealth:unit         # 单元测试
 npm run test:managed-wealth:e2e          # E2E 测试
 npm run managed-wealth:worker            # 启动全托理财工作器
-npm run managed-liquidation:worker       # 启动清算工作器
+npm run managed-liquidation:worker        # 启动清算工作器
+npm run verify:managed-wealth:lifecycle  # 验证全托理财生命周期
+npm run verify:managed-wealth:marketing  # 验证营销规则
 
 # 合作伙伴计划
 npm run seed:participation-program       # 种子数据
@@ -302,6 +338,14 @@ npm run copy-worker:speed                # 高速模式
 # 环境配置
 npm run env:mainnet                      # 切换到主网
 npm run env:local                        # 切换到本地
+
+# 参与项目
+npm run participation:levels:daily      # 每日等级快照
+npm run participation:promotion:daily    # 每日晋升快照
+
+# 数据验证
+npm run verify:partner:refund-sla        # 验证退款 SLA
+npm run verify:managed-membership:lifecycle # 验证会员生命周期
 ```
 
 ### 智能合约
@@ -419,19 +463,25 @@ openspec show [spec-id] --type spec
 - **add-supervisor-monitoring-templates** - 监控模板
 - **add-supervisor-operational-slo-metrics** - SLO 指标
 - **add-supervisor-settlement-recovery-loop** - 结算恢复循环
+- **close-managed-wealth-loop** - 关闭全托理财循环
+- **enhance-positions-display** - 增强持仓展示
 - **optimize-copy-execution-throughput** - 复制执行吞吐优化
 - **optimize-portfolio-api-performance** - 投资组合 API 性能优化
+- **enforce-redis-sharded-supervisor** - 强制 Redis 分片监控器
 
 ### 当前规范
 - **affiliate-system** - 联盟推广系统
+- **affiliate-landing-ui** - 联盟推广落地页
+- **affiliate-withdrawals** - 联盟提现
 - **copy-trading** - 复制交易系统
 - **copy-execution** - 复制交易执行
+- **fee-logic** - 费用逻辑
+- **global-partner-program** - 全球合作伙伴计划
+- **participation-program** - 参与项目系统
 - **portfolio-api** - 投资组合 API
 - **portfolio-ui** - 投资组合 UI
-- **managed-wealth** - 全托理财系统
-- **participation-program** - 参与项目系统
-- **fee-logic** - 费用逻辑
 - **storage** - 存储规范
+- **view-transaction-history** - 交易历史查看
 
 ## v0.3.0 重大变更
 
@@ -458,6 +508,11 @@ const noToken = market.tokens.find(t => t.outcome === 'No');
 - 自动升级/淘汰
 - 佣金实时计算
 
+### 扩展 API
+- 新增风险事件 API（managed-risk-events）
+- 新增会员管理 API（managed-membership）
+- 新增产品管理 API（managed-products）
+
 ## 文档资源
 
 - [docs/api/](docs/api/) - API 参考
@@ -465,6 +520,9 @@ const noToken = market.tokens.find(t => t.outcome === 'No');
 - [docs/guides/](docs/guides/) - 实用指南
 - [docs/operations/](docs/operations/) - 运维文档
 - [sdk/examples/](sdk/examples/) - SDK 示例
+- [docs/prds/](docs/prds/) - 产品需求文档
+- [docs/plans/](docs/plans/) - 计划文档
+- [docs/reports/](docs/reports/) - 分析报告
 
 ## 许可证
 
