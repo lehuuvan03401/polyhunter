@@ -7,6 +7,7 @@ import {
     computeRefundDeadline,
     isAdminRequest,
     parseMonthKey,
+    pickEliminationCandidates,
     toMonthKey,
 } from '@/lib/participation-program/partner-program';
 
@@ -123,18 +124,11 @@ export async function GET(request: NextRequest) {
             },
         });
 
-        const ranking = await buildPartnerSeatRanking(prisma, activeSeats);
-        const eliminationPreview = [...ranking]
-            .sort((a, b) => {
-                if (a.scoreNetDepositUsd !== b.scoreNetDepositUsd) {
-                    return a.scoreNetDepositUsd - b.scoreNetDepositUsd;
-                }
-                if (a.joinedAt.getTime() !== b.joinedAt.getTime()) {
-                    return b.joinedAt.getTime() - a.joinedAt.getTime();
-                }
-                return b.walletAddress.localeCompare(a.walletAddress);
-            })
-            .slice(0, Math.min(MONTHLY_ELIMINATION_COUNT, ranking.length));
+        const ranking = await buildPartnerSeatRanking(prisma, activeSeats, { monthKey });
+        const eliminationPreview = pickEliminationCandidates(
+            ranking,
+            Math.min(MONTHLY_ELIMINATION_COUNT, ranking.length)
+        );
 
         return NextResponse.json({
             monthKey,
@@ -223,24 +217,14 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        const ranked = await buildPartnerSeatRanking(prisma, activeSeats);
+        const ranked = await buildPartnerSeatRanking(prisma, activeSeats, { monthKey });
 
         const eliminateCount = Math.min(
             parsed.data.eliminateCount ?? MONTHLY_ELIMINATION_COUNT,
             ranked.length
         );
 
-        const eliminationCandidates = [...ranked]
-            .sort((a, b) => {
-                if (a.scoreNetDepositUsd !== b.scoreNetDepositUsd) {
-                    return a.scoreNetDepositUsd - b.scoreNetDepositUsd;
-                }
-                if (a.joinedAt.getTime() !== b.joinedAt.getTime()) {
-                    return b.joinedAt.getTime() - a.joinedAt.getTime();
-                }
-                return b.walletAddress.localeCompare(a.walletAddress);
-            })
-            .slice(0, eliminateCount);
+        const eliminationCandidates = pickEliminationCandidates(ranked, eliminateCount);
 
         if (parsed.data.dryRun) {
             return NextResponse.json({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import {
@@ -15,6 +15,7 @@ import {
     Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useManagedWalletAuth } from '@/lib/managed-wealth/wallet-auth-client';
 
 const DEFAULT_ELIMINATION_COUNT = 10;
 
@@ -113,6 +114,7 @@ function currentMonthKey(): string {
 export default function AdminPartnerOpsPage() {
     const { ready, authenticated } = usePrivy();
     const { wallets } = useWallets();
+    const { createWalletAuthHeaders } = useManagedWalletAuth();
     const adminWallet = wallets[0]?.address || '';
 
     const [loading, setLoading] = useState(false);
@@ -133,18 +135,33 @@ export default function AdminPartnerOpsPage() {
         setActionLoading((prev) => ({ ...prev, [key]: value }));
     };
 
-    const adminHeaders = useMemo(() => ({
-        'x-admin-wallet': adminWallet,
-    }), [adminWallet]);
+    const createAdminHeaders = useCallback(async (method: string, pathWithQuery: string) => {
+        const walletHeaders = await createWalletAuthHeaders({
+            walletAddress: adminWallet,
+            method,
+            pathWithQuery,
+        });
+        return {
+            ...walletHeaders,
+            'x-admin-wallet': adminWallet.toLowerCase(),
+        };
+    }, [adminWallet, createWalletAuthHeaders]);
 
     const fetchAll = useCallback(async () => {
         if (!adminWallet) return;
         setLoading(true);
         try {
+            const seatsPath = `/api/partners/seats?monthKey=${encodeURIComponent(monthKey)}`;
+            const [configHeaders, seatsHeaders, refundsHeaders] = await Promise.all([
+                createAdminHeaders('GET', '/api/partners/config'),
+                createAdminHeaders('GET', seatsPath),
+                createAdminHeaders('GET', '/api/partners/refunds?status=PENDING'),
+            ]);
+
             const [configRes, seatsRes, refundsRes] = await Promise.all([
-                fetch('/api/partners/config', { headers: adminHeaders }),
-                fetch(`/api/partners/seats?monthKey=${encodeURIComponent(monthKey)}`, { headers: adminHeaders }),
-                fetch('/api/partners/refunds?status=PENDING', { headers: adminHeaders }),
+                fetch('/api/partners/config', { headers: configHeaders }),
+                fetch(seatsPath, { headers: seatsHeaders }),
+                fetch('/api/partners/refunds?status=PENDING', { headers: refundsHeaders }),
             ]);
 
             const [configData, seatsData, refundsData] = await Promise.all([
@@ -172,7 +189,7 @@ export default function AdminPartnerOpsPage() {
         } finally {
             setLoading(false);
         }
-    }, [adminHeaders, adminWallet, monthKey]);
+    }, [createAdminHeaders, adminWallet, monthKey]);
 
     const updateConfig = async () => {
         if (!adminWallet) return;
@@ -186,11 +203,12 @@ export default function AdminPartnerOpsPage() {
 
         setLoadingKey('updateConfig', true);
         try {
+            const headers = await createAdminHeaders('POST', '/api/partners/config');
             const res = await fetch('/api/partners/config', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...adminHeaders,
+                    ...headers,
                 },
                 body: JSON.stringify({
                     refillPriceUsd,
@@ -216,11 +234,12 @@ export default function AdminPartnerOpsPage() {
         const count = Number(eliminateCount) || DEFAULT_ELIMINATION_COUNT;
         setLoadingKey('dryRun', true);
         try {
+            const headers = await createAdminHeaders('POST', '/api/partners/cycle/eliminate');
             const res = await fetch('/api/partners/cycle/eliminate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...adminHeaders,
+                    ...headers,
                 },
                 body: JSON.stringify({
                     monthKey,
@@ -250,11 +269,12 @@ export default function AdminPartnerOpsPage() {
         const count = Number(eliminateCount) || DEFAULT_ELIMINATION_COUNT;
         setLoadingKey('executeElimination', true);
         try {
+            const headers = await createAdminHeaders('POST', '/api/partners/cycle/eliminate');
             const res = await fetch('/api/partners/cycle/eliminate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...adminHeaders,
+                    ...headers,
                 },
                 body: JSON.stringify({
                     monthKey,
@@ -286,11 +306,12 @@ export default function AdminPartnerOpsPage() {
 
         setLoadingKey(`refund-${refundId}`, true);
         try {
+            const headers = await createAdminHeaders('POST', '/api/partners/refunds');
             const res = await fetch('/api/partners/refunds', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...adminHeaders,
+                    ...headers,
                 },
                 body: JSON.stringify({
                     refundId,

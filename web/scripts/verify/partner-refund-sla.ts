@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import {
+    buildPartnerAdminHeaders,
     evaluateRefundSla,
     parseNonNegativeInt,
     type PendingRefund,
@@ -16,6 +17,7 @@ async function main(): Promise<void> {
         process.env.PARTNER_OPS_ADMIN_WALLET ||
         process.env.ADMIN_WALLETS?.split(',').map((v) => v.trim()).filter(Boolean)[0] ||
         '';
+    const adminPrivateKey = process.env.PARTNER_OPS_ADMIN_PRIVATE_KEY;
 
     if (!adminWallet) {
         throw new Error('Missing PARTNER_OPS_ADMIN_WALLET (or ADMIN_WALLETS first entry)');
@@ -24,10 +26,15 @@ async function main(): Promise<void> {
     const allowedOverdue = parseNonNegativeInt(process.env.PARTNER_REFUND_SLA_ALLOWED_OVERDUE, 0);
     const now = Date.now();
 
-    const res = await fetch(`${baseUrl}/api/partners/refunds?status=PENDING`, {
-        headers: {
-            'x-admin-wallet': adminWallet,
-        },
+    const pathWithQuery = '/api/partners/refunds?status=PENDING';
+    const adminHeaders = await buildPartnerAdminHeaders({
+        method: 'GET',
+        pathWithQuery,
+        adminWallet,
+        adminPrivateKey,
+    });
+    const res = await fetch(`${baseUrl}${pathWithQuery}`, {
+        headers: adminHeaders,
     });
 
     const data = (await res.json().catch(() => ({}))) as RefundQueueResponse;

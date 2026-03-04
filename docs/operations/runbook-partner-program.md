@@ -22,7 +22,9 @@ This runbook covers monthly elimination cadence, 7-day refund SLA, and incident 
 
 ## Authentication
 
-- Admin endpoints require header `x-admin-wallet` matching `ADMIN_WALLETS`.
+- Admin endpoints require `x-admin-wallet` matching `ADMIN_WALLETS`.
+- In production, admin requests also require wallet signature headers (`x-wallet-signature`, `x-wallet-timestamp`) for replay protection.
+- Optional mirrored admin signature headers (`x-admin-signature`, `x-admin-timestamp`) are supported for service-to-service callers.
 - User-scoped endpoints require wallet headers/signature as defined by managed wallet auth.
 
 ## Monthly Cadence
@@ -84,6 +86,7 @@ Run monthly elimination trigger (cron/CI):
 cd web
 PARTNER_OPS_BASE_URL=https://<host> \
 PARTNER_OPS_ADMIN_WALLET=0x... \
+PARTNER_OPS_ADMIN_PRIVATE_KEY=0x... \
 PARTNER_ELIMINATION_MONTH_KEY=2026-02 \
 PARTNER_ELIMINATION_COUNT=10 \
 npm run partner:eliminate:monthly
@@ -95,6 +98,7 @@ Run refund SLA watchdog (alert on overdue):
 cd web
 PARTNER_OPS_BASE_URL=https://<host> \
 PARTNER_OPS_ADMIN_WALLET=0x... \
+PARTNER_OPS_ADMIN_PRIVATE_KEY=0x... \
 PARTNER_REFUND_SLA_ALLOWED_OVERDUE=0 \
 npm run verify:partner:refund-sla
 ```

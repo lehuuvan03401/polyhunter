@@ -9,6 +9,7 @@ import {
     getActiveSeatCount,
     isAdminRequest,
     parseMonthKey,
+    resolvePartnerSeatFeeUsd,
 } from '@/lib/participation-program/partner-program';
 
 export const dynamic = 'force-dynamic';
@@ -168,7 +169,14 @@ export async function POST(request: NextRequest) {
                 };
             }
 
-            const seatFeeUsd = parsed.data.seatFeeUsd ?? config.refillPriceUsd;
+            const seatFeeResolution = resolvePartnerSeatFeeUsd({
+                configuredSeatFeeUsd: config.refillPriceUsd,
+                requestedSeatFeeUsd: parsed.data.seatFeeUsd,
+            });
+            if (!seatFeeResolution.ok) {
+                return seatFeeResolution;
+            }
+            const seatFeeUsd = seatFeeResolution.seatFeeUsd;
             const now = new Date();
             const seat = existing
                 ? await tx.partnerSeat.update({

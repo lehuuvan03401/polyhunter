@@ -38,6 +38,35 @@
 
 ---
 
+# 任务计划：全球合伙人制度 P0/P1 风险收口（2026-03-04）
+
+## 目标
+- 收口四项高优先级问题：排序一致性、席位费口径、管理鉴权强度、月度口径一致性。
+- 保持现有 API 兼容，避免对运营流程产生破坏性变更。
+
+## 分阶段
+- [complete] 阶段 1：修复方案落地（服务层 + API）
+- [complete] 阶段 2：测试补齐与回归验证
+- [in_progress] 阶段 3：文档/PR 验收项同步与阶段提交
+
+## 执行清单
+- [complete] 统一排名和淘汰候选排序比较器（复用同一规则）
+- [complete] 席位购买口径改为“强制使用配置补位价”，移除请求方自带 seatFee 覆盖
+- [complete] 管理员接口增加签名鉴权（与现有钱包签名链路对齐）
+- [complete] 月度淘汰评分按 `monthKey` 快照边界计算，避免跨月污染
+- [complete] 补齐/更新对应单测与集成测试
+
+## 本轮验证
+- `cd web && npx vitest run lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts app/api/partners/queue/route.test.ts lib/participation-program/partner-ops-automation.test.ts`（30/30 通过）
+- `cd web && npx tsc --noEmit`（通过）
+
+## 错误记录
+| 时间 | 位置 | 错误 | 处理 |
+|---|---|---|---|
+| 2026-03-04 | planning-with-files session-catchup | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/session-catchup.py` 路径为空导致找不到脚本 | 已改为直接读取本地 `task_plan.md/findings.md/progress.md` 做上下文恢复 |
+
+---
+
 # 任务计划：Horus参与机制与全球合伙人计划（需求整理）
 
 ## 目标

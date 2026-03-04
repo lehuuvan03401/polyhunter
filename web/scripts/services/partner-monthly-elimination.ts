@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import {
+    buildPartnerAdminHeaders,
     evaluateEliminationResponse,
     parseBool,
     parsePositiveInt,
@@ -13,6 +14,7 @@ async function main(): Promise<void> {
         process.env.PARTNER_OPS_ADMIN_WALLET ||
         process.env.ADMIN_WALLETS?.split(',').map((v) => v.trim()).filter(Boolean)[0] ||
         '';
+    const adminPrivateKey = process.env.PARTNER_OPS_ADMIN_PRIVATE_KEY;
 
     if (!adminWallet) {
         throw new Error('Missing PARTNER_OPS_ADMIN_WALLET (or ADMIN_WALLETS first entry)');
@@ -31,11 +33,19 @@ async function main(): Promise<void> {
         reason,
     };
 
-    const res = await fetch(`${baseUrl}/api/partners/cycle/eliminate`, {
+    const pathWithQuery = '/api/partners/cycle/eliminate';
+    const adminHeaders = await buildPartnerAdminHeaders({
+        method: 'POST',
+        pathWithQuery,
+        adminWallet,
+        adminPrivateKey,
+    });
+
+    const res = await fetch(`${baseUrl}${pathWithQuery}`, {
         method: 'POST',
         headers: {
             'content-type': 'application/json',
-            'x-admin-wallet': adminWallet,
+            ...adminHeaders,
         },
         body: JSON.stringify(payload),
     });

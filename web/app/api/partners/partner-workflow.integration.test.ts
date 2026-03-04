@@ -316,6 +316,10 @@ async function setupPartnerRoutes() {
                     ...seat,
                     rank: index + 1,
                 })),
+        pickEliminationCandidates: <T extends { scoreNetDepositUsd: number }>(ranking: T[], eliminateCount: number): T[] =>
+            [...ranking]
+                .sort((a, b) => a.scoreNetDepositUsd - b.scoreNetDepositUsd)
+                .slice(0, eliminateCount),
     }));
 
     const eliminationRoute = await import('@/app/api/partners/cycle/eliminate/route');

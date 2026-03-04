@@ -1,5 +1,11 @@
 import type { PrismaClient } from '@prisma/client';
 import type { NextRequest } from 'next/server';
+import { ethers } from 'ethers';
+import {
+    buildManagedWalletAuthMessage,
+    buildManagedWalletSessionMessage,
+    MANAGED_WALLET_AUTH_WINDOW_MS,
+} from '@/lib/managed-wealth/wallet-auth-message';
 
 export const DEFAULT_PARTNER_MAX_SEATS = 100;
 export const MONTHLY_ELIMINATION_COUNT = 10;
@@ -32,6 +38,14 @@ export function computeRefundDeadline(eliminatedAt: Date): Date {
     return new Date(eliminatedAt.getTime() + REFUND_SLA_DAYS * 24 * 60 * 60 * 1000);
 }
 
+export function getMonthRange(monthKey: string): { monthStart: Date; monthEnd: Date } {
+    const monthStart = parseMonthKey(monthKey);
+    const monthEnd = new Date(
+        Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1)
+    );
+    return { monthStart, monthEnd };
+}
+
 export async function ensurePartnerProgramConfig(prisma: PrismaClient) {
     return prisma.partnerProgramConfig.upsert({
         where: { id: 'GLOBAL' },
@@ -55,7 +69,10 @@ export async function getActiveSeatCount(prisma: PrismaClient): Promise<number> 
 
 export async function getSeatScoreMap(
     prisma: PrismaClient,
-    walletAddresses: string[]
+    walletAddresses: string[],
+    options?: {
+        monthKey?: string;
+    }
 ): Promise<Map<string, number>> {
     const wallets = Array.from(
         new Set(walletAddresses.map((wallet) => wallet.toLowerCase().trim()).filter(Boolean))
@@ -66,8 +83,23 @@ export async function getSeatScoreMap(
         return map;
     }
 
+    const scoreWhere: {
+        walletAddress: { in: string[] };
+        snapshotDate?: { gte: Date; lt: Date };
+    } = {
+        walletAddress: { in: wallets },
+    };
+
+    if (options?.monthKey) {
+        const { monthStart, monthEnd } = getMonthRange(options.monthKey);
+        scoreWhere.snapshotDate = {
+            gte: monthStart,
+            lt: monthEnd,
+        };
+    }
+
     const latestSnapshots = await prisma.dailyLevelSnapshot.findMany({
-        where: { walletAddress: { in: wallets } },
+        where: scoreWhere,
         orderBy: [{ walletAddress: 'asc' }, { snapshotDate: 'desc' }],
         distinct: ['walletAddress'],
         select: {
@@ -104,9 +136,90 @@ export type RankedPartnerSeat = PartnerSeatForRanking & {
     scoreActiveManagedUsd: number;
 };
 
+type PartnerSeatScoreComparable = Pick<
+    RankedPartnerSeat,
+    'walletAddress' | 'joinedAt' | 'scoreNetDepositUsd' | 'scoreActiveManagedUsd'
+>;
+
+export function comparePartnerSeatRankingOrder(
+    a: PartnerSeatScoreComparable,
+    b: PartnerSeatScoreComparable
+): number {
+    if (b.scoreNetDepositUsd !== a.scoreNetDepositUsd) {
+        return b.scoreNetDepositUsd - a.scoreNetDepositUsd;
+    }
+    if (b.scoreActiveManagedUsd !== a.scoreActiveManagedUsd) {
+        return b.scoreActiveManagedUsd - a.scoreActiveManagedUsd;
+    }
+    if (a.joinedAt.getTime() !== b.joinedAt.getTime()) {
+        return a.joinedAt.getTime() - b.joinedAt.getTime();
+    }
+    return a.walletAddress.localeCompare(b.walletAddress);
+}
+
+export function comparePartnerSeatEliminationOrder(
+    a: PartnerSeatScoreComparable,
+    b: PartnerSeatScoreComparable
+): number {
+    return -comparePartnerSeatRankingOrder(a, b);
+}
+
+export function pickEliminationCandidates<T extends PartnerSeatScoreComparable>(
+    ranking: T[],
+    eliminateCount: number
+): T[] {
+    if (eliminateCount <= 0 || ranking.length === 0) {
+        return [];
+    }
+    return [...ranking]
+        .sort(comparePartnerSeatEliminationOrder)
+        .slice(0, Math.min(eliminateCount, ranking.length));
+}
+
+export function resolvePartnerSeatFeeUsd(params: {
+    configuredSeatFeeUsd: number;
+    requestedSeatFeeUsd?: number;
+}):
+    | {
+          ok: true;
+          seatFeeUsd: number;
+      }
+    | {
+          ok: false;
+          code: 'SEAT_FEE_MISMATCH';
+          expectedSeatFeeUsd: number;
+          providedSeatFeeUsd: number;
+      } {
+    const { configuredSeatFeeUsd, requestedSeatFeeUsd } = params;
+    if (requestedSeatFeeUsd === undefined) {
+        return {
+            ok: true,
+            seatFeeUsd: configuredSeatFeeUsd,
+        };
+    }
+
+    const sameFee = Math.abs(requestedSeatFeeUsd - configuredSeatFeeUsd) < 1e-6;
+    if (!sameFee) {
+        return {
+            ok: false,
+            code: 'SEAT_FEE_MISMATCH',
+            expectedSeatFeeUsd: configuredSeatFeeUsd,
+            providedSeatFeeUsd: requestedSeatFeeUsd,
+        };
+    }
+
+    return {
+        ok: true,
+        seatFeeUsd: configuredSeatFeeUsd,
+    };
+}
+
 export async function buildPartnerSeatRanking(
     prisma: PrismaClient,
-    seats: PartnerSeatForRanking[]
+    seats: PartnerSeatForRanking[],
+    options?: {
+        monthKey?: string;
+    }
 ): Promise<RankedPartnerSeat[]> {
     if (seats.length === 0) {
         return [];
@@ -114,7 +227,8 @@ export async function buildPartnerSeatRanking(
 
     const scoreMap = await getSeatScoreMap(
         prisma,
-        seats.map((seat) => seat.walletAddress)
+        seats.map((seat) => seat.walletAddress),
+        { monthKey: options?.monthKey }
     );
 
     // Get active managed equity for tie-breaking
@@ -144,21 +258,7 @@ export async function buildPartnerSeatRanking(
             scoreNetDepositUsd: Number(scoreMap.get(seat.walletAddress.toLowerCase()) ?? 0),
             scoreActiveManagedUsd: Number(activeManagedMap.get(seat.walletAddress.toLowerCase()) ?? 0),
         }))
-        .sort((a, b) => {
-            if (b.scoreNetDepositUsd !== a.scoreNetDepositUsd) {
-                return b.scoreNetDepositUsd - a.scoreNetDepositUsd;
-            }
-            // Tie-breaker 1: Active managed equity (higher is better)
-            if (b.scoreActiveManagedUsd !== a.scoreActiveManagedUsd) {
-                return b.scoreActiveManagedUsd - a.scoreActiveManagedUsd;
-            }
-            // Tie-breaker 2: Platform loyalty / seniority (earlier joined is better)
-            if (a.joinedAt.getTime() !== b.joinedAt.getTime()) {
-                return a.joinedAt.getTime() - b.joinedAt.getTime();
-            }
-            // Tie-breaker 3: Deterministic fallback
-            return a.walletAddress.localeCompare(b.walletAddress);
-        })
+        .sort(comparePartnerSeatRankingOrder)
         .map((seat, index) => ({
             ...seat,
             rank: index + 1,
@@ -172,15 +272,100 @@ export function resolveAdminWallets(): string[] {
         .filter(Boolean);
 }
 
-export function isAdminRequest(request: NextRequest): boolean {
+type AdminRequestLike = Pick<Request, 'headers' | 'method' | 'url'> & {
+    nextUrl?: {
+        pathname: string;
+        search: string;
+    };
+};
+
+function shouldRequireAdminSignature(): boolean {
+    const configured = process.env.PARTNER_ADMIN_REQUIRE_SIGNATURE;
+    if (configured === 'true') return true;
+    if (configured === 'false') return false;
+    if (process.env.NODE_ENV === 'development') return false;
+    return true;
+}
+
+function getRequestPathWithQuery(request: AdminRequestLike): string {
+    if (request.nextUrl) {
+        return `${request.nextUrl.pathname}${request.nextUrl.search}`;
+    }
+    try {
+        const parsed = new URL(request.url);
+        return `${parsed.pathname}${parsed.search}`;
+    } catch {
+        return '/';
+    }
+}
+
+function verifyAdminRequestSignature(request: AdminRequestLike, walletAddress: string): boolean {
+    if (process.env.NEXT_PUBLIC_E2E_MOCK_AUTH === 'true') {
+        return true;
+    }
+
+    const signature =
+        request.headers.get('x-admin-signature') ?? request.headers.get('x-wallet-signature');
+    const timestampRaw =
+        request.headers.get('x-admin-timestamp') ?? request.headers.get('x-wallet-timestamp');
+    const authType =
+        request.headers.get('x-admin-auth-type') ?? request.headers.get('x-wallet-auth-type');
+
+    if (!signature || !timestampRaw) {
+        return false;
+    }
+
+    const timestamp = Number(timestampRaw);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return false;
+    }
+
+    if (Math.abs(Date.now() - timestamp) > MANAGED_WALLET_AUTH_WINDOW_MS) {
+        return false;
+    }
+
+    const message = authType === 'session'
+        ? buildManagedWalletSessionMessage({
+            walletAddress,
+            timestamp,
+        })
+        : buildManagedWalletAuthMessage({
+            walletAddress,
+            method: request.method,
+            pathWithQuery: getRequestPathWithQuery(request),
+            timestamp,
+        });
+
+    try {
+        const recovered = ethers.utils.verifyMessage(message, signature).toLowerCase();
+        return recovered === walletAddress;
+    } catch {
+        return false;
+    }
+}
+
+export function isAdminRequest(request: NextRequest | AdminRequestLike): boolean {
     const adminWallets = resolveAdminWallets();
-    const adminWallet = request.headers.get('x-admin-wallet');
     if (process.env.NODE_ENV === 'development' && adminWallets.length === 0) {
         console.warn('[PartnerProgram] Admin auth bypassed in development mode');
         return true;
     }
+
+    const adminWalletRaw =
+        request.headers.get('x-admin-wallet') ?? request.headers.get('x-wallet-address');
+    if (!adminWalletRaw) return false;
+    const adminWallet = normalizeWalletAddress(adminWalletRaw);
     if (!adminWallet) return false;
-    return adminWallets.includes(adminWallet.toLowerCase());
+
+    if (!adminWallets.includes(adminWallet)) {
+        return false;
+    }
+
+    if (!shouldRequireAdminSignature()) {
+        return true;
+    }
+
+    return verifyAdminRequestSignature(request, adminWallet);
 }
 
 export function normalizeWalletAddress(input: string): string | null {

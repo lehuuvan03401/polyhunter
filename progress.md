@@ -518,3 +518,28 @@
   - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`：补充 `Navbar.participation` 文案。
   - 校验：`cd web && npx tsc --noEmit` -> 通过。
   - 提交：`d523403` (`surface participation in main nav`)
+
+## 2026-03-04（全球合伙人制度二次深度复盘）
+- 已基于最新提交重新完成规则核对：`partner-program.ts`、`partners/*` API、`schema.prisma`、runbook、spec、测试文件。
+- 已确认新增增强已落地：Tie-breaker、Queue、EliminationTask、Refund execute 路由、运维自动化脚本。
+- 已确认四项待收口问题并进入修复实施：
+  - 排序比较器一致性
+  - 席位费口径强约束
+  - 管理员签名鉴权
+  - `monthKey` 边界评分
+- 已更新 `task_plan.md` / `findings.md` 作为本轮实施基线。
+- 已完成后端修复：
+  - `web/lib/participation-program/partner-program.ts`：新增统一排序比较器、淘汰候选选择器、`monthKey` 评分窗口、席位费强约束、管理员签名鉴权。
+  - `web/app/api/partners/cycle/eliminate/route.ts`、`web/app/api/partners/rankings/route.ts`：淘汰预览/执行改为复用统一候选选择器，并按 `monthKey` 构建 ranking。
+  - `web/app/api/partners/seats/route.ts`：席位费改为配置价强约束，不再允许请求侧随意覆盖。
+- 已完成前端与运维接线：
+  - `web/app/[locale]/dashboard/admin/partners/page.tsx`：管理台请求改为携带钱包签名头 + `x-admin-wallet`。
+  - `web/lib/participation-program/partner-ops-automation.ts`：新增签名头构建 helper。
+  - `web/scripts/services/partner-monthly-elimination.ts`、`web/scripts/verify/partner-refund-sla.ts`：支持 `PARTNER_OPS_ADMIN_PRIVATE_KEY` 签名请求。
+  - `docs/operations/runbook-partner-program.md`：补充生产签名鉴权要求与脚本环境变量。
+- 已补充测试：
+  - `web/lib/participation-program/partner-program.test.ts`：新增席位费约束、淘汰候选比较器、管理员签名鉴权、monthKey 评分窗口测试。
+  - `web/app/api/partners/partner-workflow.integration.test.ts`：补齐 `pickEliminationCandidates` mock，保持流程集成测试通过。
+- 已执行验证：
+  - `cd web && npx vitest run lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts app/api/partners/queue/route.test.ts lib/participation-program/partner-ops-automation.test.ts` -> `5 files / 30 tests` 全通过。
+  - `cd web && npx tsc --noEmit` -> 通过。
