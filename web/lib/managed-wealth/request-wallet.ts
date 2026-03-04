@@ -14,6 +14,7 @@ type ResolveWalletContextOptions = {
     bodyWallet?: string | null;
     requireHeader?: boolean;
     requireSignature?: boolean;
+    allowSessionAuth?: boolean;
 };
 
 type ResolveWalletContextResult =
@@ -38,6 +39,9 @@ export function getWalletContextErrorCode(error: string): string {
     }
     if (error === 'Invalid wallet signature format') {
         return 'WALLET_SIGNATURE_FORMAT_INVALID';
+    }
+    if (error === 'Session wallet signature is not allowed for this request') {
+        return 'WALLET_SIGNATURE_SCOPE_INVALID';
     }
     if (error === 'Missing wallet address') {
         return 'WALLET_ADDRESS_REQUIRED';
@@ -96,6 +100,7 @@ export function resolveWalletContext(
     const shouldRequireSignature = options.requireSignature !== undefined
         ? options.requireSignature
         : process.env.MANAGED_WEALTH_REQUIRE_SIGNATURE === 'true';
+    const allowSessionAuth = options.allowSessionAuth ?? true;
     const bypassSignature = isCopyTradingMockAuthBypassEnabled();
 
     if (shouldRequireSignature && !bypassSignature) {
@@ -131,6 +136,13 @@ export function resolveWalletContext(
 
         let message: string;
         if (authType === 'session') {
+            if (!allowSessionAuth) {
+                return {
+                    ok: false,
+                    status: 401,
+                    error: 'Session wallet signature is not allowed for this request',
+                };
+            }
             // Session-style: path-agnostic wallet ownership proof (used for GET requests)
             message = buildManagedWalletSessionMessage({
                 walletAddress: resolvedWallet,

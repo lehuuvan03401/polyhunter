@@ -74,33 +74,5 @@ export function useRedeem() {
         }
     };
 
-    const redeemSim = async (walletAddress: string, tokenId: string, conditionId: string, outcome: string, slug: string) => {
-        setIsRedeeming(true);
-        const toastId = toast.loading(`Redeeming simulated position...`);
-
-        try {
-            const res = await fetch('/api/copy-trading/redeem-sim', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ walletAddress, tokenId, conditionId, outcome, marketSlug: slug })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Failed to redeem');
-            }
-
-            const data = await res.json();
-            toast.success(`Redemption successful! Profit: $${data.profit.toFixed(4)}`, { id: toastId });
-            return true;
-        } catch (err: any) {
-            console.error("Redeem failed:", err);
-            toast.error(`Redeem failed: ${err.message}`, { id: toastId });
-            return false;
-        } finally {
-            setIsRedeeming(false);
-        }
-    };
-
-    return { redeem, redeemSim, isRedeeming };
+    return { redeem, isRedeeming };
 }

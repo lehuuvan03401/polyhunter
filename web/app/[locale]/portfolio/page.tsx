@@ -76,7 +76,7 @@ export default function PortfolioPage() {
     // Fetch simulated metrics, positions, and HISTORY
     const { metrics: ctMetrics } = useCopyTradingMetrics(user?.wallet?.address || '');
     const { positions: simPositions } = useSimulatedPositions(user?.wallet?.address || '');
-    const { redeem, redeemSim, isRedeeming } = useRedeem();
+    const { redeem, isRedeeming } = useRedeem();
     const { history: simHistory } = useSimulatedHistory(user?.wallet?.address || '');
     const { proxyAddress, stats: proxyStats } = useProxy();
 
@@ -934,30 +934,6 @@ export default function PortfolioPage() {
                                                                                 }}
                                                                                 disabled={isRedeeming}
                                                                                 className="text-[10px] bg-green-500 text-white px-2 py-1 rounded shadow-sm hover:bg-green-600 active:bg-green-700 disabled:opacity-50 transition-colors"
-                                                                            >
-                                                                                Redeem
-                                                                            </button>
-                                                                        )}
-                                                                        {/* Mock Redeem (Sim) */}
-                                                                        {pos._type === 'sim' && pos.status === 'SETTLED_WIN' && (
-                                                                            <button
-                                                                                onClick={async (e) => {
-                                                                                    e.stopPropagation();
-                                                                                    if (user?.wallet?.address) {
-                                                                                        await redeemSim(
-                                                                                            user.wallet.address,
-                                                                                            pos.tokenId,
-                                                                                            pos.conditionId,
-                                                                                            pos.outcome,
-                                                                                            pos.slug
-                                                                                        );
-                                                                                        // Refresh positions after mock redeem
-                                                                                        // We can force reload or rely on revalidation
-                                                                                        // For now, let's just wait a bit or use router refresh if available
-                                                                                    }
-                                                                                }}
-                                                                                disabled={isRedeeming}
-                                                                                className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded shadow-sm hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50 transition-colors"
                                                                             >
                                                                                 Redeem
                                                                             </button>

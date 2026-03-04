@@ -23,6 +23,7 @@ export function resolveCopyTradingWalletContext(
         bodyWallet: options.bodyWallet,
         requireHeader: options.requireHeader ?? false,
         requireSignature: shouldRequireSignature(),
+        allowSessionAuth: true,
     });
 }
 
@@ -30,9 +31,12 @@ export function resolveCopyTradingWriteWalletContext(
     request: NextRequest,
     options: Omit<ResolveCopyTradingWalletOptions, 'requireHeader'> = {}
 ) {
-    return resolveCopyTradingWalletContext(request, {
-        ...options,
+    return resolveWalletContext(request, {
+        queryWallet: options.queryWallet,
+        bodyWallet: options.bodyWallet,
         requireHeader: true,
+        requireSignature: shouldRequireSignature(),
+        allowSessionAuth: false,
     });
 }
 
