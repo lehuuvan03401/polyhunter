@@ -3,19 +3,19 @@ import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, ERC20_ABI, USDC_DECIMALS, PROXY_FACTORY_ABI } from '@/lib/contracts/abis';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import { getCopyTradingChainId } from '@/lib/copy-trading/runtime-config';
 
 export const dynamic = 'force-dynamic';
 
 const MIN_WALLET_MATIC = Number(process.env.COPY_TRADING_MIN_WALLET_MATIC || '0.1');
 const MIN_PROXY_USDC = Number(process.env.COPY_TRADING_MIN_PROXY_USDC || '1');
+const CHAIN_ID = getCopyTradingChainId();
 
 const getProvider = () => {
     // readiness 走只读链路：优先使用独立 COPY_TRADING_RPC_URL，避免挤占前端公用 RPC。
     const rpcUrl = process.env.COPY_TRADING_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com';
     return new ethers.providers.JsonRpcProvider(rpcUrl);
 };
-
-const getChainId = () => Number(process.env.NEXT_PUBLIC_CHAIN_ID || process.env.CHAIN_ID || 137);
 
 const getAddresses = (chainId: number) => (chainId === 137 || chainId === 31337 || chainId === 1337)
     ? CONTRACT_ADDRESSES.polygon
@@ -45,9 +45,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 });
     }
 
-    const chainId = getChainId();
     const provider = getProvider();
-    const addresses = getAddresses(chainId);
+    const addresses = getAddresses(CHAIN_ID);
 
     const voidSigner = new ethers.VoidSigner(walletAddress, provider);
 

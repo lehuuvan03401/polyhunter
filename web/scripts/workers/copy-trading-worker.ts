@@ -30,14 +30,15 @@ import { DataApiClient } from '../../../sdk/src/clients/data-api';
 import { GammaApiClient } from '../../../sdk/src/index';
 import { getSpeedProfile } from '../../config/speed-profile';
 import { TradeOrchestrator } from '../../../sdk/src/core/trade-orchestrator.js';
+import { getCopyTradingChainId, isCopyTradingDryRunEnabled } from '../../lib/copy-trading/runtime-config';
 
 // --- CONFIG ---
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545';
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
-const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
+const CHAIN_ID = getCopyTradingChainId();
 const POLL_INTERVAL_MS = 30000; // Refresh configs every 30s
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
-const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
+const DRY_RUN = isCopyTradingDryRunEnabled();
 const speedProfile = getSpeedProfile();
 const CLOB_API_KEY = process.env.POLY_API_KEY || process.env.CLOB_API_KEY;
 const CLOB_API_SECRET = process.env.POLY_API_SECRET || process.env.CLOB_API_SECRET;

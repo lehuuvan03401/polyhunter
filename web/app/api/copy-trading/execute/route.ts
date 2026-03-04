@@ -12,7 +12,10 @@ import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { GuardrailService } from '@/lib/services/guardrail-service';
 import { createTTLCache } from '@/lib/server-cache';
 import { getSpeedProfile } from '@/config/speed-profile';
-import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import {
+    resolveCopyTradingWalletContext,
+    resolveCopyTradingWriteWalletContext,
+} from '@/lib/copy-trading/request-wallet';
 import { getCopyTradingChainId } from '@/lib/copy-trading/runtime-config';
 
 // Trading configuration from environment (Restored)
@@ -329,9 +332,8 @@ export async function POST(request: NextRequest) {
             orderMode = 'limit',
         } = body;
 
-        const walletCheck = resolveCopyTradingWalletContext(request, {
+        const walletCheck = resolveCopyTradingWriteWalletContext(request, {
             bodyWallet: walletAddress,
-            requireHeader: true,
         });
 
         if (!tradeId) {

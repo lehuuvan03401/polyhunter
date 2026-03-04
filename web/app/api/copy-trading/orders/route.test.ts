@@ -24,6 +24,7 @@ vi.mock('@/lib/prisma', () => ({
 
 vi.mock('@/lib/copy-trading/request-wallet', () => ({
     resolveCopyTradingWalletContext: mockResolveCopyTradingWalletContext,
+    resolveCopyTradingWriteWalletContext: mockResolveCopyTradingWalletContext,
 }));
 
 import { GET } from './route';

@@ -45,4 +45,16 @@ describe('createTTLCache', () => {
         expect(second).toBe(42);
         expect(calls).toBe(1);
     });
+
+    it('stays bounded under sustained write pressure', async () => {
+        const cache = createTTLCache<number>({ maxEntries: 100, sweepIntervalMs: 1000 });
+
+        for (let index = 0; index < 5_000; index += 1) {
+            cache.set(`key-${index}`, index, 60_000);
+        }
+
+        expect(cache.size()).toBe(100);
+        expect(cache.get('key-0')).toBeUndefined();
+        expect(cache.get('key-4999')).toBe(4999);
+    });
 });

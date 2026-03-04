@@ -106,6 +106,7 @@ vi.mock('@/config/speed-profile', () => ({
 
 vi.mock('@/lib/copy-trading/request-wallet', () => ({
     resolveCopyTradingWalletContext: mockResolveCopyTradingWalletContext,
+    resolveCopyTradingWriteWalletContext: mockResolveCopyTradingWalletContext,
 }));
 
 import { POST } from './route';

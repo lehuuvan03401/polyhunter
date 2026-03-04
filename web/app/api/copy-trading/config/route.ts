@@ -8,7 +8,10 @@ import { polyClient } from '@/lib/polymarket';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { EncryptionService } from '@/lib/encryption'; // Import EncryptionService
-import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import {
+    resolveCopyTradingWalletContext,
+    resolveCopyTradingWriteWalletContext,
+} from '@/lib/copy-trading/request-wallet';
 
 const redactConfigSecrets = (config: any) => {
     if (!config) return config;
@@ -110,9 +113,8 @@ export async function POST(request: NextRequest) {
             apiPassphrase
         } = body;
 
-        const walletCheck = resolveCopyTradingWalletContext(request, {
+        const walletCheck = resolveCopyTradingWriteWalletContext(request, {
             bodyWallet: walletAddress,
-            requireHeader: true,
         });
         if (!walletCheck.ok) {
             return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
@@ -262,9 +264,8 @@ export async function DELETE(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const configId = searchParams.get('id');
-        const walletCheck = resolveCopyTradingWalletContext(request, {
+        const walletCheck = resolveCopyTradingWriteWalletContext(request, {
             queryWallet: searchParams.get('wallet'),
-            requireHeader: true,
         });
 
         if (!configId) {
@@ -316,9 +317,8 @@ export async function PATCH(request: NextRequest) {
     try {
         const body = await request.json();
         const { id, walletAddress, ...updates } = body;
-        const walletCheck = resolveCopyTradingWalletContext(request, {
+        const walletCheck = resolveCopyTradingWriteWalletContext(request, {
             bodyWallet: walletAddress,
-            requireHeader: true,
         });
 
         if (!id) {

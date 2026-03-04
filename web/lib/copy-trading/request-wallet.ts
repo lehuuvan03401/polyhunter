@@ -26,6 +26,16 @@ export function resolveCopyTradingWalletContext(
     });
 }
 
+export function resolveCopyTradingWriteWalletContext(
+    request: NextRequest,
+    options: Omit<ResolveCopyTradingWalletOptions, 'requireHeader'> = {}
+) {
+    return resolveCopyTradingWalletContext(request, {
+        ...options,
+        requireHeader: true,
+    });
+}
+
 export function getWalletAuthHeaders(walletAddress: string) {
     return {
         'x-wallet-address': walletAddress.toLowerCase(),

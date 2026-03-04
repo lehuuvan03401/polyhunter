@@ -11,7 +11,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseMarketSlug } from '@/lib/utils';
 import { createTTLCache } from '@/lib/server-cache';
-import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import {
+    resolveCopyTradingWalletContext,
+    resolveCopyTradingWriteWalletContext,
+} from '@/lib/copy-trading/request-wallet';
 // Order status types
 export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'SETTLEMENT_PENDING';
 
@@ -246,9 +249,8 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const { walletAddress, orderIds } = body;
-        const walletCheck = resolveCopyTradingWalletContext(request, {
+        const walletCheck = resolveCopyTradingWriteWalletContext(request, {
             bodyWallet: walletAddress,
-            requireHeader: true,
         });
         if (!walletCheck.ok) {
             return NextResponse.json({ error: walletCheck.error }, { status: walletCheck.status });
