@@ -266,10 +266,10 @@
 - 输出“已完成 / 部分完成 / 待确认”的状态判断，并标注证据来源。
 
 ## 分阶段
-- [in_progress] 阶段 1：梳理规范与历史任务（OpenSpec + planning files）
-- [pending] 阶段 2：核对代码实现（Prisma + API + lib + UI）
-- [pending] 阶段 3：核对验证覆盖（unit/integration/e2e + scripts）
-- [pending] 阶段 4：形成审计结论与风险说明
+- [complete] 阶段 1：梳理规范与历史任务（OpenSpec + planning files）
+- [complete] 阶段 2：核对代码实现（Prisma + API + lib + UI）
+- [complete] 阶段 3：核对验证覆盖（unit/integration/e2e + scripts）
+- [complete] 阶段 4：形成审计结论与风险说明
 
 ## 审计重点
 1. 参与账户、入金、等级、晋升、托管授权是否已形成闭环。
