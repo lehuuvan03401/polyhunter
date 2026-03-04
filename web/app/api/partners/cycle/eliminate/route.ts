@@ -165,6 +165,20 @@ export async function POST(request: NextRequest) {
         const monthKey = parsed.data.monthKey ?? toMonthKey(new Date());
         parseMonthKey(monthKey);
 
+        if (
+            parsed.data.eliminateCount !== undefined &&
+            parsed.data.eliminateCount !== MONTHLY_ELIMINATION_COUNT
+        ) {
+            return NextResponse.json(
+                {
+                    error: `Monthly elimination count is immutable at ${MONTHLY_ELIMINATION_COUNT}`,
+                    code: 'IMMUTABLE_ELIMINATION_COUNT',
+                    allowedEliminateCount: MONTHLY_ELIMINATION_COUNT,
+                },
+                { status: 409 }
+            );
+        }
+
         let task = await prisma.partnerEliminationTask.findUnique({
             where: { monthKey }
         });
@@ -219,10 +233,7 @@ export async function POST(request: NextRequest) {
 
         const ranked = await buildPartnerSeatRanking(prisma, activeSeats, { monthKey });
 
-        const eliminateCount = Math.min(
-            parsed.data.eliminateCount ?? MONTHLY_ELIMINATION_COUNT,
-            ranked.length
-        );
+        const eliminateCount = Math.min(MONTHLY_ELIMINATION_COUNT, ranked.length);
 
         const eliminationCandidates = pickEliminationCandidates(ranked, eliminateCount);
 

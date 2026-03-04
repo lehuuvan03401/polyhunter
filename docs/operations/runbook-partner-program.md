@@ -88,7 +88,6 @@ PARTNER_OPS_BASE_URL=https://<host> \
 PARTNER_OPS_ADMIN_WALLET=0x... \
 PARTNER_OPS_ADMIN_PRIVATE_KEY=0x... \
 PARTNER_ELIMINATION_MONTH_KEY=2026-02 \
-PARTNER_ELIMINATION_COUNT=10 \
 npm run partner:eliminate:monthly
 ```
 
@@ -112,7 +111,8 @@ curl -s "$BASE_URL/api/partners/config" \
 ```
 2. Verify `stats.refill.openSeats` and `stats.refill.refillPriceUsd`.
 3. `maxSeats` is immutable and fixed at 100 by policy; only refill price is operationally configurable.
-4. Seat allocation uses `POST /api/partners/seats` and is blocked when cap is reached (`SEAT_CAP_REACHED`).
+4. Monthly elimination count is immutable at 10 by policy.
+5. Seat allocation uses `POST /api/partners/seats` and is blocked when cap is reached (`SEAT_CAP_REACHED`).
 
 ## Incident Handling
 

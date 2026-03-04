@@ -543,3 +543,16 @@
 - 已执行验证：
   - `cd web && npx vitest run lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts app/api/partners/queue/route.test.ts lib/participation-program/partner-ops-automation.test.ts` -> `5 files / 30 tests` 全通过。
   - `cd web && npx tsc --noEmit` -> 通过。
+
+## 2026-03-04（全球合伙人制度继续收口）
+- 月淘汰数量已改为固定常量策略：
+  - `POST /api/partners/cycle/eliminate` 传入自定义 `eliminateCount`（非政策常量）会返回 `409/IMMUTABLE_ELIMINATION_COUNT`。
+  - 管理后台去除“可编辑淘汰人数”，改为只读展示。
+  - 月淘汰脚本移除数量下发，仅允许环境变量值与常量一致。
+- 退款执行接口已去模拟化：
+  - `POST /api/partners/refunds/execute` 改为强制接收合法 `txHash`，不再生成 mock tx。
+  - 退款完成后在同一事务内更新 `PartnerRefund` 与 `PartnerSeat`（`REFUNDED` + `backendAccess=false`）。
+  - 新增测试 `web/app/api/partners/refunds/execute/route.test.ts`（3 个用例）。
+- 已执行验证：
+  - `cd web && npx vitest run app/api/partners/refunds/execute/route.test.ts app/api/partners/partner-workflow.integration.test.ts lib/participation-program/partner-program.test.ts lib/participation-program/partner-ops-automation.test.ts app/api/partners/config.integration.test.ts app/api/partners/queue/route.test.ts` -> `6 files / 34 tests` 全通过。
+  - `cd web && npx tsc --noEmit` -> 通过。

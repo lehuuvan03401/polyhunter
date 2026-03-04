@@ -386,4 +386,21 @@ describe('Partner elimination/refund integration workflow', () => {
         );
         expect(failCompletedRefundRes.status).toBe(409);
     });
+
+    it('rejects custom elimination count override when policy count is immutable', async () => {
+        const { eliminate } = await setupPartnerRoutes();
+
+        const res = await eliminate(
+            createJsonRequest('http://localhost/api/partners/cycle/eliminate', {
+                monthKey: MONTH_KEY,
+                eliminateCount: 1,
+                dryRun: true,
+            })
+        );
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.code).toBe('IMMUTABLE_ELIMINATION_COUNT');
+        expect(body.allowedEliminateCount).toBe(2);
+    });
 });

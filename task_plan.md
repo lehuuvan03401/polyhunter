@@ -55,6 +55,8 @@
 - [complete] 管理员接口增加签名鉴权（与现有钱包签名链路对齐）
 - [complete] 月度淘汰评分按 `monthKey` 快照边界计算，避免跨月污染
 - [complete] 补齐/更新对应单测与集成测试
+- [complete] 固化月淘汰人数策略（`eliminateCount` 不可由请求覆盖）
+- [complete] 退款执行接口去模拟化（必须提供真实 `txHash`）
 
 ## 本轮验证
 - `cd web && npx vitest run lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts app/api/partners/queue/route.test.ts lib/participation-program/partner-ops-automation.test.ts`（30/30 通过）

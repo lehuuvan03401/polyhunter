@@ -3,10 +3,10 @@ import {
     buildPartnerAdminHeaders,
     evaluateEliminationResponse,
     parseBool,
-    parsePositiveInt,
     toMonthKey,
     type EliminationResponse,
 } from '@/lib/participation-program/partner-ops-automation';
+import { MONTHLY_ELIMINATION_COUNT } from '@/lib/participation-program/partner-program';
 
 async function main(): Promise<void> {
     const baseUrl = process.env.PARTNER_OPS_BASE_URL || 'http://localhost:3000';
@@ -21,14 +21,21 @@ async function main(): Promise<void> {
     }
 
     const monthKey = process.env.PARTNER_ELIMINATION_MONTH_KEY || toMonthKey(new Date());
-    const eliminateCount = parsePositiveInt(process.env.PARTNER_ELIMINATION_COUNT, 10);
+    const configuredEliminateCount = process.env.PARTNER_ELIMINATION_COUNT;
+    if (
+        configuredEliminateCount &&
+        Number(configuredEliminateCount) !== MONTHLY_ELIMINATION_COUNT
+    ) {
+        throw new Error(
+            `PARTNER_ELIMINATION_COUNT is immutable at ${MONTHLY_ELIMINATION_COUNT}`
+        );
+    }
     const dryRun = parseBool(process.env.PARTNER_ELIMINATION_DRY_RUN, false);
     const allowExistingCycle = parseBool(process.env.PARTNER_ELIMINATION_ALLOW_EXISTING_CYCLE, true);
     const reason = process.env.PARTNER_ELIMINATION_REASON || 'scheduler-month-end';
 
     const payload = {
         monthKey,
-        eliminateCount,
         dryRun,
         reason,
     };
@@ -60,7 +67,7 @@ async function main(): Promise<void> {
 
     if (evaluation.status === 'success') {
         console.log(
-            `[partner-monthly-elimination] success monthKey=${data.monthKey || monthKey} dryRun=${dryRun} eliminateCount=${data.eliminateCount ?? eliminateCount} eliminated=${data.eliminated ?? 0}`
+            `[partner-monthly-elimination] success monthKey=${data.monthKey || monthKey} dryRun=${dryRun} eliminateCount=${data.eliminateCount ?? MONTHLY_ELIMINATION_COUNT} eliminated=${data.eliminated ?? 0}`
         );
         return;
     }

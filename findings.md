@@ -270,3 +270,5 @@
 - 席位费已改为“配置价强约束”：请求方若传入与配置价不一致的 `seatFeeUsd` 会被拒绝。
 - 管理员鉴权已支持并默认要求签名（可通过环境变量显式放宽），并兼容 `x-admin-*` 与 `x-wallet-*` 签名头。
 - 月度淘汰与月榜 LIVE 预览已按 `monthKey` 绑定评分快照窗口，避免跨月数据污染。
+- 月淘汰人数已固化为政策常量，API 不再接受自定义覆盖（传入非固定值将返回 `IMMUTABLE_ELIMINATION_COUNT`）。
+- `POST /api/partners/refunds/execute` 已移除模拟交易哈希逻辑，改为必须提供真实 `txHash` 才可完成退款状态流转。

@@ -125,7 +125,6 @@ export default function AdminPartnerOpsPage() {
     const [refillPriceInput, setRefillPriceInput] = useState('0');
 
     const [monthKey, setMonthKey] = useState(currentMonthKey());
-    const [eliminateCount, setEliminateCount] = useState(String(DEFAULT_ELIMINATION_COUNT));
     const [dryRunResult, setDryRunResult] = useState<EliminationDryRunResponse | null>(null);
 
     const [refundTxHash, setRefundTxHash] = useState<Record<string, string>>({});
@@ -231,7 +230,6 @@ export default function AdminPartnerOpsPage() {
     const runEliminationDryRun = async () => {
         if (!adminWallet) return;
 
-        const count = Number(eliminateCount) || DEFAULT_ELIMINATION_COUNT;
         setLoadingKey('dryRun', true);
         try {
             const headers = await createAdminHeaders('POST', '/api/partners/cycle/eliminate');
@@ -243,7 +241,6 @@ export default function AdminPartnerOpsPage() {
                 },
                 body: JSON.stringify({
                     monthKey,
-                    eliminateCount: count,
                     dryRun: true,
                 }),
             });
@@ -266,7 +263,6 @@ export default function AdminPartnerOpsPage() {
             return;
         }
 
-        const count = Number(eliminateCount) || DEFAULT_ELIMINATION_COUNT;
         setLoadingKey('executeElimination', true);
         try {
             const headers = await createAdminHeaders('POST', '/api/partners/cycle/eliminate');
@@ -278,7 +274,6 @@ export default function AdminPartnerOpsPage() {
                 },
                 body: JSON.stringify({
                     monthKey,
-                    eliminateCount: count,
                     dryRun: false,
                     reason: 'admin-manual-monthly-cycle',
                 }),
@@ -426,14 +421,12 @@ export default function AdminPartnerOpsPage() {
                                 className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white"
                             />
                         </label>
-                        <label className="space-y-1">
-                            <span className="text-xs text-gray-400">Eliminate Count</span>
-                            <input
-                                value={eliminateCount}
-                                onChange={(e) => setEliminateCount(e.target.value)}
-                                className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white"
-                            />
-                        </label>
+                        <div className="space-y-1">
+                            <span className="text-xs text-gray-400">Eliminate Count (Immutable)</span>
+                            <div className="w-full rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-300">
+                                {DEFAULT_ELIMINATION_COUNT}
+                            </div>
+                        </div>
                         <div className="flex items-end">
                             <button
                                 onClick={runEliminationDryRun}

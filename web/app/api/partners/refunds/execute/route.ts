@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
+import { prisma, isDatabaseEnabled } from '@/lib/prisma';
 import { isAdminRequest } from '@/lib/participation-program/partner-program';
 
 const executeSchema = z.object({
-    refundId: z.string(),
+    refundId: z.string().min(3),
+    txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid txHash'),
 });
 
 export async function POST(req: Request) {
@@ -13,18 +14,29 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        if (!isDatabaseEnabled) {
+            return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+        }
+
         const json = await req.json();
         const parsed = executeSchema.safeParse(json);
 
         if (!parsed.success) {
-            return NextResponse.json({ error: 'Invalid parameters', details: parsed.error }, { status: 400 });
+            return NextResponse.json(
+                { error: 'Invalid parameters', details: parsed.error.format() },
+                { status: 400 }
+            );
         }
 
-        const { refundId } = parsed.data;
-
+        const now = new Date();
+        const { refundId, txHash } = parsed.data;
         const refund = await prisma.partnerRefund.findUnique({
             where: { id: refundId },
-            include: { seat: true }
+            select: {
+                id: true,
+                seatId: true,
+                status: true,
+            },
         });
 
         if (!refund) {
@@ -32,40 +44,39 @@ export async function POST(req: Request) {
         }
 
         if (refund.status === 'COMPLETED') {
-            return NextResponse.json({ error: 'Refund already completed' }, { status: 400 });
+            return NextResponse.json({ error: 'Refund already completed' }, { status: 409 });
         }
 
-        // Simulate interaction with payment gateway / multi-sig safe
-        // In a real implementation this would call out to a smart contract to execute the transfer
-        const mockTxHash = `0xsimulated_refund_tx_${Date.now()}`;
+        const updatedRefund = await prisma.$transaction(async (tx) => {
+            const next = await tx.partnerRefund.update({
+                where: { id: refundId },
+                data: {
+                    status: 'COMPLETED',
+                    completedAt: now,
+                    txHash,
+                    errorMessage: null,
+                },
+            });
 
-        // 1. Mark the refund as processed
-        const updatedRefund = await prisma.partnerRefund.update({
-            where: { id: refundId },
-            data: {
-                status: 'COMPLETED',
-                completedAt: new Date(),
-                txHash: mockTxHash,
-            }
-        });
+            await tx.partnerSeat.update({
+                where: { id: refund.seatId },
+                data: {
+                    status: 'REFUNDED',
+                    refundedAt: now,
+                    backendAccess: false,
+                },
+            });
 
-        // 2. Mark the seat as fully refunded
-        await prisma.partnerSeat.update({
-            where: { id: refund.seatId },
-            data: {
-                status: 'REFUNDED',
-                refundedAt: new Date(),
-            }
+            return next;
         });
 
         return NextResponse.json({
             success: true,
-            txHash: mockTxHash,
-            refund: updatedRefund
+            txHash,
+            refund: updatedRefund,
         });
-
-    } catch (error: any) {
-        console.error('Refund execution error:', error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    } catch (error) {
+        console.error('[PartnerRefundExecute] POST failed:', error);
+        return NextResponse.json({ error: 'Failed to execute refund' }, { status: 500 });
     }
 }
