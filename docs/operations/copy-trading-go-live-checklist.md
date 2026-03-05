@@ -11,6 +11,7 @@ Final pre-launch checklist for the hardened copy-trading stack. Use this after c
 
 ## 2) Secrets and Runtime Config
 
+- [ ] `docs/operations/production-env-alignment-checklist.md` has been reviewed and signed off.
 - [ ] `CRON_SECRET` is set to a non-placeholder value.
 - [ ] `ENCRYPTION_KEY` is set to a non-zero 64-hex value.
 - [ ] `CHAIN_ID` is set explicitly and matches the target network.

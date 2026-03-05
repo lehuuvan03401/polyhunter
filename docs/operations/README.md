@@ -14,16 +14,18 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/sop-supervisor-capacity-controls.md`
 4. Supervisor monitoring deployment:
    - `docs/operations/deploy-supervisor-monitoring.md`
-5. Copy-trading go-live checklist:
+5. Production env alignment checklist:
+   - `docs/operations/production-env-alignment-checklist.md`
+6. Copy-trading go-live checklist:
    - `docs/operations/copy-trading-go-live-checklist.md`
-6. Supervisor DLQ operations:
+7. Supervisor DLQ operations:
    - `docs/operations/sop-supervisor-dlq.md`
-7. Global partner monthly operations:
+8. Global partner monthly operations:
    - `docs/operations/runbook-partner-program.md`
    - automation scripts:
      - `web/scripts/services/partner-monthly-elimination.ts`
      - `web/scripts/verify/partner-refund-sla.ts`
-8. Participation daily snapshot operations:
+9. Participation daily snapshot operations:
    - `docs/operations/runbook-participation-program.md`
    - automation scripts:
      - `web/scripts/services/participation-levels-daily-snapshot.ts`
