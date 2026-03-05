@@ -117,18 +117,12 @@
 - [complete] 参与规则与激活基础 API（rules/account/funding）
 - [complete] 固定 20% 盈利收费率改造（AffiliateEngine）
 - [complete] 托管最小本金 500U 入口约束 + 可选激活闸门
-- [pending] V1-V9 日考核引擎与平级奖结算
-- [pending] 全球合伙人席位体系
+- [complete] V1-V9 日考核引擎（规则映射 + API + 快照落库）
+- [complete] 平级奖结算链路（1代4% / 2代1%，含幂等账本）
+- [complete] 双区晋升指标与进度 API（实时查询 + 管理员快照）
+- [complete] 全球合伙人席位体系（详见下方 M3）
 - [complete] 托管授权留痕能力（模型 + API + 入口可选校验）
 - [complete] 托管可选周期收敛（managed-products list/detail + seed 对齐）
-- [complete] V1-V9 日考核快照引擎（规则映射 + API + 快照落库）
-- [pending] 平级奖结算链路（1代4% / 2代1%）
-- [pending] 双区晋升指标与进度 API
-- [complete] 平级奖结算链路（1代4% / 2代1%，含幂等账本）
-- [pending] 双区晋升指标与进度 API
-- [pending] 全球合伙人席位体系
-- [complete] 双区晋升指标与进度 API（实时查询 + 管理员快照）
-- [pending] 全球合伙人席位体系
 
 ## M3 实施进展（全球合伙人席位）
 - [complete] 全球合伙人数据模型与迁移（席位、月榜、淘汰、退款、配置）
@@ -192,7 +186,7 @@
 - [complete] 阶段 1：收口计划固化（OpenSpec change + 执行计划文档）
 - [complete] 阶段 2：P0 硬约束实现（席位上限、托管硬门槛、平级奖默认、费路隔离）
 - [complete] 阶段 3：P1 自动化与边界校验（淘汰调度、退款 SLA 看门狗、FREE 边界）
-- [in_progress] 阶段 4：验证与发布闸门（单测/集成/E2E + runbook）
+- [pending] 阶段 4：验证与发布闸门（待预发/生产发布窗口执行）
 
 ## 本轮交付
 - OpenSpec 变更：`harden-horus-participation-partner-policy`
@@ -237,8 +231,8 @@
 
 ## 实施状态（闭环落地）
 - [complete] Phase A：统一结算与分润语义（提交：`3d9dc1b`）
-- [in_progress] Phase B：持仓/NAV/清仓从钱包维度切换到订阅维度（执行隔离）
-- [in_progress] Phase C：托管闭环运维可见性（健康检查接口 + 管理后台面板）
+- [pending] Phase B：持仓/NAV/清仓从钱包维度切换到订阅维度（执行隔离；代码已完成，待上线切换验证）
+- [pending] Phase C：托管闭环运维可见性（健康检查接口 + 管理后台面板；待生产观测验收）
 
 ### Phase B 当前进度
 - [complete] 新增订阅维度持仓模型 `ManagedSubscriptionPosition`（schema + migration）
@@ -311,7 +305,7 @@
 - [complete] 阶段 1：梳理规范与历史任务（已确认 archived 主变更与 hardening 变更任务均全量勾选）
 - [complete] 阶段 2：核对代码实现（Prisma、API、核心 lib、后台页、规则展示均有落地）
 - [complete] 阶段 3：核对验证覆盖（参与系统相关 16 个 Vitest 文件、67 个测试当前通过）
-- [in_progress] 阶段 4：输出总结（整理成面对用户的完成度分析）
+- [complete] 阶段 4：输出总结（已形成面对用户的完成度分析）
 
 ## 后续修复执行（2026-03-02）
 - [complete] P1-1：`GET /api/partners/config` 收紧为管理员可读，并补集成测试
@@ -410,11 +404,11 @@
 - 跟单相关 Prisma 模型与队列/缓存逻辑
 
 ### 分阶段
-- [in_progress] 阶段 1：盘点关键路径与架构依赖（检测 -> 入队 -> 执行 -> 对账/恢复）
-- [pending] 阶段 2：功能闭环与状态机一致性审计（幂等、重试、异常回滚）
-- [pending] 阶段 3：性能与扩展性审计（并发、锁、队列、缓存、批处理）
-- [pending] 阶段 4：安全与风控审计（权限、签名、输入验证、资金安全）
-- [pending] 阶段 5：可上线性结论与修复优先级清单
+- [completed] 阶段 1：盘点关键路径与架构依赖（检测 -> 入队 -> 执行 -> 对账/恢复）
+- [completed] 阶段 2：功能闭环与状态机一致性审计（幂等、重试、异常回滚）
+- [completed] 阶段 3：性能与扩展性审计（并发、锁、队列、缓存、批处理）
+- [completed] 阶段 4：安全与风控审计（权限、签名、输入验证、资金安全）
+- [completed] 阶段 5：可上线性结论与修复优先级清单
 
 ### 审计标准
 1. 关键流程不可出现“无主状态”（订单、仓位、债务记录必须可追踪）。
@@ -433,7 +427,6 @@
 - [completed] 阶段 2：功能闭环与状态机一致性审计（幂等、重试、异常回滚）
 - [completed] 阶段 3：性能与扩展性审计（并发、锁、队列、缓存、批处理）
 - [completed] 阶段 4：安全与风控审计（权限、签名、输入验证、资金安全）
-- [in_progress] 阶段 5：可上线性结论与修复优先级清单
 - [completed] 阶段 5：可上线性结论与修复优先级清单
 
 ## [2026-03-04] OpenSpec Proposal - Copy Trading Go-Live Hardening
@@ -512,3 +505,16 @@
   - `cd web && npx vitest run --config vitest.config.ts lib/server-cache.test.ts lib/copy-trading/runtime-config.test.ts app/api/copy-trading/redeem-sim/route.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts app/api/copy-trading/orders/route.test.ts app/api/copy-trading/history/route.test.ts`
   - `npx tsc --noEmit -p web/tsconfig.json`
   - `npx tsc --noEmit -p sdk/tsconfig.json`
+
+## [2026-03-05] 上线前发布闸门（未部署）
+- 当前状态：代码、测试与 runbook 收口已完成，但生产尚未发布。
+- [pending] 预发环境执行一轮全量验证（`tsc` + 核心 `vitest` + 必要 E2E）。
+- [pending] 对齐生产环境变量与密钥基线（`CRON_SECRET`、`ENCRYPTION_KEY`、`CHAIN_ID`、`COPY_TRADING_DRY_RUN`）。
+- [pending] 按运行手册完成灰度发布与回滚演练。
+- [pending] 发布后 24h 重点观测：执行队列积压、失败率、退款 SLA、结算分润一致性。
+- [pending] 生产稳定后再归档 OpenSpec 变更（`harden-horus-participation-partner-policy` / `close-managed-wealth-loop` / `update-copy-trading-go-live-hardening`）。
+
+### 本轮验证进展（2026-03-05）
+- `npx tsc --noEmit -p web/tsconfig.json`（通过）
+- `npx tsc --noEmit -p sdk/tsconfig.json`（通过）
+- `cd web && npx vitest run --config vitest.config.ts lib/copy-trading/runtime-config.test.ts lib/server-cache.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts`（5 files / 14 tests 通过）
