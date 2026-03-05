@@ -272,3 +272,76 @@
 - 月度淘汰与月榜 LIVE 预览已按 `monthKey` 绑定评分快照窗口，避免跨月数据污染。
 - 月淘汰人数已固化为政策常量，API 不再接受自定义覆盖（传入非固定值将返回 `IMMUTABLE_ELIMINATION_COUNT`）。
 - `POST /api/partners/refunds/execute` 已移除模拟交易哈希逻辑，改为必须提供真实 `txHash` 才可完成退款状态流转。
+
+## 跟单系统上线前审计发现（2026-03-04）
+
+### 审计方法
+- 以“数据流 + 状态机 + 失败恢复”三个视角审查代码。
+- 对关键链路逐段验证：信号检测、任务落库、执行下单、结果回写、异常恢复。
+- 将问题分级为：P0（上线阻断）/P1（高风险）/P2（中风险）/P3（优化项）。
+
+### 待验证重点
+1. `detect -> execute` 之间是否存在重复执行或漏执行窗口。
+2. Worker/Supervisor 多实例下锁与幂等是否足够。
+3. 债务与报销账本是否保证资金账实一致。
+4. Readiness/Guardrail 是否与执行端保持同一口径。
+5. API 与后台脚本对同一配置是否存在分裂行为。
+
+### 初步高风险清单（待最终分级）
+1. `web/app/api/copy-trading/redeem-sim/route.ts` 缺少任何钱包鉴权/签名校验，可直接删除用户持仓并写入伪造结算记录。
+2. `web/app/api/copy-trading/execute/route.ts` 在执行前只做读检查（`status === PENDING`），无原子“抢占/锁定”更新，存在并发双执行风险。
+3. `web/app/api/copy-trading/detect/route.ts` 使用 `CRON_SECRET || 'dev-cron-secret'`，生产若漏配会退化到弱默认密钥。
+4. `web/lib/encryption.ts` 与 `sdk/src/core/encryption.ts` 使用全零默认加密密钥，生产漏配时可被已知密钥解密。
+5. `web/scripts/workers/copy-trading-supervisor.ts` 读取 `DRY_RUN` 与 `NEXT_PUBLIC_CHAIN_ID`，与其他链路使用的 `COPY_TRADING_DRY_RUN` / `CHAIN_ID` 不一致，存在错误网络/错误开关风险。
+6. `sdk/src/core/trade-orchestrator.ts` 的 EOA 成功路径未携带 `transactionHashes`，后续 `executed` 判断依赖 `transactionHashes.length`，导致成功执行被上层当作 skipped。
+7. `sdk/src/core/trade-orchestrator.ts` + `web/scripts/workers/copy-trading-supervisor.ts` 对异常缺少统一失败回写，可能留下长期 `PENDING` 孤儿单。
+8. `web/lib/server-cache.ts` TTL 缓存无容量上限/后台清理，攻击者可通过高基数 key 触发内存膨胀。
+9. `web/app/api/copy-trading/orders/route.ts` 无分页上限，`web/app/api/copy-trading/trades/route.ts` 的 `limit` 无上限，存在查询放大风险。
+10. `web/scripts/workers/copy-trading-supervisor.ts` guardrail 为“先读后增”且非原子比较交换，高并发下可能突破额度阈值。
+11. `web/app/api/copy-trading/detect/route.ts` 去重依赖时间窗+浮点精确匹配，且未写 `originalTxHash`，对并发/重放不稳健。
+
+## [2026-03-04] OpenSpec Proposal Output
+- Created change: `update-copy-trading-go-live-hardening`
+- Added proposal docs:
+  - `openspec/changes/update-copy-trading-go-live-hardening/proposal.md`
+  - `openspec/changes/update-copy-trading-go-live-hardening/tasks.md`
+  - `openspec/changes/update-copy-trading-go-live-hardening/design.md`
+- Added spec deltas:
+  - `openspec/changes/update-copy-trading-go-live-hardening/specs/copy-trading/spec.md`
+  - `openspec/changes/update-copy-trading-go-live-hardening/specs/copy-execution/spec.md`
+  - `openspec/changes/update-copy-trading-go-live-hardening/specs/storage/spec.md`
+- Validation: `openspec validate update-copy-trading-go-live-hardening --strict --no-interactive` ✅
+
+## [2026-03-04] Implementation Findings - Apply Phase
+- `execute` API previously had a read-then-run race; fixed by conditional claim lock via `lockedAt/lockedBy`.
+- `TradeOrchestrator` previously returned `executed=false` for successful EOA orders lacking `transactionHashes`; fixed to use `orderId` as success reference.
+- `TradeOrchestrator` could leave rows in `PENDING` after post-create exceptions; fixed with catch-path forced transition to `FAILED`.
+- Shared TTL cache utility now enforces `maxEntries` and sweep behavior, reducing process memory growth risk in Next route modules.
+- Supervisor now uses canonical chain/dry-run config and bounds key in-memory caches (`price/meta/preflight/filter`).
+- Validation note: OpenSpec CLI emitted non-blocking PostHog telemetry flush DNS errors due restricted network after successful validation.
+
+## [2026-03-04] Verification Findings - Rollout Readiness
+- The new `web/app/api/copy-trading/trades/route.test.ts` proves oversized `limit` values are clamped to `200`, and Prisma query cost is capped at `take: 201` (page size + sentinel row), closing the uncapped read amplification gap.
+- Existing `web/lib/server-cache.test.ts` already exercises cache eviction and sweep behavior, so bounded cache growth now has explicit regression coverage alongside the route-level query cap test.
+- `web/app/api/copy-trading/execute/route.test.ts` confirms atomic claim semantics hold under concurrent requests: one execution wins the claim, the loser gets `409`, and the trade exits with a terminal unlocked state.
+- `web/app/api/copy-trading/detect/route.test.ts` confirms detect now rejects unauthorized cron requests and dedupes by stable `originalTxHash` identity instead of heuristic timing windows.
+- With these tests in place, the OpenSpec rollout checklist for `update-copy-trading-go-live-hardening` is fully satisfied; remaining work is optional expansion, not a launch blocker for the addressed P0/P1 items.
+
+## [2026-03-04] Additional Regression Coverage
+- `web/app/api/copy-trading/orders/route.test.ts` now verifies that oversized `limit` input is clamped before reaching Prisma, and that the API preserves the `limit/nextCursor/hasMore` pagination contract after transformation.
+- `web/app/api/copy-trading/history/route.test.ts` now verifies the `cursor` and capped `take` values forwarded to Prisma, closing the last untested pagination cap added in this round.
+- After these additions, the key copy-trading read APIs touched in this hardening pass (`pending`, `trades`, `orders`, `history`) all have direct regression coverage for bounded query shape.
+
+## [2026-03-04] Operations Readiness Findings
+- `deploy/stage1/Dockerfile.frontend` and `deploy/stage1/Dockerfile.worker` were still built against the removed `frontend/` layout and could not build against the current monorepo without manual fixes.
+- Stage-1 previously had no dedicated supervisor deployment artifact, which meant the existing Prometheus/Grafana monitoring templates were not actually wired to a first-class runtime in the baseline manifests.
+- Multiple operational docs still pointed to removed paths (`web/scripts/copy-trading-supervisor.ts`, root `scripts/verify/*`, `frontend/`), which would have caused operators to execute invalid commands during launch or incident response.
+- Several SDK verification scripts still imported `../../frontend/lib/prisma.ts` or fell back to `frontend/node_modules`, which would break the exact preflight checks intended for launch validation.
+- The new `docs/operations/copy-trading-go-live-checklist.md` now serves as the single launch gate for release bits, secrets, DB migration, runtime process shape, monitoring, preflight checks, smoke tests, and rollback readiness.
+
+## [2026-03-04] Tail Gap Findings
+- `redeem-sim` is no longer merely feature-gated; it is now explicitly retired with a stable `410 GONE`, which removes the remaining risk of accidental simulation-state mutation in production-like environments.
+- Mutating copy-trading wallet routes now share one canonical auth entrypoint (`resolveCopyTradingWriteWalletContext`), reducing the chance of future route drift around `requireHeader` enforcement.
+- The prior audit identified one remaining weak default key path in `sdk/src/utils/encryption.ts`; that path is now removed by re-exporting the strict core implementation, eliminating the last known all-zero fallback in the copy-trading codepath.
+- `readiness` and the web copy-trading worker now read `CHAIN_ID` / `COPY_TRADING_DRY_RUN` through the same canonical config helpers used by the supervisor, so conflicting env values fail fast instead of silently diverging.
+- The new cache test is a bounded regression stress check, not a full production load test; if you want true p95/p99 capacity evidence, the next step is still to run concurrent traffic against a live staging deployment.

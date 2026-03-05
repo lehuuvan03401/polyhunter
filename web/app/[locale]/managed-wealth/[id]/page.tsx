@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
 import { usePrivyLogin } from '@/lib/privy-login';
-import { ArrowLeft, Loader2, ShieldCheck, User2, Info } from 'lucide-react';
+import { ArrowLeft, Loader2, ShieldCheck, User2, Info, Copy, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { DisclosurePolicyPill } from '@/components/managed-wealth/disclosure-policy-pill';
 import {
@@ -294,23 +294,65 @@ export default function ManagedWealthDetailPage() {
                         <div className="grid gap-3 sm:grid-cols-2">
                             {product.agents.map((item) => (
                                 <div key={item.id} className="flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-colors">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                    <div className="flex items-center gap-3 overflow-hidden pr-2">
+                                        <div className="h-10 w-10 shrink-0 rounded-full bg-blue-500/20 flex items-center justify-center">
                                             <User2 className="h-5 w-5 text-blue-400" />
                                         </div>
-                                        <div>
-                                            <div className="font-medium text-white">{item.agent.name}</div>
-                                            <div className="text-xs text-zinc-500 truncate max-w-[120px]">
-                                                {item.agent.traderName || item.agent.traderAddress.slice(0, 8)}...
+                                        <div className="min-w-0">
+                                            <div className="font-medium text-white truncate">{item.agent.name}</div>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                <div
+                                                    className="text-xs text-zinc-500 font-mono truncate max-w-[120px]"
+                                                    title={item.agent.traderName || item.agent.traderAddress}
+                                                >
+                                                    {item.agent.traderName || item.agent.traderAddress.slice(0, 8) + '...'}
+                                                </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        navigator.clipboard.writeText(item.agent.traderAddress);
+                                                        toast.success(t('composition.addressCopied'));
+                                                    }}
+                                                    className="p-1 shrink-0 rounded bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+                                                    title={t('composition.copyAddress')}
+                                                >
+                                                    <Copy className="h-3 w-3" />
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="text-right">
+                                    <div className="text-right shrink-0">
                                         <div className="text-xs text-zinc-500">{t('composition.weight')}</div>
                                         <div className="font-mono text-white">{(item.weight * 100).toFixed(0)}%</div>
                                     </div>
                                 </div>
                             ))}
+                            {(() => {
+                                const reserveWeight = 1 - product.agents.reduce((sum, item) => sum + item.weight, 0);
+                                if (reserveWeight <= 0.005) return null;
+                                return (
+                                    <div className="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-white/[0.02]">
+                                        <div className="flex items-center gap-3 overflow-hidden pr-2">
+                                            <div className="h-10 w-10 shrink-0 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                                                <Wallet className="h-5 w-5 text-emerald-400" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="font-medium text-zinc-300 truncate">{t('composition.reserve')}</div>
+                                                <div
+                                                    className="text-[10px] leading-tight mt-0.5 text-zinc-600 truncate max-w-[120px] sm:max-w-full"
+                                                    title={t('composition.reserveDesc')}
+                                                >
+                                                    {t('composition.reserveDesc')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <div className="text-xs text-zinc-600">{t('composition.weight')}</div>
+                                            <div className="font-mono text-zinc-400">{(reserveWeight * 100).toFixed(0)}%</div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
 

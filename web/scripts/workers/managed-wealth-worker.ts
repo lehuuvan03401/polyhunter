@@ -30,6 +30,7 @@ import { resolveManagedExecutionConfigIds } from '../../lib/managed-wealth/execu
 import { resolveManagedLiquidationIntent } from '../../lib/managed-wealth/liquidation-intent';
 import { polyClient } from '../../lib/polymarket';
 import { affiliateEngine } from '../../lib/services/affiliate-engine';
+import { ethers } from 'ethers';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
 if (!DATABASE_URL) {
@@ -42,6 +43,12 @@ const LOOP_INTERVAL_MS = Math.max(10_000, Number(process.env.MANAGED_WEALTH_LOOP
 const MAP_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_MAP_BATCH_SIZE || 100));
 const NAV_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_NAV_BATCH_SIZE || 500));
 const SETTLEMENT_BATCH_SIZE = Math.max(1, Number(process.env.MANAGED_WEALTH_SETTLEMENT_BATCH_SIZE || 300));
+const MANAGED_MAX_TRADE_SIZE_USDC = Math.max(1, Number(process.env.MANAGED_MAX_TRADE_SIZE_USDC || 500));
+
+const POLYGON_RPC_URL = process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com';
+const USDC_ADDRESS = process.env.NEXT_PUBLIC_USDC_ADDRESS || process.env.NEXT_PUBLIC_AMOY_USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const rpcProvider = new ethers.providers.JsonRpcProvider(POLYGON_RPC_URL);
+const usdcContract = new ethers.Contract(USDC_ADDRESS, ['function balanceOf(address account) external view returns (uint256)'], rpcProvider);
 const LIQUIDATION_RETRY_BASE_MS = Math.max(10_000, Number(process.env.MANAGED_LIQUIDATION_RETRY_BASE_MS || 120_000));
 const MANAGED_ALLOCATION_TARGET_COUNT = Math.max(1, Number(process.env.MANAGED_ALLOCATION_TARGET_COUNT || 3));
 const MANAGED_ALLOCATION_SNAPSHOT_ENABLED = process.env.MANAGED_ALLOCATION_SNAPSHOT_ENABLED !== 'false';
@@ -143,6 +150,47 @@ async function ensureExecutionMappings(now: Date, forceFullRefresh = false): Pro
 
     let mapped = 0;
     for (const sub of candidates) {
+        // Vault Protection Check: ensure proxy wallet has enough USDC to honor the principal size
+        let hasSufficientVaultFunds = true;
+        try {
+            const rawBalance = await usdcContract.balanceOf(sub.walletAddress);
+            const balanceUsdc = Number(ethers.utils.formatUnits(rawBalance, 6));
+            if (balanceUsdc < sub.principal) {
+                console.warn(`[ManagedWealthWorker] Insufficient vault funds for subscription ${sub.id}: Wallet ${sub.walletAddress} has ${balanceUsdc} USDC, but principal is ${sub.principal}`);
+                hasSufficientVaultFunds = false;
+
+                // De-duplicate risk event spam per day
+                const dupeStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                const recentAlert = await prisma.managedRiskEvent.findFirst({
+                    where: {
+                        subscriptionId: sub.id,
+                        metric: 'INSUFFICIENT_VAULT_FUNDS',
+                        createdAt: { gte: dupeStart },
+                    },
+                    select: { id: true },
+                });
+
+                if (!recentAlert) {
+                    await prisma.managedRiskEvent.create({
+                        data: {
+                            subscriptionId: sub.id,
+                            severity: 'ERROR',
+                            metric: 'INSUFFICIENT_VAULT_FUNDS',
+                            action: 'PAUSE_NEW_ENTRIES',
+                            description: `Proxy wallet ${sub.walletAddress} balance (${balanceUsdc.toFixed(2)} USDC) is less than registered principal (${sub.principal.toFixed(2)} USDC). Mapping paused.`,
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.error(`[ManagedWealthWorker] Failed to check vault balance for ${sub.walletAddress}`, error);
+            // On RPC failure, we fail-open to not permanently block mappings if RPC is flaky
+        }
+
+        if (!hasSufficientVaultFunds) {
+            continue;
+        }
+
         const activeExecutionTargets = await prisma.managedSubscriptionExecutionTarget.findMany({
             where: {
                 subscriptionId: sub.id,
@@ -418,8 +466,8 @@ async function ensureExecutionMappings(now: Date, forceFullRefresh = false): Pro
                 strategyProfile: sub.product.strategyProfile,
                 mode: 'FIXED_AMOUNT' as const,
                 sizeScale: target.agent.sizeScale,
-                fixedAmount: Math.max(1, Number((sub.principal * 0.1 * target.targetWeight).toFixed(2))),
-                maxSizePerTrade: Math.max(1, Number((sub.principal * 0.2 * target.targetWeight).toFixed(2))),
+                fixedAmount: Math.min(MANAGED_MAX_TRADE_SIZE_USDC, Math.max(1, Number((sub.principal * 0.1 * target.targetWeight).toFixed(2)))),
+                maxSizePerTrade: Math.max(1, Math.min(MANAGED_MAX_TRADE_SIZE_USDC * 2, Number((sub.principal * 0.2 * target.targetWeight).toFixed(2)))),
                 minSizePerTrade: target.agent.minSizePerTrade,
                 stopLoss: target.agent.stopLoss,
                 takeProfit: target.agent.takeProfit,
@@ -766,18 +814,48 @@ async function refreshNavSnapshots(now: Date): Promise<number> {
 }
 
 async function markMaturedSubscriptions(now: Date): Promise<number> {
-    const matured = await prisma.managedSubscription.updateMany({
+    const maturedCandidates = await prisma.managedSubscription.findMany({
         where: {
             status: 'RUNNING',
             endAt: { lte: now },
         },
-        data: {
-            status: 'MATURED',
-            maturedAt: now,
-        },
+        select: { id: true },
+        take: SETTLEMENT_BATCH_SIZE,
     });
 
-    return matured.count;
+    if (maturedCandidates.length === 0) return 0;
+
+    const subIds = maturedCandidates.map(c => c.id);
+
+    await prisma.$transaction(async (tx) => {
+        const executionTargets = await tx.managedSubscriptionExecutionTarget.findMany({
+            where: { subscriptionId: { in: subIds }, isActive: true },
+            select: { copyConfigId: true },
+        });
+
+        const configIds = executionTargets.map(t => t.copyConfigId);
+
+        if (configIds.length > 0) {
+            await tx.managedSubscriptionExecutionTarget.updateMany({
+                where: { subscriptionId: { in: subIds }, isActive: true },
+                data: { isActive: false, deactivatedAt: now },
+            });
+            await tx.copyTradingConfig.updateMany({
+                where: { id: { in: configIds } },
+                data: { isActive: false },
+            });
+        }
+
+        await tx.managedSubscription.updateMany({
+            where: { id: { in: subIds } },
+            data: {
+                status: 'MATURED',
+                maturedAt: now,
+            },
+        });
+    });
+
+    return subIds.length;
 }
 
 async function settleMaturedSubscriptions(now: Date): Promise<number> {

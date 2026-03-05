@@ -18,7 +18,25 @@ const config: HardhatUserConfig = {
     },
     networks: {
         hardhat: {
-            chainId: 1337,
+            chainId: 137,
+            chains: {
+                137: {
+                    hardforkHistory: {
+                        byzantium: 0,
+                        constantinople: 0,
+                        petersburg: 0,
+                        istanbul: 0,
+                        muirGlacier: 0,
+                        berlin: 0,
+                        london: 0,
+                        arrowGlacier: 0,
+                        grayGlacier: 0,
+                        merge: 0,
+                        shanghai: 0,
+                        cancun: 0
+                    }
+                }
+            },
             forking: process.env.ENABLE_FORK ? {
                 // Use a distinct env var for Fork Source to avoid picking up 'localhost' from frontend .env
                 url: process.env.MAINNET_FORK_RPC_URL || "https://polygon-bor-rpc.publicnode.com",

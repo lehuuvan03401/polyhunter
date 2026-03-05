@@ -393,3 +393,122 @@
 | 时间 | 位置 | 错误 | 处理 |
 |---|---|---|---|
 | - | - | 暂无 | - |
+
+## 任务计划：跟单交易系统上线前严谨审计（2026-03-04）
+
+### 目标
+- 以生产上线标准审计跟单交易系统，评估功能闭环完整性、性能瓶颈、安全风险、运维可行性。
+- 输出按严重级别排序的问题清单，附带代码定位与修复建议。
+
+### 范围
+- `web/scripts/copy-trading-worker.ts`
+- `web/scripts/copy-trading-supervisor.ts`
+- `web/lib/services/copy-trading/*`
+- `web/lib/services/guardrail-service.ts`
+- `web/app/api/copy-trading/*`
+- `sdk/src/services/copy-trading-execution-service.ts`
+- 跟单相关 Prisma 模型与队列/缓存逻辑
+
+### 分阶段
+- [in_progress] 阶段 1：盘点关键路径与架构依赖（检测 -> 入队 -> 执行 -> 对账/恢复）
+- [pending] 阶段 2：功能闭环与状态机一致性审计（幂等、重试、异常回滚）
+- [pending] 阶段 3：性能与扩展性审计（并发、锁、队列、缓存、批处理）
+- [pending] 阶段 4：安全与风控审计（权限、签名、输入验证、资金安全）
+- [pending] 阶段 5：可上线性结论与修复优先级清单
+
+### 审计标准
+1. 关键流程不可出现“无主状态”（订单、仓位、债务记录必须可追踪）。
+2. 失败路径必须有明确回滚、补偿或可恢复机制。
+3. 风控必须默认拒绝（fail-close），不得默认放行。
+4. 高并发下必须保证幂等与可重入安全。
+5. 所有上线阻断项必须可定位到具体代码与配置。
+
+### 错误记录（本轮）
+| 时间 | 位置 | 错误 | 处理 |
+|---|---|---|---|
+| 2026-03-04 | session-catchup | 输出为空（无可恢复上下文） | 继续审计 |
+
+### 阶段状态更新（2026-03-04 复盘）
+- [completed] 阶段 1：盘点关键路径与架构依赖（检测 -> 入队 -> 执行 -> 对账/恢复）
+- [completed] 阶段 2：功能闭环与状态机一致性审计（幂等、重试、异常回滚）
+- [completed] 阶段 3：性能与扩展性审计（并发、锁、队列、缓存、批处理）
+- [completed] 阶段 4：安全与风控审计（权限、签名、输入验证、资金安全）
+- [in_progress] 阶段 5：可上线性结论与修复优先级清单
+- [completed] 阶段 5：可上线性结论与修复优先级清单
+
+## [2026-03-04] OpenSpec Proposal - Copy Trading Go-Live Hardening
+- Change ID: `update-copy-trading-go-live-hardening`
+- Status: Proposal drafted + strict validation passed
+- Scope:
+  1. Security fail-closed (auth/signature/secret/key)
+  2. Atomic execute claim + no orphan pending
+  3. Detection idempotency hardening
+  4. Counter/cache/query/env consistency hardening
+- Next Phase: Apply stage implementation per `openspec/changes/update-copy-trading-go-live-hardening/tasks.md`
+
+## [2026-03-04] Apply Phase Progress - Copy Trading Go-Live Hardening
+- Implemented security/runtime baseline:
+  - centralized `copy-trading/runtime-config`
+  - fail-closed cron secret validation
+  - production signature-required behavior
+  - simulation redemption gating
+  - encryption key placeholder rejection
+- Implemented execution consistency:
+  - atomic claim lock in `/api/copy-trading/execute`
+  - deterministic finalize/unlock path
+  - pending list excludes actively claimed trades
+  - orchestrator now treats EOA success as executed
+  - orchestrator exception paths force `FAILED` instead of orphan `PENDING`
+- Implemented capacity controls:
+  - bounded TTL cache utility
+  - cursor+limit pagination on `pending` and `trades`
+  - supervisor cache caps + unified chain/dry-run config
+- Verification completed:
+  - `npx tsc --noEmit -p web/tsconfig.json`
+  - `npx tsc --noEmit -p sdk/tsconfig.json`
+  - `npx vitest run --config vitest.config.ts lib/copy-trading/runtime-config.test.ts lib/server-cache.test.ts`
+  - `openspec validate update-copy-trading-go-live-hardening --strict --no-interactive`
+
+## [2026-03-04] Apply Phase Completion - Copy Trading Go-Live Hardening
+- Status: rollout-readiness checklist completed for this change set.
+- Completed verification closure:
+  1. Added route-level race test for `POST /api/copy-trading/execute` claim contention.
+  2. Added detect idempotency test for stable `(configId, originalTxHash)` dedupe.
+  3. Added capped-query regression test for `GET /api/copy-trading/trades` oversized `limit`.
+  4. Confirmed bounded cache growth remains covered by `web/lib/server-cache.test.ts`.
+- Final verification:
+  - `cd web && npx vitest run --config vitest.config.ts lib/copy-trading/runtime-config.test.ts lib/server-cache.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts`
+  - `npx tsc --noEmit -p web/tsconfig.json`
+  - `openspec validate update-copy-trading-go-live-hardening --strict --no-interactive`
+- Task status:
+  - `openspec/changes/update-copy-trading-go-live-hardening/tasks.md` is now fully checked.
+- Optional expansion completed:
+  - Added route-level regression tests for `orders` and `history` pagination bounds after the main OpenSpec checklist was closed.
+  - This pushes the bounded-query coverage from the minimum required set to the broader read-path set touched in this apply round.
+
+## [2026-03-04] Operations Closeout - Copy Trading Go-Live
+- Goal:
+  - Close the remaining operational go-live gaps after code hardening: deploy artifacts, runbooks, monitoring wiring, and preflight verification scripts.
+- Completed:
+  1. Repaired Stage-1 deploy baseline to current monorepo layout (`web/` + `sdk/`).
+  2. Added dedicated `copy-supervisor` runtime wiring for docker-compose and Kubernetes stage1.
+  3. Fixed operational docs to use canonical `web/scripts/workers/*` and `sdk/scripts/verify/*` entrypoints.
+  4. Fixed SDK verify scripts that still referenced removed `frontend/` paths.
+  5. Added a dedicated final launch checklist: `docs/operations/copy-trading-go-live-checklist.md`.
+- Verification:
+  - `npx tsc --noEmit -p sdk/tsconfig.json`
+  - `npx tsc --noEmit -p web/tsconfig.json`
+
+## [2026-03-04] Tail Gap Closeout - Copy Trading Security/Runtime
+- Goal:
+  - Close the last code-level gaps left after the previous audit pass: retire `redeem-sim`, centralize mutating wallet auth, remove the last weak encryption fallback, and normalize remaining runtime config readers.
+- Completed:
+  1. Added `resolveCopyTradingWriteWalletContext()` and switched copy-trading mutating wallet routes to it.
+  2. Retired `/api/copy-trading/redeem-sim` with a permanent `410` response.
+  3. Replaced legacy SDK `src/utils/encryption.ts` implementation with a re-export of fail-closed `src/core/encryption.ts`.
+  4. Switched `readiness` and `web/scripts/workers/copy-trading-worker.ts` to canonical `runtime-config` helpers for `CHAIN_ID` / `COPY_TRADING_DRY_RUN`.
+  5. Added bounded-cache sustained write pressure regression test.
+- Verification:
+  - `cd web && npx vitest run --config vitest.config.ts lib/server-cache.test.ts lib/copy-trading/runtime-config.test.ts app/api/copy-trading/redeem-sim/route.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts app/api/copy-trading/orders/route.test.ts app/api/copy-trading/history/route.test.ts`
+  - `npx tsc --noEmit -p web/tsconfig.json`
+  - `npx tsc --noEmit -p sdk/tsconfig.json`

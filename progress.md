@@ -559,3 +559,112 @@
 - 已新增 PR 交付文档：
   - `docs/reports/2026-03-04-partner-hardening-pr.md`
   - 包含：可直接粘贴的 PR 描述、影响范围、兼容性说明、验证命令、上线前验收清单。
+
+## 2026-03-04
+- 启动“跟单交易系统上线前严谨审计”。
+- 已读取 `planning-with-files` 技能并执行 session catchup 检查（无遗留上下文输出）。
+- 已在 `task_plan.md / findings.md / progress.md` 新增本轮审计目标、阶段和方法。
+- 下一步：全量定位跟单相关入口文件并建立关键链路图，再开始风险分级排查。
+- 已完成跟单系统关键路径静态审计：API（detect/execute/config/orders/positions/metrics/readiness/history/trades/strategies）、Supervisor、ExecutionService、TradeOrchestrator、Guardrail、数据模型。
+- 已识别 11 项高风险/中高风险问题，覆盖：鉴权缺失、并发双执行、弱默认密钥、配置分裂、状态机不一致、缓存内存膨胀、查询放大、风控原子性不足。
+- 测试验证受阻：`pnpm -C sdk test copy-trading-execution-service.test.ts` 与 `pnpm -C sdk build` 失败（环境缺失 `vitest` / `tsc` 命令）。
+- 已完成上线审计分级与结论：当前不满足“严谨商业项目”直接上线标准，需先修复 P0/P1 阻断项。
+
+### [2026-03-04] Completed: OpenSpec Proposal for Copy Trading Go-Live Hardening
+- Reviewed OpenSpec baseline (`project.md`, active changes, existing specs).
+- Mapped 11 production blockers to 3 capabilities: `copy-trading`, `copy-execution`, `storage`.
+- Drafted full proposal/task/design package under `openspec/changes/update-copy-trading-go-live-hardening/`.
+- Ran strict OpenSpec validation successfully.
+- Ready for apply-stage implementation after proposal approval.
+
+### [2026-03-04] Completed: Apply Phase (Partial)
+- Added runtime config hardening for copy-trading auth/secrets/flags.
+- Hardened detect/redeem-sim/execute routes against fail-open auth and duplicate execution.
+- Corrected orchestrator execution classification and failure closure.
+- Added bounded cache behavior and targeted pagination limits.
+- Added 7 passing unit tests across runtime-config and server-cache.
+- Remaining follow-up: deeper route-level concurrency/idempotency tests and broader endpoint pagination coverage if desired.
+
+### [2026-03-04] Completed: Apply Phase Verification Closeout
+- Added route-level verification coverage:
+  - `web/app/api/copy-trading/execute/route.test.ts`
+  - `web/app/api/copy-trading/detect/route.test.ts`
+  - `web/app/api/copy-trading/trades/route.test.ts`
+- Confirmed performance regressions are now guarded in tests:
+  - bounded cache growth via `web/lib/server-cache.test.ts`
+  - capped query cost via `GET /api/copy-trading/trades` limit clamp assertion
+- Validation:
+  - `cd web && npx vitest run --config vitest.config.ts lib/copy-trading/runtime-config.test.ts lib/server-cache.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts` -> `5 files / 11 tests` passed
+  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
+  - `openspec validate update-copy-trading-go-live-hardening --strict --no-interactive` -> passed
+- OpenSpec task `4.4` marked complete; the change checklist is now fully complete.
+
+### [2026-03-04] Completed: Pagination Coverage Expansion
+- Added:
+  - `web/app/api/copy-trading/orders/route.test.ts`
+  - `web/app/api/copy-trading/history/route.test.ts`
+- Coverage purpose:
+  - `orders`: verifies `limit` clamp, `take: limit + 1`, and pagination metadata contract
+  - `history`: verifies `limit` clamp and `cursor` propagation to Prisma
+- Validation:
+  - `cd web && npx vitest run --config vitest.config.ts app/api/copy-trading/orders/route.test.ts app/api/copy-trading/history/route.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts lib/server-cache.test.ts lib/copy-trading/runtime-config.test.ts` -> `7 files / 13 tests` passed
+  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
+- Commits:
+  - `377096e` `test: cover copy-trading pagination and race paths`
+  - `71adfc8` `test: add copy-trading orders and history route coverage`
+
+### [2026-03-04] Completed: Operations and Deployment Closeout
+- Stage-1 deployment baseline updated to match the current monorepo:
+  - `deploy/stage1/Dockerfile.frontend`
+  - `deploy/stage1/Dockerfile.worker`
+  - `deploy/stage1/docker-compose.yml`
+  - `deploy/stage1/k8s/07-copy-worker.yaml`
+  - `deploy/stage1/k8s/09-copy-supervisor.yaml`
+  - `deploy/stage1/README.md`
+- Operational docs updated to canonical runtime and verification paths:
+  - `docs/operations/README.md`
+  - `docs/operations/deploy-supervisor-monitoring.md`
+  - `docs/operations/deploy-supervisor-capacity-controls.md`
+  - `docs/operations/copy-trading-supervisor.md`
+  - `docs/operations/copy-trade-lock-claim-verification.md`
+  - `docs/operations/runbook.md`
+  - `docs/operations/production_deployment.md`
+  - `docs/operations/real-trading-introduction.md`
+  - `docs/operations/speed-trading-config.md`
+  - `docs/operations/copy-trading-go-live-checklist.md`
+- Script/runtime path corrections:
+  - `web/scripts/README.md`
+  - `web/scripts/workers/copy-trading-supervisor.ts`
+  - `web/scripts/workers/copy-trading-worker.ts`
+  - `web/scripts/env/setup-real-trading.ts`
+  - `sdk/scripts/verify/README.md`
+  - `sdk/scripts/verify/async-settlement-flow.ts`
+  - `sdk/scripts/verify/reimbursement-ledger-flow.ts`
+  - `sdk/scripts/verify/claim-copytrade-locks.ts`
+  - `sdk/scripts/verify/seed-copytrade-locks.ts`
+  - `sdk/scripts/verify/copy-trade-prewrite.ts`
+- Validation:
+  - `npx tsc --noEmit -p sdk/tsconfig.json` -> passed
+  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
+
+### [2026-03-04] Completed: Tail Gap Closeout
+- Added centralized write-route wallet auth helper:
+  - `web/lib/copy-trading/request-wallet.ts` (`resolveCopyTradingWriteWalletContext`)
+- Switched copy-trading write routes to the centralized helper:
+  - `web/app/api/copy-trading/config/route.ts`
+  - `web/app/api/copy-trading/orders/route.ts`
+  - `web/app/api/copy-trading/execute/route.ts`
+- Retired simulation mutation endpoint:
+  - `web/app/api/copy-trading/redeem-sim/route.ts` now returns `410 GONE`
+  - `web/app/api/copy-trading/redeem-sim/route.test.ts` added
+- Removed the last weak SDK encryption fallback:
+  - `sdk/src/utils/encryption.ts` now re-exports fail-closed core encryption
+- Normalized remaining runtime config readers:
+  - `web/app/api/copy-trading/readiness/route.ts`
+  - `web/scripts/workers/copy-trading-worker.ts`
+- Added sustained cache pressure regression coverage:
+  - `web/lib/server-cache.test.ts`
+- Validation:
+  - `cd web && npx vitest run --config vitest.config.ts lib/server-cache.test.ts lib/copy-trading/runtime-config.test.ts app/api/copy-trading/redeem-sim/route.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts app/api/copy-trading/orders/route.test.ts app/api/copy-trading/history/route.test.ts` -> `8 files / 15 tests` passed
+  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
+  - `npx tsc --noEmit -p sdk/tsconfig.json` -> passed

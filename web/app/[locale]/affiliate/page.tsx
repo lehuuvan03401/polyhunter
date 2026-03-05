@@ -118,6 +118,8 @@ function TabBar({ activeTab, onTabChange }: { activeTab: AffiliateTab; onTabChan
 // --- Authenticated Dashboard View ---
 function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: string; initialTab: AffiliateTab }) {
     const t = useTranslations('Affiliate');
+    const guestT = useTranslations('Affiliate.guest');
+    const succT = useTranslations('Affiliate.successStories');
     const router = useRouter();
     const { createWalletAuthHeaders } = useManagedWalletAuth();
     const [activeTab, setActiveTab] = useState<AffiliateTab>(initialTab);
@@ -313,29 +315,29 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
         // My JSON didn't have "Referral Link" benefit item explicitly, I had "generations", "payouts", "tiers".
         // Let's use the keys I created: commission, generations, payouts, tiers.
         const BENEFITS = [
-            { icon: <Zap className="h-8 w-8 text-yellow-500" />, ...{ title: t('benefits.items.commission.title'), desc: t('benefits.items.commission.desc') } },
-            { icon: <Globe className="h-8 w-8 text-blue-500" />, ...{ title: t('benefits.items.generations.title'), desc: t('benefits.items.generations.desc') } },
-            { icon: <Coins className="h-8 w-8 text-green-500" />, ...{ title: t('benefits.items.payouts.title'), desc: t('benefits.items.payouts.desc') } },
-            { icon: <Trophy className="h-10 w-10" />, ...{ title: t('benefits.items.tiers.title'), desc: t('benefits.items.tiers.desc') } },
+            { icon: <Zap className="h-8 w-8 text-yellow-500" />, ...{ title: guestT('benefits.items.commission.title'), desc: guestT('benefits.items.commission.desc') } },
+            { icon: <Globe className="h-8 w-8 text-blue-500" />, ...{ title: guestT('benefits.items.generations.title'), desc: guestT('benefits.items.generations.desc') } },
+            { icon: <Coins className="h-8 w-8 text-green-500" />, ...{ title: guestT('benefits.items.payouts.title'), desc: guestT('benefits.items.payouts.desc') } },
+            { icon: <Trophy className="h-10 w-10" />, ...{ title: guestT('benefits.items.tiers.title'), desc: guestT('benefits.items.tiers.desc') } },
         ];
 
         const STEPS = [
-            { num: 1, title: t('howItWorks.steps.1.title'), desc: t('howItWorks.steps.1.desc') },
-            { num: 2, title: t('howItWorks.steps.2.title'), desc: t('howItWorks.steps.2.desc') },
-            { num: 3, title: t('howItWorks.steps.3.title'), desc: t('howItWorks.steps.3.desc') },
+            { num: 1, title: guestT('howItWorks.steps.1.title'), desc: guestT('howItWorks.steps.1.desc') },
+            { num: 2, title: guestT('howItWorks.steps.2.title'), desc: guestT('howItWorks.steps.2.desc') },
+            { num: 3, title: guestT('howItWorks.steps.3.title'), desc: guestT('howItWorks.steps.3.desc') },
         ];
 
 
 
         const ZERO_LINE_RATES = [
-            { gen: 1, rate: 25, label: t('zeroLine.generations.1') },
-            { gen: 2, rate: 10, label: t('zeroLine.generations.2') },
-            { gen: 3, rate: 5, label: t('zeroLine.generations.3') },
-            { gen: 4, rate: 3, label: t('zeroLine.generations.4') },
-            { gen: 5, rate: 2, label: t('zeroLine.generations.5') },
+            { gen: 1, rate: 25, label: guestT('zeroLine.generations.1') },
+            { gen: 2, rate: 10, label: guestT('zeroLine.generations.2') },
+            { gen: 3, rate: 5, label: guestT('zeroLine.generations.3') },
+            { gen: 4, rate: 3, label: guestT('zeroLine.generations.4') },
+            { gen: 5, rate: 2, label: guestT('zeroLine.generations.5') },
         ];
 
-        const succT = useTranslations('Affiliate.successStories');
+
 
         return (
             <div className="min-h-screen bg-[#0d0e10] text-white">
@@ -348,17 +350,17 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                     <div className="container max-w-4xl mx-auto px-4 text-center relative z-10">
                         <div className="inline-flex items-center gap-2 bg-yellow-500/10 text-yellow-500 px-4 py-2 rounded-full text-sm font-medium mb-6 border border-yellow-500/20">
                             <Sparkles className="h-4 w-4" />
-                            {t('hero.badge')}
+                            {guestT('hero.badge')}
                         </div>
 
                         <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight text-white">
-                            {t.rich('hero.title', {
+                            {guestT.rich('hero.title', {
                                 highlight: (chunks: any) => <span className="text-yellow-500">{chunks}</span>
                             })}
                         </h1>
 
                         <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-                            {t.rich('hero.desc', {
+                            {guestT.rich('hero.desc', {
                                 highlight1: (chunks: any) => <strong className="text-green-500">{chunks}</strong>,
                                 highlight2: (chunks: any) => <strong className="text-yellow-500">{chunks}</strong>
                             })}
@@ -370,17 +372,17 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                             className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-yellow-500/20"
                         >
                             {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
-                            {isRegistering ? t('hero.registering') : t('hero.cta')}
+                            {isRegistering ? guestT('hero.registering') : guestT('hero.cta')}
                         </button>
 
-                        <p className="text-sm text-muted-foreground mt-4">{t('hero.features')}</p>
+                        <p className="text-sm text-muted-foreground mt-4">{guestT('hero.features')}</p>
                     </div>
                 </section>
 
                 {/* Benefits Grid */}
                 <section className="py-16 border-t border-white/5">
                     <div className="container max-w-5xl mx-auto px-4">
-                        <h2 className="text-2xl font-bold text-center mb-10">{t('benefits.title')}</h2>
+                        <h2 className="text-2xl font-bold text-center mb-10">{guestT('benefits.title')}</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {BENEFITS.map((b, i) => (
                                 <div key={i} className="bg-[#1a1b1e] border border-white/10 rounded-xl p-6 text-center hover:border-yellow-500/30 transition-colors group">
@@ -396,7 +398,7 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                 {/* How It Works */}
                 <section className="py-16 bg-[#15161a] border-y border-white/5">
                     <div className="container max-w-4xl mx-auto px-4">
-                        <h2 className="text-2xl font-bold text-center mb-12">{t('howItWorks.title')}</h2>
+                        <h2 className="text-2xl font-bold text-center mb-12">{guestT('howItWorks.title')}</h2>
                         <div className="flex flex-col md:flex-row items-center justify-between gap-8">
                             {STEPS.map((s, i) => (
                                 <div key={i} className="flex flex-col items-center text-center flex-1">
@@ -417,8 +419,8 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                 {/* Tier System */}
                 <section className="py-16">
                     <div className="container max-w-5xl mx-auto px-4">
-                        <h2 className="text-2xl font-bold text-center mb-4">{t('tiers.title')}</h2>
-                        <p className="text-muted-foreground text-center mb-10">{t('tiers.subtitle')}</p>
+                        <h2 className="text-2xl font-bold text-center mb-4">{guestT('tiers.title')}</h2>
+                        <p className="text-muted-foreground text-center mb-10">{guestT('tiers.subtitle')}</p>
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm bg-[#1a1b1e] rounded-xl border border-white/10">
@@ -521,8 +523,8 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                 {/* Zero Line Rates */}
                 <section className="py-16 bg-[#15161a] border-y border-white/5">
                     <div className="container max-w-3xl mx-auto px-4">
-                        <h2 className="text-2xl font-bold text-center mb-4">{t('zeroLine.title')}</h2>
-                        <p className="text-muted-foreground text-center mb-10">{t('zeroLine.subtitle')}</p>
+                        <h2 className="text-2xl font-bold text-center mb-4">{guestT('zeroLine.title')}</h2>
+                        <p className="text-muted-foreground text-center mb-10">{guestT('zeroLine.subtitle')}</p>
 
                         <div className="space-y-4">
                             {ZERO_LINE_RATES.map((r) => (
@@ -541,7 +543,7 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                         </div>
 
                         <div className="mt-8 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-center">
-                            <p className="text-sm text-green-400" dangerouslySetInnerHTML={{ __html: t.raw('zeroLine.example') }} />
+                            <p className="text-sm text-green-400" dangerouslySetInnerHTML={{ __html: guestT.raw('zeroLine.example') }} />
                         </div>
                     </div>
                 </section>
@@ -549,21 +551,21 @@ function AuthenticatedView({ walletAddress, initialTab }: { walletAddress: strin
                 {/* Final CTA */}
                 <section className="py-20">
                     <div className="container max-w-2xl mx-auto px-4 text-center">
-                        <h2 className="text-3xl font-bold mb-4">{t('cta.title')}</h2>
-                        <p className="text-muted-foreground mb-8">{t('cta.subtitle')}</p>
+                        <h2 className="text-3xl font-bold mb-4">{guestT('cta.title')}</h2>
+                        <p className="text-muted-foreground mb-8">{guestT('cta.subtitle')}</p>
 
                         <button
                             onClick={handleRegister}
                             className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 px-10 rounded-xl transition-all flex items-center gap-3 mx-auto text-lg shadow-lg shadow-yellow-500/20"
                         >
                             {isRegistering ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
-                            {isRegistering ? t('hero.registering') : t('cta.button')}
+                            {isRegistering ? guestT('hero.registering') : guestT('cta.button')}
                         </button>
 
                         <div className="flex items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> {t('cta.features.free')}</span>
-                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> {t('cta.features.min')}</span>
-                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> {t('cta.features.setup')}</span>
+                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> {guestT('cta.features.free')}</span>
+                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> {guestT('cta.features.min')}</span>
+                            <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-400" /> {guestT('cta.features.setup')}</span>
                         </div>
                     </div>
                 </section >
