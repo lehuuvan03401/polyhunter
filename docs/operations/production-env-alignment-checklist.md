@@ -5,6 +5,14 @@ Purpose: align production runtime env with hardened copy-trading + managed/parti
 Source baseline reviewed on 2026-03-05:
 - `web/.env`
 - `web/.env.local`
+- `web/.env.production.example`
+
+Bootstrap:
+
+```bash
+cd web
+cp .env.production.example .env.production
+```
 
 ## 1) P0 Blockers (must be correct before deploy)
 
@@ -91,4 +99,3 @@ cd sdk
 npx tsx scripts/verify/async-settlement-flow.ts
 npx tsx scripts/verify/reimbursement-ledger-flow.ts
 ```
-

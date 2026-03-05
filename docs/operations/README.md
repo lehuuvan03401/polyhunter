@@ -16,6 +16,7 @@ Operational entrypoint for deployment, verification, and runbook workflows.
    - `docs/operations/deploy-supervisor-monitoring.md`
 5. Production env alignment checklist:
    - `docs/operations/production-env-alignment-checklist.md`
+   - `web/.env.production.example`
 6. Copy-trading go-live checklist:
    - `docs/operations/copy-trading-go-live-checklist.md`
 7. Supervisor DLQ operations:
