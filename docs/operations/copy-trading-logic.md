@@ -90,8 +90,8 @@
 ## 4. 🛡️ 容错与恢复 (Recovery Mechanisms)
 
 ### A. Stale Pending Expiration
-*   **现状**: 旧 worker 曾经实现过过期扫描；Supervisor authority runtime 还没有完整接管这部分逻辑。
-*   **结论**: 这是当前仍待补齐的恢复闭环，不应假设所有 `PENDING` 都会被自动过期回收。
+*   **现状**: `trade-orchestrator.ts` 预写 `PENDING` 时已经写入 `expiresAt`，Supervisor 会定时扫描并把过期 `PENDING` 标记为失败，同时释放 runtime lock。
+*   **运维含义**: 如果出现长期停留在 `PENDING` 的记录，优先检查 `SUPERVISOR_STALE_PENDING_RECOVERY_ENABLED`、`COPY_TRADING_PENDING_EXPIRY_MINUTES` 和 Supervisor 是否存活，而不是回退到旧 worker。
 
 ### B. Pending Debt Recovery
 *   **问题**: Smart Buffer 策略下，Bot 垫付了资金但尚未报销。如果进程重启，内存中的“债权”怎么算？
@@ -99,11 +99,35 @@
     1.  垫付失败或延迟报销时，写入 `DebtRecord` (DB)。
     2.  `recoverPendingDebts` 循环每 5 分钟运行一次。
     3.  检查 Proxy 余额，如果充足，发起 `transferFrom` 追回欠款并标记 `REPAID`。
-*   **现状补充**: `ReimbursementLedger` 批量报销闭环仍主要存在于旧链路，Supervisor authority runtime 还需继续迁移。
+*   **现状补充**: authority runtime 已经接入 `ReimbursementLedger`，BUY 且使用 bot float 的成功执行会创建/刷新 ledger entry，Supervisor 定时 claim + batch flush + retry。
 
 ### C. Crash-Safe State
 *   所有关键状态（订单、债务）均已持久化。Worker 随时重启不丢失资产。
 
 ### D. Market Resolution Ownership
-*   **现状**: `SETTLEMENT_PENDING` 恢复已经在 Supervisor 路径中，但完整的 market resolution / redeem 仍未完全从旧 worker 迁入。
-*   **运维含义**: 当前不应再把旧 worker 当作默认自动执行入口；它只保留为兼容脚本，直到 resolution/redeem 权责完全迁入 Supervisor。
+*   **现状**: Supervisor 已订阅 `market_resolved` 事件，并维护 resolution queue / reconciliation loop。winner redeem、loss settlement、`CopyTrade` 结算记录和 `UserPosition` 清账都由 authority runtime 负责。
+*   **运维含义**: 旧 worker 不再承担默认 market resolution 责任；它仅作为兼容脚本保留。
+
+### E. Reservation-Safe Guardrails
+*   **现状**: Supervisor 在真正执行前为 global / wallet / market / rate guardrail 预留容量，成功后按实际成交额 commit，skip/failure/exception 则 release。
+*   **机制**:
+    1. `checkExecutionGuardrails` 仍用于 dispatch/preflight 的快速短路。
+    2. `reserveGuardrailCapacity` 在 execution 边界做 reservation-safe 判定。
+    3. reservation 带 TTL，并由 sweep loop 回收 crash/leak 场景。
+*   **运维含义**: 如果 burst fanout 下出现 guardrail 拒单增多，先看 reservation metrics，而不是只看 `CopyTrade` 的已执行总量。
+
+## 5. Rollout Checklist
+
+1. 先执行历史仓位回填：`npm run backfill:copy-trading:positions`，默认 dry-run；确认结果后使用 `APPLY=true` 落库。
+2. 先确保 Supervisor 是唯一自动执行入口：默认脚本、Docker worker、compose profile 都应指向 supervisor，legacy worker 仅在显式 `COPY_TRADING_LEGACY_WORKER_ALLOWED=true` 时运行。
+3. 打开 recovery flags：确认 stale pending recovery、settlement recovery、ledger flush、guardrail reservations 全部启用。
+4. 进入双跑观测窗口时，不要让 legacy worker 和 supervisor 同时自动执行同一信号；兼容链路只能做手工验证或只读观测。
+5. 重点观测指标：
+   `copy_supervisor_settlement_recovery_*`
+   `copy_supervisor_guardrail_reservations_*`
+   `copy_supervisor_queue_*`
+   `copy_supervisor_reject_*`
+6. 下线顺序：
+   先确认 `PENDING` / `SETTLEMENT_PENDING` / `ReimbursementLedger(PENDING)` 无异常堆积。
+   再停 legacy worker profile。
+   最后收紧兼容入口和运维权限。

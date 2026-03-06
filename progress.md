@@ -191,6 +191,14 @@
   - `web/lib/copy-trading/guardrail-reservations.test.ts` (created)
   - `web/scripts/workers/copy-trading-supervisor.ts` (updated)
 
+### Task 7: Rollout and Cleanup
+- **Status:** complete
+- Actions taken:
+  - 更新 `docs/operations/copy-trading-logic.md`，把 stale pending、ledger ownership、market resolution ownership 和 reservation-safe guardrails 的现状改成 authority runtime 的真实状态。
+  - 在同一文档中补充 rollout checklist，明确 backfill 顺序、feature flag 检查、双跑观察窗口和 legacy worker 下线顺序。
+- Files created/modified:
+  - `docs/operations/copy-trading-logic.md` (updated)
+
 ## Verification Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
