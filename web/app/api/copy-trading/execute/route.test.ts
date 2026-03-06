@@ -16,7 +16,7 @@ const {
     process.env.TRADING_PRIVATE_KEY = '0x59c6995e998f97a5a0044966f0945382dbd4f0d2be3951ad3e2b7b6b08d4408a';
     process.env.CHAIN_ID = '31337';
 
-    const wallet = WALLET;
+    const wallet = '0x1111111111111111111111111111111111111111';
     const baseConfig = {
         slippageType: 'FIXED',
         maxSlippage: 2,
@@ -182,6 +182,18 @@ vi.mock('@/lib/server-cache', () => ({
 
 vi.mock('@/lib/copy-trading/request-wallet', () => ({
     resolveCopyTradingWalletContext: mockResolveCopyTradingWalletContext,
+}));
+
+vi.mock('@/lib/contracts/abis', () => ({
+    PROXY_FACTORY_ABI: [],
+    EXECUTOR_ABI: [],
+    ERC20_ABI: [],
+    CONTRACT_ADDRESSES: {
+        polygon: { usdc: '0xusdc', executor: '0xexecutor', ctfContract: '0xctf' },
+        amoy: { usdc: '0xusdc', executor: '0xexecutor', ctfContract: '0xctf' },
+        localhost: { usdc: '0xusdc', executor: '0xexecutor', ctfContract: '0xctf' },
+    },
+    USDC_DECIMALS: 6,
 }));
 
 vi.mock('@catalyst-team/poly-sdk', () => ({
