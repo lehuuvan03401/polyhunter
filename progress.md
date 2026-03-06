@@ -1,670 +1,88 @@
-# 进度日志
+# Progress Log
 
-## 2026-02-18
-- 完成 OpenSpec 与技能流程检查。
-- 完成核心模块定位与首轮代码阅读。
-- 已创建计划与发现文件，进入注释实施阶段。
-- 已完成以下核心文件中文注释增强：
-  - `src/services/trading-service.ts`
-  - `src/services/market-service.ts`
-  - `src/services/smart-money-service.ts`
-  - `src/services/copy-trading-execution-service.ts`
-  - `src/core/tx-mutex.ts`
-  - `src/core/tx-monitor.ts`
-- 已执行 `pnpm run build`，TypeScript 编译通过。
-- 第二批已完成以下文件中文注释增强：
-  - `scripts/copy-trading-worker.ts`
-  - `web/app/api/copy-trading/execute/route.ts`
-  - `web/app/api/copy-trading/config/route.ts`
-  - `web/app/api/copy-trading/detect/route.ts`
-  - `web/app/api/copy-trading/readiness/route.ts`
-- 已执行 `web` lint：失败（仓库已有大量历史 lint 问题，非本次注释改动引入）。
-- 第三批已完成以下文件中文注释增强：
-  - `web/app/api/copy-trading/orders/route.ts`
-  - `web/app/api/copy-trading/positions/route.ts`
-  - `web/app/api/copy-trading/metrics/route.ts`
-  - `web/lib/services/guardrail-service.ts`
-  - `web/scripts/copy-trading-supervisor.ts`
-- 已再次执行 `pnpm run build`，TypeScript 编译通过。
-- 第四批已完成以下文件中文注释增强：
-  - `web/scripts/copy-trading-supervisor.ts`（配置区分组注释增强）
-  - `scripts/copy-trading-worker.ts`（配置区分组注释增强）
-  - `src/services/smart-money-service.ts`（候选筛选与评分口径注释增强）
-- 已再次执行 `pnpm run build`，TypeScript 编译通过。
-- 第五批已完成以下文件中文注释增强：
-  - `src/services/trading-service.ts`（订单管理/奖励/授权细节注释增强）
-  - `src/services/market-service.ts`（信号检测与归一化流程注释增强）
-  - `src/services/copy-trading-execution-service.ts`（动态滑点模型注释增强）
-  - `src/core/tx-mutex.ts`（队列与观测语义注释增强）
-  - `src/core/tx-monitor.ts`（跟踪与替换链路注释增强）
-- 已再次执行 `pnpm run build`，TypeScript 编译通过。
-- 第六批已完成以下文件中文注释增强：
-  - `src/services/trading-service.ts`（初始化/缓存/本地模式注释增强）
-  - `src/services/market-service.ts`（初始化/重试/历史解析入口注释增强）
-  - `src/services/copy-trading-execution-service.ts`（地址路由/守卫入口注释增强）
-  - `src/core/tx-mutex.ts`（isLocked 使用语义注释增强）
-  - `src/core/tx-monitor.ts`（confirm 语义注释增强）
-- 已再次执行 `pnpm run build`，TypeScript 编译通过。
+## Session: 2026-03-06
 
-## 2026-02-19
-- 第七批已完成以下文件中文注释增强：
-  - `web/app/api/copy-trading/readiness/route.ts`（RPC 选择、降级容错、动作阈值口径注释增强）
-  - `src/services/market-service.ts`（历史/实时 spread 语义边界与信号阈值注释增强）
-  - `src/services/copy-trading-execution-service.ts`（Executor 代理执行、锁分层、AUTO 滑点与结算 fallback 注释增强）
-- 已执行 `pnpm run build`，TypeScript 编译通过。
+### Phase 1: Requirements & Discovery
+- **Status:** in_progress
+- **Started:** 2026-03-06
+- Actions taken:
+  - 读取 `using-superpowers` skill，确认要先检查并使用相关 skills。
+  - 读取 `planning-with-files` skill，决定为本次研究任务创建持久化计划文件。
+  - 初始化 `task_plan.md`、`findings.md`、`progress.md`。
+- Files created/modified:
+  - `task_plan.md` (created)
+  - `findings.md` (created)
+  - `progress.md` (created)
 
-## 2026-02-24
-- 新增 Supervisor 分片模式 Redis 强依赖：当 `SUPERVISOR_SHARD_COUNT>1` 时，缺少 `REDIS_URL` 将启动失败（fail fast）。
-- 新增 Supervisor 分片模式 Redis 连通性强校验：Redis 初始化/PING 失败将启动失败（fail fast），不再回退内存队列/去重/计数。
-- 保持单实例模式（`SUPERVISOR_SHARD_COUNT<=1`）兼容：Redis 不可用时仍允许内存回退。
-- 新增 OpenSpec 变更：`enforce-redis-sharded-supervisor`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate enforce-redis-sharded-supervisor --strict --no-interactive`，通过。
-- 新增 EOA 执行服务缓存生命周期加固：`UserExecutionManager` 支持 `SUPERVISOR_EOA_SERVICE_TTL_MS` 与周期 sweep（`SUPERVISOR_EOA_SERVICE_SWEEP_INTERVAL_MS`），超时自动驱逐。
-- 新增 EOA 缓存命中续期机制：每次复用服务都会刷新 `lastAccessAt`。
-- 新增优雅退出清理：`SIGINT/SIGTERM` 走 `shutdown()`，退出前清空 EOA 缓存。
-- 新增 OpenSpec 变更：`harden-eoa-service-cache-lifecycle`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate harden-eoa-service-cache-lifecycle --strict --no-interactive`，通过。
-- 新增 Supervisor 运维级 SLO 观测：队列 `p95` lag、reject reason 分布、per-wallet success/fail/skip、reconcile 差额汇总。
-- 新增执行结果统一记账：`success/failed/skipped` 在执行主路径统一打点，避免仅统计失败导致的成功率失真。
-- 新增 OpenSpec 变更：`add-supervisor-operational-slo-metrics`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-operational-slo-metrics --strict --no-interactive`，通过。
-- 新增 Supervisor 自动降载（load shedding）状态机：`NORMAL/DEGRADED/CRITICAL`，基于队列深度与队列 p95 lag 阈值自动切换。
-- 新增动态 fanout 并发上限：高负载自动降低订阅分发并发，恢复后自动回升（带恢复窗口 hysteresis）。
-- 新增 mempool 自动暂停闸门：降载模式下暂停 mempool dispatch，避免拥塞扩大。
-- 修复/接通 mempool 回调：`MempoolDetector` 回调已接入 `handleSniffedTx` 执行链路。
-- 新增 OpenSpec 变更：`add-supervisor-auto-load-shedding`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-auto-load-shedding --strict --no-interactive`，通过。
-- 新增 Supervisor 内置指标服务：支持 `/metrics`（Prometheus 文本格式）与 `/health`/`/healthz`。
-- 新增累计型观测计数器：执行结果、队列动作、拒单原因、reconcile 差额、告警次数等，避免仅窗口统计导致趋势不可见。
-- 新增运行时阈值告警：队列深度、队列 p95 lag、reject rate、`CRITICAL` 降载模式触发告警，并有冷却时间防止刷屏。
-- 指标服务已接入启动与优雅退出生命周期（start/shutdown）。
-- 新增 OpenSpec 变更：`add-supervisor-metrics-endpoint-alerts`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-metrics-endpoint-alerts --strict --no-interactive`，通过。
-- 新增 Stage1 监控落地模板：`deploy/stage1/monitoring/prometheus/prometheus.supervisor.yml`（Prometheus scrape）与 `deploy/stage1/monitoring/grafana/dashboards/copy-trading-supervisor.json`（Grafana dashboard）。
-- 新增监控落地文档：`deploy/stage1/monitoring/README.md` 与 `docs/operations/deploy-supervisor-monitoring.md`，并更新 `deploy/stage1/README.md`、`docs/operations/README.md` 索引入口。
-- 新增 OpenSpec 变更：`add-supervisor-monitoring-templates`（proposal/tasks/spec delta）。
-- 已执行 `jq empty deploy/stage1/monitoring/grafana/dashboards/copy-trading-supervisor.json`，通过。
-- 已执行 `openspec validate add-supervisor-monitoring-templates --strict --no-interactive`，通过。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 新增 `SETTLEMENT_PENDING` 自动恢复闭环：Supervisor 增加抢锁扫描 + `recoverSettlement` 执行 + 指数退避重试 + 超限失败落库（避免无限 pending）。
-- 新增 Settlement Recovery 指标：Prometheus 暴露 `copy_supervisor_settlement_recovery_*`（runs/recovered/failed/exhausted/window）。
-- 新增恢复循环配置：`SUPERVISOR_SETTLEMENT_RECOVERY_*`、`COPY_TRADING_SETTLEMENT_*`、`COPY_TRADING_LOCK_TTL_MS`。
-- 新增 OpenSpec 变更：`add-supervisor-settlement-recovery-loop`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-settlement-recovery-loop --strict --no-interactive`，通过。
-- 新增 Supervisor 队列 ack/reclaim 语义：`claim/ack/nack` + processing lease + stale reclaim，避免“出队后进程崩溃”导致任务丢失。
-- Redis 队列新增 processing/inflight 结构；内存队列补齐 in-flight 回收语义，行为对齐。
-- 新增队列恢复指标：`copy_supervisor_queue_total{action="reclaimed"}` 与摘要日志 `reclaimed` 统计。
-- 新增 OpenSpec 变更：`add-supervisor-queue-ack-reclaim`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-queue-ack-reclaim --strict --no-interactive`，通过。
-- 新增 Supervisor 队列投递上限与 DLQ：`SUPERVISOR_QUEUE_MAX_ATTEMPTS`、`SUPERVISOR_QUEUE_DLQ_MAX_SIZE`，超限任务进入 dead-letter，不再无限回队。
-- 新增 Queue DLQ 观测：`copy_supervisor_queue_total{action="dead_lettered"}`、`copy_supervisor_queue_dlq_size`，并接入 `SUPERVISOR_ALERT_QUEUE_DLQ_SIZE` 告警阈值。
-- 新增 OpenSpec 变更：`add-supervisor-queue-dlq-attempt-limits`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-queue-dlq-attempt-limits --strict --no-interactive`，通过。
-- 新增 DLQ 运维工具脚本：`web/scripts/verify/supervisor-dlq-ops.ts`，支持 `stats/peek/replay/purge`、过滤参数与 `--dry-run`。
-- 新增 DLQ 运维 SOP：`docs/operations/sop-supervisor-dlq.md`，并在 `docs/operations/README.md` 增加入口。
-- 新增 OpenSpec 变更：`add-supervisor-dlq-ops-tool`（proposal/tasks/spec delta）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `openspec validate add-supervisor-dlq-ops-tool --strict --no-interactive`，通过。
+### Phase 2: Architecture Trace
+- **Status:** complete
+- Actions taken:
+  - 读取 `web/scripts/workers/copy-trading-supervisor.ts`，梳理 signal ingestion、queue、guardrail、settlement recovery 主链路。
+  - 读取 `sdk/src/core/trade-orchestrator.ts` 与 `sdk/src/services/copy-trading-execution-service.ts`，确认预写、执行、回滚、结算状态机。
+  - 对照 `web/scripts/workers/copy-trading-worker.ts`、`web/app/api/copy-trading/execute/route.ts`、`sdk/scripts/copy-trading-worker.ts`，识别多套执行入口和 ledger 差异。
+- Files created/modified:
+  - `findings.md` (updated)
+  - `task_plan.md` (updated)
+  - `progress.md` (updated)
 
-## 2026-02-25
-- 完成市场部门“参与机制与全球合伙人计划”需求结构化整理。
-- 完成现有实现盘点（`managed-membership`、`managed-subscriptions`、`affiliate-engine`、Prisma 模型、验证脚本）。
-- 识别复用项：88/228 订阅费、MCN 5折、1天试用、直推一次 +1 天奖励。
-- 识别缺口：双入金通道、FREE/MANAGED 门槛、V1-V9 净入金等级、平级奖、全球合伙人席位机制。
-- 新增 OpenSpec 变更：`add-horus-participation-partner-program`（proposal/tasks/design/spec deltas）。
-- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
-- 基于用户“继续”指令，新增排期化路线图：`openspec/changes/add-horus-participation-partner-program/roadmap.md`。
-- 完成 M1/M2/M3 映射：范围、交付、预估人天、关键依赖、发布闸门（Gate A/B/C）。
-- 增加可执行假设（exchange webhook、trial计费边界、partner月结时区）以便研发先行。
-- 进入 M1 开发实施：新增 Participation Program 数据模型（参与账户/入金记录/净入金账本/日等级快照/收益矩阵）并新增迁移 `20260225162000_add_participation_program_m1`。
-- 新增参与机制 API：`/api/participation/rules`、`/api/participation/account`、`/api/participation/funding`。
-- 托管订阅入口新增最小本金限制：默认最小 500（`PARTICIPATION_MANAGED_MIN_PRINCIPAL_USD`）；新增可选激活闸门开关 `PARTICIPATION_REQUIRE_MANAGED_ACTIVATION`。
-- 将 `AffiliateEngine` 盈利收费率切换为固定 20%（统一 FREE/MANAGED 口径）。
-- 新增收益矩阵种子脚本：`web/prisma/seed-participation-program.ts`（npm script: `seed:participation-program`）。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
-- M1 第二批：新增托管授权留痕模型与迁移 `20260225170000_add_managed_custody_authorization`。
-- 新增托管授权 API：`/api/participation/custody-auth`（查询/授权/撤销）。
-- 托管订阅入口新增可选托管授权校验开关：`PARTICIPATION_REQUIRE_CUSTODY_AUTH`。
-- 管理产品可选期限已收敛到 `1/7/30/90/180/360`（列表与详情 API 统一过滤）。
-- `seed-managed-wealth` 与参与周期常量对齐，仅生成正式周期。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
-- M2 第一批：新增 V1-V9 等级规则与分红映射（`web/lib/participation-program/levels.ts`）。
-- 新增等级进度 API：`GET /api/participation/levels`（用户签名查询当前等级与下一等级差额）。
-- 新增等级快照执行 API：`POST /api/participation/levels`（管理员触发，支持 dry-run，写入 `DailyLevelSnapshot`）。
-- 新增等级引擎单测：`web/lib/participation-program/levels.test.ts`。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts`，通过（13/13）。
-- M2 第二批：新增平级奖结算账本模型 `SameLevelBonusSettlement` 与迁移 `20260225174000_add_same_level_bonus_settlement`。
-- `AffiliateEngine.distributeProfitFee` 已接入可选平级奖链路（`PARTICIPATION_ENABLE_SAME_LEVEL_BONUS=true` 启用）：一代 4%，二代 1%，并通过唯一键实现幂等防重。
-- 新增平级奖规则单测：`web/lib/participation-program/bonuses.test.ts`。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts`，通过（18/18）。
-- M2 第三批：新增双区晋升快照模型 `DoubleZoneSnapshot` 与迁移 `20260225182000_add_double_zone_snapshot`。
-- 新增双区晋升规则计算与进度构建：`web/lib/participation-program/promotion.ts`。
-- 新增双区晋升 API：`GET /api/participation/promotion`、`POST /api/participation/promotion`（admin + dry-run）。
-- 新增双区晋升单测：`web/lib/participation-program/promotion.test.ts`。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/settlement-math.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts`，通过（21/21）。
-- M3 第一批：新增全球合伙人模型与迁移 `20260225191000_add_global_partner_program`（配置、席位、月榜、淘汰、退款）。
-- 新增合伙人 API：
-  - `GET/POST /api/partners/config`
-  - `GET/POST /api/partners/seats`
-  - `GET/POST /api/partners/cycle/eliminate`
-  - `GET/POST /api/partners/refunds`
-  - `GET/POST /api/partners/privileges`
-  - `GET /api/partners/rankings`
-- 新增合伙人工具能力：
-  - `web/lib/participation-program/partner-program.ts`（月度键、退款截止、席位评分、排名、权限映射）
-  - `web/lib/participation-program/partner-program.test.ts`
-- 风险修复：增加“同月淘汰重复执行”拦截，避免重复运行导致超额淘汰。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（22/22）。
-- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
-- M1/M2 补强：新增推荐奖励共享引擎 `web/lib/participation-program/referral-subscription-bonus.ts`，将“首次合格参与 +1 天”逻辑统一到参与激活与托管订阅入口。
-- `POST /api/participation/account`（ACTIVATE）已接入推荐奖励链路，返回 `marketing.referralBonusApplied`。
-- `POST /api/managed-subscriptions` 改为复用推荐奖励共享引擎，去除重复逻辑并保持一次性幂等标记。
-- 托管提现结算 `POST /api/managed-subscriptions/[id]/withdraw` 已接入盈利费分发触发（仅 `grossPnl > 0`），分发失败仅记录日志不阻塞提现。
-- 新增单测：
-  - `web/lib/participation-program/referral-subscription-bonus.test.ts`
-  - `web/lib/managed-wealth/membership-plans.test.ts`
-  - `web/lib/services/affiliate-engine.test.ts`
-  - `web/lib/participation-program/levels-aggregation.test.ts`
-- Vitest 配置补齐别名解析：`web/vitest.config.ts` 新增 `@` -> `web/` alias，避免服务层测试导入失败。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run lib/participation-program/levels-aggregation.test.ts lib/participation-program/referral-subscription-bonus.test.ts lib/managed-wealth/membership-plans.test.ts lib/services/affiliate-engine.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（35/35）。
-- M1/M2 补强第二批：
-  - 新增会员单活跃并发保护：`POST /api/managed-membership` 使用 `managed_membership_<wallet>` 事务锁，防止并发重复创建活跃会员。
-  - 新增新人试用策略 helper：`web/lib/managed-wealth/subscription-trial.ts`，并在 `POST /api/managed-subscriptions` 复用。
-  - 新增试用策略单测：`web/lib/managed-wealth/subscription-trial.test.ts`。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run lib/managed-wealth/subscription-trial.test.ts lib/managed-wealth/membership-plans.test.ts lib/participation-program/referral-subscription-bonus.test.ts lib/services/affiliate-engine.test.ts lib/participation-program/levels-aggregation.test.ts lib/participation-program/levels.test.ts lib/participation-program/bonuses.test.ts lib/participation-program/promotion.test.ts lib/participation-program/partner-program.test.ts`，通过（38/38）。
-- 运维交付：新增全球合伙人 runbook `docs/operations/runbook-partner-program.md`（月度淘汰节奏、退款 SLA、补位流程、常见事故处理）。
-- 更新 `docs/operations/README.md` 索引入口，增加 Global Partner monthly operations。
-- OpenSpec 任务更新：`8.5` 标记完成。
-- 策略一致性（3.1）补齐：
-  - 新增策略解析/标签函数：`web/lib/participation-program/rules.ts`（`parseParticipationStrategy` + `PARTICIPATION_STRATEGY_LABEL_KEYS`）。
-  - 新增 managed-wealth 共享策略主题：`web/lib/managed-wealth/strategy-theme.ts`。
-  - API 收敛：`GET /api/managed-products` 复用统一策略解析；`GET /api/participation/rules` 新增 `strategyOptions`。
-  - UI 收敛：`managed-product-card`、`subscription-modal`、`managed-wealth/page`、`proxy/strategy-selector`、`copy-trader-modal` 复用统一策略常量。
-  - 新增单测：`web/lib/participation-program/rules.test.ts`、`web/lib/managed-wealth/strategy-theme.test.ts`。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run ...`（本批相关 43/43），通过。
-- 7.4 后台页交付：
-  - 新增 `web/app/[locale]/dashboard/admin/partners/page.tsx`，支持合伙人配置、淘汰 dry-run/执行、退款队列处理、席位快照查看。
-  - 更新 `web/app/[locale]/dashboard/admin/page.tsx`，新增 `Partners Ops` 入口。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run lib/participation-program/rules.test.ts lib/managed-wealth/strategy-theme.test.ts`，通过（5/5）。
-- 7.3 正式外宣规则展示交付：
-  - 新增 `web/components/participation/managed-external-rules-section.tsx`，集中展示参与通道、门槛、周期、费率、安全边界与托管收益矩阵（A/B/C）。
-  - 新增 `web/components/participation/affiliate-external-rules-section.tsx`，集中展示直推奖励、净入金口径、V1-V9 分红表、平级奖与全球合伙人席位规则。
-  - `web/app/[locale]/managed-wealth/page.tsx` 接入正式规则区块，面向托管理财用户展示完整外宣口径。
-  - `web/app/[locale]/affiliate/rules/page.tsx` 接入正式规则区块，面向推广侧展示统一政策口径。
-- OpenSpec 任务更新：`7.3` 标记完成。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/managed-wealth/strategy-theme.test.ts`，通过（5/5）。
-- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
-- 8.2 集成测试交付：
-  - 新增 `web/app/api/participation/account.integration.test.ts`，覆盖激活闸门（先注册后激活）、托管门槛校验、以及“直推奖励仅触发一次”链路。
-  - 新增 `web/app/api/partners/partner-workflow.integration.test.ts`，覆盖月度淘汰、同月重复执行拦截、退款完成与完成后禁止失败回退。
-- OpenSpec 任务更新：`8.2` 标记完成。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/participation/account.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（3/3）。
-- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
-- 8.3 E2E 流程交付：
-  - 新增 `web/e2e/participation-partner.spec.mjs`。
-  - 覆盖场景 1：`FREE/MANAGED` 正式规则展示 + 托管申购门槛流（低于 500 失败，达标成功）。
-  - 覆盖场景 2：合伙人席位操作流（淘汰 dry-run/execute + 退款完成）。
-- 修复既有构建阻断问题：`web/lib/services/affiliate-engine.ts` 的 `../prisma.js` 无效导入已改为 `@/lib/prisma`，恢复 Next build 可用。
-- OpenSpec 任务更新：`8.3` 标记完成。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts app/api/participation/account.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（6/6）。
-- 已执行 `cd web && npx playwright test --config=playwright.config.mjs e2e/participation-partner.spec.mjs`，通过（2/2）。
-- 已执行 `openspec validate add-horus-participation-partner-program --strict --no-interactive`，通过。
-- OpenSpec 归档完成：`add-horus-participation-partner-program` 已归档到 `openspec/changes/archive/2026-02-26-add-horus-participation-partner-program/`，并合并更新正式规格：
-  - `openspec/specs/participation-program/spec.md`
-  - `openspec/specs/global-partner-program/spec.md`
-  - `openspec/specs/affiliate-system/spec.md`
-  - `openspec/specs/fee-logic/spec.md`
-- 已执行 `openspec validate --all --strict --no-interactive`，通过（35/35）。
-- 2026-02-26：新增缺口收口实施计划文档 `docs/plans/2026-02-26-horus-participation-partner-gap-closure-plan.md`，按 P0/P1/P2 分阶段推进剩余部分实现项。
-- 2026-02-26：新增 OpenSpec 变更 `harden-horus-participation-partner-policy`（proposal/tasks/design/spec deltas），用于推进席位硬上限、托管硬门槛、平级奖默认开启、计费口径隔离、月末淘汰自动化与退款 SLA 看门狗。
-- 2026-02-26：P0-1 已完成第一批实现：
-  - `ensurePartnerProgramConfig` 与席位分配路径改为强制归一 `maxSeats=100`。
-  - `POST /api/partners/config` 拒绝 `maxSeats != 100`（`IMMUTABLE_SEAT_CAP`）。
-  - 合伙人管理后台 `Max Seats` 改为只读展示，避免运营误改。
-  - 新增 `web/app/api/partners/config.integration.test.ts` 覆盖不可增发约束。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（12/12）。
-- 2026-02-26：P0-2/P0-3 已完成第二批实现：
-  - 新增策略门槛工具 `web/lib/participation-program/policy-gates.ts`。
-  - `web/app/api/managed-subscriptions/route.ts` 改为生产默认强制托管激活与托管授权（非生产仍可显式放宽）。
-  - `web/lib/services/affiliate-engine.ts` 平级奖改为生产默认开启；生产显式关闭时输出审计日志。
-  - `web/lib/services/affiliate-engine.ts` 增加利润费结算防重查询，避免同交易重复分发。
-  - 新增测试：`web/lib/participation-program/policy-gates.test.ts` 与 `affiliate-engine` 防重用例。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts app/api/partners/config.integration.test.ts lib/participation-program/partner-program.test.ts app/api/partners/partner-workflow.integration.test.ts`，通过（23/23）。
-- 2026-02-26：托管理财闭环 Phase A 落地（结算路径统一）：
-  - 新增统一结算服务 `web/lib/managed-wealth/managed-settlement-service.ts`（费率解析、结算计算、结算写入、分润触发 helper、`LIQUIDATING` 状态切换 helper）。
-  - `POST /api/managed-subscriptions/[id]/withdraw` 已改为调用共享结算服务，保留冷却/提前赎回费/风控事件逻辑。
-  - `POST /api/managed-settlement/run` 已接入持仓阻塞护栏：有持仓则转 `LIQUIDATING` 并跳过；无持仓才结算。
-  - `managed-wealth-worker` 结算路径已改为复用共享结算服务；worker 与 run 路径补齐盈利分润触发（非阻断）。
-  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
-  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
-  - 已执行 `cd web && npx tsc --noEmit`，失败（仓库现存 `subscription-modal.tsx` 3 处历史类型错误，非本次改动引入）。
-- 2026-02-26：Phase A 代码已独立提交：
-  - commit: `3d9dc1b`
-  - message: `feat(managed-wealth): unify settlement flow across withdraw run and worker`
-- 2026-02-26：按用户要求，开始推进 Phase B（订阅维度执行隔离）：
-  - 已先完成未提交文件盘点与基线确认；
-  - 下一步进入数据模型与受影响链路改造（positions/NAV/liquidation）。
-- 2026-02-26：Phase B 第一批实现（订阅维度持仓隔离）：
-  - 新增 `ManagedSubscriptionPosition` 数据模型与迁移：`web/prisma/migrations/20260226180000_add_managed_subscription_position_scope/migration.sql`。
-  - `sdk/src/core/trade-orchestrator.ts` 新增 managed 订阅作用域解析与 scoped position 维护（BUY/SELL）。
-  - `web/app/api/managed-subscriptions/[id]/withdraw/route.ts` 未平仓判定改为 `managedSubscriptionPosition`（按订阅）。
-  - `web/app/api/managed-settlement/run/route.ts` 未平仓判定改为 `managedSubscriptionPosition`（按订阅）。
-  - `web/scripts/workers/managed-wealth-worker.ts` NAV、结算阻塞、清仓持仓读取改为订阅维度；清仓时同步递减 legacy `UserPosition`，避免直接清零污染同钱包其他策略。
-  - 已执行 `cd web && npx prisma generate`，通过。
-  - 已执行 `cd sdk && npm run build`，通过。
-  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
-  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
-  - 已执行 `cd web && npx tsc --noEmit`，仍受既有 `subscription-modal.tsx` 3 处历史类型错误阻断（非本批改动引入）。
-- 2026-02-26：Phase B 第二批实现（迁移回填工具）：
-  - 新增回填脚本：`web/scripts/db/backfill-managed-subscription-positions.ts`（按 `copyConfigId` 回放 `CopyTrade` 生成订阅维度持仓）。
-  - 新增运行命令：`cd web && npm run backfill:managed-positions`。
-  - 该脚本已接入代码仓库，尚未在当前环境执行（需真实数据库上下文）。
-- 2026-02-26：Phase B 第三批实现（迁移期 fallback 护栏）：
-  - 新增共享 helper：`web/lib/managed-wealth/subscription-position-scope.ts`。
-  - 逻辑：优先读 `ManagedSubscriptionPosition`；若 scoped 为空，则按 `copyConfigId` 的 `CopyTrade.tokenId` 集合回退查询 legacy `UserPosition`。
-  - `withdraw` / `managed-settlement/run` / `managed-wealth-worker` 已接入该 fallback，降低“回填前误判无仓位可结算”的风险。
-  - 已执行 `cd sdk && npm run build`，通过。
-  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
-  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
-  - 已执行 `cd web && npx tsc --noEmit`，仍被 `subscription-modal.tsx` 既有 3 处类型错误阻断（非本批改动引入）。
-- 2026-02-26：Phase B 第四批实现（对账可观测）：
-  - `web/lib/managed-wealth/subscription-position-scope.ts` 增加 fallback 开关：`MANAGED_POSITION_SCOPE_FALLBACK=false` 可关闭迁移回退逻辑。
-  - 新增对账脚本：`web/scripts/verify/managed-scoped-position-reconciliation.ts`（支持 `--strict`，输出 `BACKFILL_REQUIRED` 与 token 级差异）。
-  - `web/package.json` 新增命令：`verify:managed-positions:scope`。
-  - 已执行 `cd sdk && npm run build`，通过。
-  - 已执行 `cd web && npm run test:managed-wealth:unit`，通过（6/6）。
-  - 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts`，通过（6/6）。
-  - 已执行 `cd web && npx tsc --noEmit`，仍被 `subscription-modal.tsx` 既有 3 处类型错误阻断（非本批改动引入）。
-- 2026-02-26：补充边界强校验：
-  - `web/app/api/managed-subscriptions/route.ts` 新增 FREE 模式账户托管订阅拦截（`MODE_BOUNDARY_VIOLATION`）。
-  - `web/app/api/participation/custody-auth/route.ts` 限制授权模式为 `MANAGED`（拒绝 `FREE`）。
-  - 新增集成测试：
-    - `web/app/api/managed-subscriptions.mode-boundary.integration.test.ts`
-    - `web/app/api/participation/custody-auth.integration.test.ts`
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-subscriptions.mode-boundary.integration.test.ts app/api/participation/custody-auth.integration.test.ts lib/participation-program/policy-gates.test.ts lib/services/affiliate-engine.test.ts`，通过（13/13）。
-- 2026-02-26：新增 P1 自动化脚本：
-  - `web/scripts/services/partner-monthly-elimination.ts`（月末淘汰触发脚本，支持 dry-run 与已执行周期幂等跳过）。
-  - `web/scripts/verify/partner-refund-sla.ts`（退款 SLA 看门狗，按超期阈值失败退出）。
-  - `web/package.json` 新增运行命令：`partner:eliminate:monthly`、`verify:partner:refund-sla`。
-  - 运维文档更新：`docs/operations/runbook-partner-program.md`、`docs/operations/README.md`。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-02-26：新增计费作用域隔离实现：
-  - 新增 `web/lib/participation-program/fee-scope.ts`，统一参与利润费率与作用域判定。
-  - `web/lib/services/affiliate-engine.ts` 增加作用域校验：非参与费路事件写审计日志并跳过结算，避免冲突费路重复计费。
-  - `web/app/api/managed-subscriptions/[id]/withdraw/route.ts` 改为显式传入 `{ scope: 'MANAGED_WITHDRAWAL' }`。
-  - 新增单测：`web/lib/participation-program/fee-scope.test.ts`，并扩展 `affiliate-engine` 用例覆盖 out-of-scope 跳过与显式 scope。
-- 2026-02-26：新增自动化逻辑单测抽象：
-  - 新增 `web/lib/participation-program/partner-ops-automation.ts`（淘汰幂等判定、SLA 逾期判定纯函数）。
-  - 新增 `web/lib/participation-program/partner-ops-automation.test.ts`，覆盖“同月重复执行跳过”与“SLA breach 检测”。
-  - 两个运维脚本改为复用该纯函数库，降低脚本分叉风险。
-- 2026-02-26：补强 custody-auth 模式边界：
-  - `web/app/api/participation/custody-auth/route.ts` 要求参与账户已是 `MANAGED` 模式，否则返回 `MODE_BOUNDARY_VIOLATION`。
-  - `web/app/api/participation/custody-auth.integration.test.ts` 新增“FREE 模式/缺失账户拒绝”用例。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/services/affiliate-engine.test.ts lib/participation-program/fee-scope.test.ts lib/participation-program/partner-ops-automation.test.ts app/api/participation/custody-auth.integration.test.ts app/api/managed-subscriptions.mode-boundary.integration.test.ts`，通过（19/19）。
-- 已执行 `openspec validate harden-horus-participation-partner-policy --strict --no-interactive`，通过。
-- 2026-02-26：托管收益矩阵动态匹配能力上线（前后端联动）：
-  - 新增矩阵匹配引擎：`web/lib/participation-program/managed-return-matrix.ts`（按 principal + cycle + strategy 自动命中 A/B/C 行）。
-  - `GET /api/participation/rules` 支持动态估算参数：`principalUsd`、`cycleDays`、`strategy`，返回 `managedReturnEstimate`（档位、命中结果、收益区间）。
-  - 策略解析新增 `BALANCED -> MODERATE` 别名兼容。
-  - 订阅弹窗接入动态估算：`web/components/managed-wealth/subscription-modal.tsx` 按用户输入金额和所选周期实时展示匹配区间与档位标签。
-  - 多语言文案补齐：`web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`。
-- 2026-02-26：managed-wealth 页面策略卡片完成矩阵交互集成：
-  - `web/app/[locale]/managed-wealth/page.tsx` 新增“收益矩阵模拟器”（本金输入 + 周期选择），并将匹配结果按策略投射到三张策略卡片。
-  - `web/components/managed-wealth/managed-product-card.tsx` 顶部收益指标改为优先显示矩阵命中区间，同时展示周期与档位（未命中回退产品默认区间）。
-  - 对外规则页保留作为完整政策说明，主交互迁移到策略选择主路径，降低用户理解成本。
-- 2026-02-26：`safe-income-vault` 详情页同步矩阵口径：
-  - `web/app/[locale]/managed-wealth/[id]/page.tsx` 右侧订阅区新增本金输入，并将各期限收益区间改为按“本金 + 周期 + 当前策略”实时匹配托管收益矩阵。
-  - 顶部目标收益改为与当前选中期限的矩阵区间一致显示，并附带档位信息（A/B/C）。
-  - 未命中矩阵时自动回退到产品默认期限区间，避免空白展示。
-  - 文案补齐：`web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/participation-program/rules.test.ts lib/participation-program/managed-return-matrix.test.ts app/api/participation/rules.integration.test.ts`，通过（10/10）。
-- 2026-02-26：完成托管理财闭环深度审计（worker/API/schema/spec），定位核心断点：
-  - 静态主交易员映射（非随机算法分配）；
-  - 钱包级持仓聚合导致订阅隔离不完整；
-  - worker/admin 结算路径与手动提现路径分润触发不一致；
-  - 清仓存在模拟成交路径；
-  - 资金授权与本金占用链路缺少硬账本关联。
-- 2026-02-26：新增实施计划文档 `docs/plans/2026-02-26-managed-wealth-closed-loop-plan.md`，按 P0/P1/P2 拆分后端、前端、数据模型、测试与发布策略。
-- 2026-02-26：新增 OpenSpec 变更 `close-managed-wealth-loop`：
-  - `openspec/changes/close-managed-wealth-loop/proposal.md`
-  - `openspec/changes/close-managed-wealth-loop/tasks.md`
-  - `openspec/changes/close-managed-wealth-loop/design.md`
-  - `openspec/changes/close-managed-wealth-loop/specs/managed-wealth/spec.md`
-  - `openspec/changes/close-managed-wealth-loop/specs/fee-logic/spec.md`
-  - `openspec/changes/close-managed-wealth-loop/specs/participation-program/spec.md`
-- 已执行 `openspec validate close-managed-wealth-loop --strict --no-interactive`，通过。
-- 2026-02-26：新增托管闭环健康检查接口 `GET /api/managed-settlement/health`，输出 allocation 映射状态、清仓积压、结算-盈利费分发一致性（仅对有推荐关系钱包）三类指标。
-- 2026-02-26：新增托管运维后台页 `web/app/[locale]/dashboard/admin/managed-wealth/page.tsx`，支持一键刷新和异常清单查看；主 admin 页新增 `Managed Ops` 入口。
-- 2026-02-26：新增 `web/app/api/managed-settlement/health.integration.test.ts`，覆盖未授权拦截与健康指标聚合主路径。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-settlement/health.integration.test.ts`，通过（2/2）。
-- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
-- 2026-02-26：新增结算分润幂等账本 `ManagedSettlementExecution`（含 `ManagedCommissionStatus`），并新增迁移 `20260226193000_add_managed_settlement_execution_idempotency`。
-- 2026-02-26：`settleManagedProfitFeeIfNeeded` 改造为可抢占幂等流程（`PENDING/FAILED -> PROCESSING -> COMPLETED|FAILED|SKIPPED`），失败会落库 `commissionError`。
-- 2026-02-26：`withdraw` / `managed-settlement/run` / `managed-wealth-worker` 三入口统一接入 execution ledger。
-- 2026-02-26：新增 `web/lib/managed-wealth/managed-settlement-service.test.ts`（5 条）覆盖 non-profit skip、finalized skip、claim 冲突、成功完成、失败落库。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/managed-settlement-service.test.ts app/api/managed-settlement/health.integration.test.ts`，通过（7/7）。
-- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
-- 2026-02-26：新增本金预留账本 `ManagedPrincipalReservationLedger` 与枚举 `ManagedPrincipalReservationEntryType`，并新增迁移 `20260226195500_add_managed_principal_reservation_ledger`。
-- 2026-02-26：新增订阅-授权引用迁移 `20260226201000_link_subscription_custody_authorization`，`ManagedSubscription` 增加 `custodyAuthorizationId`。
-- 2026-02-26：新增 `web/lib/managed-wealth/principal-reservation.ts`，实现可用本金计算（含 active-subscription fallback）、预留写账、结算释放写账。
-- 2026-02-26：`POST /api/managed-subscriptions` 已接入本金可用余额硬校验与 `RESERVE` 写账，`GET /api/managed-subscriptions` 增加 `custodyAuthorization` 和 `principalReservations` 审计信息。
-- 2026-02-26：`applyManagedSettlementMutation` 已接入本金预留释放（`RELEASE`），并对已结算场景提供幂等补偿释放。
-- 2026-02-26：新增测试
-  - `web/lib/managed-wealth/principal-reservation.test.ts`（6）
-  - `web/app/api/managed-subscriptions.principal-reservation.integration.test.ts`（1）
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts ...`（本批 15/15），通过。
-- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
-- 2026-02-26：新增 `ManagedLiquidationTask` 模型与迁移 `20260226204000_add_managed_liquidation_task`，用于托管清仓显式状态跟踪。
-- 2026-02-26：`managed-wealth-worker` 清仓阶段已移除模拟成交写入（不再生成 `SYSTEM_LIQUIDATOR` / `sim-liquidation-*` 记录），改为落库 liquidation task（`PENDING/RETRYING/BLOCKED`）并等待外部执行。
-- 2026-02-26：`/api/managed-settlement/health` 新增 liquidation task 状态统计（pending/retrying/blocked/failed）。
-- 2026-02-26：新增 `web/lib/managed-wealth/liquidation-intent.ts` 与单测 `liquidation-intent.test.ts`，统一清仓任务状态决策口径。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts ...`（本批 18/18），通过。
-- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
-- 2026-02-26：新增清仓任务运营接口 `GET/POST /api/managed-liquidation/tasks`，支持任务列表、`retry`、`requeue`、`fail` 手动干预。
-- 2026-02-26：新增 `web/app/api/managed-liquidation/tasks.integration.test.ts`，覆盖未授权拦截、队列查询、重试操作。
-- 2026-02-26：`web/app/[locale]/dashboard/admin/managed-wealth/page.tsx` 接入 liquidation task queue 视图与单条任务操作按钮（Retry/Requeue/Fail）。
-- 2026-02-26：新增真实清仓执行 worker `web/scripts/workers/managed-liquidation-worker.ts`，消费 `ManagedLiquidationTask` 并通过 `CopyTradingExecutionService` 执行 SELL，成功后回写 `CopyTrade` 与持仓递减。
-- 2026-02-26：`web/package.json` 新增脚本 `managed-liquidation:worker`。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-liquidation/tasks.integration.test.ts app/api/managed-settlement/health.integration.test.ts`，通过（5/5）。
-- 已执行 `cd web && npx tsc --noEmit`：失败（既有阻断，`web/components/managed-wealth/subscription-modal.tsx` 第 233/357/362 行类型错误，非本次改动引入）。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `1.1` 数据模型任务：
-  - `web/prisma/schema.prisma` 新增 `ManagedSubscriptionAllocationStatus` 与 `ManagedSubscriptionAllocation`，支持按订阅保存 allocation version、seed、score snapshot、selected weights。
-  - 新增迁移 `web/prisma/migrations/20260302100000_add_managed_subscription_allocation/migration.sql`。
-  - `ManagedSubscription` 已补充 `allocations` relation，为后续分配服务和前端快照查询预留结构。
-- 已执行 `cd web && npx prisma format`，通过。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `2.1/2.2` 基础域服务：
-  - 新增 `web/lib/managed-wealth/allocation-service.ts`，提供候选池合并、按策略画像过滤、确定性 seed 生成、带权随机选择，以及可直接接入现有 `leaderboard-cache` / `smart-money-discovery` 的运行时入口。
-  - 新增单测 `web/lib/managed-wealth/allocation-service.test.ts`，覆盖候选筛选、seed 稳定性、相同 seed 下的选择稳定性。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts`，通过（3/3）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `2.4` worker 接线：
-  - `web/scripts/workers/managed-wealth-worker.ts` 现在会优先读取 active `ManagedSubscriptionAllocation`；若不存在或失效，则基于 `ManagedProductAgent` 权重生成并落库新的 allocation snapshot，再按 snapshot 选中的 trader 建立 `copyConfigId`。
-  - `allocation-service` 新增 `buildManagedTemplateCandidates`，让产品模板权重也走统一的 snapshot / selection 结构。
-  - 当前仍维持 `targetCount=1` 以适配单 `copyConfigId` 执行模型，因此 `2.3`（多 trader 执行）仍待实现。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts`，通过（4/4）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.1`：
-  - 新增 `web/lib/managed-wealth/subscription-position-scope.test.ts`，覆盖 scoped 优先、按 token universe 的 legacy fallback、关闭 fallback 的边界行为。
-  - 与现有 `allocation-service.test.ts`、`managed-settlement-service.test.ts` 组合后，allocation determinism / scope-isolated accounting / settlement idempotency 三类单测均已覆盖。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts lib/managed-wealth/subscription-position-scope.test.ts lib/managed-wealth/managed-settlement-service.test.ts`，通过（12/12）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `5.2`：
-  - `web/components/managed-wealth/subscription-modal.tsx` 现已显式展示最低申购额，并在输入低于最低本金时前端禁用确认、给出明确错误提示。
-  - `web/app/[locale]/managed-wealth/[id]/page.tsx` 右侧订阅区新增“最低本金”与“清仓完成后才最终结算”的前置信息，避免用户在打开弹窗前看不到关键约束。
-  - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json` 已补齐对应多语言文案。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：推进 `close-managed-wealth-loop` 的 `5.1`（订阅面板侧）：
-  - `GET /api/managed-subscriptions` 已补充轻量 `allocationSummary`（active version + normalized selected weights），避免前端直接消费整段 JSON relation。
-  - `web/components/managed-wealth/managed-subscription-item.tsx` 已在订阅卡片展示 allocation version、更新时间和主要分配权重预览。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `5.1`：
-  - `web/app/api/managed-products/[id]/route.ts` 新增 `allocationSnapshots`，向产品详情页返回最近 active allocation 的版本和权重摘要。
-  - `web/app/[locale]/managed-wealth/[id]/page.tsx` 新增 “Recent Allocation Snapshots” 区块；至此产品详情页和 `/managed-wealth/my` 订阅面板都已展示 allocation snapshot summary。
-  - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json` 已补齐相关文案。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：推进 `close-managed-wealth-loop` 的 `6.2`（首批入口 parity）：
-  - 新增 `web/app/api/managed-settlement/entrypoint-parity.integration.test.ts`，覆盖 `managed-settlement/run` 与 `managed-subscriptions/[id]/withdraw` 两条入口。
-  - 断言两条入口都会走共享的 settlement domain service，并以相同 `scope=MANAGED_WITHDRAWAL` / `sourcePrefix=managed-withdraw` 触发利润分润。
-  - 当前仍未覆盖 worker 脚本入口，因此 `6.2` 暂不勾选完成。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（2/2）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：推进 `close-managed-wealth-loop` 的 `6.4`（worker rollback 开关）：
-  - `web/scripts/workers/managed-wealth-worker.ts` 新增 `MANAGED_ALLOCATION_SNAPSHOT_ENABLED`。设为 `false` 时，可回退到旧的 `product.agents[0]` 主模板映射路径，跳过 allocation snapshot 读写。
-  - 当前仅覆盖 worker 映射路径；settlement service 的独立回滚开关仍未补齐，因此 `6.4` 暂不勾选完成。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `2.3`：
-  - `web/prisma/schema.prisma` 新增 `ManagedSubscriptionExecutionTarget`，并补充迁移 `web/prisma/migrations/20260302113000_add_managed_execution_targets/migration.sql`，将“订阅 -> 多个执行配置”的关系显式建模，同时保留 `copyConfigId` 作为主执行 target 的兼容字段。
-  - 新增 `web/lib/managed-wealth/execution-targets.ts` 与单测 `execution-targets.test.ts`，统一解析 active execution target、主 target 和 legacy `copyConfigId` fallback。
-  - `web/scripts/workers/managed-wealth-worker.ts` 现已按 allocation snapshot 的多 trader 权重创建/复用多个 `CopyTradingConfig`，并在 active allocation version 变化时按最小变更关闭过期 target config、更新 `ManagedSubscriptionExecutionTarget`，实现受控 rebalance。
-  - NAV、settlement、withdraw、health 和 liquidation path 已全部切到 execution-target 解析层；`subscription-position-scope` 现支持按多 config 的 token universe 做 scoped/legacy fallback 统计。
-- 已执行 `cd web && npx prisma generate`，通过。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/allocation-service.test.ts lib/managed-wealth/execution-targets.test.ts lib/managed-wealth/subscription-position-scope.test.ts app/api/managed-settlement/health.integration.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（14/14）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.2`：
-  - 新增 `web/lib/managed-wealth/managed-settlement-entrypoint.ts`，把三条入口共享的利润分润收口逻辑统一到 `finalizeManagedSettlementEntry`，固定 `scope=MANAGED_WITHDRAWAL` / `sourcePrefix=managed-withdraw`。
-  - `web/scripts/workers/managed-wealth-worker.ts`、`web/app/api/managed-settlement/run/route.ts`、`web/app/api/managed-subscriptions/[id]/withdraw/route.ts` 已全部改为复用该 helper，worker 路径不再与 API 路径分叉维护。
-  - 新增 `web/lib/managed-wealth/managed-settlement-entrypoint.test.ts`；结合现有 `entrypoint-parity.integration.test.ts`，现在既验证了 run/withdraw 两条 API 入口，也通过共享 helper 覆盖了 worker 的结算收口契约。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/managed-settlement-entrypoint.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（5/5）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.4`：
-  - `web/scripts/workers/managed-wealth-worker.ts` 新增 `MANAGED_MULTI_TARGET_EXECUTION_ENABLED`，设为 `false` 时会把 allocation snapshot 折叠为单 target，并停止多 trader 扩展/再平衡，保留旧的单 `copyConfigId` 执行口径。
-  - `web/lib/managed-wealth/execution-targets.ts` 新增 `MANAGED_EXECUTION_TARGET_SCOPE_ENABLED`；关闭后，NAV / settlement / liquidation / health / withdraw 等读取路径会直接退回 legacy `copyConfigId`，忽略 `ManagedSubscriptionExecutionTarget` 关系。
-  - `web/lib/managed-wealth/execution-targets.test.ts` 已补充 rollback 开关用例，确认 scope 关闭时不会访问 execution-target relation。
-- 已执行 `cd web && npx vitest run --config vitest.config.ts lib/managed-wealth/execution-targets.test.ts lib/managed-wealth/managed-settlement-entrypoint.test.ts lib/managed-wealth/subscription-position-scope.test.ts app/api/managed-settlement/health.integration.test.ts app/api/managed-settlement/entrypoint-parity.integration.test.ts`，通过（14/14）。
-- 已执行 `cd web && npx tsc --noEmit`，通过。
-- 2026-03-02：完成 `close-managed-wealth-loop` 的 `6.3`：
-  - `web/e2e/managed-wealth.spec.mjs` 现已补充 mocked dashboard withdraw 流程：用户从 marketplace 进入产品详情并完成申购，然后在 `/managed-wealth/my` 对运行中的订阅执行一键 withdraw，页面 reload 后校验已结算的 `Final Payout` 状态。
-  - 现有“查看已结算详情”用例已抽到共享 mock 响应；整份 spec 现在覆盖“申购 -> 仪表盘 -> 提现/结算完成”的用户最短闭环。
-- 已执行 `cd web && npm run test:managed-wealth:e2e`，通过（3/3）。
+### Phase 3: Risk & Gap Analysis
+- **Status:** complete
+- Actions taken:
+  - 发现 orchestrator 卖出后更新 `UserPosition` 时未同步减少 `totalCost`，会污染剩余仓位成本。
+  - 发现 execute API 执行链路只更新 `CopyTrade`，未更新 `UserPosition` 或 PnL。
+  - 确认 supervisor 路径未接入 `ReimbursementLedger` 批量报销，而旧 sdk worker 有完整实现。
+  - 确认 runtime source of truth 存在 `web worker / supervisor / API / sdk worker` 多重分叉。
+- Files created/modified:
+  - `findings.md` (updated)
+  - `task_plan.md` (updated)
+  - `progress.md` (updated)
 
-## 2026-03-02（Participation Program 审计）
-- 已读取现有 `task_plan.md`、`findings.md`、`progress.md`，确认仓库内已有 Participation Program 的历史推进记录，可作为“任务完成情况”基线。
-- 已完成第一轮文件盘点：
-  - Participation Program 代码入口：`web/lib/participation-program/*`
-  - API 入口：`web/app/api/participation/*`、`web/app/api/partners/*`
-  - 规范入口：`openspec/specs/participation-program/spec.md`、`openspec/specs/global-partner-program/spec.md`
-  - 变更记录：`openspec/changes/archive/2026-02-26-add-horus-participation-partner-program/*`、`openspec/changes/harden-horus-participation-partner-policy/*`
-- 当前状态：进入“规范与实现逐项核对”阶段。
-- 已完成验证：
-  - `cd web && npx vitest run lib/participation-program/*.test.ts app/api/participation/*.integration.test.ts app/api/partners/*.integration.test.ts` -> `16 files / 67 tests` 全通过。
-  - `cd web && npx tsc --noEmit` -> 通过。
-  - `openspec validate harden-horus-participation-partner-policy --strict --no-interactive` -> 通过。
-- 当前状态：进入“汇总结论与风险”阶段。
-- 已补充整改建议方向：
-  - P1：`partners/config` 读权限口径统一、补齐 levels/promotion 定时调度入口与 runbook。
-  - P2：OpenSpec `Purpose` 文案收口、spec 边界说明、用户侧 participation 状态可视化增强。
-- 已完成 P1 修复第一批：
-  - `web/app/api/partners/config/route.ts`：`GET` 新增管理员鉴权。
-  - `web/app/api/partners/config.integration.test.ts`：新增未授权 `GET` 覆盖，现为 4 个用例。
-  - `web/scripts/services/participation-levels-daily-snapshot.ts`：新增 daily level snapshot 触发脚本。
-  - `web/scripts/services/participation-promotion-daily-snapshot.ts`：新增 daily promotion snapshot 触发脚本。
-  - `web/package.json`：新增 `participation:levels:daily` / `participation:promotion:daily` scripts。
-  - `docs/operations/runbook-participation-program.md`：新增参与系统 daily operations runbook。
-  - `docs/operations/README.md`：新增 Participation daily snapshot operations 索引。
-- 已执行验证：
-  - `cd web && npx vitest run app/api/partners/config.integration.test.ts app/api/participation/*.integration.test.ts lib/participation-program/*.test.ts` -> `15 files / 67 tests` 全通过。
-  - `cd web && npx tsc --noEmit` -> 通过。
-- 已完成第二批收口：
-  - `openspec/specs/participation-program/spec.md`、`openspec/specs/global-partner-program/spec.md`、`openspec/specs/affiliate-system/spec.md`、`openspec/specs/fee-logic/spec.md`：补齐 `Purpose` 文案与职责边界。
-  - 提交：`3b05982` (`clarify participation spec ownership`)
-  - 校验：`openspec validate --specs --strict --no-interactive` -> `12 passed`
-- 已完成第三批前台补强：
-  - `web/app/[locale]/participation/page.tsx`：新增用户侧 participation dashboard。
-  - `web/components/layout/user-menu.tsx`：新增 Participation 菜单入口。
-  - 提交：`2b60c78` (`add participation dashboard page`)
-  - 校验：`cd web && npx tsc --noEmit` -> 通过。
-- 已完成第四批测试补强：
-  - `web/e2e/participation-dashboard.spec.mjs`：新增 participation dashboard E2E，用 mocked API 覆盖账号状态、V 级和双区进度展示。
-  - 首次运行因断言文本格式与 strict 模式匹配过严失败，已修正为与真实渲染一致的断言。
-  - 校验：`cd web && npx playwright test --config=playwright.config.mjs e2e/participation-dashboard.spec.mjs` -> 通过（1/1）。
-  - 提交：`50eb115` (`test participation dashboard e2e`)
-- 已完成第五批入口曝光补强：
-  - `web/components/layout/navbar.tsx`：已登录用户主导航新增 Participation 入口。
-  - `web/messages/en.json`、`web/messages/zh-CN.json`、`web/messages/zh-TW.json`：补充 `Navbar.participation` 文案。
-  - 校验：`cd web && npx tsc --noEmit` -> 通过。
-  - 提交：`d523403` (`surface participation in main nav`)
+### Phase 4: Verification
+- **Status:** complete
+- Actions taken:
+  - 使用 `nl -ba` 回查关键代码行号，确保最终结论能落到具体文件/行。
+  - 交叉验证 `PositionService` 正常卖出记账逻辑与 orchestrator 当前 SQL 的差异。
+  - 验证 `web/package.json` 默认启动脚本仍指向旧 worker，支撑“运行时入口不清晰”的结论。
+- Files created/modified:
+  - `findings.md` (updated)
+  - `task_plan.md` (updated)
+  - `progress.md` (updated)
 
-## 2026-03-04（全球合伙人制度二次深度复盘）
-- 已基于最新提交重新完成规则核对：`partner-program.ts`、`partners/*` API、`schema.prisma`、runbook、spec、测试文件。
-- 已确认新增增强已落地：Tie-breaker、Queue、EliminationTask、Refund execute 路由、运维自动化脚本。
-- 已确认四项待收口问题并进入修复实施：
-  - 排序比较器一致性
-  - 席位费口径强约束
-  - 管理员签名鉴权
-  - `monthKey` 边界评分
-- 已更新 `task_plan.md` / `findings.md` 作为本轮实施基线。
-- 已完成后端修复：
-  - `web/lib/participation-program/partner-program.ts`：新增统一排序比较器、淘汰候选选择器、`monthKey` 评分窗口、席位费强约束、管理员签名鉴权。
-  - `web/app/api/partners/cycle/eliminate/route.ts`、`web/app/api/partners/rankings/route.ts`：淘汰预览/执行改为复用统一候选选择器，并按 `monthKey` 构建 ranking。
-  - `web/app/api/partners/seats/route.ts`：席位费改为配置价强约束，不再允许请求侧随意覆盖。
-- 已完成前端与运维接线：
-  - `web/app/[locale]/dashboard/admin/partners/page.tsx`：管理台请求改为携带钱包签名头 + `x-admin-wallet`。
-  - `web/lib/participation-program/partner-ops-automation.ts`：新增签名头构建 helper。
-  - `web/scripts/services/partner-monthly-elimination.ts`、`web/scripts/verify/partner-refund-sla.ts`：支持 `PARTNER_OPS_ADMIN_PRIVATE_KEY` 签名请求。
-  - `docs/operations/runbook-partner-program.md`：补充生产签名鉴权要求与脚本环境变量。
-- 已补充测试：
-  - `web/lib/participation-program/partner-program.test.ts`：新增席位费约束、淘汰候选比较器、管理员签名鉴权、monthKey 评分窗口测试。
-  - `web/app/api/partners/partner-workflow.integration.test.ts`：补齐 `pickEliminationCandidates` mock，保持流程集成测试通过。
-- 已执行验证：
-  - `cd web && npx vitest run lib/participation-program/partner-program.test.ts app/api/partners/config.integration.test.ts app/api/partners/partner-workflow.integration.test.ts app/api/partners/queue/route.test.ts lib/participation-program/partner-ops-automation.test.ts` -> `5 files / 30 tests` 全通过。
-  - `cd web && npx tsc --noEmit` -> 通过。
+### Phase 5: Delivery
+- **Status:** complete
+- Actions taken:
+  - 读取 `openspec/project.md`、活跃 changes 和现有 specs，确认优化计划会影响 `copy-trading` 与 `copy-execution`。
+  - 产出设计文档 `docs/plans/2026-03-06-copy-trading-runtime-hardening-design.md`。
+  - 产出实施计划 `docs/plans/2026-03-06-copy-trading-runtime-hardening.md`。
+  - 创建并校验三个 OpenSpec changes：
+    - `fix-copy-trading-accounting-integrity`
+    - `refactor-copy-trading-runtime-authority`
+    - `harden-copy-trading-recovery-guardrails`
+- Files created/modified:
+  - `docs/plans/2026-03-06-copy-trading-runtime-hardening-design.md` (created)
+  - `docs/plans/2026-03-06-copy-trading-runtime-hardening.md` (created)
+  - `openspec/changes/fix-copy-trading-accounting-integrity/*` (created)
+  - `openspec/changes/refactor-copy-trading-runtime-authority/*` (created)
+  - `openspec/changes/harden-copy-trading-recovery-guardrails/*` (created)
+  - `task_plan.md` (updated)
+  - `progress.md` (updated)
 
-## 2026-03-04（全球合伙人制度继续收口）
-- 月淘汰数量已改为固定常量策略：
-  - `POST /api/partners/cycle/eliminate` 传入自定义 `eliminateCount`（非政策常量）会返回 `409/IMMUTABLE_ELIMINATION_COUNT`。
-  - 管理后台去除“可编辑淘汰人数”，改为只读展示。
-  - 月淘汰脚本移除数量下发，仅允许环境变量值与常量一致。
-- 退款执行接口已去模拟化：
-  - `POST /api/partners/refunds/execute` 改为强制接收合法 `txHash`，不再生成 mock tx。
-  - 退款完成后在同一事务内更新 `PartnerRefund` 与 `PartnerSeat`（`REFUNDED` + `backendAccess=false`）。
-  - 新增测试 `web/app/api/partners/refunds/execute/route.test.ts`（3 个用例）。
-- 已执行验证：
-  - `cd web && npx vitest run app/api/partners/refunds/execute/route.test.ts app/api/partners/partner-workflow.integration.test.ts lib/participation-program/partner-program.test.ts lib/participation-program/partner-ops-automation.test.ts app/api/partners/config.integration.test.ts app/api/partners/queue/route.test.ts` -> `6 files / 34 tests` 全通过。
-  - `cd web && npx tsc --noEmit` -> 通过。
-- 已新增 PR 交付文档：
-  - `docs/reports/2026-03-04-partner-hardening-pr.md`
-  - 包含：可直接粘贴的 PR 描述、影响范围、兼容性说明、验证命令、上线前验收清单。
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Planning files initialized | Create analysis tracking files | Files exist with initial task context | Pending manual verification during analysis | in_progress |
 
-## 2026-03-04
-- 启动“跟单交易系统上线前严谨审计”。
-- 已读取 `planning-with-files` 技能并执行 session catchup 检查（无遗留上下文输出）。
-- 已在 `task_plan.md / findings.md / progress.md` 新增本轮审计目标、阶段和方法。
-- 下一步：全量定位跟单相关入口文件并建立关键链路图，再开始风险分级排查。
-- 已完成跟单系统关键路径静态审计：API（detect/execute/config/orders/positions/metrics/readiness/history/trades/strategies）、Supervisor、ExecutionService、TradeOrchestrator、Guardrail、数据模型。
-- 已识别 11 项高风险/中高风险问题，覆盖：鉴权缺失、并发双执行、弱默认密钥、配置分裂、状态机不一致、缓存内存膨胀、查询放大、风控原子性不足。
-- 测试验证受阻：`pnpm -C sdk test copy-trading-execution-service.test.ts` 与 `pnpm -C sdk build` 失败（环境缺失 `vitest` / `tsc` 命令）。
-- 已完成上线审计分级与结论：当前不满足“严谨商业项目”直接上线标准，需先修复 P0/P1 阻断项。
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-03-06 | `rg` regex parse error while searching reimbursement usage | 1 | Switched to simpler keyword-based searches |
+| 2026-03-06 | `openspec validate --strict --no-interactive` reported "Nothing to validate" | 1 | Re-ran with `openspec validate --changes --strict --no-interactive` |
 
-### [2026-03-04] Completed: OpenSpec Proposal for Copy Trading Go-Live Hardening
-- Reviewed OpenSpec baseline (`project.md`, active changes, existing specs).
-- Mapped 11 production blockers to 3 capabilities: `copy-trading`, `copy-execution`, `storage`.
-- Drafted full proposal/task/design package under `openspec/changes/update-copy-trading-go-live-hardening/`.
-- Ran strict OpenSpec validation successfully.
-- Ready for apply-stage implementation after proposal approval.
-
-### [2026-03-04] Completed: Apply Phase (Partial)
-- Added runtime config hardening for copy-trading auth/secrets/flags.
-- Hardened detect/redeem-sim/execute routes against fail-open auth and duplicate execution.
-- Corrected orchestrator execution classification and failure closure.
-- Added bounded cache behavior and targeted pagination limits.
-- Added 7 passing unit tests across runtime-config and server-cache.
-- Remaining follow-up: deeper route-level concurrency/idempotency tests and broader endpoint pagination coverage if desired.
-
-### [2026-03-04] Completed: Apply Phase Verification Closeout
-- Added route-level verification coverage:
-  - `web/app/api/copy-trading/execute/route.test.ts`
-  - `web/app/api/copy-trading/detect/route.test.ts`
-  - `web/app/api/copy-trading/trades/route.test.ts`
-- Confirmed performance regressions are now guarded in tests:
-  - bounded cache growth via `web/lib/server-cache.test.ts`
-  - capped query cost via `GET /api/copy-trading/trades` limit clamp assertion
-- Validation:
-  - `cd web && npx vitest run --config vitest.config.ts lib/copy-trading/runtime-config.test.ts lib/server-cache.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts` -> `5 files / 11 tests` passed
-  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
-  - `openspec validate update-copy-trading-go-live-hardening --strict --no-interactive` -> passed
-- OpenSpec task `4.4` marked complete; the change checklist is now fully complete.
-
-### [2026-03-04] Completed: Pagination Coverage Expansion
-- Added:
-  - `web/app/api/copy-trading/orders/route.test.ts`
-  - `web/app/api/copy-trading/history/route.test.ts`
-- Coverage purpose:
-  - `orders`: verifies `limit` clamp, `take: limit + 1`, and pagination metadata contract
-  - `history`: verifies `limit` clamp and `cursor` propagation to Prisma
-- Validation:
-  - `cd web && npx vitest run --config vitest.config.ts app/api/copy-trading/orders/route.test.ts app/api/copy-trading/history/route.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts lib/server-cache.test.ts lib/copy-trading/runtime-config.test.ts` -> `7 files / 13 tests` passed
-  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
-- Commits:
-  - `377096e` `test: cover copy-trading pagination and race paths`
-  - `71adfc8` `test: add copy-trading orders and history route coverage`
-
-### [2026-03-04] Completed: Operations and Deployment Closeout
-- Stage-1 deployment baseline updated to match the current monorepo:
-  - `deploy/stage1/Dockerfile.frontend`
-  - `deploy/stage1/Dockerfile.worker`
-  - `deploy/stage1/docker-compose.yml`
-  - `deploy/stage1/k8s/07-copy-worker.yaml`
-  - `deploy/stage1/k8s/09-copy-supervisor.yaml`
-  - `deploy/stage1/README.md`
-- Operational docs updated to canonical runtime and verification paths:
-  - `docs/operations/README.md`
-  - `docs/operations/deploy-supervisor-monitoring.md`
-  - `docs/operations/deploy-supervisor-capacity-controls.md`
-  - `docs/operations/copy-trading-supervisor.md`
-  - `docs/operations/copy-trade-lock-claim-verification.md`
-  - `docs/operations/runbook.md`
-  - `docs/operations/production_deployment.md`
-  - `docs/operations/real-trading-introduction.md`
-  - `docs/operations/speed-trading-config.md`
-  - `docs/operations/copy-trading-go-live-checklist.md`
-- Script/runtime path corrections:
-  - `web/scripts/README.md`
-  - `web/scripts/workers/copy-trading-supervisor.ts`
-  - `web/scripts/workers/copy-trading-worker.ts`
-  - `web/scripts/env/setup-real-trading.ts`
-  - `sdk/scripts/verify/README.md`
-  - `sdk/scripts/verify/async-settlement-flow.ts`
-  - `sdk/scripts/verify/reimbursement-ledger-flow.ts`
-  - `sdk/scripts/verify/claim-copytrade-locks.ts`
-  - `sdk/scripts/verify/seed-copytrade-locks.ts`
-  - `sdk/scripts/verify/copy-trade-prewrite.ts`
-- Validation:
-  - `npx tsc --noEmit -p sdk/tsconfig.json` -> passed
-  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
-
-### [2026-03-04] Completed: Tail Gap Closeout
-- Added centralized write-route wallet auth helper:
-  - `web/lib/copy-trading/request-wallet.ts` (`resolveCopyTradingWriteWalletContext`)
-- Switched copy-trading write routes to the centralized helper:
-  - `web/app/api/copy-trading/config/route.ts`
-  - `web/app/api/copy-trading/orders/route.ts`
-  - `web/app/api/copy-trading/execute/route.ts`
-- Retired simulation mutation endpoint:
-  - `web/app/api/copy-trading/redeem-sim/route.ts` now returns `410 GONE`
-  - `web/app/api/copy-trading/redeem-sim/route.test.ts` added
-- Removed the last weak SDK encryption fallback:
-  - `sdk/src/utils/encryption.ts` now re-exports fail-closed core encryption
-- Normalized remaining runtime config readers:
-  - `web/app/api/copy-trading/readiness/route.ts`
-  - `web/scripts/workers/copy-trading-worker.ts`
-- Added sustained cache pressure regression coverage:
-  - `web/lib/server-cache.test.ts`
-- Validation:
-  - `cd web && npx vitest run --config vitest.config.ts lib/server-cache.test.ts lib/copy-trading/runtime-config.test.ts app/api/copy-trading/redeem-sim/route.test.ts app/api/copy-trading/execute/route.test.ts app/api/copy-trading/detect/route.test.ts app/api/copy-trading/trades/route.test.ts app/api/copy-trading/orders/route.test.ts app/api/copy-trading/history/route.test.ts` -> `8 files / 15 tests` passed
-  - `npx tsc --noEmit -p web/tsconfig.json` -> passed
-  - `npx tsc --noEmit -p sdk/tsconfig.json` -> passed
+## 5-Question Reboot Check
+| Question | Answer |
+|----------|--------|
+| Where am I? | Delivery complete; design and OpenSpec planning artifacts have been created |
+| Where am I going? | Wait for user to approve implementation or request revisions to the plan |
+| What's the goal? | 输出可执行的跟单交易优化计划，并形成正式 OpenSpec proposal |
+| What have I learned? | 主要问题集中在账本正确性、运行时权威分叉、恢复闭环和 guardrail 并发安全 |
+| What have I done? | 已完成分析、设计文档、实施计划和 3 个已通过校验的 OpenSpec changes |

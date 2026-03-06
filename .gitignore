@@ -40,3 +40,4 @@ coverage/
 contracts/artifacts/*
 contracts/typechain-types/*
 contracts/cache/*
+.worktrees/
