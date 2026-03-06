@@ -76,7 +76,7 @@ function parseTransactionError(err: unknown): string {
 
     // Wrong network
     if (lowerMessage.includes('chain') || lowerMessage.includes('network mismatch')) {
-        return 'Please switch to Polygon Amoy network';
+        return `Please switch to the correct network (Chain ID: ${TARGET_CHAIN_ID})`;
     }
 
     // Contract errors
@@ -205,19 +205,26 @@ export function useProxy(): UseProxyReturn {
                 const error = switchError as { code?: number };
                 if (error.code === 4902) {
                     let networkParams;
-                    if (targetChainId === 137) {
+                    if (NETWORK === 'localhost') {
+                        networkParams = {
+                            chainId: `0x${targetChainId.toString(16)}`,
+                            chainName: targetChainId === 137 ? 'Localhost (Fork)' : 'Localhost',
+                            nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+                            rpcUrls: [process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545'],
+                        };
+                    } else if (targetChainId === 137) {
                         networkParams = {
                             chainId: '0x89',
                             chainName: 'Polygon Mainnet',
                             nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
-                            rpcUrls: ['https://polygon-rpc.com'],
+                            rpcUrls: [process.env.NEXT_PUBLIC_RPC_URL || 'https://polygon-rpc.com'],
                             blockExplorerUrls: ['https://polygonscan.com'],
                         };
                     } else if (targetChainId === 31337 || targetChainId === 1337) {
                         networkParams = {
                             chainId: `0x${targetChainId.toString(16)}`,
                             chainName: 'Localhost',
-                            nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                            nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
                             rpcUrls: [process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545'],
                         };
                     } else {
