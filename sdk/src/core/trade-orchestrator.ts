@@ -920,16 +920,45 @@ export class TradeOrchestrator {
                     : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
                 const shares = copySide === 'BUY' ? resolvedBuyShares : -resolvedSellShares;
                 const totalCostInsert = copySide === 'BUY' ? copySizeUsdc : 0;
-                await this.prisma.$executeRaw`
-                    INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "totalCost", "avgEntryPrice", "updatedAt")
-                    VALUES (gen_random_uuid(), ${config.walletAddress.toLowerCase()}, ${tokenId}, ${shares}, ${totalCostInsert}, ${execPrice}, CURRENT_TIMESTAMP)
-                    ON CONFLICT ("walletAddress", "tokenId") 
-                    DO UPDATE SET 
-                        "balance" = GREATEST("UserPosition"."balance" + EXCLUDED."balance", 0),
-                        "totalCost" = "UserPosition"."totalCost" + EXCLUDED."totalCost",
-                        "avgEntryPrice" = CASE WHEN ("UserPosition"."balance" + EXCLUDED."balance") > 0 THEN ("UserPosition"."totalCost" + EXCLUDED."totalCost") / ("UserPosition"."balance" + EXCLUDED."balance") ELSE 0 END,
-                        "updatedAt" = CURRENT_TIMESTAMP
-                `;
+
+                // Replace raw SQL with robust Prisma logic to avoid gen_random_uuid() conflicts
+                await this.prisma.$transaction(async (tx) => {
+                    const existing = await tx.userPosition.findUnique({
+                        where: {
+                            walletAddress_tokenId: {
+                                walletAddress: config.walletAddress.toLowerCase(),
+                                tokenId: tokenId,
+                            }
+                        }
+                    });
+
+                    if (!existing) {
+                        if (shares > 0) {
+                            await tx.userPosition.create({
+                                data: {
+                                    walletAddress: config.walletAddress.toLowerCase(),
+                                    tokenId: tokenId,
+                                    balance: shares,
+                                    totalCost: totalCostInsert,
+                                    avgEntryPrice: execPrice,
+                                }
+                            });
+                        }
+                    } else {
+                        const newBalance = Math.max(0, existing.balance + shares);
+                        const newTotalCost = existing.totalCost + totalCostInsert;
+                        const newAvgEntryPrice = newBalance > 0 ? (newTotalCost / newBalance) : 0;
+
+                        await tx.userPosition.update({
+                            where: { id: existing.id },
+                            data: {
+                                balance: newBalance,
+                                totalCost: newTotalCost,
+                                avgEntryPrice: newAvgEntryPrice,
+                            }
+                        });
+                    }
+                });
 
                 if (managedSubscriptionId) {
                     await this.upsertManagedScopedPosition({

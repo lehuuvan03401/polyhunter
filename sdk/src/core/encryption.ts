@@ -17,11 +17,11 @@ function resolveEncryptionKey(): string {
     }
     return key.toLowerCase();
 }
-const ENCRYPTION_KEY_HEX = resolveEncryptionKey();
 
 export class EncryptionService {
     private static getKeyBuffer(): Buffer {
-        const keyBuffer = Buffer.from(ENCRYPTION_KEY_HEX, 'hex');
+        const keyHex = resolveEncryptionKey();
+        const keyBuffer = Buffer.from(keyHex, 'hex');
         if (keyBuffer.length !== 32) {
             throw new Error("Invalid ENCRYPTION_KEY length. Must be 32 bytes (64 hex chars).");
         }
