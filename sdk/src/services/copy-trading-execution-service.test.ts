@@ -92,6 +92,7 @@ describe('CopyTradingExecutionService', () => {
         if (!result.success) console.error(result.error);
         expect(result.success).toBe(true);
         expect(result.useProxyFunds).toBe(true);
+        expect(result.executionPrice).toBeCloseTo(0.51, 8);
 
         // 1. Check Balance (Called)
         expect(mockContract.balanceOf).toHaveBeenCalled();
@@ -132,6 +133,7 @@ describe('CopyTradingExecutionService', () => {
 
         if (!result.success) console.error(result.error);
         expect(result.success).toBe(true);
+        expect(result.executionPrice).toBeCloseTo(0.49, 8);
 
         // 1. Pull Tokens is SKIPPED due to Proxy Signatures
         expect(mockContract.executeOnProxy).not.toHaveBeenCalled();

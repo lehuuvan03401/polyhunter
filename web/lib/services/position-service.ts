@@ -6,6 +6,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { applySellToPosition } from '../../../sdk/src/core/position-accounting.js';
 
 export interface TradeEvent {
     walletAddress: string;
@@ -81,7 +82,7 @@ export class PositionService {
      * For now, simpler optimization: Atomic decrement.
      */
     async recordSell(trade: TradeEvent): Promise<ProfitResult> {
-        const { walletAddress, tokenId, amount, price, totalValue } = trade;
+        const { walletAddress, tokenId, amount, totalValue } = trade;
 
         // 1. We MUST read current avgEntryPrice to calculate realized profit.
         // There is still a small race here if AvgPrice changes between Read and Sell Execution (very rare during Sell).
@@ -97,27 +98,31 @@ export class PositionService {
                 return { realized: true, profit: totalValue, profitPercent: 1.0 };
             }
 
-            const costBasis = position.avgEntryPrice * amount;
-            const profit = totalValue - costBasis;
-            const profitPercent = costBasis > 0 ? profit / costBasis : 0;
+            const accounting = applySellToPosition({
+                currentBalance: position.balance,
+                currentTotalCost: position.totalCost,
+                currentAvgEntryPrice: position.avgEntryPrice,
+                sellShares: amount,
+                sellTotalValue: totalValue,
+            });
 
-            // Atomic Decrement
-            // We use raw SQL or updateMany with filter to ensure we don't go below zero if race happens?
-            // Actually, just standard decrement is safer now inside transaction if isolation level is sufficient.
-            // But raw SQL is safest for "balance = balance - amount".
+            await tx.userPosition.update({
+                where: { walletAddress_tokenId: { walletAddress, tokenId } },
+                data: {
+                    balance: accounting.remainingBalance,
+                    totalCost: accounting.remainingTotalCost,
+                    avgEntryPrice: accounting.remainingAvgEntryPrice,
+                    updatedAt: new Date(),
+                },
+            });
 
-            await tx.$executeRaw`
-                UPDATE "UserPosition"
-                SET 
-                    "balance" = GREATEST(0, "balance" - ${amount}),
-                    "totalCost" = GREATEST(0, "balance" - ${amount}) * "avgEntryPrice",
-                    "updatedAt" = NOW()
-                WHERE "walletAddress" = ${walletAddress} AND "tokenId" = ${tokenId}
-            `;
+            console.log(`[PositionService] SELL recorded: Profit $${accounting.realizedProfit.toFixed(4)}`);
 
-            console.log(`[PositionService] SELL recorded: Profit $${profit.toFixed(4)}`);
-
-            return { realized: true, profit, profitPercent };
+            return {
+                realized: true,
+                profit: accounting.realizedProfit,
+                profitPercent: accounting.realizedProfitPercent,
+            };
         });
     }
 

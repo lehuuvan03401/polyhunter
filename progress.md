@@ -113,3 +113,43 @@
 - 新增 OpenSpec 变更：`add-supervisor-dlq-ops-tool`（proposal/tasks/spec delta）。
 - 已执行 `cd web && npx tsc --noEmit`，通过。
 - 已执行 `openspec validate add-supervisor-dlq-ops-tool --strict --no-interactive`，通过。
+## Session: 2026-03-06 Implementation
+
+### Task 2: Position Accounting Integrity
+- **Status:** complete
+- Actions taken:
+  - 新增 `sdk/src/core/position-accounting.ts` 与测试，固定 BUY/SELL 成本核算规则。
+  - 修复 `web/lib/services/position-service.ts` 的 SELL 成本递减逻辑，并补齐单测。
+  - 新增 `sdk/src/core/user-position-ledger.ts`，统一 API / orchestrator 的 `UserPosition` 写账语义。
+  - 将 `sdk/src/core/trade-orchestrator.ts` 切换到共享 ledger helper，并在成功 SELL 时回写 `realizedPnL`。
+  - 新增 `web/scripts/db/backfill-copy-trading-position-cost-basis.ts` 与 `web/package.json` 脚本，用于历史 `UserPosition.totalCost` 漂移回填。
+- Files created/modified:
+  - `sdk/src/core/position-accounting.ts` (created)
+  - `sdk/src/core/position-accounting.test.ts` (created)
+  - `sdk/src/core/user-position-ledger.ts` (created)
+  - `sdk/src/core/trade-orchestrator.ts` (updated)
+  - `web/lib/services/position-service.ts` (updated)
+  - `web/lib/services/position-service.test.ts` (created)
+  - `web/scripts/db/backfill-copy-trading-position-cost-basis.ts` (created)
+  - `web/package.json` (updated)
+
+### Task 3: Execution Entry Point Ledger Semantics
+- **Status:** complete
+- Actions taken:
+  - 重构 `web/app/api/copy-trading/execute/route.ts`，让 manual/server execution 成功路径统一在事务中更新 `CopyTrade`、`UserPosition` 和 `realizedPnL`。
+  - 扩展 API 兼容字段：`executedAmount`、`executedPrice`、`filledShares`、`actualSellProceedsUsdc`。
+  - 扩展 `sdk/src/services/copy-trading-execution-service.ts` 返回 `executionPrice`，为 API 记账提供更准确的成交价。
+  - 为 execute route 增加 manual BUY、manual SELL、server-side BUY 回归测试，验证执行成功后仓位与 PnL 同步更新。
+- Files created/modified:
+  - `web/app/api/copy-trading/execute/route.ts` (updated)
+  - `web/app/api/copy-trading/execute/route.test.ts` (updated)
+  - `sdk/src/services/copy-trading-execution-service.ts` (updated)
+  - `sdk/src/services/copy-trading-execution-service.test.ts` (updated)
+
+## Verification Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| `npx vitest run app/api/copy-trading/execute/route.test.ts lib/services/position-service.test.ts` | `web` targeted tests | Route and position accounting regressions pass | 6 tests passed | passed |
+| `npx vitest run src/core/position-accounting.test.ts src/services/copy-trading-execution-service.test.ts` | `sdk` targeted tests | Accounting + execution service pass | 16 tests passed | passed |
+| `npx tsc --noEmit -p tsconfig.json` | `sdk` typecheck | No TypeScript errors | Exit code 0 | passed |
+| `npx tsc --noEmit -p tsconfig.json` | `web` typecheck | Project typecheck status | Fails on pre-existing `@privy-io/react-auth` missing types / implicit any outside this task | blocked |

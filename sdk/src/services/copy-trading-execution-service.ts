@@ -49,6 +49,7 @@ export interface ExecutionResult {
     usedBotFloat?: boolean;
     proxyAddress?: string;
     settlementDeferred?: boolean;
+    executionPrice?: number; // Average fill price when available, otherwise the guarded execution price
     executedAmount?: number; // The actual amount that was successfully executed (may be less than requested if scaled down)
     scaledDown?: boolean; // Flag indicating if the order was scaled down due to FOK failure
     filledShares?: number; // Filled shares returned by order execution (for SELL accounting)
@@ -920,6 +921,7 @@ export class CopyTradingExecutionService {
             usedBotFloat,
             proxyAddress,
             settlementDeferred: deferSettlement,
+            executionPrice: Number(orderResult.avgFillPrice || 0) > 0 ? Number(orderResult.avgFillPrice) : finalExecutionPrice,
             executedAmount: attemptAmount,
             scaledDown,
             filledShares,

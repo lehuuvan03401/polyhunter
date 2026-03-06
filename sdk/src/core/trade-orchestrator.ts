@@ -4,6 +4,7 @@ import { CopyTradingExecutionService } from '../services/copy-trading-execution-
 import { TokenMetadataService } from '../services/token-metadata-service.js';
 import { TradingService } from '../services/trading-service.js';
 import { Activity } from '../clients/data-api.js';
+import { applyExecutedTradeToUserPosition } from './user-position-ledger.js';
 
 interface SpeedProfile {
     name: string;
@@ -740,7 +741,7 @@ export class TradeOrchestrator {
             };
         } else if (config.executionMode === 'EOA' && eoaTradingService) {
             const fixedSlippage = config.slippageType === 'FIXED' ? (config.maxSlippage / 100) : 0;
-            const execPrice = copySide === 'BUY'
+            execPrice = copySide === 'BUY'
                 ? marketPrice * (1 + fixedSlippage)
                 : marketPrice * (1 - fixedSlippage);
             const orderAmount = copySide === 'BUY'
@@ -816,44 +817,49 @@ export class TradeOrchestrator {
             }
         }
 
-        await this.prisma.copyTrade.update({
-            where: { id: copyTrade.id },
-            data: {
-                status: finalStatus as any,
-                executedAt: new Date(),
-                txHash: result.transactionHashes?.[0] || result.orderId || undefined,
-                errorMessage: errorMessage,
-                usedBotFloat: result.usedBotFloat,
-                copySize: copySizeUsdc, // Ensure DB accurately reflects the possibly scaled-down size
-                copyPrice: execPrice
+        if (result.success) {
+            const executionRef = result.transactionHashes?.[0] || result.orderId;
+            if (executionRef) {
+                console.log(`[Orchestrator] ✅ Trade Executed: ${executionRef}`);
             }
-        });
 
-        if (result.success && result.transactionHashes && result.transactionHashes.length > 0) {
-            console.log(`[Orchestrator] ✅ Trade Executed: ${result.transactionHashes[0]}`);
-
-            // DB Record position — BUY 按 USDC/价格折算 shares；SELL 优先使用成交回执里的 filledShares。
             const resolvedBuyShares = execPrice > 0 ? (copySizeUsdc / execPrice) : 0;
             const resolvedSellShares = (copySide === 'SELL' && result.filledShares && result.filledShares > 0)
                 ? result.filledShares
                 : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
-            const shares = copySide === 'BUY' ? resolvedBuyShares : -resolvedSellShares;
-            const totalCostInsert = copySide === 'BUY' ? copySizeUsdc : 0;
-            await this.prisma.$executeRaw`
-                INSERT INTO "UserPosition" ("id", "walletAddress", "tokenId", "balance", "totalCost", "avgEntryPrice", "updatedAt")
-                VALUES (gen_random_uuid(), ${config.walletAddress.toLowerCase()}, ${tokenId}, ${shares}, ${totalCostInsert}, ${execPrice}, CURRENT_TIMESTAMP)
-                ON CONFLICT ("walletAddress", "tokenId") 
-                DO UPDATE SET 
-                    "balance" = GREATEST("UserPosition"."balance" + EXCLUDED."balance", 0),
-                    "totalCost" = "UserPosition"."totalCost" + EXCLUDED."totalCost",
-                    "avgEntryPrice" = CASE WHEN ("UserPosition"."balance" + EXCLUDED."balance") > 0 THEN ("UserPosition"."totalCost" + EXCLUDED."totalCost") / ("UserPosition"."balance" + EXCLUDED."balance") ELSE 0 END,
-                    "updatedAt" = CURRENT_TIMESTAMP
-            `;
+            const executedShares = copySide === 'BUY' ? resolvedBuyShares : resolvedSellShares;
+            let realizedPnL: number | undefined;
+
+            await this.prisma.$transaction(async (tx) => {
+                const ledger = await applyExecutedTradeToUserPosition(tx, {
+                    walletAddress: config.walletAddress.toLowerCase(),
+                    tokenId,
+                    side: copySide as 'BUY' | 'SELL',
+                    executedNotionalUsd: copySizeUsdc,
+                    executionPrice: execPrice,
+                    filledShares: copySide === 'SELL' ? resolvedSellShares : undefined,
+                });
+                realizedPnL = ledger.realizedPnL;
+
+                await tx.copyTrade.update({
+                    where: { id: copyTrade.id },
+                    data: {
+                        status: finalStatus as any,
+                        executedAt: new Date(),
+                        txHash: executionRef || undefined,
+                        errorMessage,
+                        usedBotFloat: result.usedBotFloat,
+                        copySize: copySizeUsdc,
+                        copyPrice: execPrice,
+                        realizedPnL: realizedPnL ?? undefined,
+                    },
+                });
+            });
 
             return {
                 executed: true,
                 copySizeUsdc,
-                copyShares: Math.abs(shares),
+                copyShares: executedShares,
                 execPrice,
                 leaderPrice,
                 slippageBps: simSlippageBps,
@@ -861,9 +867,23 @@ export class TradeOrchestrator {
                 feePaid: simFeePaid,
                 side: copySide,
                 tokenId: tokenId,
-                txHash: result.transactionHashes[0] || result.orderId
+                txHash: executionRef
             };
         }
+
+        const executionRef = result.transactionHashes?.[0] || result.orderId;
+        await this.prisma.copyTrade.update({
+            where: { id: copyTrade.id },
+            data: {
+                status: finalStatus as any,
+                executedAt: new Date(),
+                txHash: executionRef || undefined,
+                errorMessage,
+                usedBotFloat: result.usedBotFloat,
+                copySize: copySizeUsdc,
+                copyPrice: execPrice
+            }
+        });
 
         return {
             executed: false,

@@ -11,6 +11,7 @@ import { GuardrailService } from '@/lib/services/guardrail-service';
 import { createTTLCache } from '@/lib/server-cache';
 import { getSpeedProfile } from '@/config/speed-profile';
 import { resolveCopyTradingWalletContext } from '@/lib/copy-trading/request-wallet';
+import { applyExecutedTradeToUserPosition } from '../../../../../sdk/src/core/user-position-ledger.js';
 
 // Trading configuration from environment (Restored)
 const TRADING_PRIVATE_KEY = process.env.TRADING_PRIVATE_KEY;
@@ -58,6 +59,84 @@ interface ExecutionServiceWithAllowance {
         amount: number;
         signer?: ethers.Signer;
     }) => Promise<AllowanceCheckResult>;
+}
+
+interface SuccessfulExecutionDetails {
+    executedNotionalUsd: number;
+    executionPrice: number;
+    filledShares?: number;
+}
+
+function toPositiveNumber(value: unknown): number | undefined {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return undefined;
+    }
+    return numeric;
+}
+
+function resolveManualExecutionDetails(
+    trade: {
+        copySize: number;
+        originalPrice: number;
+        originalSide: string;
+    },
+    body: {
+        executedAmount?: unknown;
+        executedPrice?: unknown;
+        filledShares?: unknown;
+        actualSellProceedsUsdc?: unknown;
+    }
+): SuccessfulExecutionDetails | null {
+    const executionPrice = toPositiveNumber(body.executedPrice) ?? toPositiveNumber(trade.originalPrice);
+    const executedNotionalUsd = trade.originalSide === 'SELL'
+        ? (toPositiveNumber(body.actualSellProceedsUsdc) ?? toPositiveNumber(body.executedAmount) ?? toPositiveNumber(trade.copySize))
+        : (toPositiveNumber(body.executedAmount) ?? toPositiveNumber(trade.copySize));
+
+    if (!executionPrice || !executedNotionalUsd) {
+        return null;
+    }
+
+    return {
+        executedNotionalUsd,
+        executionPrice,
+        filledShares: toPositiveNumber(body.filledShares),
+    };
+}
+
+function resolveServerExecutionDetails(
+    trade: {
+        copySize: number;
+        originalPrice: number;
+        originalSide: string;
+    },
+    result: {
+        executedAmount?: number;
+        executionPrice?: number;
+        filledShares?: number;
+        actualSellProceedsUsdc?: number;
+    }
+): SuccessfulExecutionDetails | null {
+    const filledShares = toPositiveNumber(result.filledShares);
+    const sellDerivedPrice = trade.originalSide === 'SELL' && filledShares
+        ? (toPositiveNumber(result.actualSellProceedsUsdc) || 0) / filledShares
+        : undefined;
+    const executionPrice = toPositiveNumber(result.executionPrice)
+        ?? toPositiveNumber(sellDerivedPrice)
+        ?? toPositiveNumber(trade.originalPrice);
+    const executedNotionalUsd = trade.originalSide === 'SELL'
+        ? (toPositiveNumber(result.actualSellProceedsUsdc) ?? toPositiveNumber(result.executedAmount) ?? toPositiveNumber(trade.copySize))
+        : (toPositiveNumber(result.executedAmount) ?? toPositiveNumber(trade.copySize));
+
+    if (!executionPrice || !executedNotionalUsd) {
+        return null;
+    }
+
+    return {
+        executedNotionalUsd,
+        executionPrice,
+        filledShares,
+    };
 }
 
 const getChainAddresses = () => {
@@ -201,6 +280,53 @@ function evaluateOrderbookGuardrails(params: {
     return { allowed: true, spreadBps, depthUsd, depthShares, bestAsk, bestBid };
 }
 
+function invalidatePendingTradesCache(): void {
+    pendingTradesCache.clear();
+}
+
+async function finalizeTradeWithLedger(params: {
+    tradeId: string;
+    walletAddress: string;
+    tokenId?: string | null;
+    side: 'BUY' | 'SELL';
+    workerAddress?: string | null;
+    txHash?: string | null;
+    finalStatus: 'EXECUTED' | 'SETTLEMENT_PENDING';
+    usedBotFloat?: boolean;
+    errorMessage?: string | null;
+    execution: SuccessfulExecutionDetails;
+}) {
+    const updatedTrade = await prisma.$transaction(async (tx) => {
+        const ledger = params.tokenId
+            ? await applyExecutedTradeToUserPosition(tx, {
+                walletAddress: params.walletAddress,
+                tokenId: params.tokenId,
+                side: params.side,
+                executedNotionalUsd: params.execution.executedNotionalUsd,
+                executionPrice: params.execution.executionPrice,
+                filledShares: params.execution.filledShares,
+            })
+            : { realizedPnL: undefined };
+
+        return tx.copyTrade.update({
+            where: { id: params.tradeId },
+            data: {
+                status: params.finalStatus,
+                executedAt: new Date(),
+                txHash: params.txHash || null,
+                usedBotFloat: params.usedBotFloat ?? false,
+                executedBy: params.workerAddress || null,
+                errorMessage: params.errorMessage || null,
+                copySize: params.execution.executedNotionalUsd,
+                copyPrice: params.execution.executionPrice,
+                realizedPnL: ledger.realizedPnL ?? null,
+            },
+        });
+    });
+
+    invalidatePendingTradesCache();
+    return updatedTrade;
+}
 /**
  * Transfer USDC from Proxy to Bot wallet
  * Bot must be a whitelisted Executor worker
@@ -293,6 +419,10 @@ export async function POST(request: NextRequest) {
             executeOnServer = false,
             orderMode = 'limit',
             slippage = 0.02,
+            executedAmount,
+            executedPrice,
+            filledShares,
+            actualSellProceedsUsdc,
         } = body;
 
         const walletCheck = resolveCopyTradingWalletContext(request, {
@@ -410,6 +540,7 @@ export async function POST(request: NextRequest) {
                         errorMessage: serverGuardrail.reason || 'GUARDRAIL_BLOCKED',
                     },
                 });
+                invalidatePendingTradesCache();
 
                 return NextResponse.json({
                     success: false,
@@ -464,6 +595,7 @@ export async function POST(request: NextRequest) {
                             errorMessage: `ORDERBOOK_${orderbookGuard.reason}`,
                         },
                     });
+                    invalidatePendingTradesCache();
 
                     return NextResponse.json({
                         success: false,
@@ -508,6 +640,7 @@ export async function POST(request: NextRequest) {
                             errorMessage: allowanceCheck.reason || 'ALLOWANCE_MISSING',
                         },
                     });
+                    invalidatePendingTradesCache();
 
                     return NextResponse.json({
                         success: false,
@@ -539,18 +672,22 @@ export async function POST(request: NextRequest) {
                         : (trade.originalSide === 'BUY'
                             ? Boolean(result.tokenPushTxHash)
                             : Boolean(result.returnTransferTxHash));
-                    const status = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
-
-                    const updatedTrade = await prisma.copyTrade.update({
-                        where: { id: trade.id },
-                        data: {
-                            status,
-                            executedAt: new Date(),
-                            txHash: result.transactionHashes?.[0] || result.orderId,
-                            usedBotFloat: (result as any).usedBotFloat ?? false,
-                            executedBy: workerAddress,
-                            errorMessage: isSettled ? null : 'Settlement Pending',
-                        },
+                    const finalStatus = isSettled ? 'EXECUTED' : 'SETTLEMENT_PENDING';
+                    const execution = resolveServerExecutionDetails(trade, result);
+                    if (!execution) {
+                        throw new Error('Execution succeeded but no accounting details were returned');
+                    }
+                    const updatedTrade = await finalizeTradeWithLedger({
+                        tradeId: trade.id,
+                        walletAddress: normalizedWallet,
+                        tokenId: trade.tokenId,
+                        side: trade.originalSide as 'BUY' | 'SELL',
+                        workerAddress,
+                        txHash: result.transactionHashes?.[0] || result.orderId || null,
+                        finalStatus,
+                        usedBotFloat: (result as any).usedBotFloat ?? false,
+                        errorMessage: isSettled ? null : 'Settlement Pending',
+                        execution,
                     });
 
                     return NextResponse.json({
@@ -562,7 +699,7 @@ export async function POST(request: NextRequest) {
                         trade: updatedTrade,
                         useProxyFunds: result.useProxyFunds,
                         settlementDeferred: result.settlementDeferred ?? false,
-                        settlementStatus: status,
+                        settlementStatus: finalStatus,
                     });
                 } else {
                     await prisma.copyTrade.update({
@@ -572,6 +709,7 @@ export async function POST(request: NextRequest) {
                             errorMessage: result.error,
                         },
                     });
+                    invalidatePendingTradesCache();
 
                     return NextResponse.json({
                         success: false,
@@ -601,15 +739,46 @@ export async function POST(request: NextRequest) {
             status === 'failed' ? 'FAILED' :
                 status === 'skipped' ? 'SKIPPED' : 'FAILED';
 
+        if (executionStatus === 'EXECUTED') {
+            const execution = resolveManualExecutionDetails(trade, {
+                executedAmount,
+                executedPrice,
+                filledShares,
+                actualSellProceedsUsdc,
+            });
+            if (!execution) {
+                return NextResponse.json({
+                    success: false,
+                    error: 'Manual executed trade is missing pricing details',
+                }, { status: 400 });
+            }
+
+            const updatedTrade = await finalizeTradeWithLedger({
+                tradeId: trade.id,
+                walletAddress: normalizedWallet,
+                tokenId: trade.tokenId,
+                side: trade.originalSide as 'BUY' | 'SELL',
+                txHash: txHash || null,
+                finalStatus: 'EXECUTED',
+                execution,
+            });
+
+            return NextResponse.json({
+                success: true,
+                trade: updatedTrade
+            });
+        }
+
         const updatedTrade = await prisma.copyTrade.update({
             where: { id: tradeId },
             data: {
                 status: executionStatus,
                 txHash: txHash || null,
                 errorMessage: errorMessage || null,
-                executedAt: executionStatus === 'EXECUTED' ? new Date() : null,
+                executedAt: null,
             },
         });
+        invalidatePendingTradesCache();
 
         return NextResponse.json({
             success: true,
