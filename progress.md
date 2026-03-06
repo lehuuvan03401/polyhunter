@@ -146,10 +146,26 @@
   - `sdk/src/services/copy-trading-execution-service.ts` (updated)
   - `sdk/src/services/copy-trading-execution-service.test.ts` (updated)
 
+### Task 4: Supervisor Runtime Authority
+- **Status:** in_progress
+- Actions taken:
+  - 将 `web/package.json` 的默认高速脚本切到 supervisor，并保留显式 `copy-worker:legacy` 入口。
+  - 为 `web/scripts/workers/copy-trading-worker.ts` 增加 `COPY_TRADING_LEGACY_WORKER_ALLOWED=true` 启动门禁，明确其为兼容脚本。
+  - 将 `deploy/stage1/Dockerfile.worker` 默认命令切到 supervisor。
+  - 在 `deploy/stage1/docker-compose.yml` 中把 legacy `copy-worker` 放入 `legacy-copy-worker` profile，避免默认启动集合里同时跑两套自动执行器。
+  - 更新 `docs/operations/copy-trading-logic.md`，把 authority runtime 改写为 `supervisor -> orchestrator -> execution service`，并明确旧 worker 只保留兼容用途。
+- Files created/modified:
+  - `web/package.json` (updated)
+  - `web/scripts/workers/copy-trading-worker.ts` (updated)
+  - `deploy/stage1/Dockerfile.worker` (updated)
+  - `deploy/stage1/docker-compose.yml` (updated)
+  - `docs/operations/copy-trading-logic.md` (updated)
+
 ## Verification Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | `npx vitest run app/api/copy-trading/execute/route.test.ts lib/services/position-service.test.ts` | `web` targeted tests | Route and position accounting regressions pass | 6 tests passed | passed |
 | `npx vitest run src/core/position-accounting.test.ts src/services/copy-trading-execution-service.test.ts` | `sdk` targeted tests | Accounting + execution service pass | 16 tests passed | passed |
 | `npx tsc --noEmit -p tsconfig.json` | `sdk` typecheck | No TypeScript errors | Exit code 0 | passed |
+| `node -e "const pkg=require('./package.json'); ..."` | `web/package.json` scripts | Default runtime points to supervisor, legacy path explicit | `copy-worker:speed -> copy-supervisor:speed` | passed |
 | `npx tsc --noEmit -p tsconfig.json` | `web` typecheck | Project typecheck status | Fails on pre-existing `@privy-io/react-auth` missing types / implicit any outside this task | blocked |

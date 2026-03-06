@@ -16,7 +16,9 @@
     "verify:managed-wealth:marketing": "npx tsx scripts/verify/managed-wealth-marketing-rules.ts",
     "verify:managed-membership:lifecycle": "npx tsx scripts/verify/managed-membership-lifecycle.ts",
     "cache:update": "tsx scripts/debug/update-leaderboard-cache.ts",
-    "copy-worker:speed": "COPY_TRADING_SPEED_MODE=true npx tsx scripts/workers/copy-trading-worker.ts",
+    "copy-supervisor:speed": "COPY_TRADING_SPEED_MODE=true npx tsx scripts/workers/copy-trading-supervisor.ts",
+    "copy-worker:speed": "npm run copy-supervisor:speed",
+    "copy-worker:legacy": "COPY_TRADING_LEGACY_WORKER_ALLOWED=true COPY_TRADING_SPEED_MODE=true npx tsx scripts/workers/copy-trading-worker.ts",
     "env:mainnet": "tsx scripts/env/setup-env.ts mainnet",
     "env:local": "tsx scripts/env/setup-env.ts localhost"
   },

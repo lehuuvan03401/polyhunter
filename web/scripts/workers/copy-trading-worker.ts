@@ -1,10 +1,11 @@
 
 /**
- * Copy Trading Worker (Standalone)
+ * Copy Trading Worker (Legacy Compatibility)
  * 
- * Listens to Real-time Blockchain Events to trigger Copy Trades immediately.
+ * Legacy standalone runtime retained for compatibility/manual verification only.
+ * Automatic production execution is owned by copy-trading-supervisor.ts.
  * 
- * Usage: npx ts-node scripts/copy-trading-worker.ts
+ * Usage: cd web && COPY_TRADING_LEGACY_WORKER_ALLOWED=true npx tsx scripts/workers/copy-trading-worker.ts
  */
 
 import '../env/env-setup'; // Load Env FIRST
@@ -38,6 +39,7 @@ const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const POLL_INTERVAL_MS = 30000; // Refresh configs every 30s
 const GAMMA_API_URL = 'https://gamma-api.polymarket.com';
 const DRY_RUN = process.env.COPY_TRADING_DRY_RUN === 'true';
+const LEGACY_WORKER_ALLOWED = process.env.COPY_TRADING_LEGACY_WORKER_ALLOWED === 'true';
 const speedProfile = getSpeedProfile();
 const CLOB_API_KEY = process.env.POLY_API_KEY || process.env.CLOB_API_KEY;
 const CLOB_API_SECRET = process.env.POLY_API_SECRET || process.env.CLOB_API_SECRET;
@@ -45,6 +47,13 @@ const CLOB_API_PASSPHRASE = process.env.POLY_API_PASSPHRASE || process.env.CLOB_
 const clobCredentials = CLOB_API_KEY && CLOB_API_SECRET && CLOB_API_PASSPHRASE
     ? { key: CLOB_API_KEY, secret: CLOB_API_SECRET, passphrase: CLOB_API_PASSPHRASE }
     : undefined;
+
+if (!LEGACY_WORKER_ALLOWED) {
+    console.error('[Worker] copy-trading-worker.ts is compatibility-only. Use copy-trading-supervisor.ts (or `npm run copy-supervisor:speed`) for automatic execution. Set COPY_TRADING_LEGACY_WORKER_ALLOWED=true only for manual legacy verification.');
+    process.exit(1);
+}
+
+console.warn('[Worker] Legacy compatibility mode enabled. Supervisor remains the supported automatic runtime.');
 
 if (!TRADING_PRIVATE_KEY) {
     console.error('Missing TRADING_PRIVATE_KEY env var');
