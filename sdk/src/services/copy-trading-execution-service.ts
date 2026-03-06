@@ -47,6 +47,7 @@ export interface ExecutionResult {
     error?: string;
     useProxyFunds?: boolean;
     usedBotFloat?: boolean;
+    executorAddress?: string;
     proxyAddress?: string;
     settlementDeferred?: boolean;
     executionPrice?: number; // Average fill price when available, otherwise the guarded execution price
@@ -598,6 +599,7 @@ export class CopyTradingExecutionService {
         // - proxy 锁：保护同一用户资金/持仓状态一致性
         // ==================================================================
         const mutexSigner = this.getSigner(signer);
+        const executorAddress = await mutexSigner.getAddress();
 
         // 0) 条件授权：
         // 只有预检判断“可能未授权”才在 signer 锁里执行授权，减少链上写操作等待。
@@ -919,6 +921,7 @@ export class CopyTradingExecutionService {
             tokenPushTxHash,
             useProxyFunds: useProxyFunds || usedBotFloat,
             usedBotFloat,
+            executorAddress,
             proxyAddress,
             settlementDeferred: deferSettlement,
             executionPrice: Number(orderResult.avgFillPrice || 0) > 0 ? Number(orderResult.avgFillPrice) : finalExecutionPrice,

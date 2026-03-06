@@ -147,7 +147,7 @@
   - `sdk/src/services/copy-trading-execution-service.test.ts` (updated)
 
 ### Task 4: Supervisor Runtime Authority
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - 将 `web/package.json` 的默认高速脚本切到 supervisor，并保留显式 `copy-worker:legacy` 入口。
   - 为 `web/scripts/workers/copy-trading-worker.ts` 增加 `COPY_TRADING_LEGACY_WORKER_ALLOWED=true` 启动门禁，明确其为兼容脚本。
@@ -161,11 +161,31 @@
   - `deploy/stage1/docker-compose.yml` (updated)
   - `docs/operations/copy-trading-logic.md` (updated)
 
+### Task 5: Recovery Closure into Supervisor
+- **Status:** complete
+- Actions taken:
+  - 新增 `sdk/src/core/copy-trade-lifecycle.ts` 与测试，统一 `PENDING` 过期时间计算；orchestrator 预写 `CopyTrade` 时开始写入 `expiresAt`。
+  - 扩展 `sdk/src/services/copy-trading-execution-service.ts` 返回 `proxyAddress` 与 `executorAddress`，让 authority runtime 能在成功交易后稳定写入 `ReimbursementLedger`。
+  - 将 `trade-orchestrator` 的 deferred reimbursement 路径接回 ledger ownership，避免当前 authority runtime 下只存在旧 sdk worker 的批量报销闭环。
+  - 在 `web/scripts/workers/copy-trading-supervisor.ts` 中补上 stale `PENDING` 过期回收、ledger claim/flush/retry、market resolution queue、Gamma 校验后的 winner redeem / loss settlement，以及定时 reconciliation fallback。
+  - 新增 `sdk/src/core/copy-trade-settlement.ts` 与测试，把 outcome -> token 映射和 `WIN/LOSS` 判定抽成可验证模块，供 supervisor 的 settlement loop 复用。
+- Files created/modified:
+  - `sdk/src/core/copy-trade-lifecycle.ts` (created)
+  - `sdk/src/core/copy-trade-lifecycle.test.ts` (created)
+  - `sdk/src/core/copy-trade-settlement.ts` (created)
+  - `sdk/src/core/copy-trade-settlement.test.ts` (created)
+  - `sdk/src/core/trade-orchestrator.ts` (updated)
+  - `sdk/src/services/copy-trading-execution-service.ts` (updated)
+  - `sdk/src/services/copy-trading-execution-service.test.ts` (updated)
+  - `web/scripts/workers/copy-trading-supervisor.ts` (updated)
+
 ## Verification Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | `npx vitest run app/api/copy-trading/execute/route.test.ts lib/services/position-service.test.ts` | `web` targeted tests | Route and position accounting regressions pass | 6 tests passed | passed |
 | `npx vitest run src/core/position-accounting.test.ts src/services/copy-trading-execution-service.test.ts` | `sdk` targeted tests | Accounting + execution service pass | 16 tests passed | passed |
+| `npx vitest run src/core/copy-trade-lifecycle.test.ts src/core/copy-trade-settlement.test.ts src/services/copy-trading-execution-service.test.ts` | `sdk` targeted tests | Lifecycle + settlement helpers + execution service pass | 18 tests passed | passed |
 | `npx tsc --noEmit -p tsconfig.json` | `sdk` typecheck | No TypeScript errors | Exit code 0 | passed |
 | `node -e "const pkg=require('./package.json'); ..."` | `web/package.json` scripts | Default runtime points to supervisor, legacy path explicit | `copy-worker:speed -> copy-supervisor:speed` | passed |
 | `npx tsc --noEmit -p tsconfig.json` | `web` typecheck | Project typecheck status | Fails on pre-existing `@privy-io/react-auth` missing types / implicit any outside this task | blocked |
+| `npx tsc --noEmit -p tsconfig.json --pretty false` + grep touched files | `web` typecheck triage | No new TypeScript errors in touched copy-trading runtime files | No matches for `copy-trading-supervisor`, `copy-trade-settlement`, `copy-trade-lifecycle`, `copy-trading-execution-service`, `trade-orchestrator` | passed |

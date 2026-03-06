@@ -22,6 +22,8 @@ import { ethers } from 'ethers';
 import { createHash, randomUUID } from 'crypto';
 import { EncryptionService } from '../../../sdk/src/core/encryption.js'; // Import EncryptionService
 import { CONTRACT_ADDRESSES, CTF_ABI, ERC20_ABI, USDC_DECIMALS } from '../../../sdk/src/core/contracts';
+import { buildCopyTradePendingExpiryDate } from '../../../sdk/src/core/copy-trade-lifecycle.js';
+import { buildSettlementOutcomeDecisions } from '../../../sdk/src/core/copy-trade-settlement.js';
 import { CopyTradingExecutionService, ExecutionParams } from '../../../sdk/src/services/copy-trading-execution-service';
 import { TradeOrchestrator } from '../../../sdk/src/core/trade-orchestrator.js';
 import { TradingService, TradeInfo } from '../../../sdk/src/services/trading-service';
@@ -39,7 +41,7 @@ import { DataApiClient, type Activity as DataActivity } from '../../../sdk/src/c
 import { PrismaDebtLogger, PrismaDebtRepository } from '../services/debt-adapters';
 import { AffiliateEngine } from '../../lib/services/affiliate-engine';
 import { PositionService } from '../../lib/services/position-service';
-import { RealtimeServiceV2, ActivityTrade, Subscription } from '../../../sdk/src/services/realtime-service-v2';
+import { RealtimeServiceV2, ActivityTrade, MarketEvent, Subscription } from '../../../sdk/src/services/realtime-service-v2';
 import { TxMonitor, TrackedTx } from '../../../sdk/src/core/tx-monitor';
 import { normalizeTradeSizingFromShares } from '../../../sdk/src/utils/trade-sizing.js';
 
@@ -143,6 +145,21 @@ const SELL_RECONCILIATION_DIFF_THRESHOLD_USDC = Math.max(0.0001, Number(process.
 const SETTLEMENT_RECOVERY_ENABLED = process.env.SUPERVISOR_SETTLEMENT_RECOVERY_ENABLED !== 'false';
 const SETTLEMENT_RECOVERY_INTERVAL_MS = Math.max(10_000, parseInt(process.env.SUPERVISOR_SETTLEMENT_RECOVERY_INTERVAL_MS || '60000', 10));
 const SETTLEMENT_RECOVERY_BATCH = Math.max(1, parseInt(process.env.SUPERVISOR_SETTLEMENT_RECOVERY_BATCH || '20', 10));
+const SETTLEMENT_QUEUE_INTERVAL_MS = Math.max(1_000, parseInt(process.env.SUPERVISOR_SETTLEMENT_QUEUE_INTERVAL_MS || '5000', 10));
+const SETTLEMENT_GAMMA_SYNC_DELAY_MS = Math.max(0, parseInt(process.env.SUPERVISOR_SETTLEMENT_GAMMA_SYNC_DELAY_MS || '3000', 10));
+const SETTLEMENT_RECONCILIATION_ENABLED = process.env.SUPERVISOR_SETTLEMENT_RECONCILIATION_ENABLED !== 'false';
+const SETTLEMENT_RECONCILIATION_INTERVAL_MS = Math.max(60_000, parseInt(process.env.SUPERVISOR_SETTLEMENT_RECONCILIATION_INTERVAL_MS || '300000', 10));
+const STALE_PENDING_RECOVERY_ENABLED = process.env.SUPERVISOR_STALE_PENDING_RECOVERY_ENABLED !== 'false';
+const STALE_PENDING_RECOVERY_INTERVAL_MS = Math.max(10_000, parseInt(process.env.SUPERVISOR_STALE_PENDING_RECOVERY_INTERVAL_MS || '60000', 10));
+const STALE_PENDING_RECOVERY_BATCH = Math.max(1, parseInt(process.env.SUPERVISOR_STALE_PENDING_RECOVERY_BATCH || '25', 10));
+const LEDGER_ENABLED = process.env.COPY_TRADING_LEDGER_ENABLED === 'true'
+    || process.env.COPY_TRADING_LEDGER_ENABLED === '1';
+const LEDGER_FLUSH_AMOUNT = Number(process.env.COPY_TRADING_LEDGER_FLUSH_AMOUNT || '100');
+const LEDGER_MAX_AGE_MS = parseInt(process.env.COPY_TRADING_LEDGER_MAX_AGE_MS || '300000', 10);
+const LEDGER_FLUSH_INTERVAL_MS = Math.max(10_000, parseInt(process.env.COPY_TRADING_LEDGER_FLUSH_INTERVAL_MS || '60000', 10));
+const LEDGER_MAX_RETRY_ATTEMPTS = parseInt(process.env.COPY_TRADING_LEDGER_MAX_RETRY_ATTEMPTS || '5', 10);
+const LEDGER_RETRY_BACKOFF_MS = parseInt(process.env.COPY_TRADING_LEDGER_RETRY_BACKOFF_MS || '60000', 10);
+const LEDGER_CLAIM_BATCH = Math.max(1, parseInt(process.env.COPY_TRADING_LEDGER_CLAIM_BATCH || '50', 10));
 const SETTLEMENT_MAX_RETRY_ATTEMPTS = Math.max(1, parseInt(process.env.COPY_TRADING_SETTLEMENT_MAX_RETRY_ATTEMPTS || '5', 10));
 const SETTLEMENT_RETRY_BACKOFF_MS = Math.max(
     1000,
@@ -174,6 +191,7 @@ const SIGNAL_MODE_RAW = (process.env.COPY_TRADING_SIGNAL_MODE || 'HYBRID').toUpp
 const SIGNAL_MODE = SIGNAL_MODE_RAW === 'WS_ONLY' || SIGNAL_MODE_RAW === 'POLLING_ONLY' || SIGNAL_MODE_RAW === 'HYBRID'
     ? SIGNAL_MODE_RAW
     : 'HYBRID';
+const ENABLE_MARKET_EVENTS = process.env.COPY_TRADING_ENABLE_MARKET_EVENTS !== 'false';
 const POLLING_BASE_INTERVAL_MS = Math.max(1000, parseInt(process.env.SUPERVISOR_POLLING_BASE_INTERVAL_MS || '5000', 10));
 const POLLING_MAX_INTERVAL_MS = Math.max(POLLING_BASE_INTERVAL_MS, parseInt(process.env.SUPERVISOR_POLLING_MAX_INTERVAL_MS || '10000', 10));
 const POLLING_LIMIT = Math.max(10, Math.min(500, parseInt(process.env.SUPERVISOR_POLLING_LIMIT || '200', 10)));
@@ -291,6 +309,7 @@ const realtimeService = new RealtimeServiceV2({
 });
 let activitySubscription: Subscription | null = null;
 let activitySubscriptionKey = '';
+let marketEventSubscription: Subscription | null = null;
 
 // Core Services
 const gammaApi = new GammaApiClient(rateLimiter, cache);
@@ -346,6 +365,10 @@ async function shutdown(signal: string) {
         if (activitySubscription) {
             activitySubscription.unsubscribe();
             activitySubscription = null;
+        }
+        if (marketEventSubscription) {
+            marketEventSubscription.unsubscribe();
+            marketEventSubscription = null;
         }
         // Assuming disconnect type exists on V2, if not we rely on process exit
         // realtimeService.disconnect(); 
@@ -1057,6 +1080,8 @@ const queueStats = {
 let isDrainingQueue = false;
 let isSellReconciliationRunning = false;
 let isSettlementRecoveryRunning = false;
+let isStalePendingRecoveryRunning = false;
+let isLedgerFlushRunning = false;
 const queueLagSamplesMs: number[] = [];
 const rejectStats = {
     total: 0,
@@ -1886,6 +1911,12 @@ async function getStrictMempoolPrice(tokenId: string, side: 'BUY' | 'SELL'): Pro
 // Maps: walletAddress -> tokenId -> balance
 const userPositionsCache = new Map<string, Map<string, number>>();
 const POSITION_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh every 5 minutes
+const SETTLEMENT_CACHE = new Set<string>();
+const SETTLEMENT_QUEUE: string[] = [];
+const SETTLEMENT_QUEUED = new Set<string>();
+const SETTLEMENT_IN_FLIGHT = new Set<string>();
+let isSettlementQueueRunning = false;
+let isSettlementReconciliationRunning = false;
 
 const preflightCache = new Map<string, { value: any; fetchedAt: number }>();
 const preflightInFlight = new Map<string, Promise<any>>();
@@ -2351,6 +2382,343 @@ async function resolveSellPositionDecision(walletAddress: string, tokenId: strin
     }
 }
 
+async function resolveConfigIdForPosition(walletAddress: string, tokenId: string): Promise<string | null> {
+    const normalizedWallet = walletAddress.toLowerCase();
+
+    const recentTrade = await prisma.copyTrade.findFirst({
+        where: {
+            tokenId,
+            config: { walletAddress: normalizedWallet },
+        },
+        orderBy: { detectedAt: 'desc' },
+        select: { configId: true },
+    });
+
+    if (recentTrade?.configId) {
+        return recentTrade.configId;
+    }
+
+    const config = await prisma.copyTradingConfig.findFirst({
+        where: { walletAddress: normalizedWallet },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+    });
+
+    return config?.id || null;
+}
+
+function enqueueSettlementCondition(conditionId: string, source: 'market_event' | 'reconcile'): boolean {
+    if (!conditionId || SETTLEMENT_CACHE.has(conditionId) || SETTLEMENT_IN_FLIGHT.has(conditionId) || SETTLEMENT_QUEUED.has(conditionId)) {
+        return false;
+    }
+
+    SETTLEMENT_QUEUE.push(conditionId);
+    SETTLEMENT_QUEUED.add(conditionId);
+    console.log(`[Supervisor] ⚖️ Settlement queued (${source}): ${conditionId}`);
+    return true;
+}
+
+async function upsertSettlementCopyTrade(params: {
+    configId: string;
+    conditionId: string;
+    tokenId: string;
+    outcome: string;
+    marketSlug: string;
+    originalSize: number;
+    settlementValue: number;
+    proceeds: number;
+    status: 'EXECUTED' | 'FAILED';
+    txHash: string;
+    errorMessage: string;
+    realizedPnL?: number;
+}): Promise<void> {
+    const existingSettlement = await prisma.copyTrade.findFirst({
+        where: {
+            configId: params.configId,
+            tokenId: params.tokenId,
+            conditionId: params.conditionId,
+            originalTrader: 'POLYMARKET_SETTLEMENT',
+            originalSide: 'SELL',
+        },
+        orderBy: { executedAt: 'desc' },
+        select: { id: true, status: true },
+    });
+
+    const settlementData = {
+        configId: params.configId,
+        originalTrader: 'POLYMARKET_SETTLEMENT',
+        originalSide: 'SELL',
+        originalSize: params.originalSize,
+        originalPrice: params.settlementValue,
+        marketSlug: params.marketSlug,
+        conditionId: params.conditionId,
+        tokenId: params.tokenId,
+        outcome: params.outcome,
+        copySize: params.proceeds,
+        copyPrice: params.settlementValue,
+        status: params.status,
+        executedAt: new Date(),
+        txHash: params.txHash,
+        errorMessage: params.errorMessage,
+        realizedPnL: params.status === 'EXECUTED' ? params.realizedPnL : undefined,
+    };
+
+    if (!existingSettlement) {
+        await prisma.copyTrade.create({ data: settlementData });
+        return;
+    }
+
+    if (existingSettlement.status === 'FAILED') {
+        await prisma.copyTrade.update({
+            where: { id: existingSettlement.id },
+            data: settlementData,
+        });
+    }
+}
+
+function handleMarketResolution(event: MarketEvent): void {
+    if (event.type !== 'resolved') return;
+    if (enqueueSettlementCondition(event.conditionId, 'market_event')) {
+        void processSettlementQueue();
+    }
+}
+
+async function resolvePositions(conditionId: string): Promise<boolean> {
+    console.log(`\n[Supervisor] 🔍 Resolving positions for condition ${conditionId}...`);
+
+    try {
+        if (SETTLEMENT_GAMMA_SYNC_DELAY_MS > 0) {
+            await new Promise((resolve) => setTimeout(resolve, SETTLEMENT_GAMMA_SYNC_DELAY_MS));
+        }
+
+        const market = await gammaApi.getMarketByConditionId(conditionId);
+        if (!market) {
+            console.warn(`[Supervisor] ⚠️ Settlement skipped, market missing in Gamma: ${conditionId}`);
+            return false;
+        }
+
+        const outcomeFallbackRows = await prisma.copyTrade.findMany({
+            where: { conditionId },
+            select: { tokenId: true, outcome: true },
+            distinct: ['tokenId'],
+        });
+
+        const fallbackTokenIdsByOutcome = new Map<string, string>();
+        for (const row of outcomeFallbackRows) {
+            if (row.outcome && row.tokenId && !fallbackTokenIdsByOutcome.has(row.outcome)) {
+                fallbackTokenIdsByOutcome.set(row.outcome, row.tokenId);
+            }
+        }
+
+        const decisions = buildSettlementOutcomeDecisions({
+            outcomes: market.outcomes,
+            outcomePrices: market.outcomePrices,
+            closed: market.closed,
+            tokens: Array.isArray((market as any).tokens) ? (market as any).tokens : undefined,
+            fallbackTokenIdsByOutcome,
+        });
+
+        if (decisions.length === 0) {
+            console.log(`[Supervisor] ℹ️ Settlement not ready for ${conditionId}; market closed=${market.closed}`);
+            return false;
+        }
+
+        let settledCount = 0;
+        let hadFailure = false;
+
+        for (const decision of decisions) {
+            const positions = await prisma.userPosition.findMany({
+                where: { tokenId: decision.tokenId, balance: { gt: 0 } },
+                select: {
+                    id: true,
+                    walletAddress: true,
+                    tokenId: true,
+                    balance: true,
+                    totalCost: true,
+                },
+            });
+
+            if (positions.length === 0) {
+                continue;
+            }
+
+            console.log(
+                `[Supervisor] ⚖️ Settling ${positions.length} position(s) for ${decision.outcome} (${decision.tokenId.slice(0, 10)}...) as ${decision.settlementType}`
+            );
+
+            for (const pos of positions) {
+                const configId = await resolveConfigIdForPosition(pos.walletAddress, decision.tokenId);
+                if (!configId) {
+                    hadFailure = true;
+                    console.warn(`[Supervisor] ⚠️ Settlement skipped, config missing for ${pos.walletAddress} ${decision.tokenId}`);
+                    continue;
+                }
+
+                const proceeds = pos.balance * decision.settlementValue;
+                let settlementStatus: 'EXECUTED' | 'FAILED' = 'EXECUTED';
+                let txHash = decision.settlementType === 'WIN' ? 'redeem-pending' : 'settled-loss';
+                let errorMessage: string | null = null;
+
+                if (decision.settlementType === 'WIN') {
+                    const proxyAddress = await executionService.resolveProxyAddress(pos.walletAddress);
+                    if (!proxyAddress) {
+                        settlementStatus = 'FAILED';
+                        errorMessage = 'SETTLEMENT_PROXY_NOT_FOUND';
+                    } else {
+                        const redeemResult = await executionService.redeemPositions(
+                            proxyAddress,
+                            conditionId,
+                            [decision.indexSet]
+                        );
+
+                        if (redeemResult.success) {
+                            txHash = redeemResult.txHash || 'redeem-tx';
+                        } else {
+                            settlementStatus = 'FAILED';
+                            errorMessage = redeemResult.error || 'SETTLEMENT_REDEEM_FAILED';
+                        }
+                    }
+                }
+
+                if (settlementStatus === 'FAILED') {
+                    hadFailure = true;
+                    await upsertSettlementCopyTrade({
+                        configId,
+                        conditionId,
+                        tokenId: decision.tokenId,
+                        outcome: decision.outcome,
+                        marketSlug: market.slug,
+                        originalSize: pos.balance,
+                        settlementValue: decision.settlementValue,
+                        proceeds,
+                        status: 'FAILED',
+                        txHash,
+                        errorMessage: errorMessage || 'SETTLEMENT_FAILED',
+                    });
+                    continue;
+                }
+
+                const profitResult = await positionService.recordSell({
+                    walletAddress: pos.walletAddress,
+                    tokenId: decision.tokenId,
+                    side: 'SELL',
+                    amount: pos.balance,
+                    price: decision.settlementValue,
+                    totalValue: proceeds,
+                });
+
+                setPositionCacheBalance(pos.walletAddress, decision.tokenId, 0);
+
+                const successMessage = decision.settlementType === 'WIN'
+                    ? `Redeemed (PnL $${profitResult.profit.toFixed(2)})`
+                    : `Settled Loss ($${profitResult.profit.toFixed(2)})`;
+
+                await upsertSettlementCopyTrade({
+                    configId,
+                    conditionId,
+                    tokenId: decision.tokenId,
+                    outcome: decision.outcome,
+                    marketSlug: market.slug,
+                    originalSize: pos.balance,
+                    settlementValue: decision.settlementValue,
+                    proceeds,
+                    status: 'EXECUTED',
+                    txHash,
+                    errorMessage: successMessage,
+                    realizedPnL: profitResult.profit,
+                });
+
+                settledCount += 1;
+            }
+        }
+
+        if (settledCount > 0) {
+            console.log(`[Supervisor] ✅ Settlement closed ${settledCount} position(s) for ${conditionId}.`);
+        } else {
+            console.log(`[Supervisor] ℹ️ No active positions to settle for ${conditionId}.`);
+        }
+
+        return !hadFailure;
+    } catch (error) {
+        console.error(`[Supervisor] ❌ Settlement resolution failed for ${conditionId}:`, error);
+        return false;
+    }
+}
+
+async function processSettlementQueue(): Promise<void> {
+    if (isShuttingDown || isSettlementQueueRunning || SETTLEMENT_QUEUE.length === 0) {
+        return;
+    }
+
+    const conditionId = SETTLEMENT_QUEUE.shift();
+    if (!conditionId) {
+        return;
+    }
+
+    isSettlementQueueRunning = true;
+    SETTLEMENT_QUEUED.delete(conditionId);
+    SETTLEMENT_IN_FLIGHT.add(conditionId);
+
+    try {
+        const settled = await resolvePositions(conditionId);
+        if (settled) {
+            SETTLEMENT_CACHE.add(conditionId);
+        }
+    } finally {
+        SETTLEMENT_IN_FLIGHT.delete(conditionId);
+        isSettlementQueueRunning = false;
+    }
+}
+
+async function reconcileResolvedPositions(): Promise<void> {
+    if (isShuttingDown || isSettlementReconciliationRunning) return;
+    isSettlementReconciliationRunning = true;
+
+    try {
+        const positions = await prisma.userPosition.findMany({
+            where: { balance: { gt: 0 } },
+            select: { tokenId: true },
+        });
+
+        if (positions.length === 0) return;
+
+        const tokenIds = Array.from(new Set(positions.map((position) => position.tokenId).filter(Boolean)));
+        if (tokenIds.length === 0) return;
+
+        const trades = await prisma.copyTrade.findMany({
+            where: {
+                tokenId: { in: tokenIds },
+                conditionId: { not: null },
+            },
+            select: { tokenId: true, conditionId: true, detectedAt: true },
+            orderBy: { detectedAt: 'desc' },
+        });
+
+        const tokenToCondition = new Map<string, string>();
+        for (const trade of trades) {
+            if (trade.tokenId && trade.conditionId && !tokenToCondition.has(trade.tokenId)) {
+                tokenToCondition.set(trade.tokenId, trade.conditionId);
+            }
+        }
+
+        let queued = 0;
+        for (const conditionId of new Set(tokenToCondition.values())) {
+            if (enqueueSettlementCondition(conditionId, 'reconcile')) {
+                queued += 1;
+            }
+        }
+
+        if (queued > 0) {
+            console.log(`[Supervisor] 🔁 Settlement reconcile queued ${queued} condition(s).`);
+            void processSettlementQueue();
+        }
+    } catch (error) {
+        console.error('[Supervisor] Settlement reconciliation failed:', error);
+    } finally {
+        isSettlementReconciliationRunning = false;
+    }
+}
+
 // --- EVENT DEDUPLICATION (Shared Store) ---
 interface DedupStore {
     checkAndSet(key: string, ttlMs: number): Promise<boolean>;
@@ -2756,6 +3124,103 @@ async function claimCopyTrades(options: {
     });
 }
 
+function getLedgerBotAddress(): string | null {
+    const wallet = masterTradingService.getWallet();
+    if (!wallet?.address) return null;
+    return wallet.address.toLowerCase();
+}
+
+async function upsertReimbursementLedgerEntry(params: {
+    copyTradeId: string;
+    proxyAddress: string;
+    botAddress: string;
+    amount: number;
+}): Promise<void> {
+    if (!LEDGER_ENABLED) return;
+
+    const existing = await prisma.reimbursementLedger.findUnique({
+        where: { copyTradeId: params.copyTradeId },
+        select: { status: true },
+    });
+
+    if (!existing) {
+        await prisma.reimbursementLedger.create({
+            data: {
+                copyTradeId: params.copyTradeId,
+                proxyAddress: params.proxyAddress,
+                botAddress: params.botAddress,
+                amount: params.amount,
+                currency: 'USDC',
+                status: 'PENDING',
+            },
+        });
+        return;
+    }
+
+    if (existing.status === 'SETTLED') {
+        return;
+    }
+
+    await prisma.reimbursementLedger.update({
+        where: { copyTradeId: params.copyTradeId },
+        data: {
+            copyTradeId: params.copyTradeId,
+            proxyAddress: params.proxyAddress,
+            botAddress: params.botAddress,
+            amount: params.amount,
+            currency: 'USDC',
+            status: 'PENDING',
+            retryCount: 0,
+            nextRetryAt: null,
+            errorLog: null,
+            txHash: null,
+            settledAt: null,
+            lockedAt: null,
+            lockedBy: null,
+        },
+    });
+}
+
+async function claimReimbursementLedgerEntries(options: {
+    where: Record<string, any>;
+    orderBy?: Record<string, any>;
+    take: number;
+}): Promise<any[]> {
+    const now = new Date();
+    const lockOwnerBase = getLedgerBotAddress() || 'supervisor-ledger';
+    const lockOwner = `${lockOwnerBase}-ledger-${process.pid}-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+    const staleBefore = new Date(now.getTime() - COPY_TRADE_LOCK_TTL_MS);
+    const lockClause = { OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }] };
+
+    const candidates = await prisma.reimbursementLedger.findMany({
+        where: { AND: [options.where, lockClause] },
+        orderBy: options.orderBy,
+        take: options.take,
+        select: { id: true },
+    });
+
+    if (candidates.length === 0) return [];
+
+    const ids = candidates.map((candidate: { id: string }) => candidate.id);
+    await prisma.reimbursementLedger.updateMany({
+        where: { AND: [{ id: { in: ids } }, options.where, lockClause] },
+        data: { lockedAt: now, lockedBy: lockOwner },
+    });
+
+    return prisma.reimbursementLedger.findMany({
+        where: { id: { in: ids }, lockedBy: lockOwner },
+    });
+}
+
+async function releaseReimbursementLedgerEntries(entries: Array<{ id: string }>): Promise<void> {
+    if (entries.length === 0) return;
+
+    await prisma.reimbursementLedger.updateMany({
+        where: { id: { in: entries.map((entry) => entry.id) } },
+        data: { lockedAt: null, lockedBy: null },
+    });
+}
+
 async function recoverPendingSettlements(): Promise<void> {
     if (isShuttingDown || isSettlementRecoveryRunning) return;
     isSettlementRecoveryRunning = true;
@@ -2875,7 +3340,7 @@ async function recoverPendingSettlements(): Promise<void> {
                     amount,
                     recoveryPrice,
                     trade.usedBotFloat === true,
-                    false
+                    LEDGER_ENABLED
                 );
 
                 if (recovery.success) {
@@ -2893,6 +3358,15 @@ async function recoverPendingSettlements(): Promise<void> {
                             lockedBy: null,
                         },
                     });
+                    const ledgerBotAddress = getLedgerBotAddress();
+                    if (LEDGER_ENABLED && side === 'BUY' && trade.usedBotFloat === true && ledgerBotAddress) {
+                        await upsertReimbursementLedgerEntry({
+                            copyTradeId: trade.id,
+                            proxyAddress,
+                            botAddress: ledgerBotAddress,
+                            amount,
+                        });
+                    }
                     continue;
                 }
 
@@ -2944,6 +3418,146 @@ async function recoverPendingSettlements(): Promise<void> {
     } finally {
         settlementRecoveryMetrics.lastElapsedMs = Date.now() - startedAt;
         isSettlementRecoveryRunning = false;
+    }
+}
+
+async function expireStalePendingTrades(): Promise<void> {
+    if (isShuttingDown || isStalePendingRecoveryRunning) return;
+    isStalePendingRecoveryRunning = true;
+
+    try {
+        const now = new Date();
+        const staleTrades = await claimCopyTrades({
+            where: {
+                status: 'PENDING',
+                expiresAt: { lt: now },
+            },
+            orderBy: { expiresAt: 'asc' },
+            take: STALE_PENDING_RECOVERY_BATCH,
+        });
+
+        if (staleTrades.length === 0) return;
+
+        console.log(`[Supervisor] ⏳ Expiring ${staleTrades.length} stale PENDING trade(s).`);
+        for (const trade of staleTrades) {
+            await prisma.copyTrade.update({
+                where: { id: trade.id },
+                data: {
+                    status: 'FAILED',
+                    errorMessage: 'PENDING_EXPIRED',
+                    lockedAt: null,
+                    lockedBy: null,
+                },
+            });
+        }
+    } catch (error) {
+        console.error('[Supervisor] Failed to expire stale PENDING trades:', error);
+    } finally {
+        isStalePendingRecoveryRunning = false;
+    }
+}
+
+async function flushReimbursementLedger(): Promise<void> {
+    if (isShuttingDown || isLedgerFlushRunning || !LEDGER_ENABLED) return;
+
+    const botAddress = getLedgerBotAddress();
+    if (!botAddress) return;
+
+    isLedgerFlushRunning = true;
+
+    try {
+        const now = new Date();
+        const pendingEntries = await claimReimbursementLedgerEntries({
+            where: {
+                status: 'PENDING',
+                botAddress,
+                retryCount: { lt: LEDGER_MAX_RETRY_ATTEMPTS },
+                OR: [
+                    { nextRetryAt: null },
+                    { nextRetryAt: { lte: now } },
+                ],
+            },
+            orderBy: { createdAt: 'asc' },
+            take: LEDGER_CLAIM_BATCH,
+        });
+
+        if (pendingEntries.length === 0) return;
+
+        const groups = new Map<string, { entries: any[]; total: number; oldest: Date }>();
+        for (const entry of pendingEntries) {
+            const key = String(entry.proxyAddress || '').toLowerCase();
+            if (!key) continue;
+            const existing = groups.get(key);
+            if (existing) {
+                existing.entries.push(entry);
+                existing.total += Number(entry.amount || 0);
+                if (entry.createdAt && entry.createdAt < existing.oldest) {
+                    existing.oldest = entry.createdAt;
+                }
+            } else {
+                groups.set(key, {
+                    entries: [entry],
+                    total: Number(entry.amount || 0),
+                    oldest: entry.createdAt || now,
+                });
+            }
+        }
+
+        if (groups.size === 0) {
+            await releaseReimbursementLedgerEntries(pendingEntries);
+            return;
+        }
+
+        console.log(`[Supervisor] 💸 Reimbursement ledger claimed ${pendingEntries.length} entry(s) across ${groups.size} proxy group(s).`);
+
+        for (const [proxyAddress, group] of groups.entries()) {
+            const ageMs = now.getTime() - group.oldest.getTime();
+            const shouldFlush = LEDGER_FLUSH_AMOUNT <= 0
+                || group.total >= LEDGER_FLUSH_AMOUNT
+                || ageMs >= LEDGER_MAX_AGE_MS;
+
+            if (!shouldFlush) {
+                await releaseReimbursementLedgerEntries(group.entries);
+                continue;
+            }
+
+            const result = await executionService.transferFromProxy(proxyAddress, group.total);
+            if (result.success) {
+                await prisma.reimbursementLedger.updateMany({
+                    where: { id: { in: group.entries.map((entry) => entry.id) } },
+                    data: {
+                        status: 'SETTLED',
+                        settledAt: new Date(),
+                        txHash: result.txHash,
+                        errorLog: null,
+                        nextRetryAt: null,
+                        lockedAt: null,
+                        lockedBy: null,
+                    },
+                });
+                continue;
+            }
+
+            const maxRetryCount = Math.max(...group.entries.map((entry) => Number(entry.retryCount || 0)));
+            const nextRetryCount = maxRetryCount + 1;
+            const retryAllowed = nextRetryCount <= LEDGER_MAX_RETRY_ATTEMPTS;
+
+            await prisma.reimbursementLedger.updateMany({
+                where: { id: { in: group.entries.map((entry) => entry.id) } },
+                data: {
+                    status: retryAllowed ? 'PENDING' : 'FAILED',
+                    retryCount: nextRetryCount,
+                    nextRetryAt: retryAllowed ? new Date(Date.now() + LEDGER_RETRY_BACKOFF_MS * Math.pow(2, Math.max(0, nextRetryCount - 1))) : null,
+                    errorLog: result.error || 'LEDGER_FLUSH_FAILED',
+                    lockedAt: null,
+                    lockedBy: null,
+                },
+            });
+        }
+    } catch (error) {
+        console.error('[Supervisor] Reimbursement ledger flush failed:', error);
+    } finally {
+        isLedgerFlushRunning = false;
     }
 }
 
@@ -3001,6 +3615,25 @@ function subscribeToActivityIfNeeded(): void {
     );
     activitySubscriptionKey = nextKey;
     console.log(`[Supervisor] 🎧 Activity subscription: filtered (${sortedAddresses.length} traders)`);
+}
+
+function subscribeToMarketEventsIfNeeded(): void {
+    if (!ENABLE_MARKET_EVENTS) {
+        if (marketEventSubscription) {
+            marketEventSubscription.unsubscribe();
+            marketEventSubscription = null;
+        }
+        return;
+    }
+
+    if (marketEventSubscription) {
+        return;
+    }
+
+    marketEventSubscription = realtimeService.subscribeMarketEvents({
+        onMarketEvent: handleMarketResolution,
+    });
+    console.log('[Supervisor] ⚖️ Market resolution subscription enabled.');
 }
 
 function getTraderCursorScope(traderAddress: string): string {
@@ -3941,14 +4574,17 @@ async function handleActivityTrade(trade: ActivityTrade) {
 }
 
 function startActivityListener() {
-    if (!isWsSignalEnabled()) {
+    if (!isWsSignalEnabled() && !ENABLE_MARKET_EVENTS) {
         console.log('[Supervisor] 📡 WS signal source disabled by COPY_TRADING_SIGNAL_MODE.');
         return;
     }
     console.log("[Supervisor] 🔌 Connecting Activity WebSocket...");
     realtimeService.connect();
-    subscribeToActivityIfNeeded();
-    console.log("[Supervisor] 🎧 Listening for WS Trades...");
+    if (isWsSignalEnabled()) {
+        subscribeToActivityIfNeeded();
+        console.log("[Supervisor] 🎧 Listening for WS Trades...");
+    }
+    subscribeToMarketEventsIfNeeded();
 }
 
 // --- MAIN ---
@@ -4168,6 +4804,45 @@ async function main() {
         }, SETTLEMENT_RECOVERY_INTERVAL_MS);
     }
 
+    console.log(
+        `[Supervisor] ⚖️ Settlement queue enabled: interval=${SETTLEMENT_QUEUE_INTERVAL_MS}ms gammaDelay=${SETTLEMENT_GAMMA_SYNC_DELAY_MS}ms marketEvents=${ENABLE_MARKET_EVENTS}`
+    );
+    void processSettlementQueue();
+    setInterval(() => {
+        void processSettlementQueue();
+    }, SETTLEMENT_QUEUE_INTERVAL_MS);
+
+    if (SETTLEMENT_RECONCILIATION_ENABLED) {
+        console.log(
+            `[Supervisor] 🔁 Settlement reconciliation enabled: interval=${SETTLEMENT_RECONCILIATION_INTERVAL_MS}ms`
+        );
+        void reconcileResolvedPositions();
+        setInterval(() => {
+            void reconcileResolvedPositions();
+        }, SETTLEMENT_RECONCILIATION_INTERVAL_MS);
+    }
+
+    if (STALE_PENDING_RECOVERY_ENABLED) {
+        const pendingExpiryPreview = buildCopyTradePendingExpiryDate(new Date());
+        console.log(
+            `[Supervisor] ⏳ Stale pending recovery enabled: interval=${STALE_PENDING_RECOVERY_INTERVAL_MS}ms batch=${STALE_PENDING_RECOVERY_BATCH} pendingExpiryAtExample=${pendingExpiryPreview.toISOString()}`
+        );
+        void expireStalePendingTrades();
+        setInterval(() => {
+            void expireStalePendingTrades();
+        }, STALE_PENDING_RECOVERY_INTERVAL_MS);
+    }
+
+    if (LEDGER_ENABLED) {
+        console.log(
+            `[Supervisor] 💸 Reimbursement ledger enabled: interval=${LEDGER_FLUSH_INTERVAL_MS}ms amount=${LEDGER_FLUSH_AMOUNT} maxAgeMs=${LEDGER_MAX_AGE_MS} batch=${LEDGER_CLAIM_BATCH}`
+        );
+        void flushReimbursementLedger();
+        setInterval(() => {
+            void flushReimbursementLedger();
+        }, LEDGER_FLUSH_INTERVAL_MS);
+    }
+
     // Queue Drain Loop
     console.log(
         `[Supervisor] 📬 Queue reliability: maxAttempts=${QUEUE_MAX_ATTEMPTS} leaseMs=${QUEUE_PROCESSING_LEASE_MS} reclaimMs=${QUEUE_RECLAIM_INTERVAL_MS} dlqMax=${QUEUE_DLQ_MAX_SIZE}`
@@ -4217,6 +4892,9 @@ async function main() {
         }
     } else {
         console.log('[Supervisor] 📡 POLLING_ONLY mode: WS/chain/mempool listeners disabled.');
+        if (ENABLE_MARKET_EVENTS) {
+            startActivityListener();
+        }
     }
 
     // Keep alive

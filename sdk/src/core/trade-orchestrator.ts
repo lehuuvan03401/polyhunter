@@ -4,6 +4,7 @@ import { CopyTradingExecutionService } from '../services/copy-trading-execution-
 import { TokenMetadataService } from '../services/token-metadata-service.js';
 import { TradingService } from '../services/trading-service.js';
 import { Activity } from '../clients/data-api.js';
+import { buildCopyTradePendingExpiryDate } from './copy-trade-lifecycle.js';
 import { applyExecutedTradeToUserPosition } from './user-position-ledger.js';
 
 interface SpeedProfile {
@@ -38,6 +39,8 @@ const DEFAULT_SPEED_PROFILE: SpeedProfile = {
 };
 
 const MAX_DYNAMIC_DEVIATION = 0.2; // 20% hard cap
+const LEDGER_ENABLED = process.env.COPY_TRADING_LEDGER_ENABLED === 'true'
+    || process.env.COPY_TRADING_LEDGER_ENABLED === '1';
 
 // Polymarket taker fee rate (0.1% = 10 bps)
 const POLYMARKET_TAKER_FEE_RATE = 0.001;
@@ -575,7 +578,9 @@ export class TradeOrchestrator {
                     copySize: copySizeUsdc,
                     copyPrice: marketPrice,
                     originalTxHash,
-                    detectedAt: new Date()
+                    detectedAt: new Date(),
+                    status: 'PENDING',
+                    expiresAt: buildCopyTradePendingExpiryDate(),
                 }
             });
         } catch (e: any) {
@@ -588,26 +593,29 @@ export class TradeOrchestrator {
 
         console.log(`[Orchestrator] 🚀 Dispatching Execution -> Tx: ${copyTrade.id}`);
 
-        // 9. Execute On-Chain
-        let result: {
-            success: boolean;
-            orderId?: string;
-            error?: string;
-            usedBotFloat?: boolean;
-            transactionHashes?: string[];
-            executedAmount?: number;
-            scaledDown?: boolean;
-            tokenPushTxHash?: string;
-            returnTransferTxHash?: string;
-            settlementDeferred?: boolean;
-            filledShares?: number;
-            actualSellProceedsUsdc?: number;
-            sellProceedsSource?: 'trade_ids' | 'order_snapshot' | 'fallback' | 'none';
-        } = { success: false };
-        let execPrice = marketPrice;
-        let simSlippageBps = 0;
-        let simLatencyMs = 0;
-        let simFeePaid = 0;
+        try {
+            // 9. Execute On-Chain
+            let result: {
+                success: boolean;
+                orderId?: string;
+                error?: string;
+                usedBotFloat?: boolean;
+                transactionHashes?: string[];
+                executedAmount?: number;
+                scaledDown?: boolean;
+                tokenPushTxHash?: string;
+                returnTransferTxHash?: string;
+                settlementDeferred?: boolean;
+                filledShares?: number;
+                actualSellProceedsUsdc?: number;
+                sellProceedsSource?: 'trade_ids' | 'order_snapshot' | 'fallback' | 'none';
+                executorAddress?: string;
+                proxyAddress?: string;
+            } = { success: false };
+            let execPrice = marketPrice;
+            let simSlippageBps = 0;
+            let simLatencyMs = 0;
+            let simFeePaid = 0;
 
         if (this.isSimulation) {
             console.log(`[Orchestrator] 🧪 Simulation Mode: Bypassing on-chain execution for ${copyTrade.id}`);
@@ -773,7 +781,7 @@ export class TradeOrchestrator {
                 slippage: maxDeviation,
                 slippageMode: 'AUTO',
                 overrides: overrides,
-                deferReimbursement: false,
+                deferReimbursement: LEDGER_ENABLED,
                 deferSettlement: this.deferSettlement,
                 allowPartialFill: true // Enable robust FOK scaling
             });
@@ -800,94 +808,161 @@ export class TradeOrchestrator {
         let finalStatus = 'EXECUTED';
         let errorMessage = null;
 
-        if (!result.success) {
-            finalStatus = 'FAILED';
-            errorMessage = result.error || 'Execution failed';
-        } else {
-            const isProxyMode = !this.isSimulation && config.executionMode !== 'EOA';
-            if (isProxyMode) {
-                const settlementDeferred = Boolean(result.settlementDeferred);
-                const settlementConfirmed = copySide === 'BUY'
-                    ? Boolean(result.tokenPushTxHash)
-                    : Boolean(result.returnTransferTxHash);
-                if (settlementDeferred || !settlementConfirmed) {
-                    finalStatus = 'SETTLEMENT_PENDING';
-                    errorMessage = 'Settlement Pending';
+            if (!result.success) {
+                finalStatus = 'FAILED';
+                errorMessage = result.error || 'Execution failed';
+            } else {
+                const isProxyMode = !this.isSimulation && config.executionMode !== 'EOA';
+                if (isProxyMode) {
+                    const settlementDeferred = Boolean(result.settlementDeferred);
+                    const settlementConfirmed = copySide === 'BUY'
+                        ? Boolean(result.tokenPushTxHash)
+                        : Boolean(result.returnTransferTxHash);
+                    if (settlementDeferred || !settlementConfirmed) {
+                        finalStatus = 'SETTLEMENT_PENDING';
+                        errorMessage = 'Settlement Pending';
+                    }
                 }
             }
-        }
 
-        if (result.success) {
-            const executionRef = result.transactionHashes?.[0] || result.orderId;
-            if (executionRef) {
-                console.log(`[Orchestrator] ✅ Trade Executed: ${executionRef}`);
+            if (result.success) {
+                const executionRef = result.transactionHashes?.[0] || result.orderId;
+                if (executionRef) {
+                    console.log(`[Orchestrator] ✅ Trade Executed: ${executionRef}`);
+                }
+
+                const resolvedBuyShares = execPrice > 0 ? (copySizeUsdc / execPrice) : 0;
+                const resolvedSellShares = (copySide === 'SELL' && result.filledShares && result.filledShares > 0)
+                    ? result.filledShares
+                    : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
+                const executedShares = copySide === 'BUY' ? resolvedBuyShares : resolvedSellShares;
+                let realizedPnL: number | undefined;
+                const shouldRecordLedger = Boolean(
+                    LEDGER_ENABLED
+                    && copySide === 'BUY'
+                    && result.usedBotFloat
+                    && result.proxyAddress
+                    && result.executorAddress
+                );
+
+                await this.prisma.$transaction(async (tx) => {
+                    const ledger = await applyExecutedTradeToUserPosition(tx, {
+                        walletAddress: config.walletAddress.toLowerCase(),
+                        tokenId,
+                        side: copySide as 'BUY' | 'SELL',
+                        executedNotionalUsd: copySizeUsdc,
+                        executionPrice: execPrice,
+                        filledShares: copySide === 'SELL' ? resolvedSellShares : undefined,
+                    });
+                    realizedPnL = ledger.realizedPnL;
+
+                    await tx.copyTrade.update({
+                        where: { id: copyTrade.id },
+                        data: {
+                            status: finalStatus as any,
+                            executedAt: new Date(),
+                            txHash: executionRef || undefined,
+                            errorMessage,
+                            usedBotFloat: result.usedBotFloat,
+                            copySize: copySizeUsdc,
+                            copyPrice: execPrice,
+                            realizedPnL: realizedPnL ?? undefined,
+                        },
+                    });
+
+                    if (shouldRecordLedger) {
+                        const existingLedger = await tx.reimbursementLedger.findUnique({
+                            where: { copyTradeId: copyTrade.id },
+                            select: { status: true },
+                        });
+
+                        if (!existingLedger) {
+                            await tx.reimbursementLedger.create({
+                                data: {
+                                    copyTradeId: copyTrade.id,
+                                    proxyAddress: result.proxyAddress!,
+                                    botAddress: result.executorAddress!,
+                                    amount: copySizeUsdc,
+                                    currency: 'USDC',
+                                    status: 'PENDING',
+                                },
+                            });
+                        } else if (existingLedger.status !== 'SETTLED') {
+                            await tx.reimbursementLedger.update({
+                                where: { copyTradeId: copyTrade.id },
+                                data: {
+                                    proxyAddress: result.proxyAddress!,
+                                    botAddress: result.executorAddress!,
+                                    amount: copySizeUsdc,
+                                    currency: 'USDC',
+                                    status: 'PENDING',
+                                    retryCount: 0,
+                                    nextRetryAt: null,
+                                    errorLog: null,
+                                    txHash: null,
+                                    settledAt: null,
+                                    lockedAt: null,
+                                    lockedBy: null,
+                                },
+                            });
+                        }
+                    }
+                });
+
+                return {
+                    executed: true,
+                    copySizeUsdc,
+                    copyShares: executedShares,
+                    execPrice,
+                    leaderPrice,
+                    slippageBps: simSlippageBps,
+                    latencyMs: simLatencyMs,
+                    feePaid: simFeePaid,
+                    side: copySide,
+                    tokenId: tokenId,
+                    txHash: executionRef
+                };
             }
 
-            const resolvedBuyShares = execPrice > 0 ? (copySizeUsdc / execPrice) : 0;
-            const resolvedSellShares = (copySide === 'SELL' && result.filledShares && result.filledShares > 0)
-                ? result.filledShares
-                : (execPrice > 0 ? (copySizeUsdc / execPrice) : 0);
-            const executedShares = copySide === 'BUY' ? resolvedBuyShares : resolvedSellShares;
-            let realizedPnL: number | undefined;
-
-            await this.prisma.$transaction(async (tx) => {
-                const ledger = await applyExecutedTradeToUserPosition(tx, {
-                    walletAddress: config.walletAddress.toLowerCase(),
-                    tokenId,
-                    side: copySide as 'BUY' | 'SELL',
-                    executedNotionalUsd: copySizeUsdc,
-                    executionPrice: execPrice,
-                    filledShares: copySide === 'SELL' ? resolvedSellShares : undefined,
-                });
-                realizedPnL = ledger.realizedPnL;
-
-                await tx.copyTrade.update({
-                    where: { id: copyTrade.id },
-                    data: {
-                        status: finalStatus as any,
-                        executedAt: new Date(),
-                        txHash: executionRef || undefined,
-                        errorMessage,
-                        usedBotFloat: result.usedBotFloat,
-                        copySize: copySizeUsdc,
-                        copyPrice: execPrice,
-                        realizedPnL: realizedPnL ?? undefined,
-                    },
-                });
+            const executionRef = result.transactionHashes?.[0] || result.orderId;
+            await this.prisma.copyTrade.update({
+                where: { id: copyTrade.id },
+                data: {
+                    status: finalStatus as any,
+                    executedAt: new Date(),
+                    txHash: executionRef || undefined,
+                    errorMessage,
+                    usedBotFloat: result.usedBotFloat,
+                    copySize: copySizeUsdc,
+                    copyPrice: execPrice
+                }
             });
 
             return {
-                executed: true,
-                copySizeUsdc,
-                copyShares: executedShares,
-                execPrice,
-                leaderPrice,
-                slippageBps: simSlippageBps,
-                latencyMs: simLatencyMs,
-                feePaid: simFeePaid,
-                side: copySide,
-                tokenId: tokenId,
-                txHash: executionRef
+                executed: false,
+                reason: errorMessage || 'UNKNOWN_FAILURE'
+            };
+        } catch (error: any) {
+            try {
+                await this.prisma.copyTrade.updateMany({
+                    where: {
+                        id: copyTrade.id,
+                        status: 'PENDING' as any,
+                    },
+                    data: {
+                        status: 'FAILED' as any,
+                        errorMessage: error?.message || 'ORCHESTRATOR_EXECUTION_EXCEPTION',
+                    },
+                });
+            } catch (persistError) {
+                console.error('[Orchestrator] Failed to persist execution exception state:', persistError);
+            }
+
+            console.error('[Orchestrator] Execution exception:', error);
+            return {
+                executed: false,
+                reason: error?.message || 'ORCHESTRATOR_EXECUTION_EXCEPTION'
             };
         }
-
-        const executionRef = result.transactionHashes?.[0] || result.orderId;
-        await this.prisma.copyTrade.update({
-            where: { id: copyTrade.id },
-            data: {
-                status: finalStatus as any,
-                executedAt: new Date(),
-                txHash: executionRef || undefined,
-                errorMessage,
-                usedBotFloat: result.usedBotFloat,
-                copySize: copySizeUsdc,
-                copyPrice: execPrice
-            }
-        });
-
-        return {
-            executed: false,
-            reason: errorMessage || 'UNKNOWN_FAILURE'
-        };
     }
 }
