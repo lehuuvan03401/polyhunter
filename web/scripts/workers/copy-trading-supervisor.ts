@@ -41,6 +41,7 @@ import { DataApiClient, type Activity as DataActivity } from '../../../sdk/src/c
 import { PrismaDebtLogger, PrismaDebtRepository } from '../services/debt-adapters';
 import { AffiliateEngine } from '../../lib/services/affiliate-engine';
 import { PositionService } from '../../lib/services/position-service';
+import { evaluateReservationSafeGuardrails } from '../../lib/copy-trading/guardrail-reservations';
 import { RealtimeServiceV2, ActivityTrade, MarketEvent, Subscription } from '../../../sdk/src/services/realtime-service-v2';
 import { TxMonitor, TrackedTx } from '../../../sdk/src/core/tx-monitor';
 import { normalizeTradeSizingFromShares } from '../../../sdk/src/utils/trade-sizing.js';
@@ -68,6 +69,19 @@ const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_US
 const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_USD || '0');
 const MAX_TRADES_PER_WINDOW = Number(process.env.COPY_TRADING_MAX_TRADES_PER_WINDOW || '0');
 const TRADE_WINDOW_MS = Number(process.env.COPY_TRADING_TRADE_WINDOW_MS || '600000');
+const GUARDRAIL_RESERVATIONS_ENABLED = process.env.SUPERVISOR_GUARDRAIL_RESERVATIONS_ENABLED !== 'false';
+const GUARDRAIL_RESERVATION_TTL_MS = Math.max(
+    10_000,
+    parseInt(process.env.SUPERVISOR_GUARDRAIL_RESERVATION_TTL_MS || String(Math.max(120_000, TRADE_WINDOW_MS)), 10)
+);
+const GUARDRAIL_RESERVATION_SWEEP_INTERVAL_MS = Math.max(
+    5_000,
+    parseInt(process.env.SUPERVISOR_GUARDRAIL_RESERVATION_SWEEP_INTERVAL_MS || '30000', 10)
+);
+const GUARDRAIL_LOCK_TTL_MS = Math.max(
+    5_000,
+    parseInt(process.env.SUPERVISOR_GUARDRAIL_LOCK_TTL_MS || '30000', 10)
+);
 const MARKET_CAPS_RAW = process.env.COPY_TRADING_MARKET_CAPS || '';
 const ASYNC_SETTLEMENT = process.env.COPY_TRADING_ASYNC_SETTLEMENT === 'true'
     || process.env.COPY_TRADING_ASYNC_SETTLEMENT === '1';
@@ -1065,6 +1079,11 @@ const cumulativeMetrics = {
     settlementRecoveryRecovered: 0,
     settlementRecoveryFailed: 0,
     settlementRecoveryExhausted: 0,
+    guardrailReservationsReserved: 0,
+    guardrailReservationsCommitted: 0,
+    guardrailReservationsReleased: 0,
+    guardrailReservationsExpired: 0,
+    guardrailReservationsRejected: 0,
     alertsTotal: 0,
 };
 const queueStats = {
@@ -1113,6 +1132,15 @@ const settlementRecoveryMetrics = {
     exhausted: 0,
     lastRunAt: 0,
     lastElapsedMs: 0,
+};
+const guardrailReservationMetrics = {
+    reserved: 0,
+    committed: 0,
+    released: 0,
+    expired: 0,
+    rejected: 0,
+    lastSweepAt: 0,
+    lastSweepExpired: 0,
 };
 const alertState = {
     lastAlertAt: 0,
@@ -1524,6 +1552,16 @@ async function buildPrometheusMetricsSnapshot(): Promise<string> {
     lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.recovered, { outcome: 'recovered' }));
     lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.failed, { outcome: 'failed' }));
     lines.push(formatPromMetric('copy_supervisor_settlement_recovery_window_total', settlementRecoveryMetrics.exhausted, { outcome: 'exhausted' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_total', cumulativeMetrics.guardrailReservationsReserved, { outcome: 'reserved' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_total', cumulativeMetrics.guardrailReservationsCommitted, { outcome: 'committed' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_total', cumulativeMetrics.guardrailReservationsReleased, { outcome: 'released' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_total', cumulativeMetrics.guardrailReservationsExpired, { outcome: 'expired' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_total', cumulativeMetrics.guardrailReservationsRejected, { outcome: 'rejected' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_window_total', guardrailReservationMetrics.reserved, { outcome: 'reserved' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_window_total', guardrailReservationMetrics.committed, { outcome: 'committed' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_window_total', guardrailReservationMetrics.released, { outcome: 'released' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_window_total', guardrailReservationMetrics.expired, { outcome: 'expired' }));
+    lines.push(formatPromMetric('copy_supervisor_guardrail_reservations_window_total', guardrailReservationMetrics.rejected, { outcome: 'rejected' }));
 
     lines.push(formatPromMetric('copy_supervisor_alerts_total', cumulativeMetrics.alertsTotal));
     lines.push(formatPromMetric('copy_supervisor_reject_total', cumulativeMetrics.rejectsTotal));
@@ -1646,6 +1684,17 @@ async function logMetricsSummary(): Promise<void> {
                 `[Metrics] 🚑 Settlement recovery: runs=${settlementRecoveryMetrics.runs} claimed=${settlementRecoveryMetrics.claimed} recovered=${settlementRecoveryMetrics.recovered} failed=${settlementRecoveryMetrics.failed} exhausted=${settlementRecoveryMetrics.exhausted} lastElapsed=${settlementRecoveryMetrics.lastElapsedMs}ms lastAt=${settlementRecoveryMetrics.lastRunAt ? new Date(settlementRecoveryMetrics.lastRunAt).toISOString() : 'n/a'}`
             );
         }
+        if (
+            guardrailReservationMetrics.reserved > 0
+            || guardrailReservationMetrics.committed > 0
+            || guardrailReservationMetrics.released > 0
+            || guardrailReservationMetrics.expired > 0
+            || guardrailReservationMetrics.rejected > 0
+        ) {
+            console.log(
+                `[Metrics] 🪪 Guardrail reservations: reserved=${guardrailReservationMetrics.reserved} committed=${guardrailReservationMetrics.committed} released=${guardrailReservationMetrics.released} expired=${guardrailReservationMetrics.expired} rejected=${guardrailReservationMetrics.rejected} lastSweepExpired=${guardrailReservationMetrics.lastSweepExpired} lastSweepAt=${guardrailReservationMetrics.lastSweepAt ? new Date(guardrailReservationMetrics.lastSweepAt).toISOString() : 'n/a'}`
+            );
+        }
         console.log(`[Metrics] 🧾 Dedup: hits=${dedupStats.hits} misses=${dedupStats.misses}`);
         console.log(`[Metrics] 📡 Signal: mode=${SIGNAL_MODE} poll_lag_ms=${signalHealth.pollLagMs} ws_last_event_age_ms=${signalHealth.wsLastEventAgeMs} source_mismatch_rate=${signalHealth.sourceMismatchRate.toFixed(4)} ws_degraded=${signalHealth.wsDegraded}`);
         console.log(`[Metrics] 📡 Source counts: ws=${sourceStats.wsEvents} polling=${sourceStats.pollingEvents} both=${sourceStats.closedBoth} ws_only=${sourceStats.closedWsOnly} polling_only=${sourceStats.closedPollingOnly}`);
@@ -1684,6 +1733,11 @@ async function logMetricsSummary(): Promise<void> {
         settlementRecoveryMetrics.recovered = 0;
         settlementRecoveryMetrics.failed = 0;
         settlementRecoveryMetrics.exhausted = 0;
+        guardrailReservationMetrics.reserved = 0;
+        guardrailReservationMetrics.committed = 0;
+        guardrailReservationMetrics.released = 0;
+        guardrailReservationMetrics.expired = 0;
+        guardrailReservationMetrics.rejected = 0;
         dedupStats.hits = 0;
         dedupStats.misses = 0;
         sourceStats.wsEvents = 0;
@@ -1962,6 +2016,72 @@ interface CounterStore {
     incrBy(key: string, value: number, ttlMs: number): Promise<number>;
 }
 
+type GuardrailReservationRecord = {
+    id: string;
+    walletAddress: string;
+    amount: number;
+    marketSlug?: string;
+    dailyKey: string;
+    windowBucket: string;
+    createdAt: number;
+    expiresAt: number;
+    source: string;
+    tradeId?: string;
+    tokenId?: string;
+};
+
+interface GuardrailReservationStore {
+    get(id: string): Promise<GuardrailReservationRecord | null>;
+    set(record: GuardrailReservationRecord): Promise<void>;
+    delete(id: string): Promise<void>;
+    list(): Promise<GuardrailReservationRecord[]>;
+}
+
+class MemoryGuardrailReservationStore implements GuardrailReservationStore {
+    private store = new Map<string, GuardrailReservationRecord>();
+
+    async get(id: string): Promise<GuardrailReservationRecord | null> {
+        return this.store.get(id) || null;
+    }
+
+    async set(record: GuardrailReservationRecord): Promise<void> {
+        this.store.set(record.id, record);
+    }
+
+    async delete(id: string): Promise<void> {
+        this.store.delete(id);
+    }
+
+    async list(): Promise<GuardrailReservationRecord[]> {
+        return Array.from(this.store.values());
+    }
+}
+
+class RedisGuardrailReservationStore implements GuardrailReservationStore {
+    constructor(private client: any, private key: string) { }
+
+    async get(id: string): Promise<GuardrailReservationRecord | null> {
+        const raw = await this.client.hget(this.key, id);
+        if (!raw) return null;
+        return JSON.parse(String(raw)) as GuardrailReservationRecord;
+    }
+
+    async set(record: GuardrailReservationRecord): Promise<void> {
+        await this.client.hset(this.key, record.id, JSON.stringify(record));
+    }
+
+    async delete(id: string): Promise<void> {
+        await this.client.hdel(this.key, id);
+    }
+
+    async list(): Promise<GuardrailReservationRecord[]> {
+        const values = await this.client.hvals(this.key);
+        return Array.isArray(values)
+            ? values.map((value: string) => JSON.parse(String(value)) as GuardrailReservationRecord)
+            : [];
+    }
+}
+
 class MemoryCounterStore implements CounterStore {
     private store = new Map<string, { value: number; expiresAt: number }>();
     async get(key: string): Promise<number | null> {
@@ -2002,6 +2122,145 @@ class RedisCounterStore implements CounterStore {
 }
 
 let counterStore: CounterStore = new MemoryCounterStore();
+let guardrailReservationStore: GuardrailReservationStore = new MemoryGuardrailReservationStore();
+let isGuardrailReservationSweepRunning = false;
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getWindowBucketAt(timestampMs: number): string {
+    return String(Math.floor(timestampMs / TRADE_WINDOW_MS));
+}
+
+function buildReservedCounterKey(key: string): string {
+    return `reserved:${key}`;
+}
+
+function getReservationCounterTtlMs(): number {
+    return Math.max(GUARDRAIL_RESERVATION_TTL_MS * 3, GUARDRAIL_CACHE_TTL_MS);
+}
+
+function buildGuardrailScopeKeys(params: {
+    walletAddress: string;
+    dailyKey: string;
+    marketSlug?: string;
+    windowBucket: string;
+}): {
+    globalAmountKey: string;
+    walletAmountKey: string;
+    marketAmountKey?: string;
+    windowCountKey: string;
+    lockKeys: string[];
+} {
+    const walletAddress = params.walletAddress.toLowerCase();
+    const globalAmountKey = `global:${params.dailyKey}`;
+    const walletAmountKey = `wallet:${walletAddress}:${params.dailyKey}`;
+    const marketAmountKey = params.marketSlug ? `market:${params.marketSlug.toLowerCase()}:${params.dailyKey}` : undefined;
+    const windowCountKey = `window:${params.windowBucket}`;
+    const lockKeys = [globalAmountKey, walletAmountKey, marketAmountKey, windowCountKey].filter(Boolean) as string[];
+
+    return {
+        globalAmountKey,
+        walletAmountKey,
+        marketAmountKey,
+        windowCountKey,
+        lockKeys,
+    };
+}
+
+function buildGuardrailReservationScopes(record: GuardrailReservationRecord) {
+    return buildGuardrailScopeKeys({
+        walletAddress: record.walletAddress,
+        dailyKey: record.dailyKey,
+        marketSlug: record.marketSlug,
+        windowBucket: record.windowBucket,
+    });
+}
+
+async function getReservedCounterValue(key: string): Promise<number> {
+    return Number(await counterStore.get(buildReservedCounterKey(key)) || 0);
+}
+
+async function updateReservedCounterValue(key: string, delta: number): Promise<void> {
+    const reservationKey = buildReservedCounterKey(key);
+    const ttlMs = getReservationCounterTtlMs();
+    const current = Number(await counterStore.get(reservationKey) || 0);
+    const next = Math.max(0, current + delta);
+    await counterStore.set(reservationKey, next, ttlMs);
+}
+
+async function adjustGuardrailReservedCounters(record: GuardrailReservationRecord, direction: 'reserve' | 'release'): Promise<void> {
+    const scopes = buildGuardrailReservationScopes(record);
+    const amountDelta = direction === 'reserve' ? record.amount : -record.amount;
+    await updateReservedCounterValue(scopes.globalAmountKey, amountDelta);
+    await updateReservedCounterValue(scopes.walletAmountKey, amountDelta);
+    if (scopes.marketAmountKey) {
+        await updateReservedCounterValue(scopes.marketAmountKey, amountDelta);
+    }
+    await updateReservedCounterValue(scopes.windowCountKey, direction === 'reserve' ? 1 : -1);
+}
+
+async function withRedisGuardrailLocks<T>(keys: string[], task: () => Promise<T>): Promise<T> {
+    if (!redisClient || keys.length === 0) {
+        return task();
+    }
+
+    const owner = `guardrail-lock-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const acquired: string[] = [];
+
+    try {
+        for (const key of keys) {
+            const redisKey = `copy:guardrail:lock:${key}`;
+            let locked = false;
+
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+                const result = await redisClient.set(redisKey, owner, 'PX', GUARDRAIL_LOCK_TTL_MS, 'NX');
+                if (result === 'OK') {
+                    acquired.push(redisKey);
+                    locked = true;
+                    break;
+                }
+                await sleep(25 * (attempt + 1));
+            }
+
+            if (!locked) {
+                throw new Error(`GUARDRAIL_LOCK_TIMEOUT:${key}`);
+            }
+        }
+
+        return await task();
+    } finally {
+        for (const redisKey of acquired.reverse()) {
+            try {
+                const currentOwner = await redisClient.get(redisKey);
+                if (currentOwner === owner) {
+                    await redisClient.del(redisKey);
+                }
+            } catch {
+                // Lock cleanup is best-effort; TTL prevents permanent leaks.
+            }
+        }
+    }
+}
+
+async function withGuardrailScopeLocks<T>(keys: string[], task: () => Promise<T>): Promise<T> {
+    const uniqueKeys = Array.from(new Set(keys.filter(Boolean))).sort();
+    if (uniqueKeys.length === 0) {
+        return task();
+    }
+
+    if (redisClient) {
+        return withRedisGuardrailLocks(uniqueKeys, task);
+    }
+
+    let runner = task;
+    for (const key of [...uniqueKeys].reverse()) {
+        const next = runner;
+        runner = () => scopedTxMutex.getMutex(`guardrail:${key}`).run(next);
+    }
+    return runner();
+}
 
 async function getCachedCounter(key: string, fallback: () => Promise<number>): Promise<number> {
     const cached = await counterStore.get(key);
@@ -2019,21 +2278,209 @@ function getDailyKey(date: Date): string {
 }
 
 function getWindowBucket(): string {
-    return String(Math.floor(Date.now() / TRADE_WINDOW_MS));
+    return getWindowBucketAt(Date.now());
 }
 
 async function incrementGuardrailCounters(params: {
     walletAddress: string;
     amount: number;
     marketSlug?: string;
+    dailyKey?: string;
+    windowBucket?: string;
 }) {
-    const dailyKey = getDailyKey(new Date());
+    const dailyKey = params.dailyKey || getDailyKey(new Date());
+    const windowBucket = params.windowBucket || getWindowBucket();
     await counterStore.incrBy(`global:${dailyKey}`, params.amount, GUARDRAIL_CACHE_TTL_MS);
     await counterStore.incrBy(`wallet:${params.walletAddress.toLowerCase()}:${dailyKey}`, params.amount, GUARDRAIL_CACHE_TTL_MS);
     if (params.marketSlug) {
         await counterStore.incrBy(`market:${params.marketSlug.toLowerCase()}:${dailyKey}`, params.amount, GUARDRAIL_CACHE_TTL_MS);
     }
-    await counterStore.incrBy(`window:${getWindowBucket()}`, 1, GUARDRAIL_CACHE_TTL_MS);
+    await counterStore.incrBy(`window:${windowBucket}`, 1, GUARDRAIL_CACHE_TTL_MS);
+}
+
+async function finalizeGuardrailReservation(
+    record: GuardrailReservationRecord | null | undefined,
+    mode: 'commit' | 'release' | 'expire',
+    options?: { committedAmount?: number }
+): Promise<void> {
+    if (!GUARDRAIL_RESERVATIONS_ENABLED || !record) return;
+
+    const scopes = buildGuardrailReservationScopes(record);
+    await withGuardrailScopeLocks(scopes.lockKeys, async () => {
+        const current = await guardrailReservationStore.get(record.id);
+        if (!current) return;
+
+        await adjustGuardrailReservedCounters(current, 'release');
+
+        if (mode === 'commit') {
+            const committedAmount = Number.isFinite(options?.committedAmount)
+                ? Math.max(0, Number(options?.committedAmount || 0))
+                : current.amount;
+            await incrementGuardrailCounters({
+                walletAddress: current.walletAddress,
+                amount: committedAmount,
+                marketSlug: current.marketSlug,
+                dailyKey: current.dailyKey,
+                windowBucket: current.windowBucket,
+            });
+            guardrailReservationMetrics.committed += 1;
+            cumulativeMetrics.guardrailReservationsCommitted += 1;
+        } else if (mode === 'release') {
+            guardrailReservationMetrics.released += 1;
+            cumulativeMetrics.guardrailReservationsReleased += 1;
+        } else {
+            guardrailReservationMetrics.expired += 1;
+            cumulativeMetrics.guardrailReservationsExpired += 1;
+            await recordGuardrailEvent({
+                reason: 'GUARDRAIL_RESERVATION_EXPIRED',
+                source: 'supervisor-guardrail-expire',
+                walletAddress: current.walletAddress,
+                amount: current.amount,
+                tradeId: current.tradeId,
+                tokenId: current.tokenId,
+            });
+        }
+
+        await guardrailReservationStore.delete(current.id);
+    });
+}
+
+async function reserveGuardrailCapacity(
+    walletAddress: string,
+    amount: number,
+    context: { source?: string; marketSlug?: string; tradeId?: string; tokenId?: string } = {}
+): Promise<{ allowed: boolean; reason?: string; reservation?: GuardrailReservationRecord }> {
+    const source = context.source || 'supervisor-reservation';
+    const marketSlug = context.marketSlug?.toLowerCase();
+
+    const baseline = await checkExecutionGuardrails(walletAddress, amount, {
+        source: `${source}-precheck`,
+        marketSlug,
+        tradeId: context.tradeId,
+        tokenId: context.tokenId,
+    });
+    if (!baseline.allowed || !GUARDRAIL_RESERVATIONS_ENABLED) {
+        return { allowed: baseline.allowed, reason: baseline.reason };
+    }
+
+    const now = Date.now();
+    const dailyKey = getDailyKey(new Date(now));
+    const windowBucket = getWindowBucketAt(now);
+    const reservation: GuardrailReservationRecord = {
+        id: randomUUID(),
+        walletAddress: walletAddress.toLowerCase(),
+        amount,
+        marketSlug,
+        dailyKey,
+        windowBucket,
+        createdAt: now,
+        expiresAt: now + GUARDRAIL_RESERVATION_TTL_MS,
+        source,
+        tradeId: context.tradeId,
+        tokenId: context.tokenId,
+    };
+    const scopes = buildGuardrailReservationScopes(reservation);
+
+    try {
+        return await withGuardrailScopeLocks(scopes.lockKeys, async () => {
+            const since = new Date(now - 24 * 60 * 60 * 1000);
+            const windowStart = new Date(now - TRADE_WINDOW_MS);
+            const marketCap = marketSlug ? (MARKET_CAPS.get(marketSlug) || MARKET_DAILY_CAP_USD) : 0;
+
+            const decision = evaluateReservationSafeGuardrails({
+                amountUsd: amount,
+                global: GLOBAL_DAILY_CAP_USD > 0
+                    ? {
+                        usedUsd: await getCachedCounter(scopes.globalAmountKey, () => getExecutedTotalSince(since)),
+                        reservedUsd: await getReservedCounterValue(scopes.globalAmountKey),
+                        capUsd: GLOBAL_DAILY_CAP_USD,
+                    }
+                    : undefined,
+                wallet: WALLET_DAILY_CAP_USD > 0
+                    ? {
+                        usedUsd: await getCachedCounter(scopes.walletAmountKey, () => getExecutedTotalSince(since, walletAddress)),
+                        reservedUsd: await getReservedCounterValue(scopes.walletAmountKey),
+                        capUsd: WALLET_DAILY_CAP_USD,
+                    }
+                    : undefined,
+                market: marketSlug && marketCap > 0
+                    ? {
+                        usedUsd: await getCachedCounter(scopes.marketAmountKey!, () => getExecutedTotalForMarketSince(since, marketSlug)),
+                        reservedUsd: await getReservedCounterValue(scopes.marketAmountKey!),
+                        capUsd: marketCap,
+                    }
+                    : undefined,
+                window: MAX_TRADES_PER_WINDOW > 0
+                    ? {
+                        usedCount: await getCachedCounter(scopes.windowCountKey, () => getExecutedCountSince(windowStart)),
+                        reservedCount: await getReservedCounterValue(scopes.windowCountKey),
+                        capCount: MAX_TRADES_PER_WINDOW,
+                    }
+                    : undefined,
+            });
+
+            if (!decision.allowed) {
+                const reasonCode = String(decision.reason || 'GUARDRAIL_RESERVATION_BLOCKED').split(' ')[0];
+                guardrailReservationMetrics.rejected += 1;
+                cumulativeMetrics.guardrailReservationsRejected += 1;
+                await recordGuardrailEvent({
+                    reason: reasonCode,
+                    source: `${source}-reservation`,
+                    walletAddress,
+                    amount,
+                    tradeId: context.tradeId,
+                    tokenId: context.tokenId,
+                });
+                return { allowed: false, reason: decision.reason };
+            }
+
+            await adjustGuardrailReservedCounters(reservation, 'reserve');
+            await guardrailReservationStore.set(reservation);
+            guardrailReservationMetrics.reserved += 1;
+            cumulativeMetrics.guardrailReservationsReserved += 1;
+            return { allowed: true, reservation };
+        });
+    } catch (error: any) {
+        await recordGuardrailEvent({
+            reason: 'GUARDRAIL_RESERVATION_LOCK_FAILED',
+            source,
+            walletAddress,
+            amount,
+            tradeId: context.tradeId,
+            tokenId: context.tokenId,
+        });
+        return {
+            allowed: false,
+            reason: error?.message || 'GUARDRAIL_RESERVATION_LOCK_FAILED',
+        };
+    }
+}
+
+async function sweepExpiredGuardrailReservations(): Promise<void> {
+    if (!GUARDRAIL_RESERVATIONS_ENABLED || isShuttingDown || isGuardrailReservationSweepRunning) return;
+    isGuardrailReservationSweepRunning = true;
+
+    try {
+        const now = Date.now();
+        const reservations = await guardrailReservationStore.list();
+        let expired = 0;
+
+        for (const reservation of reservations) {
+            if (reservation.expiresAt > now) continue;
+            await finalizeGuardrailReservation(reservation, 'expire');
+            expired += 1;
+        }
+
+        guardrailReservationMetrics.lastSweepAt = now;
+        guardrailReservationMetrics.lastSweepExpired = expired;
+        if (expired > 0) {
+            console.log(`[Supervisor] 🧹 Guardrail reservation sweep released ${expired} expired reservation(s).`);
+        }
+    } catch (error) {
+        console.warn('[Supervisor] Guardrail reservation sweep failed:', error);
+    } finally {
+        isGuardrailReservationSweepRunning = false;
+    }
 }
 
 async function recordGuardrailEvent(params: {
@@ -2778,6 +3225,7 @@ async function initSharedStores(): Promise<void> {
         );
         dedupStore = new RedisDedupStore(redisClient, `${prefix}dedup:`);
         counterStore = new RedisCounterStore(redisClient, `${prefix}counter:`);
+        guardrailReservationStore = new RedisGuardrailReservationStore(redisClient, `${prefix}guardrail:reservations`);
         console.log('[Supervisor] ✅ Redis connected. Shared stores enabled.');
     } catch (error) {
         if (redisRequired) {
@@ -4446,6 +4894,7 @@ async function executeJobInternal(
     const typeLabel = isPreflight ? "🦈 MEMPOOL" : "🐢 BLOCK";
     const startTime = Date.now(); // Track latency
     console.log(`[Supervisor] 🏃 [${typeLabel}] Assigning User ${config.walletAddress} -> Worker ${workerAddress}`);
+    let guardrailReservation: GuardrailReservationRecord | undefined;
 
     try {
         const copyAmount = calculateCopySize(config, originalSize, approxPrice);
@@ -4458,7 +4907,7 @@ async function executeJobInternal(
             return;
         }
         const marketSlug = await getMarketSlugForGuardrail(tokenId);
-        const executionGuardrail = await checkExecutionGuardrails(config.walletAddress, copyAmount, {
+        const executionGuardrail = await reserveGuardrailCapacity(config.walletAddress, copyAmount, {
             source: isPreflight ? 'supervisor-execute-preflight' : 'supervisor-execute',
             marketSlug,
             tradeId: originalSignalId,
@@ -4471,6 +4920,7 @@ async function executeJobInternal(
             recordWalletExecution(config.walletAddress, 'skipped', latencyMs);
             return;
         }
+        guardrailReservation = executionGuardrail.reservation;
 
         // Map real-time trade signature to the generalized Activity schema expected by Orchestrator
         const mappedTrade = {
@@ -4498,15 +4948,26 @@ async function executeJobInternal(
                 const balanceDelta = resultSide === 'BUY' ? resultShares : -resultShares;
                 updatePositionCache(config.walletAddress, resultTokenId, balanceDelta);
             }
-            await incrementGuardrailCounters({
-                walletAddress: config.walletAddress,
-                amount: executionResult.copySizeUsdc ?? copyAmount,
-                marketSlug,
-            });
+            if (guardrailReservation) {
+                await finalizeGuardrailReservation(guardrailReservation, 'commit', {
+                    committedAmount: executionResult.copySizeUsdc ?? copyAmount,
+                });
+                guardrailReservation = undefined;
+            } else {
+                await incrementGuardrailCounters({
+                    walletAddress: config.walletAddress,
+                    amount: executionResult.copySizeUsdc ?? copyAmount,
+                    marketSlug,
+                });
+            }
             const latencyMs = Date.now() - startTime;
             recordExecution('success', latencyMs);
             recordWalletExecution(config.walletAddress, 'success', latencyMs);
         } else {
+            if (guardrailReservation) {
+                await finalizeGuardrailReservation(guardrailReservation, 'release');
+                guardrailReservation = undefined;
+            }
             const latencyMs = Date.now() - startTime;
             recordExecution('skipped', latencyMs);
             recordWalletExecution(config.walletAddress, 'skipped', latencyMs);
@@ -4514,6 +4975,12 @@ async function executeJobInternal(
         }
 
     } catch (e: any) {
+        if (guardrailReservation) {
+            await finalizeGuardrailReservation(guardrailReservation, 'release').catch((releaseError) => {
+                console.warn('[Supervisor] Failed to release guardrail reservation after execution error:', releaseError);
+            });
+            guardrailReservation = undefined;
+        }
         // Record failed execution
         const latencyMs = Date.now() - startTime;
         recordExecution('failed', latencyMs);
@@ -4820,6 +5287,16 @@ async function main() {
         setInterval(() => {
             void reconcileResolvedPositions();
         }, SETTLEMENT_RECONCILIATION_INTERVAL_MS);
+    }
+
+    if (GUARDRAIL_RESERVATIONS_ENABLED) {
+        console.log(
+            `[Supervisor] 🪪 Guardrail reservations enabled: ttl=${GUARDRAIL_RESERVATION_TTL_MS}ms sweep=${GUARDRAIL_RESERVATION_SWEEP_INTERVAL_MS}ms lockTtl=${GUARDRAIL_LOCK_TTL_MS}ms`
+        );
+        void sweepExpiredGuardrailReservations();
+        setInterval(() => {
+            void sweepExpiredGuardrailReservations();
+        }, GUARDRAIL_RESERVATION_SWEEP_INTERVAL_MS);
     }
 
     if (STALE_PENDING_RECOVERY_ENABLED) {

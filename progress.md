@@ -179,6 +179,18 @@
   - `sdk/src/services/copy-trading-execution-service.test.ts` (updated)
   - `web/scripts/workers/copy-trading-supervisor.ts` (updated)
 
+### Task 6: Guardrail Reservations
+- **Status:** complete
+- Actions taken:
+  - 新增 `web/lib/copy-trading/guardrail-reservations.ts` 与测试，把“已执行 + 已预留 + 本次申请”的 reservation-safe 判定抽成共享 helper。
+  - 在 `web/scripts/workers/copy-trading-supervisor.ts` 中加入 guardrail reservation store、scope locks、reserve/commit/release/expire 流程，以及 Redis / in-memory 双后端实现。
+  - 将 `executeJobInternal` 改成在真正执行前 reservation，在成功后按实际成交额 commit，在 skip/failure/exception 时 release，避免 burst fanout 下额度被并发冲穿。
+  - 增加 reservation TTL sweep 和 Prometheus / summary metrics，跟踪 reserved、committed、released、expired、rejected。
+- Files created/modified:
+  - `web/lib/copy-trading/guardrail-reservations.ts` (created)
+  - `web/lib/copy-trading/guardrail-reservations.test.ts` (created)
+  - `web/scripts/workers/copy-trading-supervisor.ts` (updated)
+
 ## Verification Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
@@ -189,3 +201,5 @@
 | `node -e "const pkg=require('./package.json'); ..."` | `web/package.json` scripts | Default runtime points to supervisor, legacy path explicit | `copy-worker:speed -> copy-supervisor:speed` | passed |
 | `npx tsc --noEmit -p tsconfig.json` | `web` typecheck | Project typecheck status | Fails on pre-existing `@privy-io/react-auth` missing types / implicit any outside this task | blocked |
 | `npx tsc --noEmit -p tsconfig.json --pretty false` + grep touched files | `web` typecheck triage | No new TypeScript errors in touched copy-trading runtime files | No matches for `copy-trading-supervisor`, `copy-trade-settlement`, `copy-trade-lifecycle`, `copy-trading-execution-service`, `trade-orchestrator` | passed |
+| `npx vitest run --config vitest.config.ts lib/copy-trading/guardrail-reservations.test.ts app/api/copy-trading/execute/route.test.ts lib/services/position-service.test.ts` | `web` targeted tests | Reservation helper + existing route/accounting regressions pass | 9 tests passed | passed |
+| `npx tsc --noEmit -p tsconfig.json --pretty false` + grep touched files | `web` typecheck triage after Task 6 | No new TypeScript errors in `copy-trading-supervisor` / `guardrail-reservations` and previous touched runtime files | `NO_TOUCHED_FILE_ERRORS` | passed |
