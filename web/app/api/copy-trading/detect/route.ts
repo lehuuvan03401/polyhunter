@@ -23,7 +23,6 @@ const DETECTION_WINDOW_SECONDS = 120; // 2 minutes
 
 // Expiry time for pending trades (user has this long to confirm)
 const PENDING_EXPIRY_MINUTES = 10;
-void getCopyTradingCronSecret();
 
 /**
  * Calculate copy size based on config and original trade

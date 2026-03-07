@@ -9,7 +9,6 @@ export const dynamic = 'force-dynamic';
 
 const MIN_WALLET_MATIC = Number(process.env.COPY_TRADING_MIN_WALLET_MATIC || '0.1');
 const MIN_PROXY_USDC = Number(process.env.COPY_TRADING_MIN_PROXY_USDC || '1');
-const CHAIN_ID = getCopyTradingChainId();
 
 const getProvider = () => {
     // readiness 走只读链路：优先使用独立 COPY_TRADING_RPC_URL，避免挤占前端公用 RPC。
@@ -46,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
 
     const provider = getProvider();
-    const addresses = getAddresses(CHAIN_ID);
+    const addresses = getAddresses(getCopyTradingChainId());
 
     const voidSigner = new ethers.VoidSigner(walletAddress, provider);
 

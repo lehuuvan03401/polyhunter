@@ -25,7 +25,6 @@ const WORKER_KEYS = (process.env.COPY_TRADING_WORKER_KEYS || '')
     .map((key) => key.trim())
     .filter(Boolean);
 const WORKER_INDEX = parseInt(process.env.COPY_TRADING_WORKER_INDEX || '0', 10);
-const CHAIN_ID = getCopyTradingChainId();
 const RPC_URLS = (process.env.COPY_TRADING_RPC_URLS || '')
     .split(',')
     .map((url) => url.trim())
@@ -71,9 +70,10 @@ interface ExecutionServiceWithAllowance {
 }
 
 const getChainAddresses = () => {
-    if (CHAIN_ID === 137) return CONTRACT_ADDRESSES.polygon;
-    if (CHAIN_ID === 80001 || CHAIN_ID === 80002) return CONTRACT_ADDRESSES.amoy;
-    if (CHAIN_ID === 31337 || CHAIN_ID === 1337) return CONTRACT_ADDRESSES.localhost;
+    const chainId = getCopyTradingChainId();
+    if (chainId === 137) return CONTRACT_ADDRESSES.polygon;
+    if (chainId === 80001 || chainId === 80002) return CONTRACT_ADDRESSES.amoy;
+    if (chainId === 31337 || chainId === 1337) return CONTRACT_ADDRESSES.localhost;
     return CONTRACT_ADDRESSES.polygon;
 };
 
@@ -248,7 +248,7 @@ async function transferFromProxy(
     signer: ethers.Wallet
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
     try {
-        const addresses = CHAIN_ID === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
+        const addresses = getCopyTradingChainId() === 137 ? CONTRACT_ADDRESSES.polygon : CONTRACT_ADDRESSES.amoy;
         const botAddress = signer.address;
 
         // Encode USDC transfer call
@@ -531,7 +531,7 @@ export async function POST(request: NextRequest) {
                 const cache = createUnifiedCache();
                 const tradingService = new TradingService(rateLimiter, cache, {
                     privateKey: workerSelection.privateKey,
-                    chainId: CHAIN_ID,
+                    chainId: getCopyTradingChainId(),
                 });
                 await tradingService.initialize();
 
@@ -572,7 +572,7 @@ export async function POST(request: NextRequest) {
                 // Initialize Execution Service
                 const provider = new ethers.providers.JsonRpcProvider(selectedRpc);
                 const signer = new ethers.Wallet(workerSelection.privateKey, provider);
-                const executionService = new CopyTradingExecutionService(tradingService, signer, CHAIN_ID) as ExecutionServiceWithAllowance;
+                const executionService = new CopyTradingExecutionService(tradingService, signer, getCopyTradingChainId()) as ExecutionServiceWithAllowance;
                 const workerAddress = await signer.getAddress();
 
                 const proxyAddress = await executionService.resolveProxyAddress(normalizedWallet);
@@ -590,12 +590,12 @@ export async function POST(request: NextRequest) {
 
                 const allowanceCheck = executionService.checkProxyAllowance
                     ? await executionService.checkProxyAllowance({
-                    proxyAddress,
-                    side: claimedTrade.originalSide as 'BUY' | 'SELL',
-                    tokenId: claimedTrade.tokenId,
-                    amount: claimedTrade.copySize,
-                    signer,
-                })
+                        proxyAddress,
+                        side: claimedTrade.originalSide as 'BUY' | 'SELL',
+                        tokenId: claimedTrade.tokenId,
+                        amount: claimedTrade.copySize,
+                        signer,
+                    })
                     : await checkProxyAllowanceFallback({
                         proxyAddress,
                         side: claimedTrade.originalSide as 'BUY' | 'SELL',

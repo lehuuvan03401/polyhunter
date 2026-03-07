@@ -4,7 +4,6 @@ import { isCopyTradingDryRunEnabled } from '@/lib/copy-trading/runtime-config';
 // Configuration from environment
 const ENABLE_REAL_TRADING = process.env.ENABLE_REAL_TRADING === 'true';
 const EMERGENCY_PAUSE = process.env.COPY_TRADING_EMERGENCY_PAUSE === 'true';
-const DRY_RUN = isCopyTradingDryRunEnabled();
 const GLOBAL_DAILY_CAP_USD = Number(process.env.COPY_TRADING_DAILY_CAP_USD || '0');
 const WALLET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_WALLET_DAILY_CAP_USD || '0');
 const MARKET_DAILY_CAP_USD = Number(process.env.COPY_TRADING_MARKET_DAILY_CAP_USD || '0');
@@ -271,7 +270,7 @@ export class GuardrailService {
             }
         }
 
-        if (DRY_RUN) {
+        if (isCopyTradingDryRunEnabled()) {
             // DRY_RUN 仍记录 guardrail 命中，便于验证链路触达。
             GuardrailService.recordGuardrailTrigger({ reason: 'DRY_RUN', source, walletAddress, amount, tradeId: context.tradeId, tokenId: context.tokenId });
             return { allowed: false, reason: 'DRY_RUN' };
