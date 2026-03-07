@@ -32,7 +32,7 @@ async function main() {
     // Ensure the impersonated account has native token to pay gas on local fork
     await ethers.provider.send("hardhat_setBalance", [
         WHALE_ADDRESS,
-        ethers.toBeHex(ethers.parseEther("1000")),
+        ethers.toBeHex(ethers.parseEther("1000"))
     ]);
     const whale = await ethers.getSigner(WHALE_ADDRESS);
 

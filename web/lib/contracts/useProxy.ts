@@ -281,8 +281,15 @@ export function useProxy(): UseProxyReturn {
         }
 
         try {
-            const { provider } = await getSignerAndProvider();
-            const code = await provider.getCode(ADDRESSES.proxyFactory);
+            const { provider: walletProvider } = await getSignerAndProvider();
+
+            // If we are on localhost, force the read operations to go directly to our local node.
+            // MetaMask might internally route to Polygon Mainnet if both are chain 137, causing code checks to fail.
+            const readProvider = NETWORK === 'localhost'
+                ? new ethers.providers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545')
+                : walletProvider;
+
+            const code = await readProvider.getCode(ADDRESSES.proxyFactory);
             if (!code || code === '0x') {
                 setHasProxy(false);
                 setProxyAddress(null);
@@ -290,7 +297,7 @@ export function useProxy(): UseProxyReturn {
                 return null;
             }
 
-            const factory = new ethers.Contract(ADDRESSES.proxyFactory, PROXY_FACTORY_ABI, provider);
+            const factory = new ethers.Contract(ADDRESSES.proxyFactory, PROXY_FACTORY_ABI, readProvider);
             const address = await factory.getUserProxy(walletAddress);
             const exists = address !== ethers.constants.AddressZero;
 
@@ -300,9 +307,9 @@ export function useProxy(): UseProxyReturn {
             const legacyFactoryAddr = (ADDRESSES as any).legacyProxyFactory; // Cast to bypass TS if missing on some types, but we added it
             if (legacyFactoryAddr && legacyFactoryAddr !== ADDRESSES.proxyFactory) {
                 try {
-                    const legacyCode = await provider.getCode(legacyFactoryAddr);
+                    const legacyCode = await readProvider.getCode(legacyFactoryAddr);
                     if (legacyCode && legacyCode !== '0x') {
-                        const legacyFactory = new ethers.Contract(legacyFactoryAddr, PROXY_FACTORY_ABI, provider);
+                        const legacyFactory = new ethers.Contract(legacyFactoryAddr, PROXY_FACTORY_ABI, readProvider);
                         legacyAddr = await legacyFactory.getUserProxy(walletAddress);
                         legacyExists = legacyAddr !== ethers.constants.AddressZero;
                     }
@@ -339,14 +346,17 @@ export function useProxy(): UseProxyReturn {
         if (!proxyAddress && !legacyProxyAddress) return;
 
         try {
-            const { provider } = await getSignerAndProvider();
+            const { provider: walletProvider } = await getSignerAndProvider();
+            const readProvider = NETWORK === 'localhost'
+                ? new ethers.providers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545')
+                : walletProvider;
 
             if (proxyAddress) {
-                const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, provider);
+                const proxy = new ethers.Contract(proxyAddress, POLY_HUNTER_PROXY_ABI, readProvider);
 
                 const promises: Promise<any>[] = [
                     proxy.getStats(),
-                    provider.getBalance(proxyAddress), // ETH balance (for gas if needed)
+                    readProvider.getBalance(proxyAddress), // ETH balance (for gas if needed)
                     proxy.executor().catch(() => ethers.constants.AddressZero),
                 ];
 
@@ -371,7 +381,7 @@ export function useProxy(): UseProxyReturn {
             }
 
             if (legacyProxyAddress) {
-                const legacyProxy = new ethers.Contract(legacyProxyAddress, POLY_HUNTER_PROXY_ABI, provider);
+                const legacyProxy = new ethers.Contract(legacyProxyAddress, POLY_HUNTER_PROXY_ABI, readProvider);
                 const legacyStatsResult = await legacyProxy.getStats().catch(() => null);
                 if (legacyStatsResult) {
                     setLegacyStats({
@@ -402,8 +412,12 @@ export function useProxy(): UseProxyReturn {
         }
 
         try {
-            const { provider } = await getSignerAndProvider();
-            const usdc = new ethers.Contract(ADDRESSES.usdc, ERC20_ABI, provider);
+            const { provider: walletProvider } = await getSignerAndProvider();
+            const readProvider = NETWORK === 'localhost'
+                ? new ethers.providers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8545')
+                : walletProvider;
+
+            const usdc = new ethers.Contract(ADDRESSES.usdc, ERC20_ABI, readProvider);
             const balance = await usdc.balanceOf(walletAddress);
             setUsdcBalance(formatUSDC(balance));
         } catch (err: any) {

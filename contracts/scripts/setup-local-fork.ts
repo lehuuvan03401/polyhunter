@@ -79,7 +79,7 @@ async function main() {
         });
         await network.provider.request({
             method: "hardhat_setBalance",
-            params: [IMPERSONATE_USDC_WHALE, ethers.toBeHex(ethers.parseEther("1"))],
+            params: [IMPERSONATE_USDC_WHALE, ethers.toBeHex(ethers.parseEther("1000"))],
         });
         const whaleSigner = await ethers.getSigner(IMPERSONATE_USDC_WHALE);
 
